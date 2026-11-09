@@ -3,9 +3,12 @@ package cvsession
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 
+	"github.com/go-go-golems/go-go-goja/pkg/repldb"
 	"github.com/go-go-golems/go-go-goja/pkg/replmcp"
+	"github.com/go-go-golems/go-go-goja/pkg/replsession"
 	"github.com/go-go-golems/goja-cv/pkg/cv/docs"
 	cvmod "github.com/go-go-golems/goja-cv/pkg/gojamod/cv"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -31,13 +34,13 @@ type MCPServer struct {
 // EvalInput is the input of the cv eval tool.
 type EvalInput struct {
 	Code      string `json:"code" jsonschema:"JavaScript program body (the body of an async function: use await and return)."`
-	SessionID string `json:"sessionId,omitempty" jsonschema:"Session to evaluate in. Omit to use the default session."`
+	SessionID string `json:"sessionId,omitempty" jsonschema:"Optional; omit it to use the default session (where img and mem live); only pass ids returned by create_session or list_sessions."`
 }
 
 // OpenInput is the input of the open tool.
 type OpenInput struct {
 	Path      string `json:"path" jsonschema:"Image file to open (PNG, JPEG, TIFF); it becomes img."`
-	SessionID string `json:"sessionId,omitempty" jsonschema:"Session to open the image in. Omit to use the default session."`
+	SessionID string `json:"sessionId,omitempty" jsonschema:"Optional; omit it to use the default session; only pass ids returned by create_session or list_sessions."`
 }
 
 // NewMCPServer creates the default session (with Options.Image bound to img)
@@ -143,10 +146,36 @@ func (s *MCPServer) open(ctx context.Context, _ *mcp.CallToolRequest, in OpenInp
 	return s.run(ctx, s.session(in.SessionID), code)
 }
 
+// unknownSession is the tool error for an invented session id (the same
+// wording as replmcp's, whose eval tool this server replaces).
+func (s *MCPServer) unknownSession(sessionID string) error {
+	ids := s.App.Sessions()
+	var existing string
+	switch {
+	case len(ids) == 0:
+		existing = "No sessions exist yet."
+	case len(ids) == 1 && ids[0] == s.DefaultSession:
+		existing = fmt.Sprintf("There is only the default session (%s).", ids[0])
+	default:
+		list := make([]string, len(ids))
+		for i, id := range ids {
+			list[i] = id
+			if id == s.DefaultSession {
+				list[i] += " (default)"
+			}
+		}
+		existing = "Existing sessions: " + strings.Join(list, ", ") + "."
+	}
+	return errors.Errorf("session %q does not exist. %s To use the default session (where img, mem and your looks live), omit sessionId; to start a new one, call create_session. Only pass ids returned by create_session or list_sessions.", sessionID, existing)
+}
+
 func (s *MCPServer) run(ctx context.Context, sessionID, code string) (*mcp.CallToolResult, any, error) {
 	resp, err := s.App.Evaluate(ctx, sessionID, code)
 	if err != nil {
 		if resp == nil || resp.Cell == nil {
+			if errors.Is(err, replsession.ErrSessionNotFound) || errors.Is(err, repldb.ErrSessionNotFound) {
+				return nil, nil, s.unknownSession(sessionID)
+			}
 			return nil, nil, errors.Wrapf(err, "evaluate in session %s", sessionID)
 		}
 		result := replmcp.EvalResult(resp, s.limits)

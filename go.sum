@@ -110,8 +110,8 @@ github.com/go-go-golems/geppetto v0.11.7 h1:+1PrKGlG5byyoD2FxkSIOgpiVBaq/Y7j/eC+
 github.com/go-go-golems/geppetto v0.11.7/go.mod h1:dSfEljXNeSPqZ5Ftrhr6nsgN3Brcxjr3fYrYq6uQ0kU=
 github.com/go-go-golems/glazed v1.3.5 h1:nMduPxFCocHRI8i2KhyimFuqCovy3CtEktdar0R86sI=
 github.com/go-go-golems/glazed v1.3.5/go.mod h1:Q+GuLpSK6OHfDJBbrA4RFOkpYPw++2jj5FAquem8w8g=
-github.com/go-go-golems/go-go-goja v0.10.8-0.20261109055857-cfa59095bf17 h1:LsDP3iFlHz97DkNqEy5ok8llA8LDWryz1QysSbmv9Ak=
-github.com/go-go-golems/go-go-goja v0.10.8-0.20261109055857-cfa59095bf17/go.mod h1:OpwLXioC6BhcKvrROYBUhnBVsVWc8M+wzL6HvGtnlLY=
+github.com/go-go-golems/go-go-goja v0.10.8-0.20261109062017-5e1ba117462e h1:cZcrWcTf3OUnzHBbRNODL9M6fCRJkwlvhZxh0toU9cE=
+github.com/go-go-golems/go-go-goja v0.10.8-0.20261109062017-5e1ba117462e/go.mod h1:OpwLXioC6BhcKvrROYBUhnBVsVWc8M+wzL6HvGtnlLY=
 github.com/go-go-golems/logcopter v0.1.0 h1:CGBxAGudhoQOncJ6GEWDJ6c1g5LrU59/ewGlPFKBmdk=
 github.com/go-go-golems/logcopter v0.1.0/go.mod h1:HNCeqsUqxu+Jm5h05YlbN5+KFtK84D5ZnOimvVLyWH4=
 github.com/go-jose/go-jose/v4 v4.1.8 h1:k38WifTutpGuqt6Imq9xW1OgCvnWFri0Nz7FnfiACM8=

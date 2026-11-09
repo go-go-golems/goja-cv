@@ -155,6 +155,27 @@ type App struct {
 	opts      Options
 	states    sync.Map // session id → *state
 	evalLocks sync.Map // session id → *sync.Mutex
+
+	mu       sync.Mutex
+	sessions []string // ids created through CreateSession, in order
+}
+
+// CreateSession creates a cv session and remembers its id (Sessions).
+func (a *App) CreateSession(ctx context.Context) (*replsession.SessionSummary, error) {
+	s, err := a.App.CreateSession(ctx)
+	if err == nil && s != nil {
+		a.mu.Lock()
+		a.sessions = append(a.sessions, s.ID)
+		a.mu.Unlock()
+	}
+	return s, err
+}
+
+// Sessions lists the ids of the sessions created through this app.
+func (a *App) Sessions() []string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return append([]string(nil), a.sessions...)
 }
 
 // New builds a cv session app owned by ctx.

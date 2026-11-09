@@ -2,9 +2,11 @@ package cvsession_test
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
+	"github.com/go-go-golems/go-go-goja/pkg/replsession"
 	"github.com/go-go-golems/goja-cv/pkg/cv/docs"
 	"github.com/go-go-golems/goja-cv/pkg/cvsession"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -211,5 +213,57 @@ func TestMCPInstructionsAreCompactAndDocsAreResources(t *testing.T) {
 	text, _, isErr := callEval(t, cs, `return cv.docs.read("getting-started", { section: "The globals" })`)
 	if isErr || !strings.Contains(text, "## The globals") {
 		t.Fatalf("docs via eval:\n%s", text)
+	}
+}
+
+// TestMCPUnknownSessionIsAHelpfulToolError: agents invent session ids (pi run 2
+// call 2 passed "probe"); the cv eval tool must say what exists and to omit it.
+func TestMCPUnknownSessionIsAHelpfulToolError(t *testing.T) {
+	cs := connect(t, cvsession.Options{Image: tiffPath})
+	ctx := context.Background()
+	for _, tool := range []string{"eval", "history"} {
+		args := map[string]any{"sessionId": "probe"}
+		if tool == "eval" {
+			args["code"] = "return 1"
+		}
+		res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: tool, Arguments: args})
+		if err != nil {
+			t.Fatalf("%s: protocol error %v", tool, err)
+		}
+		text, _, isErr := splitResult(t, res)
+		if !isErr || !strings.Contains(text, `session "probe" does not exist`) || !strings.Contains(text, "omit sessionId") ||
+			!strings.Contains(text, "There is only the default session") {
+			t.Fatalf("%s: isErr=%v text=%q", tool, isErr, text)
+		}
+	}
+	// the default session still works and "probe" was not remembered
+	text, _, isErr := callEval(t, cs, "return 2")
+	if isErr || !strings.HasPrefix(text, "2") {
+		t.Fatalf("default session: %q", text)
+	}
+	res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "list_sessions", Arguments: map[string]any{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if text, _, _ := splitResult(t, res); strings.Contains(text, "probe") {
+		t.Fatalf("list_sessions remembers probe: %s", text)
+	}
+	if _, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "create_session", Arguments: map[string]any{}}); err != nil {
+		t.Fatal(err)
+	}
+	res, err = cs.CallTool(ctx, &mcp.CallToolParams{Name: "eval", Arguments: map[string]any{"code": "return 1", "sessionId": "probe"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if text, _, _ := splitResult(t, res); !strings.Contains(text, "Existing sessions: ") || !strings.Contains(text, "(default)") {
+		t.Fatalf("after create_session: %s", text)
+	}
+}
+
+func TestAppEvaluateKeepsSessionNotFound(t *testing.T) {
+	app, _ := newApp(t, cvsession.Options{})
+	_, err := app.Evaluate(context.Background(), "probe", "return 1")
+	if !errors.Is(err, replsession.ErrSessionNotFound) {
+		t.Fatalf("err %v does not wrap replsession.ErrSessionNotFound", err)
 	}
 }
