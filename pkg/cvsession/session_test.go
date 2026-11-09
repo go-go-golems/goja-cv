@@ -3,9 +3,9 @@ package cvsession_test
 import (
 	"context"
 	"fmt"
-	"sync"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
