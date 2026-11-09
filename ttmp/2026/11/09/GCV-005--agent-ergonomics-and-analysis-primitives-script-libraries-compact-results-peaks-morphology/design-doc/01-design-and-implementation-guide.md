@@ -17,11 +17,11 @@ RelatedFiles:
     - Path: ttmp/2026/11/09/GCV-004--api-v2-one-way-per-thing-literal-options-space-on-the-image-masks-as-images-regions-as-arrays-one-save-one-workspace-and-foundations/design-doc/01-design-and-implementation-guide.md
       Note: the base API (revision 3, deviations 1-28); its architecture tour, workspace, items and look queue are assumed throughout
     - Path: pkg/cvsession/session.go
-      Note: preludes (runPreludes), the eval wrapper and line mapping; --prelude becomes a cv.load eval; evals are marked for the drop lint
+      Note: preludes (runPreludes), the eval wrapper and line mapping; --prelude becomes a cv.load eval
     - Path: pkg/cvsession/init.js
       Note: __cv_run waits for the loads and saves an eval started
     - Path: pkg/cvsession/processor.go
-      Note: warnings, unusedNodes, errorNode, contextBlock; the drop lint, the UNHANDLED warning, function docs
+      Note: warnings, unusedNodes (deleted), errorNode, contextBlock; the UNHANDLED warning, function docs
     - Path: pkg/cvsession/yaml.go
       Note: the result renderer (array and string caps, capText); compact tables exempt from both caps
     - Path: pkg/cvsession/native.go
@@ -59,10 +59,10 @@ ExternalSources:
     - /Users/manuel/code/wesen/2026-11-07--dust-scanning/ttmp/2026/11/07/DUST-002--film-dust-detector-model-exploration/scripts/84-cv-helpers.js
     - /Users/manuel/code/wesen/2026-11-07--dust-scanning/ttmp/2026/11/07/DUST-002--film-dust-detector-model-exploration/reference/04-goja-cv-dust-playbook.md
     - /Users/manuel/code/wesen/go-go-golems/go-go-parc/Projects/2026/11/09/ARTICLE - Deep Dive - goja-cv in Agent Hands - Feedback from 39 Annotator Agents.md
-Summary: "Intern guide for GCV-005 (revision 2): what 39 annotator agents did with goja-cv, and the design that follows from it on top of API v2 (GCV-004). Part A: task libraries (cv.load with a JavaScript load stack, cv.scripts, --prelude as a load, file:line locations, evals that wait for their loads and saves, one UNHANDLED warning from goja's rejection tracker), mem function docs shown when new or changed, compact tables exempt from the item and string caps, an UNUSED_NODE lint for values the code drops (expression statements, found with go-go-goja's jsparse). Part B: peaks (sub-pixel local maxima of the core/ring step, snr against the local ring, multi-radius, Regions of disks, row-band processing) and two morphology ops, erode and dilate (disk up to 64 doc px, van Herk lines), which replace mask grow/shrink; opening, closing and top-hat are compositions. CROP_FIRST is deleted. Phases A1-A4 and B1-B3; relative gold tests; validation with an agent rerun and gold metrics; review disposition in Appendix B."
+Summary: "Intern guide for GCV-005 (revision 3): what 39 annotator agents did with goja-cv, and the design that follows from it on top of API v2 (GCV-004). Part A: task libraries (cv.load with a JavaScript load stack, cv.scripts, --prelude as a load, file:line locations, evals that wait for their loads and saves, one UNHANDLED warning from goja's rejection tracker), mem function docs shown when new or changed, compact tables exempt from the item and string caps; UNUSED_NODE is deleted. Part B: peaks (sub-pixel local maxima of the core/ring step, snr against the local ring, multi-radius, Regions of disks, row-band processing) and two morphology ops, erode and dilate (disk up to 64 doc px, van Herk lines), which replace mask grow/shrink; opening, closing and top-hat are compositions. CROP_FIRST and OpDef.Halo are deleted. Phases A1-A4 and B1-B3; relative gold tests; validation with an agent rerun and gold metrics; review disposition in Appendix B; no open questions."
 LastUpdated: 2026-11-10T02:00:00-05:00
 WhatFor: "Understanding why agents need task libraries, readable results and coordinates from data, and implementing GCV-005 phase by phase on top of GCV-004."
-WhenToUse: "Read before touching cv.load, preludes, the result renderer, the context block, UNUSED_NODE, sheet labels, peaks, erode/dilate or the crop lint; read the GCV-004 guide's section 2 first if you are new to goja-cv."
+WhenToUse: "Read before touching cv.load, preludes, the result renderer, the context block, UNUSED_NODE (deleted), sheet labels, peaks, erode/dilate, OpDef.Halo or the crop lint; read the GCV-004 guide's section 2 first if you are new to goja-cv."
 ---
 
 # GCV-005 — Agent ergonomics and analysis primitives
@@ -73,6 +73,7 @@ WhenToUse: "Read before touching cv.load, preludes, the result renderer, the con
 |---|---|---|
 | 2026-11-09 | 1 | First version, written on `task/gcv-005-agent-ergonomics-and-primitives` (stacked on `task/gcv-004-api-v2` at `10938ce`, GCV-004 Phases 0b, 0c and 1 implemented) from the evidence of DUST-002 `reference/11`, the 374 extracted agent evals, the 39 agent diaries and the coordinator's disposition in `reference/01-analysis-annotator-agent-feedback.md`. |
 | 2026-11-10 | 2 | Revised from the review read (`reference/04-review-read-findings.md`, 33 findings) and the coordinator's decisions; GCV-004 batch 1 (Phases 0a–4) merged into the branch (`6bb71a8`). Evidence counts corrected (39 pastes, 335 other evals, 19 `UNUSED_NODE` of which 18 false, 24/28 of 32 probes, no result reached the 9,000 cap; the cuts were the string and item caps). `CROP_FIRST` is deleted and crop's help documents what an op after a crop sees. The disk is "distance ≤ r" without a promise of equality with `grow`. Morphology is two ops, `erode` and `dilate`; opening, closing and top-hat are compositions with help concept entries; disks are capped at 64 doc px, lines use van Herk. `UNUSED_NODE` is redesigned: it reports nodes and promises dropped by an expression statement, found with go-go-goja's `jsparse`, in evals and loaded files. Evals wait for the loads and saves they started; one `UNHANDLED` warning from goja's rejection tracker replaces `LOAD`; `E_TOO_MANY` counts nesting depth on a JavaScript load stack. Function docs: a comment that is the first token of the body, shown when the name is new or its source changed, never consumed by a prelude. Tables are exempt from the item and string caps. Peaks: row bands, a pre-filter before the exact measure, a time budget, and prototype numbers from four gold tiles; snr thresholds explained as random-place numbers. Labels, the string-`id` error and point lists move to GCV-004 Phase 5. Terms defined before use; Appendix A updated; Appendix B added. |
+| 2026-11-10 | 3 | The coordinator's decisions on revision 2's open questions, all deletions or acceptances. `UNUSED_NODE` is deleted with no replacement lint: the jsparse rewrite, `__cv_drop`, `UNAWAITED` and the site-based reporting go (D10). `OpDef.Halo` is deleted with the crop lint (D25); `crop`'s help explains the edge effect in words. Sheet captions list cell ids for arrays and say "cells in region order" for a Regions node. `cv.save` promises join the pending list in GCV-004 Phase 6. GCV-004 Phase 5 does not add `mask.regions`' `grow`, so B1 deletes nothing there and needs only Phase 4. No open questions remain. |
 
 ## How to read this guide
 
@@ -123,10 +124,9 @@ GCV-005 makes goja-cv good at being that substrate. It has two independent halve
 3. An array of flat records renders as a compact table, a header line and one line per row. Tables are exempt from the
    48-item array cap and the 2,000-character string cap that cut the agents' row lists; only the result cap applies,
    and a paging note says which rows are shown and how to get the rest.
-4. `UNUSED_NODE` reports what the code drops: a node or promise that an expression statement produces and nothing
-   uses (`mem.spots(0.3)` without `await`, `img.gaussian(2)` alone on a line). A node reachable from a value the code
-   keeps (a variable, the return value, `mem`) is not dropped. This removes all 18 false warnings of the study and
-   keeps the mistakes the lint exists for, in evals and in loaded files alike.
+4. `UNUSED_NODE` is deleted. In the study 18 of its 19 warnings were false; in v2 a node nobody awaits, looks at or
+   saves is a harmless no-op, and the mistakes that matter (a dropped `cv.load` or `cv.save`) are covered by evals that
+   wait for them and by `UNHANDLED`. The docs state the rule: a node you don't await, look at or save does nothing.
 5. One warning, `UNHANDLED`, reports a promise that was rejected and never handled, from goja's rejection tracker. It
    covers an unawaited `cv.load` or `cv.save` that failed.
 6. Sheet captions list the ids of their cells in order, so a model never reads an id off a picture. (Item labels, the
@@ -145,8 +145,8 @@ GCV-005 makes goja-cv good at being that substrate. It has two independent halve
    element (`{ line: angle }`, any length). Opening is `x.erode(r).dilate(r)`, closing `x.dilate(r).erode(r)`, a top-hat
    `x.sub(x.erode(r).dilate(r))`; `cv.help` has concept entries for the three words. The mask ops `grow` and `shrink`
    are deleted.
-10. The `CROP_FIRST` lint is deleted: cropping first is the intended way to get a local scale for peaks, morphology and
-    views. `crop`'s help says what an op after a crop sees.
+10. The `CROP_FIRST` lint is deleted, and with it `OpDef.Halo`, its only reader: cropping first is the intended way to
+    get a local scale for peaks, morphology and views. `crop`'s help says what an op after a crop sees.
 11. The speck view keeps its white point (a noise-scaled view measured worse: 87 % against 91 % gold coverage); its
     documentation says the scale is set over the image it is computed on.
 
@@ -292,7 +292,7 @@ become a table; the rulers of evals 7–8 become `peaks`; the sheet cells map to
 | **sp** | the helpers' name for the core/ring step measured on the speck view (core 3 px, ring 6–12 px); random places are 90 % below 0.06, labelled dust has a median of 0.31 |
 | **hot list** | the helpers' `mem.hot(level)`: components of the speck view above `level`, each probed; `mem.hotByLevel[level]` keeps each level's rows |
 | **NMS** | non-maximum suppression: keeping a pixel only if no pixel within a given distance has a larger value |
-| **`Halo`** | `OpDef.Halo` (`pkg/cv/graph/registry.go:281`): how many doc px around each output pixel an op reads; help prints it (§7.9) |
+| **`Halo`** | `OpDef.Halo` (`pkg/cv/graph/registry.go:281`): how many doc px around each output pixel an op reads; read only by `CROP_FIRST`, and deleted with it (D25) |
 | **hash-consing** | the builder returns the existing node for an identical call, so repeating work costs nothing (GCV-004 §2.4) |
 | **MAD** | median absolute deviation, a robust noise estimate (`kernels.MAD`) |
 | **builder placeholder** | the stand-in receiver a builder lambda (`img.within(m, i => …)`) is called with at build time (GCV-004 §2.9) |
@@ -468,14 +468,13 @@ booleans, `null` or `undefined`. A **table** is the rendering of an array of at 
 line with the union of their keys, then one line per record. In the result's YAML it is a literal block scalar (a
 multi-line string, `|-`). A table is built as one YAML node, not through the renderer's per-array and per-string caps.
 
-### 4.4 A dropped value
+### 4.4 A node that nothing uses
 
-An **expression statement** is a statement that consists of an expression and nothing else: `mem.spots(0.3)`,
-`img.gaussian(2)`, `out.push(x)`. Its value is thrown away. A **dropped value** is the value of an expression statement
-whose expression is a call (`f(…)`, `a.b(…)`, `new F(…)`) when that value is a cv node, contains cv nodes, or is a
-promise. A dropped node is **unused** when nothing else used it (awaited, looked at, saved, returned, kept in `mem`,
-bound to an image name, or an input of a used node). `UNUSED_NODE` reports unused dropped nodes; `UNAWAITED` reports
-dropped promises. A value assigned to a variable is not dropped, whether or not the variable is used later.
+In v2 a node is a description of work: options are literal and only `await`, a look or `cv.save` evaluates it (GCV-004
+§4.1, §6.5). A node that the code builds and then neither awaits, looks at nor saves **does nothing**: no pixels are
+computed, nothing is written, and the cache is untouched. There is therefore no wrong result to warn about, and
+GCV-005 has no lint for it (D10). The promises that matter, those of `cv.load` and `cv.save`, are waited for by the eval
+(§4.9), and their failures are reported (§6.6).
 
 ### 4.5 The step map and a peak
 
@@ -800,7 +799,7 @@ Rules:
 - Arrays of anything else render as today; every cut note names `cv.save` instead of `cv.json`.
 - There is no new API: picking columns is `rows.map(({ id, cx, cy, snr }) => ({ id, cx, cy, snr }))`, paging is `slice`.
 
-### 6.6 `UNUSED_NODE`, `UNAWAITED` and `UNHANDLED`
+### 6.6 `UNUSED_NODE` is deleted; `UNHANDLED`
 
 ```js
 // before: 18 false warnings in the study (c71dd0f2 trial 2, eval 2, and 17 others)
@@ -810,16 +809,14 @@ return { scene: v.scene.look("scene"), speck: v.speck.look("speck") }
 // UNUSED_NODE: [Image #26 view(name: "speckColor")] builds a node and discards it. …
 ```
 
-After GCV-005 this eval has no warning: `mem.views()`'s value is kept in `v`. These do:
+After GCV-005 no eval gets `UNUSED_NODE`: the warning is deleted (D10). A node you don't await, look at or save does
+nothing, which the eval contract states in the instructions and the getting-started topic. What can go wrong is a
+promise that fails with nobody listening:
 
 ```js
-mem.spots(0.3)                  // UNUSED_NODE line 1: mem.spots(0.3) builds 1 node and discards it. fix: const r = await mem.spots(0.3)
-img.gaussian(2)                 // UNUSED_NODE line 2: img.gaussian(2) builds 1 node and discards it. fix: return img.gaussian(2).look()
-mem.hot(0.3)                    // UNAWAITED line 3: mem.hot(0.3) returns a promise that nothing awaits; its result and errors are lost. fix: await mem.hot(0.3)
-cv.save("x.tif", img.view("speck"))  // no warning: the eval waits for saves; a failure is UNHANDLED
+cv.load("dust/helpers.js")            // not awaited: the eval still waits for it before it ends
+cv.save("x.tif", img.view("speck"))   // not awaited: the eval waits for it too (GCV-004 Phase 6 puts it on the pending list)
 ```
-
-And a rejected promise nobody handled:
 
 ```
 UNHANDLED dust/helpers.js:57: a promise was rejected and never handled: mem.img is undefined. fix: await the call that returned it
@@ -827,13 +824,10 @@ UNHANDLED dust/helpers.js:57: a promise was rejected and never handled: mem.img 
 
 Rules:
 
-- `UNUSED_NODE` is raised for a value dropped by an expression statement (§4.4) that is, or contains, cv nodes none of
-  which was used. The warning names the statement's line and source, and how many nodes it dropped.
-- `UNAWAITED` is raised for a dropped promise, except the promises of `cv.load` and `cv.save`, which the eval waits for.
-- Both apply to the eval's code and to loaded files; warnings in a file carry `file:line`.
-- A node built at any other place, kept in a variable or not, is not reported. There is no `cv.quiet`.
 - `UNHANDLED` reports, once, each promise rejected during the eval that had no handler when the eval ended, with the
-  rejection's message and the location of its error.
+  rejection's message and the location of its error. It covers an unawaited `cv.load` or `cv.save` that failed and an
+  async helper whose error nobody caught.
+- There is no warning for unused nodes, no `UNAWAITED`, and no `cv.quiet`.
 
 ### 6.7 Sheets: labels and the cell list
 
@@ -949,7 +943,7 @@ const spots = await s.sub(lines).mask.luminance({ above: 0.3 }).components({ min
 ```
 
 ```js
-// before (GCV-004): mask ops grow and shrink, and mask.regions({ grow })
+// before (GCV-004 revision 3's design): mask ops grow and shrink, and mask.regions({ grow })
 const m = img.mask.luminance({ above: 0.9 }).grow(3)
 const around = img.mask.regions(spots, { grow: 2 })
 // after
@@ -969,7 +963,7 @@ Rules:
 - Pixels outside the image take no part: near the border the element is clipped.
 - Opening, closing and top-hat are compositions (§4.8); `cv.help("opening")`, `cv.help("closing")` and
   `cv.help("tophat")` return concept entries with them.
-- `grow`, `shrink` and `mask.regions`' `grow` are deleted. `grow(r)` selected (at 0.5) the pixels up to distance r + 0.5;
+- `grow` and `shrink` are deleted, and `mask.regions` has no `grow` option (GCV-004 Phase 5 does not add it). `grow(r)` selected (at 0.5) the pixels up to distance r + 0.5;
   `dilate(r)` selects those up to r, so masks grow by half a pixel less than before; `dilate(r + 0.5)` gives the old set.
 
 ### 6.10 The speck view's scale, and crops
@@ -986,8 +980,8 @@ No option is added to the view. Its documentation (`pkg/cv/docs/topics/11-views.
 
 `CROP_FIRST` is deleted, and `crop`'s help says what cropping first means:
 
-> Ops after a crop see only the crop. Each op that reads a neighbourhood (its halo, shown in its help) has edge effects
-> within that distance of the crop's border: a blur sees mirrored pixels, peaks report cut rings (`ringCoverage`), a
+> Ops after a crop see only the crop. An op that reads a neighbourhood around each pixel has edge effects near the
+> crop's border: a blur sees mirrored pixels, peaks report cut rings (`ringCoverage`), a
 > view's scale comes from the crop. Crop first to work locally or to save time; crop last to look at part of a
 > whole-image result.
 
@@ -1000,7 +994,7 @@ No option is added to the view. Its documentation (`pkg/cv/docs/topics/11-views.
 | `look({ grid, gridLabels })` | a labelled grid is a better ruler, and a model still reads a cell name off a picture; `peaks` returns coordinates as data |
 | `crop(box, { fit: "shift" })` | the `RANGE` warnings are informative and the clip is correct; a library clamps its boxes in one line (`x = Math.min(Math.max(x, bx), bx + bw - w)`) |
 | `components({ maxAspect })`, an `elongation` field | `items.filter(r => r.aspect < 3)` is the one way to filter; line removal is morphology (§6.9) |
-| `cv.quiet(node)` | the drop lint (§6.6) has no false positives of the study's kind |
+| `cv.quiet(node)` | `UNUSED_NODE` is deleted (D10), so there is nothing to silence |
 | `cv.table(rows, { columns })` | tables are automatic (§6.5) |
 | `measure.line(path, { width })` | a recipe with `profile` measures a thread's width (§12.4) |
 | `view("speck", { white })` | the noise scale measured worse; `dog().levels({ white })` and `img.crop(b).view("speck")` give other scales; local normalization is `peaks`' snr (D21) |
@@ -1019,8 +1013,8 @@ No option is added to the view. Its documentation (`pkg/cv/docs/topics/11-views.
 | `cv.sheet(items, …)` | Image (picture) | caption lists the cells' labels or ids; `labels: "id" \| "none"` |
 | `--prelude FILE` | | a `cv.load` at session start; the file must lie in a root |
 
-Removed: `m.grow(r)`, `m.shrink(r)`, `mask.regions(items, { grow })`, the sheet's `labels: "index"`, the `CROP_FIRST`
-warning.
+Removed: `m.grow(r)`, `m.shrink(r)`, the sheet's `labels: "index"`, the `CROP_FIRST` and `UNUSED_NODE` warnings,
+`OpDef.Halo`. (`mask.regions(items, { grow })` is never added: GCV-004 Phase 5 leaves `grow` out.)
 
 ## 7. Proposed architecture
 
@@ -1028,38 +1022,36 @@ warning.
 
 ```
  agent code ──eval──► session (cvsession)
-                       App.Evaluate: markDrops(body) ── jsparse: expression statements that are calls
-                                       → "__cv_drop(k, <expr>)"; same lines, original text kept for where:
                        __cv_run(async function () { … })
                          body settles → await allSettled(native.pending())   // the eval's loads and saves
                          │
                          │  cv.load(path, args)  (prelude.js)
-                         │    f := native.__compile(path)       Workspace.Open → markDrops (session hook) → goja.Compile(name)
+                         │    f := native.__compile(path)       Workspace.Open → goja.Compile(name)
                          │    load stack depth ≤ 32 (JS array)  → f.run(args) → inner promise
                          │    native.__pending(inner); return inner.then(v => v)
                          ▼
                        rejection tracker (vm.SetPromiseRejectionTracker): rejected-without-handler set
                        processor.Process
                          ├─ render value ── tables (exempt from item/string caps), functions as signature + doc
-                         ├─ warnings ─────── UNUSED_NODE / UNAWAITED from drop records; UNHANDLED from the tracker
+                         ├─ warnings ─────── UNHANDLED from the tracker (no UNUSED_NODE)
                          │                   lineTag: "line N" (eval) | "name:N" (file)
                          ├─ errors ───────── where: innermost eval-or-file frame; called from: innermost eval frame
                          └─ context block ── mem, functions (short signatures), new functions (docs; agent evals only)
 
- x.peaks(opts) ──► op "peaks" (Image → Regions, Luma, AnalysisScale 1, Halo 2.5·max r + 2)
+ x.peaks(opts) ──► op "peaks" (Image → Regions, Luma, AnalysisScale 1)
                      └─ kernels.Peaks, in row bands: step map (chord sums) → NMS (DiskMinMax) → sub-pixel fit
                         → digital-ring snr pre-filter → ProbePoint at survivors → |snr| filter → non-overlap merge
- x.erode/dilate(r, { line }) ──► ops (one channel → one channel), Halo r
+ x.erode/dilate(r, { line }) ──► ops (one channel → one channel)
                      └─ kernels.DiskMinMax (chords + van Herk; binary fast path: DistanceToSet) | kernels.LineMinMax (van Herk along lines)
 ```
 
 | layer | removed | added or changed |
 |---|---|---|
 | `pkg/cv/kernels` | `Grow`, `Shrink` | `DiskMinMax`, `LineMinMax`, `Peaks` and its helpers |
-| `pkg/cv/graph` | `CROP_FIRST` (`WCropFirst`, its branch of `orderWarnings`, `hasHalo`) | — |
+| `pkg/cv/graph` | `CROP_FIRST` (`WCropFirst`, its branch of `orderWarnings`, `hasHalo`); `OpDef.Halo` | — |
 | `pkg/cv/ops` | `grow`, `shrink`, the `index` labels of `sheet` | `peaks.go`, `morph.go` (`erode`, `dilate`); the sheet caption's cell list; `crop`'s doc |
-| `pkg/gojamod/cv` | | `cv.load` and `cv.scripts` (prelude.js), `binding.compile`, `binding.pending`, `binding.drop`, `binding.scripts`, the file registry, `DescribeFunction`, `MarkDrops`; help: `load`, `scripts`, concept entries `opening`, `closing`, `tophat`, and each op's halo |
-| `pkg/cvsession` | prelude file reading; site-based `UNUSED_NODE` (`feeds`, `onPlaceholder`); the display-renderer walk of `mem` | preludes as loads, `inPrelude`; `markDrops` before `Wrap`; `__cv_run` waits for pending promises; the rejection tracker and `UNHANDLED`; `UNUSED_NODE`/`UNAWAITED` from drops; file frames in `readFailure`, `errorNode`, `lineTag`; `collectNodes`; tables and functions in the renderer; context block functions; instructions |
+| `pkg/gojamod/cv` | | `cv.load` and `cv.scripts` (prelude.js), `binding.compile`, `binding.pending`, `binding.scripts`, the file registry, `DescribeFunction`; help: `load`, `scripts`, concept entries `opening`, `closing`, `tophat` |
+| `pkg/cvsession` | prelude file reading; `UNUSED_NODE` (`unusedNodes`, its walk of `mem`, `feeds`, `onPlaceholder`) | preludes as loads, `inPrelude`; `__cv_run` waits for pending promises; the rejection tracker and `UNHANDLED`; file frames in `readFailure`, `errorNode`, `lineTag`; tables and functions in the renderer; context block functions; instructions |
 | `cmd/goja-cv` | | `--prelude` must lie in a root |
 
 ### 7.2 `cv.load` in the module
@@ -1074,7 +1066,7 @@ const loadStack = [];                       // names of the files whose synchron
 // load(path, args) runs a script file (workspace, then --read directories) as the body of
 // async function (args) { … } and returns a promise of its return value.
 load(path, args) {
-  const f = native.__compile(path);         // { name, run }: read, marked for the drop lint, compiled
+  const f = native.__compile(path);         // { name, run }: read and compiled
   if (loadStack.length >= 32) native.__tooDeep(loadStack.concat([f.name]));   // throws E_TOO_MANY with the stack
   loadStack.push(f.name);
   let inner;
@@ -1097,8 +1089,8 @@ wait to the inner promise, and the rejection tracker sees whether the caller han
 awaited load fails the eval as any rejected `await` does.
 
 `binding.compile` (`pkg/gojamod/cv/binding.go`, registered in `binding.object`, `binding.go:105-…`, inside GCV-004's
-`export` panic boundary) resolves the path through the engine's `Workspace` (GCV-004 §7.8), reads the file, applies the
-drop marker when the session installed one (§7.6), and compiles:
+`export` panic boundary) resolves the path through the engine's `Workspace` (GCV-004 §7.8), reads the file and
+compiles it:
 
 ```go
 // compiled is what __compile returns to JavaScript.
@@ -1115,7 +1107,7 @@ type compiled struct {
 - **Line numbers.** The wrapper `(async function (args) {` is prepended to the file's first line without a newline, so
   line N of the compiled source is line N of the file.
 - **Pending promises.** `binding.pending` appends the inner promise to the eval trace's `Pending` list. GCV-004's
-  `cv.save` (Phase 6) appends its promise to the same list.
+  `cv.save` appends its promise to the same list (GCV-004 Phase 6).
 
 `cv.scripts` walks each root with `os.Root.FS()` and `fs.WalkDir` within the bounds of §6.2. It is a method of the
 `Workspace`, so it shares the root list and the shadowing rule with `cv.open`.
@@ -1193,44 +1185,23 @@ the paging note. Cut notes of other arrays and strings name `cv.save`.
 Functions render through `DescribeFunction` (§10.4): `mem.probe(x, y): the best point within 2 px: …`, named by the key
 path, else by the function's own `name`.
 
-### 7.6 The drop lint
+### 7.6 Deleting `UNUSED_NODE`
 
-**Marking.** `cvmod.MarkDrops(name, src string, base int) (marked string, sites []DropSite, err error)` parses `src` with
-go-go-goja's `jsparse.Analyze` (goja's own parser, already a dependency through go-go-goja's
-`pkg/jsparse/analyze.go:36`), walks `Index.Nodes` for records of kind `ExpressionStatement` whose expression child is a
-`CallExpression` or `NewExpression`, and rewrites each expression `E` as `__cv_drop(k, E)`, inserting from the end of the
-text so offsets stay valid. `DropSite{Line, Source}` is recorded at index k. Insertions add no newline, so line numbers
-do not move; `state.lines` keeps the original text for `where:` lines. Awaited calls (`await f()`), assignments and
-declarations are other node kinds and are not marked. When parsing fails, nothing is marked and the eval or the load
-fails with goja's own syntax error.
-
-- For an eval, `App.Evaluate` marks the body before `Wrap`, parsing it wrapped as an async function body so that
-  top-level `await` and `return` parse; `base` subtracts the wrapper.
-- For a loaded file, `binding.compile` calls the marker the session installed with `cvmod.SetDropMarker(vm, …)`. Outside
-  a session (xgoja) there is no marker and no warning, because there is nowhere to show one.
-
-**Recording.** `__cv_drop(k, v)` is a session global (`init.js`) that calls `native.drop(k, v)` and returns `v`. The
-native side records `Drop{Site: sites[k], Nodes: collectNodes(v), Promise: v is a *goja.Promise and not in the eval's
-pending list}` in the eval trace.
-
-**Reporting.** In `Process`, the used set is computed as today: `trace.Used`, the returned value's nodes, `collectNodes(mem)`
-and the named images, closed over inputs. Each drop whose nodes are all outside the used set gives
-`UNUSED_NODE <line or file:line>: <source> builds N node(s) and discards them. fix: …`; each drop with a promise gives
-`UNAWAITED …`. Identical warnings from a loop fold with the existing `dedupe`. The site-based reporting of
-`unusedNodes` (`trace.Created`, `feeds`, `onPlaceholder`) is deleted.
-
-`collectNodes(v)` walks own enumerable properties and array elements with a visited set and no cap, reading through
-descriptors; it stops at nodes, looks, functions and proxies. It does not follow the item-link symbol (GCV-004 §4.5): an
-awaited item's node is in `trace.Used` already, because awaiting used it.
+`unusedNodes` (`processor.go:311-370`), its call in `warnings` (`processor.go:264-…`), its walk of `mem` through the
+display renderer, `feeds`, `onPlaceholder` (`processor.go:372-396`), the `WUnusedNode` code and, if no other reader
+remains, `EvalTrace.Created` and `noteCall`'s recording of created nodes (`evaltrack.go:177-…`) are deleted. Before
+deleting `Created`, grep for readers: warnings with sites (`SiteWarning`) and looks use their own records. Tests and docs
+blocks that expect `UNUSED_NODE` are changed to expect no warning. Nothing replaces it (D10).
 
 ### 7.7 Sheets
 
 GCV-004 Phase 5 delivers the shared `items|point[]` binding with the `Point` shape, the `label` field and the string-`id`
 error, and deletes the sheet's separate list path (`listItems`). GCV-005 then changes two things in `sheet`
 (`pkg/cv/ops/sheet.go`): the `labels` enum becomes `id | none` with default `id` (`sheet.go:297`), and the look's caption
-names the cells: `sheet(15 items; cells: 14 13 26 …)`. The caption comes from the node's description (GCV-004's caption
-chain), which reads the items node's labels and ids at evaluation; with more than 40 cells, the list ends with
-`… (N more)`.
+names the cells: `sheet(15 items; cells: 14 13 26 …)`. The caption is written into the result before looks render, so
+it is built from what is known when the look is created: for an array, the `items` op's entries carry each element's
+label and id, and the caption lists them in cell order (with more than 40 cells it ends with `… (N more)`); for a Regions
+node passed directly, whose ids are known only after evaluation, it says `cells in region order`.
 
 ### 7.8 The `peaks` op and kernel
 
@@ -1253,7 +1224,6 @@ graph.OpDef{
         {Name: "polarity", Type: "enum:bright,dark,both", Default: "bright", Doc: "maxima of the step, minima, or both"},
     },
     AnalysisScale: func(graph.Args) float64 { return 1 },
-    Halo:          func(a graph.Args) float64 { return 2.5*maxRadius(a) + 2 }, // read by help (§7.9)
     Fields:        fixedFields(peakFields),
     Run:           runPeaks, // §10.6
     Doc: "Local maxima of the core/ring step (measure's step) at sub-pixel precision, as disks: …",
@@ -1332,7 +1302,6 @@ func morphOp(name, doc string, isMax bool) graph.OpDef {
         },
         Validate: func(a graph.Args) error { /* disk (no line) with radius > 64 → E_ARG_RANGE with the crop / twice fix */ },
         Identity: func(a graph.Args) bool { return a.DocLength("radius") == 0 },
-        Halo:     func(a graph.Args) float64 { return a.DocLength("radius") },
         Run:      /* DiskMinMax or LineMinMax on plane 0, at a.Length("radius", scale) */,
         Doc:      doc,
         See:      []string{"erode", "dilate", "feather", "opening", "tophat"},
@@ -1344,12 +1313,14 @@ func morphOp(name, doc string, isMax bool) graph.OpDef {
 The ops follow their receiver's space and keep its encoding; a one-channel receiver is read as stored (GCV-004 §4.4,
 deviation 24).
 
-**Help.** `cv.help(op)` prints each op's halo when it has one ("reads up to 3σ = 6 doc px around each pixel"), and
-`crop`'s help carries the text of §6.10. The concept entries `opening`, `closing` and `tophat` in `cvFuncs`
+**Help.** `crop`'s help carries the text of §6.10. The concept entries `opening`, `closing` and `tophat` in `cvFuncs`
 (`pkg/gojamod/cv/help.go`) give the compositions of §4.8.
 
-**The crop lint.** The `CROP_FIRST` branch of `orderWarnings` (`pkg/cv/graph/order.go:27-33`), `hasHalo`
-(`order.go:56-60`) and `WCropFirst` (`pkg/cv/graph/errors.go:35`) are deleted; `DECORATION_FIRST` stays.
+**The crop lint and `Halo`.** The `CROP_FIRST` branch of `orderWarnings` (`pkg/cv/graph/order.go:27-33`), `hasHalo`
+(`order.go:56-60`) and `WCropFirst` (`pkg/cv/graph/errors.go:35`) are deleted; `DECORATION_FIRST` stays. With them goes
+their only reader's input, `OpDef.Halo` (`pkg/cv/graph/registry.go:281`) and the `Halo` function of every op that
+declares one (`grep -n "Halo:" pkg/cv/ops`). Windowed evaluation, the future work GCV-004 §3.3 mentions, can reintroduce a
+halo when it exists (D25).
 
 ### 7.10 The instructions
 
@@ -1408,7 +1379,7 @@ await cv.load(path, args); cv.scripts() lists them." The 4,000-character test st
 - **Options considered:** (a) keep it as raw eval text outside the roots; (b) `await cv.load(FILE)` at session start,
   the file inside a root, with the function state untouched.
 - **Decision:** (b).
-- **Rationale:** One mechanism: file:line locations, the drop lint, `cv.scripts`, nested loads from a prelude. The
+- **Rationale:** One mechanism: file:line locations, `UNHANDLED`, `cv.scripts`, nested loads from a prelude. The
   prelude's output is never seen, so it must not mark anything as shown: the agent's first eval shows the docs of
   everything the prelude defined (review F3).
 - **Consequences:** The operator names the library's directory with `--read`; `runPreludes` sets `inPrelude`.
@@ -1463,23 +1434,26 @@ await cv.load(path, args); cv.scripts() lists them." The 4,000-character test st
 - **Consequences:** A table is text in the YAML; programs use `cv.save`.
 - **Status:** accepted.
 
-### D10. `UNUSED_NODE` reports values the code drops
+### D10. `UNUSED_NODE` is deleted, with no replacement lint
 
-- **Context:** 18 of 19 warnings were `speckColor` from a bundle the eval kept in `const v` and used in part; the lint
-  must still catch `mem.spots(0.3)` and `img.gaussian(2)` alone on a line.
-- **Options considered:** (a) `cv.quiet(node)`; (b) widen reachability; (c) attribute warnings to sites in the eval's own
-  code (revision 1); (d) report nodes and promises dropped by an expression statement, found by parsing the code.
-- **Decision:** (d), in evals and loaded files, with `UNAWAITED` for dropped promises.
-- **Rationale:** The mistakes the lint exists for are a forgotten `return`, `await` or assignment, and each leaves an
-  expression statement whose value is thrown away. A value kept in a variable was not dropped, whatever happens to its
-  parts. (c) misses `mem.spots(0.3)` (built inside the library) and still warns on a paste in eval 1 (7 of the 18); (b)
-  cannot see local variables; (a) adds an API to silence a false positive. go-go-goja's `jsparse` finds the statements;
-  the rewrite keeps lines, so locations are unchanged.
-- **Consequences:** A node built and assigned to a variable that is never used is no longer reported (the one correct
-  warning of the study, `const s = mem.img.view("speckColor")`, becomes silent). This is the price of a rule with no
-  false positives of the study's kind; an unused variable is visible in the code the agent just wrote. The site-based
-  reporting is deleted.
-- **Status:** accepted.
+- **Context:** In the study, 18 of 19 `UNUSED_NODE` warnings were false: `speckColor` from a helper's bundle that the
+  eval kept in `const v` and used in part. Revision 2 replaced the lint with one that rewrites the agent's source
+  (go-go-goja's `jsparse`, `__cv_drop(k, expr)` around expression statements) to report dropped nodes and promises
+  (`UNAWAITED`). Under that rule the study's one true positive, `const s = mem.img.view("speckColor")` never used, is
+  silent too.
+- **Options considered:** (a) `cv.quiet(node)`; (b) attribute warnings to sites in the eval's own code (revision 1);
+  (c) a drop lint over rewritten source (revision 2); (d) no lint.
+- **Decision:** (d).
+- **Rationale:** The warning has no true positives left in the evidence. In v2 a lazy node that nobody uses is a harmless
+  no-op: options are literal and only `await`, a look or `cv.save` evaluates anything (GCV-004 §4.1, §6.5), so a dropped
+  node cannot produce a wrong result. The mistakes that matter are dropped `cv.load` and `cv.save` promises; the eval
+  waits for both through the pending list (D23), and `UNHANDLED` reports their failures. (c) rewrites agent source to
+  support a warning, the kind of complexity GCV-005 exists to cut, and it made replsession store marked source text.
+  (a) and (b) keep a warning that was wrong 18 times in 19.
+- **Consequences:** `unusedNodes` and its machinery are deleted (§7.6, §9); the docs state "a node you don't await, look
+  at or save does nothing". A forgotten `await` on a value the agent wanted shows up as a missing value in the result,
+  which the agent sees.
+- **Status:** accepted (revision 3).
 
 ### D11. Labels are data; sheet captions list their cells
 
@@ -1612,7 +1586,7 @@ await cv.load(path, args); cv.scripts() lists them." The 4,000-character test st
 - **Decision:** (b).
 - **Rationale:** Cropping first is intended, not a mistake. Exceptions would leave a lint whose advice is right for blurs
   and wrong for everything GCV-005 adds; the help text states the actual behaviour once.
-- **Consequences:** `Halo` keeps one reader, help, which prints it.
+- **Consequences:** `OpDef.Halo` loses its only reader and is deleted (D25).
 - **Status:** accepted.
 
 ### D23. Evals wait for their loads and saves; one `UNHANDLED` warning
@@ -1635,18 +1609,30 @@ await cv.load(path, args); cv.scripts() lists them." The 4,000-character test st
   eval timeout. Calling the file's function from JavaScript keeps the count in JavaScript (review F32).
 - **Status:** accepted.
 
+### D25. `OpDef.Halo` is deleted
+
+- **Context:** After D22 the only possible reader of `OpDef.Halo` is help output; GCV-004 says windowed evaluation, the
+  feature a halo exists for, is future work.
+- **Options considered:** (a) keep `Halo` and print it in help (revision 2); (b) delete it.
+- **Decision:** (b).
+- **Rationale:** A field read only to be printed is metadata every op must keep correct for no behaviour. When windowed
+  evaluation exists it will define the halo it needs and test it. `crop`'s help explains the edge effect in words: an
+  op after a crop sees only the crop.
+- **Consequences:** Every op's `Halo` function goes; `peaks`, `erode` and `dilate` declare none.
+- **Status:** accepted (revision 3).
+
 ## 9. Legacy and complexity to delete
 
 | # | phase | delete | where | lines (est.) |
 |---|---|---|---|---|
 | 1 | A1 | prelude file reading and the "not subject to roots" path | `session.go:87`, `withDefaults`, `runPreludes` (`226-257`), `New` | ~20 |
-| 2 | A2 | site-based `UNUSED_NODE`: `trace.Created` reporting, `feeds`, `onPlaceholder`; the display-renderer walk of `mem` | `processor.go:311-396` | ~70 |
+| 2 | A2 | `UNUSED_NODE` entirely: `unusedNodes`, its call, its walk of `mem`, `feeds`, `onPlaceholder`, `WUnusedNode`, `EvalTrace.Created` if unread; tests and docs that expect it | `processor.go:264-396`, `evaltrack.go`, `graph/errors.go` | ~110 |
 | 3 | A2 | "return cv.json(x) for all" in the item and string cap notes, and in `capText` (if GCV-004 Phase 6 has not replaced them) | `yaml.go:155`, `180`, `290` | ~3 |
 | 4 | A3 | the sheet's `index` labels and input-dependent default | `sheet.go:297` and its default logic (the list path itself goes in GCV-004 Phase 5) | ~10 |
 | 5 | B1 | `CROP_FIRST`: its branch of `orderWarnings`, `hasHalo`, `WCropFirst`; its tests in `pkg/cv/graph/crop_test.go`; its mention in `pkg/cv/docs/topics/06-looks.md` | `order.go:27-33`, `56-60`; `errors.go:35` | ~25 |
 | 6 | B1 | `grow`, `shrink` | `pkg/cv/ops/mask.go:338-339` | ~2 (+ docs, help) |
 | 7 | B1 | `kernels.Grow`, `kernels.Shrink` | `pkg/cv/kernels/mask.go:411-449` | ~40 |
-| 8 | B1 | `mask.regions`' `grow` option (added by GCV-004 Phase 5) | GCV-004's `mask.regions` | ~10 |
+| 8 | B1 | `OpDef.Halo` and every op's `Halo` function | `registry.go:281`, `pkg/cv/ops/*.go` | ~30 |
 | 9 | B1 | exported `SquareMinMax`, `Opening`, `Closing` (unexported, kept for the speck background) | `morph.go:54-107` | renames |
 
 Tests that use deleted names and must change in B1: `pkg/cv/ops/regions_test.go:74` (`toMask({ grow })`, or its
@@ -1656,10 +1642,10 @@ GCV-004 successor), `pkg/cv/kernels/mask_test.go:66-95` (`TestGrowThenShrinkIsNe
 
 Nothing keeps an old name: `grow`, `shrink`, `labels: "index"` get edit-distance suggestions only (GCV-004 D12).
 
-**Estimate.** Deleted: about 180 lines of non-test code. Added: `cv.load`, `cv.scripts`, compile and pending (~180),
-locations (~60), the drop lint (~120), settled evals and `UNHANDLED` (~60), context block functions and
-`DescribeFunction` (~100), tables (~130), the sheet caption (~20), morphology (~200), peaks (~300). Net about +1,000; tests
-about +1,300. Treat as ±30 %; the implementation diary records `git diff --stat` per phase.
+**Estimate.** Deleted: about 250 lines of non-test code. Added: `cv.load`, `cv.scripts`, compile and pending (~180),
+locations (~60), settled evals and `UNHANDLED` (~60), context block functions and
+`DescribeFunction` (~100), tables (~130), the sheet caption (~20), morphology (~200), peaks (~300). Net about +850; tests
+about +1,150. Treat as ±30 %; the implementation diary records `git diff --stat` per phase.
 
 ## 10. Pseudocode for the key flows
 
@@ -1677,7 +1663,6 @@ binding.compile(path):                                      (owner goroutine, in
         missing                               → E_ARG_TYPE "no such file", listing the roots searched
     text := read f (at most 1 MiB, else E_ARG_TYPE "too large for a script")
     name := loc.Rel ("/"-separated); "read<N>:" + loc.Rel when an earlier root has the same relative path
-    if a drop marker is installed: text, sites := marker(name, text)            // §10.5
     prg, err := goja.Compile(name, "(async function (args) {" + text + "\n})", false)
     err is a syntax error                     → throw { code: "SyntaxError", message: name + ":" + L + ":" + C + ": " + msg }
     files[name] := split(original text, "\n")
@@ -1754,39 +1739,10 @@ DescribeFunction(fn, name) → (sig, doc):
     the repeated functions: line cuts sig at 40 runes with "…"; new functions: and results show it whole
 ```
 
-### 10.5 The drop lint
+### 10.5 (removed in revision 3)
 
-```
-MarkDrops(name, src, base) → (marked, sites):
-    res := jsparse.Analyze(name, src, nil);  res.ParseErr ≠ nil → (src, nil)          // let goja report the error
-    drops := [ n in res.Index.Nodes : n.Kind == "ExpressionStatement"
-                                       and its expression child's Kind ∈ { CallExpression, NewExpression } ]
-    sort drops by Start descending
-    for k, n in drops:  e := the expression child
-        src := src[: e.Start−1] + "__cv_drop(" + k + ", " + src[e.Start−1 : e.End−1] + ")" + src[e.End−1 :]
-        sites[k] := { Source: name, Line: e.StartLine − base }
-    return (src, sites)
-
-App.Evaluate(body):
-    marked, sites := MarkDrops("<eval>", "(async function () {\n" + body + "\n})", 1)
-    strip the wrapper from marked; st.setPending(body /* original, for where: */, sites); Wrap(marked) → replapi
-
-__cv_drop(k, v):  native.drop(k, v); return v                                      (init.js)
-native.drop(k, v): trace.Drops += { Site: sites[k], Nodes: collectNodes(v),
-                                    Promise: v is a *goja.Promise and v ∉ trace.Pending }
-
-report(trace, returned):
-    used := closure over inputs of (trace.Used ∪ nodes(returned) ∪ collectNodes(mem) ∪ named images)
-    for d in trace.Drops:
-        if d.Nodes ≠ ∅ and d.Nodes ∩ used = ∅: UNUSED_NODE tag(d.Site) + src + " builds " + |d.Nodes| + " node(s) and discards them" + fix
-        if d.Promise:                          UNAWAITED  tag(d.Site) + src + " returns a promise that nothing awaits" + fix "await " + src
-    dedupe
-
-collectNodes(v, seen):
-    NodeOf(v) → [id];  not an object, or a function, look, provider, promise or proxy → []
-    seen[v] → [];  seen[v] = true
-    for each own enumerable string key k with a data descriptor: collectNodes(value, seen)
-```
+Revision 2's drop lint lived here. Revision 3 deletes `UNUSED_NODE` with no replacement (D10); the section number is
+kept so that references to §10.6–§10.12 stay valid.
 
 ### 10.6 Settled evals and unhandled rejections
 
@@ -1944,8 +1900,7 @@ Warnings:
 
 | code | when | change |
 |---|---|---|
-| `UNUSED_NODE` | an expression statement drops a value whose nodes nothing used (§4.4) | new rule; replaces the site-based one |
-| `UNAWAITED` | an expression statement drops a promise that is not a load or save | new |
+| `UNUSED_NODE` | — | deleted (D10) |
 | `UNHANDLED` | a promise was rejected and never handled during the eval | new; covers `cv.load` and `cv.save` |
 | `CROP_FIRST` | — | deleted |
 
@@ -1970,7 +1925,7 @@ cv is a lazy image-analysis API. You drive it with the eval tool.
 Eval contract
 - The code is the body of an async function: use await and end with return. The value comes back as YAML (max 9000 chars; a list of flat rows comes back as a table, paged), then warnings (with your line) and a context block (images, mem, and the docs of new mem functions).
 - const/let do not survive between evals: keep values on mem.
-- Calls build lazy, immutable nodes. await gives data: a Value or Regions node is computed at full resolution (regions become an array of flat items { id, x, y, w, h, cx, cy, r, … }); await img gives the image's summary. Options are literal values: levels({ white: (await d.stats()).p99 }).
+- Calls build lazy, immutable nodes; a node you don't await, look at or save does nothing. await gives data: a Value or Regions node is computed at full resolution (regions become an array of flat items { id, x, y, w, h, cx, cy, r, … }); await img gives the image's summary. Options are literal values: levels({ white: (await d.stats()).p99 }).
 - node.look(label | { zoom, ruler }) shows an image; every look is delivered, at most 4 per eval. Never read a coordinate off a picture: get it from data (peaks, items, measure).
 - Coordinates, lengths and boxes are doc px (original-image pixels).
 - Errors are YAML with code, message, where (your line, or file:line in a loaded file), hint and a literal fix: apply the fix.
@@ -2004,7 +1959,7 @@ More: cv.help(name) (one op or function), cv.docs.search("width of a line"), cv.
 |---|---|---|
 | `pkg/cv/docs/topics/14-task-libraries.md` (new) | §12.3: script files, `args`, return, `mem`, doc lines, `cv.scripts`, `--prelude`, `file:line` errors, settled evals, `UNHANDLED`, no cache | A1 |
 | `01-getting-started.md` | the eval contract: tables, `cv.load`, the context block's functions | A1, A2 |
-| `03-nodes-and-evaluation.md` | `UNUSED_NODE` and `UNAWAITED`: what counts as dropped | A2 |
+| `03-nodes-and-evaluation.md` | the rule "a node you don't await, look at or save does nothing"; `UNUSED_NODE` gone | A2 |
 | `05-masks-and-regions.md` | `dilate`/`erode` replace `grow`/`shrink` (line 17), `mask.regions(items).dilate(2)` | B1 |
 | `06-looks.md` | the `CROP_FIRST` mention goes; sheet captions list their cells | A3, B1 |
 | `08-errors.md` | §11's rows | A1, A2, B1 |
@@ -2016,10 +1971,10 @@ More: cv.help(name) (one op or function), cv.docs.search("width of a line"), cv.
 | `pkg/doc/04-agents.md` | task libraries, with the study's numbers | A4 |
 | `pkg/doc/05-setup-claude-code.md`, `06-setup-codex.md`, `07-setup-pi.md` | registration with `--read DIR --prelude DIR/lib.js`, and when to use it ("give agents a task-specific helper library") | A4 |
 | `pkg/doc/08-recipes.md` | the playbook pattern (§12.5) | A4 |
-| `pkg/doc/10-troubleshooting.md` | `UNHANDLED`, `UNAWAITED`, a prelude outside the roots, `E_TOO_MANY` from loads | A4 |
+| `pkg/doc/10-troubleshooting.md` | `UNHANDLED`, a prelude outside the roots, `E_TOO_MANY` from loads | A4 |
 | `README.md` | MCP section: `--prelude` and `cv.load` (lines 81, 98) | A4 |
 | `pkg/cvsession/reference.go` | `Instructions` (§12.1), `EvalToolDescription` | A4, B3 |
-| help (`pkg/gojamod/cv/help.go`) | entries `load`, `scripts`; concept entries `opening` (`x.erode(r).dilate(r)`), `closing` (`x.dilate(r).erode(r)`), `tophat` (`x.sub(x.erode(r).dilate(r))`, black `x.dilate(r).erode(r).sub(x)`); each op's halo; `crop`'s text of §6.10 | A1, B1 |
+| help (`pkg/gojamod/cv/help.go`) | entries `load`, `scripts`; concept entries `opening` (`x.erode(r).dilate(r)`), `closing` (`x.dilate(r).erode(r)`), `tophat` (`x.sub(x.erode(r).dilate(r))`, black `x.dilate(r).erode(r).sub(x)`); `crop`'s text of §6.10 | A1, B1 |
 | op docs | `peaks`, `erode`, `dilate`, the speck view's `Doc`, `sheet`'s `labels` | B1, B2, A3 |
 
 ### 12.3 Recipe: writing a task library
@@ -2048,7 +2003,7 @@ return "dust helpers ready"
 
 The topic states the rules: a script file is an eval body with `args`; keep state on `mem`; open each function's body
 with its doc comment; return a short string or an object; load siblings by root-relative path; `cv.load` runs the file
-every time; warnings from the file (`UNUSED_NODE`, `UNAWAITED`) carry `file:line`.
+every time; warnings and errors from the file carry `file:line`.
 
 ### 12.4 Recipe: the width of a thread
 
@@ -2101,18 +2056,17 @@ new ops, the crop lint) touch disjoint code; either can land first. Every phase 
 
 | phase | content | needs from GCV-004 | needs from GCV-005 |
 |---|---|---|---|
-| A2 | tables, function docs, context block, the drop lint, `UNHANDLED` | Phase 6 (`cv.save`, named by the paging and cut notes) | — |
-| A1 | `cv.load`, `cv.scripts`, compile and pending, settled evals, preludes as loads, file locations | Phase 6 (`Workspace`, `cv.save` appends to the pending list) | A2 for the drop marker on files (optional) |
+| A2 | tables, function docs, context block, `UNHANDLED`; delete `UNUSED_NODE` | Phase 6 (`cv.save`, named by the paging and cut notes) | — |
+| A1 | `cv.load`, `cv.scripts`, compile and pending, settled evals, preludes as loads, file locations | Phase 6 (`Workspace`, `cv.save` appends to the pending list) | — |
 | A3 | sheet caption's cell list, `labels: id \| none` | Phase 5 (`items\|point[]`, `Point`, `label`, string-`id` error) | — |
 | A4 | Part A documentation sweep | Phase 8 (its instructions), or the current text | A1–A3 |
-| B1 | `erode`, `dilate`, help (halo, concept entries), `crop`'s help; delete `CROP_FIRST`, `grow`, `shrink`, `mask.regions`' `grow` | Phase 4 (`OneChannel`, implemented) and Phase 5 (it adds `mask.regions(items, { grow })`) | — |
+| B1 | `erode`, `dilate`, help concept entries, `crop`'s help; delete `CROP_FIRST`, `OpDef.Halo`, `grow`, `shrink` | Phase 4 (`OneChannel`, implemented) | — |
 | B2 | `peaks` | Phase 3 (`Luma`, implemented), Phase 5 (`Disk` regions, links, `measure` radii) | B1 (`DiskMinMax`) |
 | B3 | gold-gated tests, `scripts/01-gold-metrics.sh`, Part B docs | — | B1, B2 |
 | V | validation (§15) | GCV-004 complete | A1–A4, B1–B3 |
 
-Recommended order once GCV-004 batch 2 has landed: B1, A2, A1, then A3 and B2, then B3, A4 and V. If the coordinator
-asks GCV-004 Phase 5 not to add `mask.regions`' `grow` (GCV-005's migration is `mask.regions(items).dilate(r)`), B1 can
-land right after Phase 5's other parts without deleting anything there.
+Recommended order: B1 now (its only GCV-004 dependency, Phase 4, is implemented, and GCV-004 Phase 5 does not add
+`mask.regions`' `grow`); A2 and A1 after GCV-004 Phase 6; A3 and B2 after Phase 5; then B3, A4 and V.
 
 **Phase A2 — readable results.**
 1. Tests: an array of two or more flat records renders as a table with the union of keys, `-` for missing and null,
@@ -2123,16 +2077,11 @@ land right after Phase 5's other parts without deleting anything there.
    `function`, `async`, single-parameter, destructured-parameter and method-shorthand forms, with a doc comment opening
    the body and with a mid-body comment only (no doc), on a bound and a native function, and on a fixture file copied
    from the DUST-002 helpers into `testdata`; the context block lists short signatures, shows docs once, again after the
-   source of a function changes, not after an unchanged reload; the drop lint: `mem.spots(0.3)` (a library function that
-   builds a node) warns with the line, `img.gaussian(2)` warns, `const v = mem.views(); return v.scene.look()` does not,
-   `mem.tile(…)` (its node bound to a name) does not, `x.look("a")` as a statement does not, `out.push(img.crop(b))`
-   does not (the node is kept in `out`), `mem.hot(0.3)` gives `UNAWAITED`, a statement in a `for` body and in an arrow
-   callback is checked, a syntax error leaves the eval's error unchanged, lines and `where:` are unchanged by the
-   rewrite; `UNHANDLED` for `Promise.reject(new Error("x"))` dropped, none for a caught rejection, none for the eval's
-   own failure; a node in the 60th element of an array on `mem` counts as kept; a getter on `mem` is not run.
-2. Implement: `renderer.table`, `tableOf`, `tableLeft`, key paths; `DescribeFunction`; `fnSeen`, `inPrelude`;
-   `MarkDrops`, `__cv_drop`, `binding.drop`, the drop report, `collectNodes`; the rejection tracker; delete §9 items 2
-   and 3. Docs: `01`, `03`, `08`.
+   source of a function changes, not after an unchanged reload; a getter on `mem` is not run; no eval produces
+   `UNUSED_NODE` (`img.gaussian(2)` alone on a line, the `mem.views()` case); `UNHANDLED` for `Promise.reject(new
+   Error("x"))` left unhandled, none for a caught rejection, none for the eval's own failure.
+2. Implement: `renderer.table`, `tableOf`, `tableLeft`, key paths; `DescribeFunction`; `fnSeen`, `inPrelude`; the
+   rejection tracker; delete §9 items 2 and 3. Docs: `01`, `03`, `08`.
 
 **Phase A1 — task libraries.**
 1. Tests: `cv.load` of a file in the workspace, in a read directory, shadowed by the workspace (the workspace's runs), by
@@ -2155,7 +2104,7 @@ land right after Phase 5's other parts without deleting anything there.
 
 **Phase A3 — sheet captions and labels.**
 1. Tests: a sheet of an array lists its cells' labels (else ids) in its caption in cell order, cut after 40 with the
-   count; `labels: "none"` draws none and still lists the cells; `labels: "index"` is an enum error.
+   count; a sheet of a Regions node says `cells in region order`; `labels: "none"` draws none and still lists the cells; `labels: "index"` is an enum error.
 2. Implement: the caption list; `labels: id | none`. Delete §9 item 4. If `sheet-2x2.png` moves (its labels), regenerate
    it and record why in the diary.
 
@@ -2172,8 +2121,8 @@ and morphology lines if Part B has not landed) and its length test; `EvalToolDes
    the receiver; a 1 px line vanishes under the disk opening of radius 3 and survives the line opening of radius 5 at
    its angle; the top-hat of a flat disk of radius 4 on a ramp is the disk at full height; `img.crop(b).view("speck")`,
    `img.crop(b).gaussian(2)` and `m.crop(b).dilate(2)` raise no warning; `cv.help("opening")`, `("closing")` and
-   `("tophat")` return the compositions; `cv.help("gaussian")` prints its halo.
-2. Implement: `DiskMinMax`, `LineMinMax`, `binaryDisk`; `morphOp`, `erode`, `dilate`; help halo and concept entries;
+   `("tophat")` return the compositions; no op declares a `Halo` (the field does not exist).
+2. Implement: `DiskMinMax`, `LineMinMax`, `binaryDisk`; `morphOp`, `erode`, `dilate`; help concept entries;
    `crop`'s help; delete §9 items 5–9 and update the tests listed in §9. Golden: add `dilate-mask.png` (a mask dilated by
    a disk) and `tophat-gray.png` (a top-hat of the planted scan's grey image). Docs: `02`, `05`, `06`, `08`.
 
@@ -2205,9 +2154,8 @@ appended to this guide.
 - **Renderer.** Table detection, formatting, cap exemption, budget and paging; function rendering. A golden text file of
   a representative result (detector items, measured peaks, a nested object with two tables) pins the format.
 - **Docs and state.** `DescribeFunction` forms; `fnSeen` by source text; preludes do not consume docs.
-- **Drop lint.** Marking (statements in blocks, loops, callbacks; not awaits, assignments or declarations), recording,
-  reporting, `UNAWAITED`, line preservation; `collectNodes`.
-- **Rejections.** `UNHANDLED` for dropped rejections; none when handled; settled evals.
+- **No `UNUSED_NODE`.** No eval produces it; tests that expected it are changed.
+- **Rejections.** `UNHANDLED` for unhandled rejections; none when handled; settled evals.
 - **Loading.** Path resolution through the workspace (GCV-004's fixtures), naming, args, returns, re-reading, nesting
   depth, parallel loads, locations.
 - **Kernels.** Brute-force equivalence for `DiskMinMax`, `LineMinMax` and the band step map; the binary fast path; the
@@ -2274,7 +2222,7 @@ ring tile), `216610367f9a7bfe_1536_3072` (lines).
 | evals per tile | 6–14 | not more |
 | cut results | the item cap in 40 of 374 evals; the string cap once | no table cut by the item or string cap |
 | row lists returned as joined strings | in most `mem.hot` results | none |
-| `UNUSED_NODE` | 19 (18 false) | only for dropped values |
+| `UNUSED_NODE` | 19 (18 false) | none (the warning is deleted) |
 | hand-typed coordinate lists probed in loops | 22 agents | none, or each from data |
 | suggestions accepted by the person | per the DUST-002 review | not fewer |
 
@@ -2311,7 +2259,7 @@ random-place numbers of the old playbook are not reused for peaks (§4.6).
 | the header and `return "helpers ready (v1)"` | keep a first comment line (the `cv.scripts` doc); open each function's body with its doc comment (today `mem.probe`'s first inner comment is a mid-body note, which D7 ignores); load with `--prelude` or `await cv.load(…)` |
 | `const r3 = …` used by closures | unchanged; private to the file, as intended |
 | `mem.tile` | unchanged (`name: "img"`); add `mem.lin = mem.img.as("linear")` |
-| `mem.views` | unchanged; no warning when a caller keeps the bundle in a variable |
+| `mem.views` | unchanged; `UNUSED_NODE` no longer exists |
 | `mem.best` | delete; for a hand-given point, `(await mem.lin.crop([x - 16, y - 16, 32, 32]).peaks({ snr: 0 }))[0]` is the strongest spot near it |
 | `mem.probe(x, y)` | `mem.lin.measure([{ cx: x, cy: y, r: 3 }])`; the speck step with `mem.lin.view("speck").measure(…, { prefix: "sp" })` |
 | `mem.probeR(x, y, r)` | `mem.lin.measure([{ cx: x, cy: y, r }])` |
@@ -2346,27 +2294,21 @@ rulers becomes "take coordinates from the rows", and the probe thresholds are re
    into an eval". A complete fix needs a source name per eval in go-go-goja's replsession.
 6. *goja behaviour.* `Function.prototype.toString`, `goja.Compile` names in stack frames and the rejection tracker are
    pinned by A1 and A2 tests.
-7. *The drop lint's blind spot.* A node assigned to a variable that is never used is no longer reported (D10). The lint
-   trades that case for having no false positives of the study's kind.
+7. *No unused-node lint.* A forgotten `await` on a value the agent wanted is not warned about (D10); the agent sees the
+   value missing from its result. Dropped loads and saves are waited for, and their failures reported.
 8. *`cv.scripts` enumerates.* It lists `.js` names under granted directories, which `cv.open` cannot; bounded by entries
    and files (D6).
 9. *GCV-004 drift.* GCV-005 assumes GCV-004's final model (Appendix A); a phase that meets a GCV-004 deviation follows it
    and records it.
 
-**Open questions.**
+**Decided in revision 3** (the coordinator's decisions on revision 2's open questions):
 
-1. *The rewritten eval text in replsession's history.* `App.Evaluate` hands replsession the marked source
-   (`__cv_drop(k, …)`), which replsession stores as the cell's source. Nothing an agent reads shows cell sources today
-   (the result text uses the original lines), but a history or persistence feature would show the marked text. Either
-   accept it (the marks are readable) or ask go-go-goja for a hook that runs code different from the stored source.
-2. *Sheet captions of a Regions node.* For an array the cells' ids are known when the look is created (the `items` op's
-   entries); for a Regions node passed directly they are known only after evaluation, while the caption text in the YAML
-   is written before looks render. The guide lists cells for arrays and writes "cells in region order" for a Regions node;
-   rendering looks before the YAML would allow both.
-3. *`cv.save` and the pending list.* GCV-004 Phase 6 must append each `cv.save` promise to the eval trace's pending list
-   (§7.2); until then only loads are waited for.
-4. *Delete `OpDef.Halo`?* After D22 its only reader is help. Keeping it costs one function per op and documents the edge
-   effects of crops; deleting it is also defensible. The guide keeps it.
+1. The eval source is not rewritten: `UNUSED_NODE` is deleted (D10), so replsession never stores marked text.
+2. Sheet captions list cell ids for arrays; for a Regions node passed directly they say "cells in region order" (§7.7).
+3. `cv.save` promises join the pending list in GCV-004 Phase 6 (Appendix A).
+4. `OpDef.Halo` is deleted (D25).
+
+There are no open questions left in this revision.
 
 ## 18. References
 
@@ -2379,7 +2321,7 @@ rulers becomes "take coordinates from the rows", and the probe thresholds are re
   `87-cv-measure-auc.py`, `88-cv-hot-recall.py`; `DUST-002/reference/04-goja-cv-dust-playbook.md`; old issue 18 in
   `DUST-002/reference/07-goja-cv-handover-issues.md`.
 - Background: the vault article "Deep Dive — goja-cv in Agent Hands — Feedback from 39 Annotator Agents".
-- go-go-goja: `pkg/jsparse` (`Analyze`, `Index`, `NodeRecord`), `pkg/replsession/evaluate.go`; goja:
+- go-go-goja: `pkg/replsession/evaluate.go`; goja:
   `Runtime.SetPromiseRejectionTracker` (`builtin_promise.go:668`), `Compile`, `Function.prototype.toString`.
 - Algorithms: M. van Herk (1992) and J. Gil and M. Werman (1993), running min/max (`minMax1D`); P. Soille, E. Breen and
   R. Jones (1996), erosions along discrete lines at arbitrary angles; P. Felzenszwalb and D. Huttenlocher (2012),
@@ -2404,9 +2346,9 @@ implemented.
 | the `items` op; literal boxes, circles and points; `Region.Shape` `Disk` and `Point`; one `items\|point[]` binding for `measure`, `sample`, `sheet` | Phase 5 (open question 1 settled there) | in progress | peaks regions; sheets |
 | the `label` field, the non-numeric-`id` error, repeatable ids | Phase 5 (open question 2 settled there) | in progress | sheet and overlay labels |
 | `measure(items)` with radii from `r`; `prefix`; `E_FIELD_EXISTS` | Phase 5 | in progress | `measure` of peaks |
-| `mask.regions(items, { grow })` | Phase 5 | in progress | its `grow` deleted in B1 |
+| `mask.regions(items)` without a `grow` option (the coordinator asked batch 2 not to add it; `dilate` replaces it) | Phase 5 | in progress | B1 deletes nothing there |
 | `Workspace`, `--root`, `--read`, `Workspace.Open`, `Location`; `--image`/`--prelude` inside a root | Phase 6 | in progress | `cv.load`, `cv.scripts`, preludes |
-| `cv.save`; its promise on the pending list; profile and histogram `rows` | Phase 6 | in progress | notes, settled evals, the thread-width recipe |
+| `cv.save`; its promise on the pending list (revision 2's open question 3, satisfied by Phase 6); profile and histogram `rows` | Phase 6 | in progress | notes, settled evals, the thread-width recipe |
 | xgoja `root` and `read` | Phase 6 | in progress | `cv.load` in xgoja |
 | pruned names; edit distance for removed names | Phase 7 | in progress | `grow`, `shrink`, `labels: "index"` |
 | the v2 instructions | Phase 8 | in progress | §12.1 |
@@ -2427,7 +2369,7 @@ what the reviewer proposed or what the coordinator decided in its place; "partly
 | F7 docs repeated after reloads | P2 | fixed: by source text | §6.4, §7.4, D3, D8 |
 | F8 loads leak into later evals | P2 | fixed (coordinator): `__cv_run` waits; one `UNHANDLED` warning from the rejection tracker | §4.9, §6.6, §7.4, §10.6, D23 |
 | F9 `E_TOO_MANY` counts parallel loads | P2 | fixed: nesting depth on a JavaScript load stack | §6.1, §7.2, D24 |
-| F10 attribution silences dropped library results | P2 | fixed (coordinator): `UNUSED_NODE` reports dropped values, found with `jsparse`; `UNAWAITED` for promises | §4.4, §5.5, §6.6, §7.6, §10.5, D10 |
+| F10 attribution silences dropped library results | P2 | fixed (coordinator): revision 2 replaced attribution with a drop lint; revision 3 deletes `UNUSED_NODE` altogether (no true positives left; dropped nodes are no-ops; loads and saves are waited for) | §4.4, §5.5, §6.6, §7.6, D10 |
 | F11 phase dependencies | P2 | fixed: A2 needs Phase 6; B1 needs Phase 5 | §13 |
 | F12 snr thresholds from random places | P2 | fixed: explained; the validation sweeps 0.5/1/1.4/2 for coverage and peaks not near gold; prototype numbers | §3.6, §4.6, D13, D14, §15.2 |
 | F13 peaks cost on a full scan | P2 | fixed: row bands, a pre-filter, a time budget (0.5 s per tile, ≤ 30 s at 53 MP), a benchmark; no hard limit, crop documented | §7.8, §10.7, B2 |
@@ -2439,7 +2381,7 @@ what the reviewer proposed or what the coordinator decided in its place; "partly
 | F19 `ProbePoint` signature | P3 | fixed: `Peaks` takes a one-channel buffer | §7.8 |
 | F20 step-map cost | P3 | fixed: about 20 r lookups per pixel | §7.8, §10.7 |
 | F21 line length stated two ways | P3 | fixed: 2R + 1 samples whose end centres are about 2r apart | §4.7, §10.10 |
-| F22 `goja-cv run` cannot lint a library with `args` | P3 | partly: superseded, the drop lint applies to loaded files directly, so no `run` step is needed | §6.6, §7.6 |
+| F22 `goja-cv run` cannot lint a library with `args` | P3 | partly: superseded, there is no unused-node lint to run (D10) | D10 |
 | F23 name collisions, fragile frame regex | P3 | fixed: `read<N>:` names for shadowed files; names without whitespace or parentheses | §6.1, §7.2, §7.3 |
 | F24 `cv.scripts` lacks evidence, enumerates | P3 | partly: kept (the brief asks for a listing) with a walk bounded by entries visited; the enumeration recorded as a risk | §6.2, D6, §17 risk 8 |
 | F25 B1 test updates incomplete | P3 | fixed: the full list | §9 |
@@ -2448,8 +2390,9 @@ what the reviewer proposed or what the coordinator decided in its place; "partly
 | F28 quotations | P3 | fixed: quoted exactly; "failed until" dropped | §3.2, §3.3 |
 | F29 squared distances in the fast path | P3 | fixed | §10.11 |
 | F30 the repeated `functions:` line is long | P3 | fixed: signatures cut at 40 characters there | §6.4, §10.4 |
-| F31 `collectNodes` ignores the item link | P3 | fixed: stated why it need not follow it | §7.6 |
+| F31 `collectNodes` ignores the item link | P3 | fixed in revision 2; superseded in revision 3, where `collectNodes` goes with `UNUSED_NODE` | D10 |
 | F32 let JavaScript call the loaded function | P3 | fixed: `__compile` returns the function; `prelude.js` calls it | §7.2, D24 |
 | F33 goldens and `Disk` consumers | P3 | fixed: `overlay-peaks`, `dilate-mask`, `tophat-gray`; B2 tests every `Disk` consumer | §13, §14.3 |
 
-Totals: 31 fixed, 2 partly fixed (F22, F24), 0 declined.
+Totals: 31 fixed, 2 partly fixed (F22, F24), 0 declined. Revision 3 changed the fixes of F10 and F22 (deletion of
+`UNUSED_NODE`) and of F1 (`OpDef.Halo` deleted with the lint), without changing their disposition.

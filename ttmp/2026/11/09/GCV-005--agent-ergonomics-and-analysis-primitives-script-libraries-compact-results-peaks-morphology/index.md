@@ -24,10 +24,10 @@ WhenToUse: "Start here; the guide is design-doc/01."
 GCV-005 turns the feedback of 39 Claude Sonnet annotator agents (DUST-002 `reference/11`, 374 evals) into goja-cv
 changes on top of GCV-004 (API v2). Part A makes task libraries a first-class part of a session and makes results
 readable; Part B adds the analysis primitives agents improvised (`peaks`, morphology). The design and implementation
-guide is `design-doc/01-design-and-implementation-guide.md` (revision 2); the coordinator's analysis is
+guide is `design-doc/01-design-and-implementation-guide.md` (revision 3); the coordinator's analysis is
 `reference/01-…`; the diaries are `reference/02-…` (coordination) and `reference/03-…` (design writer).
 
-Status: guide revision 2 (review dispositioned, Appendix B); implementation follows GCV-004 batch 2.
+Status: guide revision 3 (review dispositioned, Appendix B; no open questions); implementation follows GCV-004 batch 2.
 
 ## Key Links
 
