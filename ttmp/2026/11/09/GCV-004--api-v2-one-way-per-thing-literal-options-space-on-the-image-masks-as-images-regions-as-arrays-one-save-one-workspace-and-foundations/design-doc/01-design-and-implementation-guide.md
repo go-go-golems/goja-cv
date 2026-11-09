@@ -2745,3 +2745,26 @@ prescribes the reviewer's fix or an equivalent; "partly" means the intent is met
 | F37 look queue edge cases | P3 | fixed: preludes, late looks, duplicates | §7.7 |
 
 Totals: 36 fixed, 1 partly fixed (F36), 0 declined.
+
+## Implementation notes (deviations)
+
+Where the implementation (diary: `reference/06-diary-implementation.md`) differs from this guide. Numbered in the
+order found; the phase is in brackets.
+
+1. [all] The gated real-data tests were already red at the batch-1 start (`fa115dc`): `~/dustdet/cv_tiles` was
+   regenerated on 2026-11-09 and `~/dustds/gold` holds 197 points instead of 142, so `TestRealViewRanking` (median
+   75, top 50 39.6 %), `TestRealHotListMeasures` (48.2 % / 43.7 %) and `TestRealTileReEncodedAsLinear` (meanL
+   0.136 against the "guide" 0.336) fail before any change. The gate (`scripts/04-gate.sh`) runs the race tests
+   with the real-data directories pointed at nothing (as in CI); `scripts/05-real-data.sh` runs them separately and
+   each phase compares their numbers with that baseline instead of the guide's (§14.5).
+2. [0b] Goroutines below `pkg/cv/graph` (kernel bands in `pkg/cv/parallel`, TIFF strips in `pkg/cv/buffer`) cannot
+   import `graph.Recover`; they use `parallel.Recover`, which returns a `*parallel.PanicError` that `safeRun` maps
+   to `E_INTERNAL`.
+3. [0b] `SourceMeta` has a fourth field, `FileEncoding`: `buffer.Info.Encoding` is not serialized (`json:"-"`), and
+   the metadata is hashed as JSON.
+4. [0b] The timeout test of §7.11 does not tell a passthrough from a conversion: goja's interrupt flag stays set
+   until `ClearInterrupt`, so a converted `E_INTERNAL` is never observed either. A stack overflow inside a native
+   function (also uncatchable, but not sticky) is the discriminating test; both are kept.
+5. [0b] `cutValue` cuts exactly `ScaledSize(window, scale)` only from a buffer that is at the render scale; a
+   buffer computed at another scale (a sheet at its `AnalysisScale` 1) is cut to the pixels the window touches and
+   `exactSize` resizes it, which is the one resize left.

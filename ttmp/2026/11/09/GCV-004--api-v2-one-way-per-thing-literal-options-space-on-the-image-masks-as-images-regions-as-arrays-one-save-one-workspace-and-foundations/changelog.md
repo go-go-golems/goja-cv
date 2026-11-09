@@ -31,3 +31,8 @@ Guide revision 3: decided §17 Q1-Q4 (stepChroma gate 1, symlinks refused, pinne
 
 - /Users/manuel/code/wesen/go-go-golems/goja-cv/ttmp/2026/11/09/GCV-004--api-v2-one-way-per-thing-literal-options-space-on-the-image-masks-as-images-regions-as-arrays-one-save-one-workspace-and-foundations/design-doc/01-design-and-implementation-guide.md — revision 3
 
+
+## 2026-11-09
+
+Phase 0b: foundations without API change (commit 2b0955f)
+
