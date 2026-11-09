@@ -10,10 +10,42 @@ DocType: reference
 Intent: long-term
 Owners: []
 RelatedFiles:
+    - Path: repo://cmd/goja-cv/eval.go
+      Note: writeContent, --out-root, --prelude (Phases 6-8)
+    - Path: repo://pkg/cv/buffer/write.go
+      Note: TIFF/PNG/NPY writers with metadata (Phase 6)
+    - Path: repo://pkg/cv/dataout/data.go
+      Note: Data handles cv.json/cv.csv (Phase 7)
+    - Path: repo://pkg/cv/dataout/save.go
+      Note: image saving (Phase 6)
+    - Path: repo://pkg/cv/docs/topics/12-measuring.md
+      Note: measuring topic (Phase 9)
+    - Path: repo://pkg/cv/docs/topics/13-data-out.md
+      Note: data-out topic (Phase 9)
+    - Path: repo://pkg/cv/graph/cache.go
+      Note: warnings with cache entries (open item 9)
+    - Path: repo://pkg/cv/graph/paths.go
+      Note: out-root containment (Phase 6)
     - Path: repo://pkg/cv/graph/schema.go
       Note: FieldSpec schema, removed fields, producer hint (Phase 1)
+    - Path: repo://pkg/cv/kernels/probe.go
+      Note: probe kernel (Phase 3-4)
+    - Path: repo://pkg/cv/look/chart.go
+      Note: profile line chart (Phase 5)
+    - Path: repo://pkg/cv/ops/measure_real_test.go
+      Note: gated hot-list test and benchmark (Phase 9)
+    - Path: repo://pkg/cv/ops/measurement.go
+      Note: sample, measure, profile (Phase 3)
+    - Path: repo://pkg/cv/ops/regionmeasure.go
+      Note: regions.measure (Phase 4)
     - Path: repo://pkg/cv/ops/schema.go
       Note: op result schemas (Phase 1)
+    - Path: repo://pkg/cv/ops/views.go
+      Note: speck views linear by default (open item 1)
+    - Path: repo://pkg/cvsession/processor.go
+      Note: look and data budgets (Phase 7)
+    - Path: repo://pkg/cvsession/session.go
+      Note: OutRoot, MaxData, Preludes (Phases 6-8)
     - Path: repo://pkg/gojamod/cv/prelude.js
       Note: shared item prototype with removed-field accessors (Phase 1)
 ExternalSources: []
@@ -22,6 +54,7 @@ LastUpdated: 2026-11-09T07:23:01.422048-05:00
 WhatFor: Reviewing and continuing the GCV-003 implementation on branch task/gcv-003-measurement-data-out (stacked on task/gcv-002-inspection-views).
 WhenToUse: Before reviewing a GCV-003 commit, or when picking up the open items it hands over.
 ---
+
 
 
 # Diary - implementation

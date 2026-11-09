@@ -1150,6 +1150,7 @@ the code differs.
     their entry; a value too large to cache reports its warnings directly.
 22. **Extra legacy removed**: the old `EncodePNG`/`EncodeTIFF16`/`WriteFile` and the `x/image/tiff` writer path,
     `statsWeighted` wrapper, the `measure → stats` op synonym; method redirects added for `export`/`write`/`saveAs`
-    (→ save), `toCSV`/`table` (→ cv.csv), `json`/`dump` (→ cv.json).
+    (→ save), `toCSV`/`table` (→ cv.csv), `json`/`dump` (→ cv.json); from the agent runs, `regions.measure({
+    ringRadii })` (→ `ring: [r1, r2]`) and `components({ maxArea })` (→ `where({ area: { lte } })`).
 23. **Not done**: windowed pixel-op evaluation with `OpDef.Halo` (GCV-002 open item; design note in the diary,
     step 9); moving the `cvFuncs` help table to `pkg/cvsession` (optional; `cv.help` lives in the module).
