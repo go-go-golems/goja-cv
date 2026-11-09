@@ -120,9 +120,9 @@ func (t *tiffFile) ints(e tiffEntry) ([]int64, error) {
 		case 4, 13:
 			out[i] = int64(t.bo.Uint32(b[4*i:]))
 		case 8:
-			out[i] = int64(int16(t.bo.Uint16(b[2*i:])))
+			out[i] = int64(int16(t.bo.Uint16(b[2*i:]))) // #nosec G115 -- SSHORT: the bits are a signed value
 		case 9:
-			out[i] = int64(int32(t.bo.Uint32(b[4*i:])))
+			out[i] = int64(int32(t.bo.Uint32(b[4*i:]))) // #nosec G115 -- SLONG: the bits are a signed value
 		default:
 			return nil, formatErr("TIFF field type %d where integers are expected", e.typ)
 		}
@@ -158,7 +158,7 @@ func (t *tiffFile) floats(e tiffEntry) ([]float64, error) {
 				out[i] = float64(num) / float64(den)
 			}
 		case 10:
-			num, den := int32(t.bo.Uint32(b[8*i:])), int32(t.bo.Uint32(b[8*i+4:]))
+			num, den := int32(t.bo.Uint32(b[8*i:])), int32(t.bo.Uint32(b[8*i+4:])) // #nosec G115 -- SRATIONAL: signed values
 			if den != 0 {
 				out[i] = float64(num) / float64(den)
 			}
@@ -676,7 +676,7 @@ func decompress(src []byte, compression int64, want int) ([]byte, error) {
 func unpackBits(src []byte, want int) ([]byte, error) {
 	out := make([]byte, 0, want)
 	for i := 0; i < len(src) && len(out) < want; {
-		n := int(int8(src[i]))
+		n := int(int8(src[i])) // #nosec G115 -- PackBits headers are signed bytes
 		i++
 		switch {
 		case n >= 0: // n+1 literal bytes

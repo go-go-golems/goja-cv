@@ -418,7 +418,7 @@ func lzwEncode(data []byte) []byte {
 		acc = acc<<width | uint32(code) // #nosec G115 -- codes < 4096
 		nbits += width
 		for nbits >= 8 {
-			out = append(out, byte(acc>>(nbits-8)))
+			out = append(out, byte(acc>>(nbits-8))) // #nosec G115 -- the next 8 bits of the accumulator
 			nbits -= 8
 		}
 	}
@@ -461,7 +461,7 @@ func lzwEncode(data []byte) []byte {
 		emit(eoiCode)
 	}
 	if nbits > 0 {
-		out = append(out, byte(acc<<(8-nbits)))
+		out = append(out, byte(acc<<(8-nbits))) // #nosec G115 -- the last bits, left-aligned
 	}
 	return out
 }
