@@ -333,3 +333,121 @@ method })` (was `heal(regions|mask, …)`, generated from `Inputs`), and explain
 `within(mask: #7, edit: #11)` (was `within()`). The two tests that pinned the old strings were updated.
 
 `git diff --stat 2b0955f ceb1ec4 -- pkg cmd internal`: 39 files changed, 656 insertions(+), 451 deletions(-).
+
+## Step 3: Phase 1 — literal options
+
+Phase 1 makes every option a literal value. Params, value lifting, the Value ops, derived fields, the SPACE warning
+and `E_LAZY_COMPARE` are deleted; a node is accepted only for an argument of node type. A measurement that feeds an
+option is awaited first, and reading a field of an unawaited Value or Regions node (or using it as a number) is the
+new `E_NOT_AWAITED`, with the literal fix `(await img.stats()).p99`. The speck view keeps its white point through an
+internal `levelsAt` op, bit-identical to the old lifted chain.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 1)
+
+**Assistant interpretation:** Implement guide Phase 1 (§6.1, §7.2, §7.4 "Views", §7.7 "Lazy data fails loudly",
+§9 items 5–6) with its docs (`07-params.md` deleted; `03`, `08`, `09`; the lift error's fix).
+
+**Inferred user intent:** Remove the machinery agents never used (params: 0 uses, lifting: 4) so every static is
+computable and every accessor can be strict.
+
+**Commit (code):** `01e5607` — "GCV-004 Phase 1: literal options"
+
+### What I did
+
+- Graph: `params.go` deleted; `KindParam`, the `accepts`/`Lookup`/`Methods` Param rules, `Engine.Params`,
+  `DeclareParam`, `EvalCtx.Params`, the param part of signatures, `Describe`'s params argument, `ArgSpec.Static`,
+  `Expander.Arg`, `spaceWarnings`/`WSpace`/`measuringOp`/`inputRefs`, `resolveArgs`' substitution and re-check
+  (`resolveArgs` now only attaches the values), `NoField`, `ELazyCompare`, `EParamRedeclare`. `binder.lift` refuses a
+  node for any argument not of node type with `literalError`: `E_ARG_TYPE "white must be a number, not a node:
+  options are literal values."`, fix `{ white: (await img.stats()).p99 }` (option) or `(await img.stats()).p99`
+  (positional). `graph.AwaitExpr` writes the awaited expression (`img.stats()` for an op on the opened image, seen
+  through inserted conversions; `node.stats()` otherwise). `bind` takes `nodeOf` instead of `kindOf`.
+- Ops: `value.go` (field, pick, percentile, add/sub/mul/div/min/max/abs/distance on Values) and the `param` source
+  deleted; `levelsAt` (internal; `p` 0.99, `times` 5, `floor` 1e-4; the quantile with `kernels.Percentile` on a copy
+  of the receiver's luminance, exactly what `stats` computes) replaces the lifted `stats → field → mul → max →
+  levels` chain of `speckView`; `highpass`/`dog` pass their sigmas as literals; `isRef` and the "lifted" branches of
+  `validateColor`, `validateGradient`, `validateIDs`, `where` deleted. `levels.white`'s usual range is now [0, 4].
+- Binding/prelude: `__param*`, `__lazy`, `__fieldNames`, `P`, `paramProp`, `FIELDS`/`OTHER_METHODS` deleted;
+  `__notAwaited(id, prop, hint)`: a field of the node's schema or any other non-method → `E_NOT_AWAITED`; an Image
+  method that takes regions → `E_NOT_AWAITED` "regions are arguments of image methods", fix `img.heal(regions, …)`;
+  a method of another kind (`stats().exposure`) → the old cross-kind `E_UNKNOWN_METHOD`. `Symbol.toPrimitive`/
+  `valueOf` call it on every kind. `look()` marshals its options so a node there reaches the binder.
+- Session: `init.js` loses `P` and its guard; the context block loses params; `Instructions` (3949 characters) teach
+  awaiting a measurement; `formatAny` and `capitalize` (now unused) deleted.
+- Docs: `07-params.md` deleted (topic list 12); `03` gains "Options are literal values" and `E_NOT_AWAITED` (with an
+  `error=E_ARG_TYPE` and an `error=E_NOT_AWAITED` block); `08`'s table and its "Reading an error" example
+  (`specks.heal()` is now `E_NOT_AWAITED`); `09`, `01`, `02`, `05`, `06`, `10`, `11`, `12` blocks that used `pick`,
+  lazy fields or `d.stats().p99.mul(5)`; guidebook `02-concepts` (Params section gone), `08-recipes` ("Hand a person a
+  slider" became "Explore a value"), `10-troubleshooting`, `04`, `07`, `01`; README.
+- Tests: `TestNodeAsOptionIsArgType` in graph and ops (replaces `TestEncodingArgsAreStatic`); `TestDiagnostics`
+  covers `img.stats().p99`, `img.stats() + 1`, `img.exposure(1).stats().p99`, `.items` on Regions,
+  `specks.heal()`, and that `typeof img.detect.specks().count` is still `"function"`; `TestErrorYAMLHasCodeFixAndLine`
+  covers the session YAML of both errors. Param tests were deleted or rewritten with literals
+  (`TestParamMovesRecomputeOnlyDownstream`, `TestParamsRecomputeOnlyDownstream`, `TestParamsInContextAndPerson`
+  deleted; `TestWithinPlaceholder`, Session B/C, `where` count tests now build a second node with another literal and
+  check that only it runs).
+
+### Why
+
+- D1: with literal options every static is computable at build time and the review's `encoding` bug cannot be
+  written; agents already await in 1139 places.
+
+### What worked
+
+- `sheet-2x2` (a `speck` cell) and every other golden stayed exact; `TestRealViewRanking` and the hot-list numbers are
+  unchanged (the hot-list test now awaits `stats` and passes `2 × p99` as a literal).
+- The registry walk and the docs tests found every remaining user of the deleted API.
+
+### What didn't work
+
+- The first full run failed in 11 places, e.g. `docs_test.go:91: getting-started.md line 30: … E_NOT_AWAITED … read
+  .pick after awaiting it` (every docs block that used `pick`), `measuring.md line 52: unexpected warnings: RANGE line
+  3: levels.white = 0.0448154 is outside the usual range [0.05, 4]` (a measured white used to be lifted and so never
+  range-checked), `instructions are 4027 characters, want < 4000`.
+- `img.detect.specks().feather(2)` first gave `E_NOT_AWAITED … read .feather after awaiting it`; the old cross-kind
+  hint (`"feather" is a Mask method`) is better there, so methods of other kinds keep `E_UNKNOWN_METHOD`.
+- `return await img.check.dust().count` used to work (a derived field that is also a Regions method name); it is now
+  `E_NOT_AWAITED` with the fix `(await img.check.dust()).count`, which is the v2 rule.
+- `img.look({ zoom: img.stats() })` gave `must be a number, got goja.Proxy`: look options were not marshalled.
+
+### What I learned
+
+- The fix expression needs the receiver as the agent wrote it: `detect.specks` is built on `convert(toGray(img))`
+  (inserted by the builder), so `AwaitExpr` looks through `convert` and `toGray` to say `img.detect.specks()`.
+
+### What was tricky to build
+
+- Keeping the speck view bit-identical: the old chain evaluated `stats` (no mask: `kernels.Stats`, whose `L.P99` is
+  `Percentile` on a copy of `Buf.Luminance()`), multiplied by 5 in float64 and took `max(·, 1e-4)`. `levelsAt` does
+  exactly those steps on its receiver at the scale it runs; because the old lifted input was evaluated in the same
+  run at the same scale as `levels`' receiver, the numbers match at every render scale.
+- `E_NOT_AWAITED` versus `E_UNKNOWN_METHOD`: the guide says every non-method property of a lazy Value or Regions node
+  is `E_NOT_AWAITED`; I kept the cross-kind error for names that are methods of another kind (and not fields of the
+  node's schema), because its fix is better, and documented it as a deviation.
+
+### What warrants a second pair of eyes
+
+- `levels.white`'s usual range lower bound (now 0): measured whites of derived images (DoG p99 × 2 ≈ 0.045) are now
+  literals and would otherwise warn in the recommended recipes.
+- `binding.notAwaited`'s three cases and their order.
+
+### What should be done in the future
+
+- Phase 5 deletes `fields.go`'s remaining removed-field accessors (`__removedFields`, `__noField`, `__itemProto`) and
+  `E_NO_FIELD` with the item prototype; Phase 1 removed only `__fieldNames`.
+
+### Code review instructions
+
+- Start with `pkg/cv/graph/args.go` (`binder.lift`, `literalError`, `AwaitExpr`), `pkg/gojamod/cv/binding.go`
+  (`notAwaited`), `pkg/gojamod/cv/prelude.js` (`lookup`), `pkg/cv/ops/views.go` (`speckView`, `levelsAtOp`).
+- Validate: `scripts/04-gate.sh`; `scripts/05-real-data.sh` (identical to the baseline); `go test ./pkg/cv/look -run
+  TestGoldenLooks` (exact, no `-update`).
+
+### Technical details
+
+Goldens: none moved (checked without `-update`). Real data: identical to Step 1.
+
+`git diff --stat ceb1ec4 01e5607 -- pkg cmd internal README.md`: 85 files changed, 658 insertions(+), 1550
+deletions(-).

@@ -41,3 +41,8 @@ Phase 0b: foundations without API change (commit 2b0955f)
 
 Phase 0c: Args redesign (commit ceb1ec4)
 
+
+## 2026-11-09
+
+Phase 1: literal options (commit 01e5607)
+

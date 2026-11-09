@@ -2778,3 +2778,15 @@ order found; the phase is in brackets.
    `within(mask: #7, edit: #11)`), where they used to print the input kinds or nothing.
 10. [0c] The registry property test is the existing `TestRegistryWalk` (every op called and evaluated at three
     scales, help for every op), not a separate call of each build-time function with default arguments.
+11. [1] On a lazy Value or Regions node, a property that is a method of another kind (and not a field of the node's
+    schema) keeps the cross-kind `E_UNKNOWN_METHOD` (`img.stats().exposure(1)` → fix `img.exposure(…)`;
+    `regions.feather(2)` → `"feather" is a Mask method`); fields and other names are `E_NOT_AWAITED` as §7.7 says,
+    and an Image method that takes regions is `E_NOT_AWAITED` with "regions are arguments" (`img.heal(regions, …)`).
+    `Symbol.toPrimitive` and `valueOf` throw `E_NOT_AWAITED` on Image nodes too (fix `(await img).w`).
+12. [1] The `(await …)` fix is `{ name: (await img.stats()).p99 }` for an option and `(await img.stats()).p99` for a
+    positional argument; the expression is `img.<op>()` when the op was called on the opened image (seen through
+    inserted conversions) and `node.<op>()` otherwise, since the agent's variable name is not known.
+13. [1] `levels.white`'s usual range became [0, 4] (was [0.05, 4]): measured whites of derived images (2 × the p99
+    of a DoG ≈ 0.045 in the measuring recipe) are now literals and would raise RANGE.
+14. [1] `fields.go` keeps `__removedFields`, `__noField` and `__itemProto` (and `E_NO_FIELD` stays) until Phase 5,
+    which deletes the item prototype; Phase 1 deleted `__fieldNames` only.
