@@ -32,7 +32,7 @@ const MaskType = "Mask"
 // such as "Image" or "Regions|Image" ("Mask" is not a kind: see acceptsNode).
 func accepts(decl Kind, k Kind) bool {
 	for _, d := range strings.Split(string(decl), "|") {
-		if Kind(d) == k {
+		if Kind(d) == k || (d == ItemsType && k == KindRegions) {
 			return true
 		}
 	}
@@ -43,7 +43,7 @@ func accepts(decl Kind, k Kind) bool {
 // "Image", "Mask" (an Image with one channel) or "Regions|Mask".
 func acceptsNode(decl string, n *Node) bool {
 	for _, d := range strings.Split(decl, "|") {
-		if Kind(d) == n.Kind || (d == MaskType && n.Kind == KindImage && n.Channels == 1) {
+		if Kind(d) == n.Kind || (d == MaskType && n.Kind == KindImage && n.Channels == 1) || (d == ItemsType && n.Kind == KindRegions) {
 			return true
 		}
 	}
@@ -267,11 +267,7 @@ type OpDef struct {
 	Internal bool              // not callable from JavaScript, not listed in help (convert)
 	Lossless bool              // looks of its result are PNG by default (format "auto"): contact sheets
 	Chart    ChartKind         // look() of a Value result draws this chart (histogram: bars, profile: lines)
-	// MaxItems is a static upper bound on the item count of a Regions
-	// result (top(n)); ok false when unknown. A sheet sizes
-	// itself by it.
-	MaxItems func(args Args) (n int, ok bool)
-	Bespoke  bool // a module op bound by hand (cv.open, the builder placeholder): the prelude does not generate cv.<name>
+	Bespoke  bool              // a module op bound by hand (cv.open, the builder placeholder): the prelude does not generate cv.<name>
 	// Expand makes the op a macro: a graph of other ops built at intern
 	// time (exactly one of Run and Expand is set). See ExpandFunc.
 	Expand ExpandFunc
@@ -285,14 +281,9 @@ type OpDef struct {
 	// Fields is the schema of the result: the items of a Regions result, the
 	// rows or the object of a Value result (schema.go). It runs at intern
 	// time with the bound args (node arguments are InputRefs; Args carries the
-	// input nodes), and is called with Args without inputs for help. nil: a
-	// Regions op on Regions keeps its receiver's fields; other results have
-	// none.
+	// input nodes), and is called with Args without inputs for help. nil: no
+	// fields.
 	Fields func(a Args) []FieldSpec
-	// Produces maps the field names the op can add with some arguments to
-	// the call that adds them, for the hint of a filter on a field the
-	// receiver lacks ("snr comes from regions.measure(img, { ring: true })").
-	Produces map[string]string
 	// Validate checks bound args at build time (after defaults and types);
 	// the input nodes (their statics, such as Fields) are read through
 	// Args. Errors fail the call.

@@ -173,7 +173,7 @@ func TestHelp(t *testing.T) {
 		const h = cv.help()
 		const e = cv.help("exposure")
 		return { kinds: h.kinds.join(","), image: h.ops.Image.join(","), ev: e.exposure.args.ev, usage: e.exposure.usage, version: cv.version }`).(map[string]any)
-	if got["kinds"] != "Image,Regions" || !strings.Contains(got["image"].(string), "gaussian") {
+	if got["kinds"] != "Image" || !strings.Contains(got["image"].(string), "gaussian") {
 		t.Fatalf("help: %v", got)
 	}
 	if got["ev"] != "number in [-10, 10], usual [-3, 3], required, positional. stops of light: linear values are multiplied by 2^ev" || got["usage"] != "exposure(ev)" {
@@ -281,8 +281,8 @@ func TestDiagnostics(t *testing.T) {
 		{`return img.stats() + 1`, "E_NOT_AWAITED", "Await the node first", "(await img.stats()).p99"},
 		{`return img.stats().p99`, "E_NOT_AWAITED", "", "(await img.stats()).p99"},
 		{`return img.exposure(1).stats().p99`, "E_NOT_AWAITED", "", "(await node.stats()).p99"},
-		{`return img.detect.specks().items`, "E_NOT_AWAITED", "", "(await img.detect.specks()).items"},
-		{`return img.detect.specks().heal()`, "E_NOT_AWAITED", "Pass the regions to the image method.", "img.heal(regions, …)"},
+		{`return img.detect.specks().length`, "E_NOT_AWAITED", "", "(await img.detect.specks()).length"},
+		{`return img.detect.specks().heal()`, "E_NOT_AWAITED", "Pass the regions (the node, or the awaited array) to the image method.", "img.heal(regions, …)"},
 		{`img.ev = 0.3`, "E_IMMUTABLE", "", ""},
 		{`img.exposure = 1`, "E_IMMUTABLE", "", "const next = node.exposure(…)"},
 		{`delete img.foo`, "E_IMMUTABLE", "", ""},
@@ -301,10 +301,8 @@ func TestDiagnostics(t *testing.T) {
 	if strings.Join(e.Path, " → ") != "open(gradient-64x48-16bit.tif) → ✗ levels" {
 		t.Fatalf("eval path: %v", e.Path)
 	}
-	// a method of a Regions node still resolves (Regions keep their methods until they become arrays)
-	if got := mustRun(t, rt, `return typeof img.detect.specks().count`); got != "function" {
-		t.Fatalf("Regions method: %v", got)
-	}
+	// a Regions node has no methods: count is lazy data
+	mustFail(t, rt, "E_NOT_AWAITED", `return typeof img.detect.specks().count`)
 	// errors are catchable JS errors with code and name
 	got := mustRun(t, rt, `try { img.levels({ blak: 1 }) } catch (e) { return [e.name, e.code, e instanceof Error, String(e).startsWith("E_UNKNOWN_OPTION: levels has no option \"blak\"")] }`).([]any)
 	if fmt.Sprint(got) != "[E_UNKNOWN_OPTION E_UNKNOWN_OPTION true true]" {

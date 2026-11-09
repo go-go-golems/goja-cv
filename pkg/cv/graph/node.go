@@ -129,7 +129,7 @@ func (b *Builder) call(op *OpDef, receiver NodeID, raw []any, meta any, nested b
 	if err != nil {
 		return CallResult{}, err
 	}
-	bd, err := bind(op, callName(op), recv != nil, raw, b.Node)
+	bd, err := bind(op, callName(op), recv != nil, raw, b.Node, b.itemsNode)
 	if err != nil {
 		return CallResult{}, err
 	}
@@ -150,7 +150,7 @@ func (b *Builder) call(op *OpDef, receiver NodeID, raw []any, meta any, nested b
 	args := Args{op: op, vals: bd.args, meta: meta, ins: inputs}
 	if op.Validate != nil {
 		if err := op.Validate(args); err != nil {
-			return CallResult{}, b.reg.producerHint(err)
+			return CallResult{}, err
 		}
 	}
 	if recv != nil {

@@ -230,7 +230,7 @@ func crossKind(k Kind, name string, op *OpDef) (string, string) {
 	}
 	on, self := receiverVar(op.On), receiverVar(k)
 	for _, s := range op.Args {
-		if s.Positional && isKindType(s.Type) && accepts(Kind(s.Type), k) {
+		if s.Positional && (isKindType(s.Type) || takesItems(s.Type)) && accepts(Kind(s.Type), k) {
 			return fmt.Sprintf("%q is %s method that takes %s: call it on the %s and pass this node.", name, A(string(op.On)), string(k), kindNoun(op.On)),
 				fmt.Sprintf("%s.%s(%s, …)", on, name, self)
 		}
@@ -239,13 +239,13 @@ func crossKind(k Kind, name string, op *OpDef) (string, string) {
 	var fix string
 	switch {
 	case k == KindRegions && op.OneChannel:
-		hint = fmt.Sprintf("%q is a method of a one-channel image (a mask); convert with .toMask().", name)
-		fix = fmt.Sprintf("%s.toMask().%s(…)", self, name)
+		hint = fmt.Sprintf("%q is a method of a one-channel image (a mask); make one with img.mask.regions(regions).", name)
+		fix = fmt.Sprintf("img.mask.regions(%s).%s(…)", self, name)
 	case k == KindImage && op.On == KindValue:
 		fix = fmt.Sprintf("%s.stats().%s(…)", self, name)
 	case k == KindRegions && op.On == KindImage:
 		hint = fmt.Sprintf("%q is an Image method; to apply it inside these regions use within with their mask.", name)
-		fix = fmt.Sprintf("img.within(%s.toMask(), i => i.%s(…))", self, name)
+		fix = fmt.Sprintf("img.within(img.mask.regions(%s), i => i.%s(…))", self, name)
 	default:
 		fix = fmt.Sprintf("%s.%s(…)", on, name)
 	}

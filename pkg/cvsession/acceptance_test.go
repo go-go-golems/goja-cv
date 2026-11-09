@@ -159,8 +159,8 @@ return {
 // with 36 labelled cells whose ids match the regions.
 func TestAcceptanceSheetOf36(t *testing.T) {
 	app, sid := acceptanceApp(t)
-	resp := eval(t, app, sid, `const top = img.detect.specks().sortBy("area").top(36)
-return { ids: (await top).items.map(r => r.id), sheet: cv.sheet(top, { views: img.view("speck") }).look("candidates") }`)
+	resp := eval(t, app, sid, `const top = (await img.detect.specks()).sort((a, b) => b.area - a.area).slice(0, 36)
+return { ids: top.map(r => r.id), sheet: cv.sheet(top, { views: img.view("speck") }).look("candidates") }`)
 	out := mustOK(t, resp)
 	if len(resp.Content) != 1 {
 		t.Fatalf("looks:\n%s", out)

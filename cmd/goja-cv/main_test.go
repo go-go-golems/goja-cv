@@ -202,7 +202,7 @@ const saved = await cv.csv(regs).save("tables/regs.csv")
 return {
   look: img.look("scene"),
   spots: cv.csv(regs, { name: "spots" }),
-  again: cv.csv(regs.top(1), { name: "spots" }),
+  again: cv.csv((await regs).slice(0, 1), { name: "spots" }),
   raw: cv.json([{ b: 1, a: 2 }, { b: 3, a: 4 }], { name: "probe" }),
   anon: cv.json({ n: 1 }),
   saved: saved.rows,

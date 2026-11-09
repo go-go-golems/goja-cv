@@ -4,14 +4,14 @@ The YAML result is for you to read and is capped; data for programs leaves as JS
 
 ## Text for you, data for programs
 
-The result of an eval comes back as YAML capped at about 9000 characters and 48 items per list. Return summaries there. A program that needs every row gets them from a data item: `cv.json(x)` or `cv.csv(x)` returned from the eval is delivered as content (MCP: text; CLI: a file named after it in `--out`). Awaited Regions hold every item (up to 100000), so code may loop over `items` freely.
+The result of an eval comes back as YAML capped at about 9000 characters and 48 items per list. Return summaries there. A program that needs every row gets them from a data item: `cv.json(x)` or `cv.csv(x)` returned from the eval is delivered as content (MCP: text; CLI: a file named after it in `--out`). Awaited Regions are an array of every item (up to 100000), so code may loop over them freely.
 
 ```js
 const specks = img.detect.specks()
 return {
-  count: await specks.count(),
+  count: (await specks).length,
   table: cv.csv(specks, { name: "specks" }),
-  probe: cv.json(await img.measure([[200.5, 46.5]]), { name: "probe" }),
+  probe: cv.json(await img.measure([[200.5, 46.5]], { coreRadius: 3 }), { name: "probe" }),
 }
 ```
 

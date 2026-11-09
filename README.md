@@ -11,10 +11,10 @@ enter JavaScript, and the runtime has no filesystem, process or network access.
 
 ```js
 const s = await img.stats()
-const dust = img.detect.specks().where({ score: { gte: 0.5 } })
+const dust = (await img.detect.specks()).filter(r => r.score >= 0.5)
 return {
   meanL: s.meanL, p99: s.p99,
-  dust: await dust.count(),
+  dust: dust.length,
   look: img.overlay(dust, { labels: "id" }).look("dust"),
 }
 ```
@@ -185,15 +185,16 @@ from six per task to two, every one corrected on the next call):
 
 - Tell the model: "Use the cv eval tool for every measurement; use `cv.docs.search(…)` and `cv.help(name)` when
   unsure; apply the `fix:` of an error."
-- **Keep nodes, await only for data**: `const specks = img.detect.specks()` is a node; `await specks` is data
-  (`{ count, items }`). Awaited data still accepts node methods, but `r.count` is a number.
+- **Keep nodes, await only for data**: `const specks = img.detect.specks()` is a node; `await specks` is an array of
+  items that JavaScript filters, sorts and slices, and that goes back wherever regions go (`img.overlay(arr)`).
 - **Use `mem`** for anything needed in a later call; `const`/`let` do not survive.
 - **Look** to see results (`node.look("label")`, `cv.compare([a, b]).look()`: every look of an eval is delivered), zoom into crops with
   rulers (`img.crop([x, y, 64, 64]).look({ zoom: 8, ruler: 8 })`), and back judgements with numbers:
-  `img.measure(points)` (step, spread, snr, stepChroma of a spot against its surroundings; stepChroma is null when |snr| < 1),
-  `regions.measure(img, { ring: true }).sortBy("snr")`, `img.profile(a, b).look()`.
-- **Region items are flat** (`{ id, x, y, w, h, cx, cy, area, aspect, … }`; `x, y` a corner, `cx, cy` a centre) and
-  can be passed wherever a box, point or id is expected: `img.crop(item)`, `img.measure(items)`, `only(item)`.
+  `img.measure(items)` (step, spread, snr, stepChroma of each item against its surroundings, sized from the item;
+  stepChroma is null when |snr| < 1), `img.profile(a, b).look()`.
+- **Region items are flat** (`{ id, x, y, w, h, cx, cy, area, aspect, … }`; `x, y` a corner, `cx, cy` a centre), stay
+  linked to their pixels, and can be passed wherever a box or point is expected: `img.crop(item)`. Literal boxes
+  `{ x, y, w, h }` and circles `{ cx, cy, r }` mix in; ids may repeat, and `label` is printed instead of the id.
 
 ## Embedding
 

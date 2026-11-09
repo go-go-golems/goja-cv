@@ -30,12 +30,12 @@ Most used calls
 - node.look("label") or node.look({ label, maxSide }) queues an image: every look of an eval is delivered (returned or not, also after a throw), at most four; a LOOKS warning names the others. Captions give the op chain and the scale: 1 image px = S doc px. cv.explain(node) describes a node without evaluating it.
 - Magnify with coordinates: img.crop([x, y, w, h]).look({ zoom: 8, ruler: 8 }) (crop last; rulers read absolute doc px).
 - Views that make small things stand out: img.view("speck" | "speckDark" | "signed" | "detail" | "neutral" | "scene"), img.highpass(sigma), img.dog(1, 4); cv.docs.read("views").
-- Many candidates in one image: cv.sheet(regions.sortBy("area").top(36), { views: [img, img.view("speck")] }).look(); mark points with img.annotate([{ circle: [x, y, r] }]).
+- Many candidates in one image: cv.sheet(items, { views: [img, img.view("speck")] }).look(); mark points with img.annotate([{ circle: [x, y, r] }]).
 - cv.compare([a, b], { mode: "side" | "split" }) to see before/after; a.sub(b) is their signed difference (.mul(4).add(0.5) shows zero as grey).
 - Masks are one-channel images: img.mask.luminance({ above, below }), mask.box([x, y, w, h]), mask.gradient({ from: "top", to: 0.5 }), mask.flood, img.toGray(); a.and(b), a.or(b), a.minus(b), a.not(), m.feather(r), m.grow(r), m.coverage().
 - img.within(mask, i => i.exposure(-0.4)) edits inside a mask (the function runs when built).
-- Dust: img.detect.specks() → Regions with flat items { id, x, y, w, h, cx, cy, area, … } (pass an item as box, point or id); .where({ score: { gte: 0.5 } }), .sortBy("area").top(n), .without([id]); img.overlay(regions, { labels: "id" }).look(); img.heal(regions, { radius }).
-- Measure: img.measure(points) (step, spread, snr, stepChroma), img.sample, img.profile(a, b).look(), regions.measure(img, { ring: true }); cv.docs.read("measuring").
+- Regions (img.detect.specks(), m.components()) have no methods; awaited: an array of items { id, x, y, w, h, cx, cy, area, … } to filter/sort/slice in JS and pass back: img.overlay(items, { labels: "id" }), img.heal(items). Boxes { x, y, w, h } and circles { cx, cy, r } mix in.
+- Measure: img.measure(items) (step, spread, snr, stepChroma; radii from each item, points need coreRadius), img.sample, img.profile(a, b).look(); cv.docs.read("measuring").
 - Data: return cv.csv(x, { name }) or cv.json(x) for all rows; node.save(path) under --out-root; cv.docs.read("data-out").
 
 More: cv.docs.list() (topics), cv.docs.search("heal dust") (sections with snippets), cv.docs.read(id, { section }) (Markdown); start with cv.docs.read("getting-started") and cv.docs.read("recipes"). cv.help(op) describes one op (arguments, units, defaults). Resources: cv://docs/<id>, cv://reference (every op) and cv://guide/<slug> (the guidebook).`

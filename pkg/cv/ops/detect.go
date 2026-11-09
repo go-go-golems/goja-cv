@@ -64,10 +64,9 @@ func detectOps() []graph.OpDef {
 			Doc: "Find small dark/bright specks (dust): the luminance in the image's space (file units for an opened file) minus a morphological background, " +
 				"thresholded at max(minContrast, 4σ noise) with hysteresis, labelled, at most maxArea. " +
 				"Each region has contrast, localNoise, sharpness (soft round blobs like stars are low) and score in [0, 1]; " +
-				"keep real dust with .where({ score: { gte: 0.5 } }). Regions are analysed at analysisScale (default 1), so ids and boxes are the same in a look and a measurement.",
-			Fields:   fixedFields(speckFields),
-			Produces: speckProduces,
-			See:      []string{"heal", "check.dust", "where", "overlay"},
+				"keep real dust with (await img.detect.specks()).filter(r => r.score >= 0.5). Regions are analysed at analysisScale (default 1), so ids and boxes are the same in a look and a measurement.",
+			Fields: fixedFields(speckFields),
+			See:    []string{"heal", "check.dust", "measure", "overlay"},
 		},
 		{
 			Name: "check.dust", On: graph.KindImage, Returns: graph.KindValue, Global: true,
@@ -103,7 +102,7 @@ func detectOps() []graph.OpDef {
 					"maxArea": maxArea, "coverage": area / float64(src.Frame.W*src.Frame.H), "noise": res.Noise,
 				}
 				if count > 0 {
-					out["hint"] = "img.heal(img.detect.specks().where({ score: { gte: 0.5 } }), { radius: 3 })"
+					out["hint"] = "img.heal((await img.detect.specks()).filter(r => r.score >= 0.5), { radius: 3 })"
 				}
 				return data(out), nil
 			},

@@ -23,9 +23,9 @@ Every node has one kind, and every op says which kinds it takes and returns.
 
 | kind | what it evaluates to | made by |
 |---|---|---|
-| Image | float32 pixels with an encoding (srgb or linear), a space, a channel count (1 or 3) and a frame (await gives a summary, never pixels); a mask is a one-channel image of weights in [0, 1] | `img`, `exposure`, `levels`, `within`, `heal`, `overlay`; masks: `img.mask.luminance`, `img.mask.box`, `regions.toMask()` |
-| Regions | discrete areas with flat fields id, x, y, w, h (box), cx, cy (centroid), area, aspect and measures | `img.detect.specks()`, `mask.components()` |
-| Value | plain data: numbers, objects, arrays | `stats`, `histogram`, `coverage`, `count` |
+| Image | float32 pixels with an encoding (srgb or linear), a space, a channel count (1 or 3) and a frame (await gives a summary, never pixels); a mask is a one-channel image of weights in [0, 1] | `img`, `exposure`, `levels`, `within`, `heal`, `overlay`; masks: `img.mask.luminance`, `img.mask.box`, `img.mask.regions(items)` |
+| Regions | discrete areas with flat fields id, x, y, w, h (box), cx, cy (centre), area, aspect and measures; no methods; awaited, an array of items | `img.detect.specks()`, `mask.components()`, `img.measure(items)` |
+| Value | plain data: numbers, objects, arrays | `stats`, `histogram`, `coverage`, `profile` |
 
 ## Lazy, immutable, shared nodes
 
@@ -39,8 +39,8 @@ const b = a.gaussian(2)
 return { same: a === img.exposure(0.3), graph: cv.explain(b).graph, summary: await b }
 ```
 
-Awaited data still remembers its node, so `const r = await img.detect.specks()` followed by
-`r.where(...)` works; data fields win where names collide (`r.count` is the number). A node that is built and
+Awaited regions are a plain array: `const r = await img.detect.specks()`, then `r.filter(...)`, `r.sort(...)`,
+`r.slice(...)` are JavaScript, and the array goes back wherever regions go. A node that is built and
 thrown away produces an `UNUSED_NODE` warning, and reading a field of an unawaited measurement
 (`img.stats().p99`) or comparing a node with `<` is `E_NOT_AWAITED` — await it first.
 
@@ -73,25 +73,27 @@ computed from linear light, and a look shows encoded values; masks and derived i
 ## Masks and regions
 
 A **mask** is a soft field (a feathered sky): a one-channel image of weights, read as stored (never converted
-between spaces), on which every image op works; **regions** are identified things you count, rank and exclude
-(143 specks, drop id 31). Each converts into the other: `regions.toMask()`, `mask.components()`.
+between spaces), on which every image op works; **regions** are things you count, rank and exclude
+(143 specks, drop id 31). Awaited regions are an array of **items**; each stays linked to its region's exact pixels
+through `filter`, `sort`, `slice` and `{ ...r }`, and literal boxes `{ x, y, w, h }` and circles `{ cx, cy, r }`
+mix in. Ids are data (they may repeat); a `label` is printed instead of the id. Each converts into the other:
+`img.mask.regions(items)`, `mask.components()`.
 
 ```js
 const sel = img.mask.luminance({ above: 0.45 }).minus(img.mask.box([0, 0, 40, 40])).feather(6)
-const specks = img.detect.specks().where({ score: { gte: 0.5 } }).sortBy("area").top(3)
+const specks = (await img.detect.specks()).filter(r => r.score >= 0.5).sort((a, b) => b.area - a.area).slice(0, 3)
 return {
   coverage: await sel.coverage(),
   inside: (({ meanL, area }) => ({ meanL, area }))(await img.stats({ mask: sel })),
-  biggest: (await specks).items.map(r => ({ id: r.id, x: r.x, y: r.y, w: r.w, h: r.h })),
+  biggest: specks.map(r => ({ id: r.id, x: r.x, y: r.y, w: r.w, h: r.h })),
 }
 ```
 
 ## Lambdas
 
-Two kinds of function can be passed in. **Builder** lambdas run once while the graph is built and return
-nodes: `img.within(mask, i => i.exposure(-0.5))`. **Data** lambdas run at evaluation time on small data:
-`regions.filter(r => r.aspect > 2)`. There are no per-pixel JavaScript functions; prefer `where({ … })`, which
-runs in Go.
+The one function cv takes is a **builder** lambda: it runs once while the graph is built and returns nodes:
+`img.within(mask, i => i.exposure(-0.5))`. Data is selected with JavaScript on awaited arrays
+(`(await regions).filter(r => r.aspect > 2)`). There are no per-pixel JavaScript functions.
 
 ## Looks
 

@@ -48,8 +48,8 @@ func TestSessionB(t *testing.T) {
 		const specks = globalThis.specks = scan.detect.specks({ maxArea: 120, minContrast: 0.04 })
 		const r = await specks
 		const look = await scan.overlay(specks, { labels: "id", color: "red" })
-		const star = r.items.reduce((a, b) => (b.score < a.score ? b : a))
-		return { count: r.count, largest: r.items.slice(0, 5), look, star }`, scan)).(map[string]any)
+		const star = r.reduce((a, b) => (b.score < a.score ? b : a))
+		return { count: r.length, largest: r.slice(0, 5), look, star }`, scan)).(map[string]any)
 	if r1["count"] != int64(41) {
 		t.Fatalf("eval 1 count %v", r1["count"])
 	}
@@ -70,11 +70,11 @@ func TestSessionB(t *testing.T) {
 	}
 	t.Logf("eval 1: count %v, largest %v, star id %v score %v", r1["count"], first, starID, star["score"])
 
-	// eval 2: exclude the star by id, keep a score threshold
+	// eval 2: exclude the star by id, keep a score threshold (JavaScript on the awaited array)
 	r2 := mustRun(t, rt, fmt.Sprintf(`
-		const keep = globalThis.keep = specks.where({ score: { gte: 0.5 } }).without([%v])
+		const keep = globalThis.keep = (await specks).filter(r => r.score >= 0.5 && r.id !== %v)
 		const healed = globalThis.healed = scan.heal(keep, { radius: 3 })
-		const n = await keep.count()
+		const n = keep.length
 		const h = await healed
 		const after = await healed.check.dust()
 		return { n, h, after: after.verdict, afterCount: after.count }`, starID)).(map[string]any)
@@ -84,18 +84,18 @@ func TestSessionB(t *testing.T) {
 	eng := engineOf(t, rt)
 	detect := nodeByOp(t, eng, "detect.specks")
 	heal := nodeByOp(t, eng, "heal")
-	where := nodeByOp(t, eng, "where")
-	if len(detect) != 1 || len(heal) != 1 || len(where) != 1 {
-		t.Fatalf("nodes: detect %d heal %d where %d", len(detect), len(heal), len(where))
+	items := nodeByOp(t, eng, "items")
+	if len(detect) != 1 || len(heal) != 1 || len(items) != 1 {
+		t.Fatalf("nodes: detect %d heal %d items %d", len(detect), len(heal), len(items))
 	}
 	runsDetect, runsHeal := eng.Evaluator().Runs(detect[0].ID), eng.Evaluator().Runs(heal[0].ID)
 
 	// eval 3: another threshold (0) — the star stays excluded by id,
-	// detection does not re-run, only the new where and below
+	// detection does not re-run, only the new items and below
 	r3 := mustRun(t, rt, fmt.Sprintf(`
-		const keep0 = specks.where({ score: { gte: 0 } }).without([%v])
-		const n = await keep0.count()
-		await scan.heal(keep0, { radius: 3 }).stats()   // awaiting an Image computes nothing: measure it
+		const keep0 = (await specks).filter(r => r.score >= 0 && r.id !== %v)
+		const n = keep0.length
+		await scan.heal(keep0, { radius: 2 }).stats()   // awaiting an Image computes nothing: measure it
 		return { n }`, starID)).(map[string]any)
 	if r3["n"] != int64(40) {
 		t.Fatalf("eval 3: %v", r3)
@@ -108,8 +108,8 @@ func TestSessionB(t *testing.T) {
 	}
 	// the same regions at preview scale and at full scale (doc px)
 	same := mustRun(t, rt, `
-		const a = await keep, b = await keep
-		return JSON.stringify(a.items) === JSON.stringify(b.items) && a.count === b.count`)
+		const a = await specks, b = await specks
+		return JSON.stringify(a) === JSON.stringify(b) && a.length === b.length`)
 	if same != true {
 		t.Fatal("regions differ between two awaits")
 	}

@@ -23,21 +23,21 @@ func contentByCaption(t *testing.T, app *cvsession.App, sid, code string) (strin
 func TestDataContentLazyEagerAndColumns(t *testing.T) {
 	app, sid := acceptanceApp(t)
 	out, items := contentByCaption(t, app, sid, `
-const specks = img.detect.specks().sortBy("area").top(5)
-const r = await specks
-r.items[0].note = "edited"
-const rows = await img.measure([[200.5, 46.5], [43.5, 67.5]])
+const specks = img.detect.specks()
+const r = (await specks).slice(0, 5)
+r[0].note = "edited"
+const rows = await img.measure([[200.5, 46.5], [43.5, 67.5]], { coreRadius: 3 })
 return {
   lazy: cv.csv(specks, { name: "specks" }),
-  eager: cv.json(r.items, { name: "edited" }),
+  eager: cv.json(r, { name: "edited" }),
   cols: cv.csv(specks, { name: "cols", columns: ["id", "cx", "cy", "score"] }),
   rows: cv.json(rows, { name: "rows" }),
 }`)
 	_, prof := contentByCaption(t, app, sid, `return cv.csv(img.profile([190.5, 46.5], [195.5, 46.5]), { name: "prof" })`)
-	mustContain(t, out, "lazy: '[content 1: data specks.csv (15 columns of top)]'", "eager: '[content 2: data edited.json (5 items)]'",
-		"cols: '[content 3: data cols.csv (4 columns of top)]'")
+	mustContain(t, out, "lazy: '[content 1: data specks.csv (15 columns of detect.specks)]'", "eager: '[content 2: data edited.json (5 items)]'",
+		"cols: '[content 3: data cols.csv (4 columns of detect.specks)]'")
 	csv := items["data specks.csv"]
-	if lines := strings.Split(strings.TrimSpace(csv), "\n"); len(lines) != 6 || lines[0] != "id,x,y,w,h,cx,cy,area,aspect,contrast,localNoise,sharpness,score,meanL,polarity" {
+	if lines := strings.Split(strings.TrimSpace(csv), "\n"); len(lines) != 42 || lines[0] != "id,x,y,w,h,cx,cy,area,aspect,contrast,localNoise,sharpness,score,meanL,polarity" {
 		t.Fatalf("specks.csv:\n%s", csv)
 	}
 	var edited []map[string]any
@@ -47,7 +47,7 @@ return {
 	if !strings.HasPrefix(items["data cols.csv"], "id,cx,cy,score\n") {
 		t.Fatalf("cols.csv:\n%s", items["data cols.csv"])
 	}
-	if !strings.HasPrefix(items["data rows.json"], `[{"cx":200.5,"cy":46.5,"coreMean":`) {
+	if !strings.HasPrefix(items["data rows.json"], `[{"id":1,"x":200.5,"y":46.5,"w":0,"h":0,"cx":200.5,"cy":46.5,"area":0,"aspect":1,"coreMean":`) {
 		t.Fatalf("rows.json in schema order:\n%s", items["data rows.json"])
 	}
 	if p := prof["data prof.csv"]; !strings.HasPrefix(p, "t,cx,cy,meanL,meanR,meanG,meanB\n0,190.5,46.5,") || strings.Count(p, "\n") != 7 {
@@ -105,7 +105,7 @@ return { s: [s.format, s.rows, s.path.endsWith("t/specks.csv")].join(" "), j: j.
 	// within the budget: no warning
 	mustNotContain(t, mustOK(t, eval(t, app, sid, `return [1, 2, 3, 4].map(i => img.exposure(i / 10).look("ok" + i))`)), "LOOKS", "not delivered")
 	// over the byte limit: a note to save it
-	resp = eval(t, app, sid, `return cv.csv(img.measure(Array.from({ length: 200 }, (_, i) => [i + 0.5, 50.5])), { name: "big" })`)
+	resp = eval(t, app, sid, `return cv.csv(img.measure(Array.from({ length: 200 }, (_, i) => [i + 0.5, 50.5]), { coreRadius: 3 }), { name: "big" })`)
 	mustOK(t, resp)
 	if len(resp.Content) != 1 || resp.Content[0].MIMEType != "text/plain" || !strings.Contains(string(resp.Content[0].Data), `too large for the conversation`) ||
 		!strings.Contains(string(resp.Content[0].Data), `.save("big.csv")`) {

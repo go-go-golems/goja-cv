@@ -21,13 +21,14 @@ marks the failing call), `hint` and usually `fix` (literal code). Apply the fix 
 
 | code | usually means |
 |---|---|
-| E_UNKNOWN_METHOD / E_NAMESPACE | wrong method name or kind (`specks.heal()` → `img.heal(specks)`); see `fix` |
+| E_UNKNOWN_METHOD / E_NAMESPACE | wrong method name or kind (`img.blur(2)` → `img.gaussian(2)`); see `fix` |
 | E_UNKNOWN_OPTION | option misspelt or named differently (`min` → `above`, `radius` → `sigma` on a blur) |
 | E_ARG_TYPE / E_ARG_RANGE | wrong type or outside hard limits; `cv.help(op)` lists units and ranges |
-| E_WRONG_KIND | a colour image where a mask (one channel) is expected (fix `img.toGray()`), regions where a mask is expected (`.toMask()`), or plain data where a node was expected |
-| E_NOT_AWAITED | a field of, or a number from, an unawaited measurement: `(await img.stats()).p99` |
-| E_NOT_ARRAY | awaited Regions used as an array: they are `{ count, items }`; use `.items` |
-| TypeError with a hint | a JavaScript error on cv data, translated (`r.count()` after await → `r.count`) |
+| E_WRONG_KIND | a colour image where a mask (one channel) is expected (fix `img.toGray()`), regions where a mask is expected (`img.mask.regions(regions)`), or plain data where a node was expected |
+| E_NOT_AWAITED | a field of, or a number from, an unawaited measurement or region set: `(await img.stats()).p99`; regions have no methods: `img.heal(regions)`, `(await regions).filter(…)` |
+| E_ARG_TYPE "item 3 was moved" | the box of an awaited region item was edited: pass a plain box `{ x, y, w, h }` for new geometry |
+| ITEMS warning | objects that look like region items lost their link (a `map` that built new objects): spread them, `{ ...r, note }` |
+| TypeError with a hint | a JavaScript error on cv data, translated (`r.count()` after await → `r.length`) |
 | E_NO_IMAGE | nothing open: `img = cv.open("scan.tif")` or start with `--image` |
 | E_ACCESS | the path is outside `--root` |
 | E_TIMEOUT | the eval ran longer than the limit (60 s; `--timeout-ms`) |

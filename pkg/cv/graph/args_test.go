@@ -51,7 +51,6 @@ func TestAccessorsAreLoud(t *testing.T) {
 		"unknown argument":         func() { a.Number("nope") },
 		"Value at build time":      func() { a.Value("m") },
 		"Input of a literal":       func() { a.Input("s") },
-		"Func of a string":         func() { a.Func("s") },
 	} {
 		if msg := mustPanic(t, name, f); !strings.HasPrefix(msg, "cv: ") {
 			t.Fatalf("%s: %q", name, msg)

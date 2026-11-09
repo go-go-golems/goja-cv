@@ -260,8 +260,8 @@ return { cov: await sky.coverage(), sky: sky.look("sky"), darker: darker.look("d
 		t.Fatalf("content %+v", resp.Content)
 	}
 	resp = eval(t, app, sid, `const m = img.mask.luminance({ above: 0.5 })
-const big = m.components().filter(x => x.area > 10)
-return { n: await big.count(), sel: img.overlay(m).look("sel") }`)
+const big = (await m.components()).filter(x => x.area > 10)
+return { n: big.length, sel: img.overlay(m).look("sel") }`)
 	mustContain(t, text(resp), "n: ", "look 3: sel")
 	mustNotContain(t, text(resp), "UNUSED_NODE", "error")
 	out = text(eval(t, app, sid, `return img.mask.luminance({ above: 0.5 }).components().look()`))
@@ -284,7 +284,7 @@ func TestCrossKindErrorsHaveALiteralFixAndGrammar(t *testing.T) {
 		"const specks = img.detect.specks()\nreturn specks.heal()": {"code: E_NOT_AWAITED", "regions are arguments of image methods", "fix: img.heal(regions, …)"},
 		`return img.within(img, i => i.exposure(-0.4))`:            {"code: E_WRONG_KIND", "needs a one-channel image (a mask); this image has 3 channels", "where: 'line 1: return img.within(img, i => i.exposure(-0.4))'", "fix: img.toGray()"},
 		`return img.coverage()`:                                    {"code: E_WRONG_KIND", "coverage needs a one-channel image (a mask or a grey image); this image has 3 channels", "fix: img.toGray().coverage(…)"},
-		`return img.detect.specks().feather(2)`:                    {`"feather" is a method of a one-channel image (a mask)`, "fix: regions.toMask().feather(…)"},
+		`return img.detect.specks().feather(2)`:                    {`"feather" is a method of a one-channel image (a mask)`, "fix: img.mask.regions(regions).feather(…)"},
 		`return img.stats().exposure(1)`:                           {"Value has no method \"exposure\"", "fix: img.exposure(…)"},
 		`if (img > 1) return 1`:                                    {"code: E_NOT_AWAITED", "fix: (await img).w"},
 		`img.foo = 1`:                                              {`cannot set "foo" on an Image node`},
@@ -340,40 +340,33 @@ func TestBatchedHelpNeverThrows(t *testing.T) {
 	mustContain(t, out, "overlay:", "mask.luminance:", "coverage:", "explain:", "found: false", "name: nope")
 }
 
-// TestAwaitedDataKeepsItsNode is pi run 1 calls 10, 15, 23 and 24: agents
-// await a node and keep using the result as the node.
-func TestAwaitedDataKeepsItsNode(t *testing.T) {
+// TestAwaitedRegionsAreArrays is pi run 1 calls 10, 15, 23 and 24 in v2:
+// agents await regions and keep using the result where regions go.
+func TestAwaitedRegionsAreArrays(t *testing.T) {
 	app, sid := newApp(t, cvsession.Options{Image: planted(t)})
 	resp := eval(t, app, sid, `const r = await img.detect.specks({ polarity: 'both' })
-const dust = r.where({ score: { gte: 0.5 } })
-const viaFilter = r.filter(x => x.score >= 0.5)
-const healed = img.heal(r.where({ score: { gte: 0.5 } }), { radius: 3 })
+const dust = r.filter(x => x.score >= 0.5)
+const healed = img.heal(dust, { radius: 3 })
 return {
-  n: r.count, keys: Object.keys(r), json: Object.keys(JSON.parse(JSON.stringify(r))),
-  dust: await dust.count(), filtered: (await viaFilter).count,
+  n: r.length, keys: Object.keys(r[0]).length, json: Object.keys(JSON.parse(JSON.stringify(r[0]))).length,
+  dust: dust.length,
   explain: cv.explain(img.detect.specks({ polarity: 'both' })).graph.length > 0,
   after: (await healed.check.dust()).count,
-  healedDirect: (await img.heal(await dust).check.dust()).count,
   overlay: img.overlay(r, { labels: "id" }).look("all"),
   summary: Object.keys(await img),
-  brighter: (await (await img).exposure(1).stats()).meanL > (await img.stats()).meanL,
 }`)
 	out := text(resp)
-	t.Logf("%s", out)
 	if resp.Cell.Execution.Status != "ok" {
 		t.Fatalf("status %s:\n%s", resp.Cell.Execution.Status, out)
 	}
-	mustContain(t, out, "n: 41", "keys: [count, frame, items, kind, scale]", "json: [count, frame, items, kind, scale]",
-		"dust: 40", "filtered: 40", "explain: true", "after: 0", "healedDirect: 0", "look 1: all", "brighter: true")
-	mustNotContain(t, out, "where:", "UNUSED_NODE")
-	// returning awaited data renders exactly the data
-	out = text(eval(t, app, sid, `const r = await img.detect.specks(); return { count: r.count, items: r.items.length, w: r.frame[2] }`))
-	mustContain(t, out, "{count: 41, items: 41, w: 256}")
-	out = text(eval(t, app, sid, `const s = await img.stats(); return s`))
-	mustNotContain(t, out, "levels", "exposure", "pick:")
+	mustContain(t, out, "n: 41", "keys: 15", "json: 15", "dust: 40", "explain: true", "after: 0", "look 1: all")
+	mustNotContain(t, out, "UNUSED_NODE", "ITEMS")
+	// returning awaited items renders exactly the data
+	out = text(eval(t, app, sid, `const r = await img.detect.specks(); return { count: r.length, first: r[0].id }`))
+	mustContain(t, out, "{count: 41, first: 9}")
 	// plain objects that never came from a node still get a structured error with a fix
 	out = text(eval(t, app, sid, `return img.overlay({ items: [] }).look()`))
-	mustContain(t, out, "code: E_WRONG_KIND", "fix:")
+	mustContain(t, out, "code: E_ARG_TYPE", "takes regions")
 }
 
 // TestImageMetadata: both pi runs inferred bit depth from histogram
@@ -421,39 +414,26 @@ func TestUnknownNamesOnCv(t *testing.T) {
 }
 
 // TestAwaitedRegionsMisuseGetsStructuredErrors: pi run 3 calls 7 and 8, run 4
-// call 5, verbatim.
+// call 5, verbatim: the array calls now work; count() names length.
 func TestAwaitedRegionsMisuseGetsStructuredErrors(t *testing.T) {
 	app, sid := newApp(t, cvsession.Options{Image: planted(t)})
-	for code, want := range map[string][]string{
-		// run 3 call 7: count is data after await
-		`const dust = await img.check.dust({});
+	out := text(eval(t, app, sid, `const dust = await img.check.dust({});
 const specks = await img.detect.specks({});
 const cnt = await specks.count();
-return { cnt }`: {"code: TypeError", "where: 'line 3: const cnt = await specks.count();'",
-			"After await, specks is data: specks.count is a number (41), not a method.", "fix: specks.count"},
-		// run 4 call 5
-		`const specks = img.detect.specks();
+return { cnt }`))
+	mustContain(t, out, "code: TypeError", "where: 'line 3: const cnt = await specks.count();'", "awaited regions are an array", "fix: specks.length")
+	out = text(eval(t, app, sid, `const specks = img.detect.specks();
 const all = await specks.sortBy("area");
-return { total: all.count ? await all.count() : null }`: {"After await, all is data: all.count is a number (41)", "fix: all.count"},
-		// run 3 call 8: awaited top(n) used as an array
-		`const specks = await img.detect.specks({});
-const rows = await specks.top(1000);
-return { first: rows.slice(0, 3) }`: {"code: E_NOT_ARRAY", "where: 'line 3: return { first: rows.slice(0, 3) }'",
-			"Awaited Regions are { count, items: [...] }", "fix: rows.items.slice(…)"},
-		`const rows = await img.detect.specks()
-const ids = rows.map(r => r.id)
-return ids`: {"code: E_NOT_ARRAY", "fix: rows.items.map(…)"},
-		`const rows = await img.detect.specks()
+return { total: all.length }`))
+	mustContain(t, out, "code: E_NOT_AWAITED", "fix: (await img.detect.specks()).sortBy")
+	for _, code := range []string{`const specks = await img.detect.specks({});
+return { first: specks.slice(0, 3).length }`, `const rows = await img.detect.specks()
+return rows.map(r => r.id).length`, `const rows = await img.detect.specks()
 let n = 0
 for (const r of rows) n++
-return n`: {"code: E_NOT_ARRAY", "for (const r of regions.items)"},
-	} {
-		out := text(eval(t, app, sid, code))
-		mustContain(t, out, want...)
+return n`} {
+		mustOK(t, eval(t, app, sid, code))
 	}
-	// the data itself is unchanged
-	out := text(eval(t, app, sid, `const r = await img.detect.specks(); return { n: r.count, items: r.items.length, keys: Object.keys(r).join(",") }`))
-	mustContain(t, out, "n: 41", "items: 41", "keys: 'count,frame,items,kind,scale'")
 }
 
 func TestRawTypeErrorsOnDataNameTheOp(t *testing.T) {

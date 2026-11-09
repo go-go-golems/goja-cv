@@ -54,15 +54,6 @@ func (ec *EvalCtx) warnings() []Warning {
 	return append([]Warning(nil), ec.warns...)
 }
 
-// Callbacks runs JavaScript data lambdas for ops such as Regions.filter.
-// The binding implements it by scheduling onto the runtime owner goroutine;
-// evaluation never runs on that goroutine, so the call can be served.
-type Callbacks interface {
-	// CallEach calls function id once per element of args and returns the
-	// results as plain data.
-	CallEach(ctx context.Context, id FuncID, args []any) ([]any, error)
-}
-
 // Evaluator computes node values with signature-keyed caching, shared
 // in-flight work, the identity short-circuit and parallel input evaluation.
 type Evaluator struct {
@@ -70,7 +61,6 @@ type Evaluator struct {
 	cache   *Cache
 	sources *SourceStore
 	flight  singleflight.Group
-	cbs     Callbacks
 
 	mu    sync.Mutex
 	runs  map[NodeID]int
@@ -80,25 +70,6 @@ type Evaluator struct {
 // NewEvaluator wires an evaluator to its graph, cache and sources.
 func NewEvaluator(b *Builder, cache *Cache, sources *SourceStore) *Evaluator {
 	return &Evaluator{b: b, cache: cache, sources: sources, runs: map[NodeID]int{}}
-}
-
-// SetCallbacks installs the runner for JavaScript data lambdas.
-func (e *Evaluator) SetCallbacks(c Callbacks) {
-	e.mu.Lock()
-	e.cbs = c
-	e.mu.Unlock()
-}
-
-// CallEach runs data lambda id on each of args through the installed
-// Callbacks.
-func (e *Evaluator) CallEach(ctx context.Context, id FuncID, args []any) ([]any, error) {
-	e.mu.Lock()
-	c := e.cbs
-	e.mu.Unlock()
-	if c == nil {
-		return nil, Errorf(EInternal, "no JavaScript runtime is attached to run data lambdas")
-	}
-	return c.CallEach(ctx, id, args)
 }
 
 func (e *Evaluator) Builder() *Builder            { return e.b }

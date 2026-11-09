@@ -3,7 +3,7 @@ package ops
 import "github.com/go-go-golems/goja-cv/pkg/cv/graph"
 
 // Field schemas of the ops' results (graph.FieldSpec, GCV-003 §7.5). One
-// list per result: the items JavaScript receives, where/sortBy, help and CSV
+// list per result: the items JavaScript receives, help and CSV
 // columns all read it.
 
 func numField(name string, unit graph.Unit, doc string) graph.FieldSpec {
@@ -31,12 +31,6 @@ var speckFields = graph.WithFields(graph.GeometryFields,
 	numField("meanL", graph.Level, "mean luminance inside the speck"),
 	strField("polarity", `"dark" or "bright"`),
 )
-
-// speckProduces are the fields detect.specks adds to geometry.
-var speckProduces = map[string]string{
-	"contrast": "img.detect.specks()", "localNoise": "img.detect.specks()", "sharpness": "img.detect.specks()",
-	"score": "img.detect.specks()", "polarity": "img.detect.specks()",
-}
 
 var statsBaseFields = []graph.FieldSpec{
 	numField("meanL", graph.Level, "mean luminance (Rec. 709 weights)"),

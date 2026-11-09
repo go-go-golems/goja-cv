@@ -78,7 +78,7 @@ func targetMask(ctx context.Context, op string, v graph.Value, base *graph.Image
 	var thr float32 = 0.5
 	switch x := v.(type) {
 	case *graph.RegionsValue:
-		if err := graph.SameFrame(op, x.Frame, base.Frame); err != nil {
+		if err := itemsCover(op, x, base.Frame); err != nil {
 			return nil, err
 		}
 		var err error
@@ -107,7 +107,7 @@ func healOps() []graph.OpDef {
 		{
 			Name: "heal", On: graph.KindImage, Returns: graph.KindImage, Space: graph.Physical,
 			Args: []graph.ArgSpec{
-				{Name: "target", Type: "Regions|Mask", Positional: true, Doc: "what to replace: regions, or a mask (≥ 0.5)"},
+				itemsArg("target", graph.ItemsType+"|"+graph.MaskType, "what to replace: regions (a Regions node or an array of items: region items, boxes, circles), or a mask (≥ 0.5)"),
 				{Name: "radius", Type: "number", Unit: graph.DocPx, Default: 3.0, Min: graph.F(0), Max: graph.F(200), Usual: [2]float64{0.5, 20},
 					Doc: "margin in doc px: each target is grown by this much before it is replaced"},
 				{Name: "method", Type: "enum:patch,diffuse", Default: "patch",

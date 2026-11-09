@@ -101,7 +101,6 @@ func (n *native) unknownMember(c goja.FunctionCall) goja.Value {
 // failure is an uncaught error of the current eval, read from the thrown value.
 type failure struct {
 	Name, Code, Message, Hint, Fix string
-	Member                         string // the member an E_NOT_ARRAY call used
 	Path, Valid                    []string
 	CV                             bool
 	Line, Column                   int // in the evaluated source
@@ -147,7 +146,6 @@ func readFailure(vm *goja.Runtime, v goja.Value) *failure {
 	}
 	f.Name, f.Code, f.Message = get("name"), get("code"), get("message")
 	f.Hint, f.Fix = get("hint"), get("fix")
-	f.Member = get("member")
 	f.Path, f.Valid = list("path"), list("valid")
 	f.CV = obj.Get("cv") != nil && obj.Get("cv").ToBoolean()
 	f.Stack = get("stack")

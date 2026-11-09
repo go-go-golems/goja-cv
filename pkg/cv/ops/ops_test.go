@@ -136,11 +136,13 @@ var walkSamples = map[string]func(w walkNodes) []any{
 	"sample": func(walkNodes) []any {
 		return []any{[]any{[]any{10.5, 10.5}, []any{30.0, 20.0}}, map[string]any{"radius": 2}}
 	},
-	"measure": func(walkNodes) []any { return []any{[]any{[]any{20.5, 20.5}}} },
-	"profile": func(walkNodes) []any { return []any{[]any{2.0, 24.0}, []any{60.0, 24.0}} },
-	"Regions:measure": func(w walkNodes) []any {
-		return []any{nodeArg(w.img), map[string]any{"stats": []any{"mean", "max"}, "ring": true}}
+	"measure": func(w walkNodes) []any {
+		return []any{nodeArg(w.regions), map[string]any{"stats": []any{"mean", "max"}, "ring": true}}
 	},
+	"mask.regions": func(w walkNodes) []any {
+		return []any{[]any{[]any{4.0, 4.0, 10.0, 6.0}, map[string]any{"cx": 30.0, "cy": 20.0, "r": 5.0}}}
+	},
+	"profile":        func(walkNodes) []any { return []any{[]any{2.0, 24.0}, []any{60.0, 24.0}} },
 	"mask.luminance": func(walkNodes) []any { return []any{map[string]any{"above": 0.4}} },
 	"mask.color":     func(walkNodes) []any { return []any{map[string]any{"hue": 30}} },
 	"mask.box":       func(walkNodes) []any { return []any{[]any{4, 4, 20, 10}} },
@@ -158,12 +160,6 @@ var walkSamples = map[string]func(w walkNodes) []any{
 		return []any{nodeArg(w.regions), map[string]any{"labels": "id", "color": []any{0.2, 0.9, 0.3}}}
 	},
 	"compare":       func(w walkNodes) []any { return []any{[]any{nodeArg(w.edited)}} },
-	"where":         func(walkNodes) []any { return []any{map[string]any{"area": map[string]any{"gte": 2}}} },
-	"without":       func(walkNodes) []any { return []any{[]any{1}} },
-	"only":          func(walkNodes) []any { return []any{1} },
-	"sortBy":        func(walkNodes) []any { return []any{"area"} },
-	"top":           func(walkNodes) []any { return []any{3} },
-	"toMask":        func(walkNodes) []any { return []any{map[string]any{"grow": 1}} },
 	"within":        func(w walkNodes) []any { return []any{nodeArg(w.mask), nodeArg(w.edited)} },
 	"heal":          func(w walkNodes) []any { return []any{nodeArg(w.regions), map[string]any{"radius": 1}} },
 	"crop":          func(walkNodes) []any { return []any{[]any{5.0, 7.0, 21.0, 13.0}} },
@@ -180,9 +176,8 @@ var walkSamples = map[string]func(w walkNodes) []any{
 	},
 }
 
-// walkSkip are ops the Go-only walk cannot evaluate (data lambdas need a
-// JavaScript runtime; they are covered by the runtime tests).
-var walkSkip = map[string]bool{"filter": true, "split": true} // split builds 3 nodes: channel_test.go
+// walkSkip are ops the walk does not evaluate.
+var walkSkip = map[string]bool{"split": true} // split builds 3 nodes: channel_test.go
 
 // TestRegistryWalk is the registry and channel property test (GCV-004
 // §7.5, §14.1): every op is built with sample arguments on colour, grey and
@@ -214,8 +209,6 @@ func TestRegistryWalk(t *testing.T) {
 			switch {
 			case op.On == graph.KindValue:
 				recvs = []*graph.Node{stats}
-			case op.On == graph.KindRegions:
-				recvs = []*graph.Node{regs}
 			case op.On != graph.KindImage: // sources are covered by Open
 			case op.OneChannel:
 				recvs = []*graph.Node{grey, mask}

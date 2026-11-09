@@ -10,7 +10,7 @@ import (
 )
 
 // Error and warning codes (guide Part 4, Appendix B, plus the M1 additions
-// E_NO_FIELD, E_IMMUTABLE, E_EVAL and E_INTERNAL and the M3 addition
+// E_IMMUTABLE, E_EVAL and E_INTERNAL and the M3 addition
 // E_PLACEHOLDER).
 const (
 	EUnknownMethod    = "E_UNKNOWN_METHOD"
@@ -22,7 +22,6 @@ const (
 	ENotAwaited       = "E_NOT_AWAITED" // a property of, or a primitive from, a lazy node
 	ETimeout          = "E_TIMEOUT"
 	ECancelled        = "E_CANCELLED"
-	ENoField          = "E_NO_FIELD"    // a removed field name read on an awaited region item
 	EImmutable        = "E_IMMUTABLE"   // assignment to a node property
 	EEval             = "E_EVAL"        // a kernel or IO failure during evaluation
 	EInternal         = "E_INTERNAL"    // a bug: an op panicked
@@ -51,7 +50,6 @@ type Error struct {
 	Valid   []string `json:"valid,omitempty"` // valid alternatives (option keys, methods, enum values)
 	Line    int      `json:"line,omitempty"`  // filled by the eval tool from the JS stack
 	cause   error
-	field   string // the unknown field of an UnknownFieldError (for the producer hint)
 }
 
 var _ error = &Error{}

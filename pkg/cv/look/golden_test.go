@@ -129,7 +129,7 @@ func goldenCases() []goldenCase {
 		{"sheet-2x2", classStrict, func(t *testing.T, e *graph.Engine, img graph.NodeID) graph.NodeID {
 			v := call(t, e, "view", img, "speck")
 			return call(t, e, "sheet", 0, []any{[]any{200.5, 46.5}, []any{40.0, 150.0, 30.0, 12.0}},
-				map[string]any{"views": []any{graph.NodeArg{ID: img}, graph.NodeArg{ID: v.ID}}, "size": 24.0, "zoom": 4.0}).ID
+				map[string]any{"views": []any{graph.NodeArg{ID: img}, graph.NodeArg{ID: v.ID}}, "size": 24.0, "zoom": 4.0, "labels": "index"}).ID
 		}, Options{}},
 	}
 }

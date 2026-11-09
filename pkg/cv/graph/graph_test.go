@@ -90,7 +90,7 @@ func testRegistry(t *testing.T) (*Registry, *atomic.Int64) {
 				m, _ := in[0].(*DataValue).Data.(map[string]any)
 				v, ok := m[a.String("name")]
 				if !ok {
-					return nil, Errorf(ENoField, "no field %q", a.String("name"))
+					return nil, Errorf(EArgType, "no field %q", a.String("name"))
 				}
 				return &DataValue{Data: v}, nil
 			}},

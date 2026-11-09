@@ -102,7 +102,7 @@ func selectionWeights(ctx context.Context, v graph.Value, src *graph.ImageValue)
 	var m *buffer.Buffer
 	switch x := v.(type) {
 	case *graph.RegionsValue:
-		if err := graph.SameFrame("stats", x.Frame, src.Frame); err != nil {
+		if err := itemsCover("stats", x, src.Frame); err != nil {
 			return nil, err
 		}
 		var err error
@@ -129,7 +129,7 @@ func measureOps() []graph.OpDef {
 			Args: []graph.ArgSpec{
 				{Name: "percentiles", Type: "number[]", Default: []any{}, Min: graph.F(0), Max: graph.F(1),
 					Doc: "extra luminance/channel percentiles as fractions, e.g. [0.005, 0.995]"},
-				{Name: "mask", Type: "Regions|Mask", Optional: true, Doc: "measure only inside this mask (weighted by it) or these regions"},
+				{Name: "mask", Type: graph.ItemsType + "|" + graph.MaskType, Optional: true, Doc: "measure only inside this mask (weighted by it) or these items (a Regions node or an array: region items, boxes, circles)"},
 				{Name: "box", Type: "box", Unit: graph.DocPx, Optional: true, InFrame: true, Doc: "measure only inside [x, y, w, h] (doc px, absolute in the image's frame); combines with mask"},
 			},
 			Fields: statsFields,

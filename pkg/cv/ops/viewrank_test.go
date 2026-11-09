@@ -11,7 +11,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 	"testing"
 
 	"github.com/go-go-golems/goja-cv/pkg/cv/graph"
@@ -20,87 +19,79 @@ import (
 
 // TestRealViewRanking ports the colleague's view metric (DUST-002
 // scripts/85-cv-views.py; GCV-002 guide §13.4) to the speck preset: for each
-// labelled tile, render img.view("speck") as the look a vision model gets,
-// find all local maxima (5 × 5, a plateau is one bump) on its luminance,
-// and rank each labelled point's peak (within r + 2 px, r ≤ 12) among them
-// (ties count against the point). The colleague measured a median rank of
-// 18 and 78 % of points among the 50 most visible bumps for his best view.
+// labelled tile, render the view as the look a vision model gets, find all
+// local maxima (5 × 5, a plateau is one bump) on its luminance, and rank
+// each labelled point's peak (within r + 2 px, r ≤ 12) among them (ties
+// count against the point). The labels change as the colleague annotates,
+// so the test compares views instead of asserting today's ranks: the speck
+// view must rank labelled specks earlier than the plain stretched tile
+// (levels({ auto: true })).
 //
 // Gated on GOJACV_TILES (default ~/dustdet/cv_tiles) and GOJACV_GOLD
-// (default ~/dustds/gold); labels are {tile}.final.json or {tile}.p1.json
-// (as the colleague's script read them, whether complete or not), points of
-// type dust, hair or scratch in absolute raw-scan coordinates, converted
-// with the tile's origin_x, origin_y.
+// (default ~/dustds/gold); labels are {tile}.final.json or {tile}.p1.json,
+// points of type dust, hair or scratch in absolute raw-scan coordinates,
+// converted with the tile's origin_x, origin_y. Tiles are opened with
+// encoding "linear" (their code value is density, DUST-002 script 82).
 func TestRealViewRanking(t *testing.T) {
-	tiles := tilesDir(t)
-	goldDir := os.Getenv("GOJACV_GOLD")
-	if goldDir == "" {
-		home, _ := os.UserHomeDir()
-		goldDir = filepath.Join(home, "dustds", "gold")
+	type rank struct {
+		median int
+		top50  float64
+		n      int
 	}
-	labels, _ := filepath.Glob(filepath.Join(goldDir, "*.p1.json"))
-	finals, _ := filepath.Glob(filepath.Join(goldDir, "*.final.json"))
-	if len(labels)+len(finals) == 0 {
-		t.Skipf("no gold labels in %s (set GOJACV_GOLD)", goldDir)
-	}
-	ids := map[string]bool{}
-	for _, f := range append(labels, finals...) {
-		b := filepath.Base(f)
-		ids[strings.TrimSuffix(strings.TrimSuffix(b, ".p1.json"), ".final.json")] = true
-	}
-	var ranks []int
-	nTiles := 0
-	for id := range ids {
-		tif := filepath.Join(tiles, id+".tif")
-		if _, err := os.Stat(tif); err != nil {
-			continue
-		}
-		pts := goldPoints(t, goldDir, id)
-		if len(pts) == 0 {
-			continue
-		}
-		var meta struct {
-			X float64 `json:"origin_x"`
-			Y float64 `json:"origin_y"`
-		}
-		raw, err := os.ReadFile(filepath.Join(tiles, id+".json"))
-		if err != nil || json.Unmarshal(raw, &meta) != nil {
-			continue
-		}
-		nTiles++
-		L := speckLook(t, tif)
-		peaks := bumpPeaks(L)
-		for _, p := range pts {
-			x, y := p.X-meta.X, p.Y-meta.Y
-			rr := math.Min(p.R, 12) + 2
-			pk, ok := peakNear(L, x, y, rr)
-			if !ok {
-				continue
+	views := map[string]func(e *graph.Engine, img *graph.Node) *graph.Node{
+		"speck": func(e *graph.Engine, img *graph.Node) *graph.Node {
+			cr, err := e.Call("view", img.ID, []any{"speck"})
+			if err != nil {
+				t.Fatal(err)
 			}
-			n := 0
-			for _, v := range peaks {
-				if v >= pk-0.5 {
-					n++
+			return cr.Node()
+		},
+		"levels": func(e *graph.Engine, img *graph.Node) *graph.Node {
+			cr, err := e.Call("levels", img.ID, []any{map[string]any{"auto": true}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			return cr.Node()
+		},
+	}
+	res := map[string]rank{}
+	tiles := labelledTiles(t)
+	for name, view := range views {
+		var ranks []int
+		for _, lt := range tiles {
+			L := viewLook(t, lt.tif, view)
+			peaks := bumpPeaks(L)
+			for _, p := range lt.pts {
+				pk, ok := peakNear(L, p.X-lt.ox, p.Y-lt.oy, math.Min(p.R, 12)+2)
+				if !ok {
+					continue
 				}
+				n := 0
+				for _, v := range peaks {
+					if v >= pk-0.5 {
+						n++
+					}
+				}
+				ranks = append(ranks, max(n, 1))
 			}
-			ranks = append(ranks, max(n, 1))
 		}
-	}
-	if len(ranks) == 0 {
-		t.Skip("no labelled tile has its tile file")
-	}
-	sort.Ints(ranks)
-	median := ranks[len(ranks)/2]
-	top50 := 0
-	for _, r := range ranks {
-		if r <= 50 {
-			top50++
+		if len(ranks) == 0 {
+			t.Skip("no labelled point lies in its tile")
 		}
+		sort.Ints(ranks)
+		top := 0
+		for _, r := range ranks {
+			if r <= 50 {
+				top++
+			}
+		}
+		res[name] = rank{ranks[len(ranks)/2], float64(top) / float64(len(ranks)), len(ranks)}
+		t.Logf("%s view: %d points on %d tiles, median rank %d, top50 %.1f %%", name, len(ranks), len(tiles), res[name].median, 100*res[name].top50)
 	}
-	frac := float64(top50) / float64(len(ranks))
-	t.Logf("speck view: %d points on %d tiles, median rank %d, top50 %.1f %%", len(ranks), nTiles, median, 100*frac)
-	if median > 30 || frac < 0.70 {
-		t.Fatalf("speck view ranks labelled specks too late: median %d (want ≤ 30), top50 %.1f %% (want ≥ 70 %%)", median, 100*frac)
+	sp, lv := res["speck"], res["levels"]
+	if sp.median >= lv.median || sp.top50 <= lv.top50 {
+		t.Fatalf("the speck view ranks labelled specks no earlier than levels({ auto: true }): median %d vs %d, top50 %.1f %% vs %.1f %%",
+			sp.median, lv.median, 100*sp.top50, 100*lv.top50)
 	}
 }
 
@@ -140,20 +131,13 @@ func goldPoints(t *testing.T, dir, id string) []goldPoint {
 	return nil
 }
 
-// speckLook renders img.view("speck") as a look (maxSide 1024, as the
-// colleague's script did) and returns its 8-bit luminance.
-func speckLook(t *testing.T, tif string) [][]float64 {
+// viewLook renders a view of a tile (opened with encoding "linear") as a
+// look (maxSide 1024, as the colleague's script did) and returns its 8-bit
+// luminance.
+func viewLook(t *testing.T, tif string, view func(e *graph.Engine, img *graph.Node) *graph.Node) [][]float64 {
 	t.Helper()
 	e := graph.NewEngine(NewRegistry(), graph.EngineOptions{})
-	img, err := e.Open(tif, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	cr, err := e.Call("view", img.ID, []any{"speck"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	l, err := look.New(e, cr.Node().ID, look.Options{MaxSide: 1024})
+	l, err := look.New(e, view(e, openTile(t, e, tif)).ID, look.Options{MaxSide: 1024})
 	if err != nil {
 		t.Fatal(err)
 	}

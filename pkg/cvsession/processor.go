@@ -440,7 +440,7 @@ func (s *state) errorNode(vm *goja.Runtime, evalErr error, trace cvmod.EvalTrace
 		s.broken = true
 		f.Hint = brokenMessage
 	}
-	s.explainDataMisuse(f, trace)
+	s.explainDataMisuse(f)
 	code := f.Code
 	if code == "" {
 		code = f.Name
@@ -493,48 +493,40 @@ func receiverOf(src, member string) string {
 	return ""
 }
 
-// explainDataMisuse turns errors caused by treating awaited cv data like its
-// node into a hint and a literal fix: E_NOT_ARRAY gets the real receiver in
-// its fix, and a raw TypeError from calling a data field that shadows a node
-// method (await specks; specks.count()) is explained.
-func (s *state) explainDataMisuse(f *failure, trace cvmod.EvalTrace) {
+// explainDataMisuse explains a raw TypeError from calling an op on plain
+// data (an awaited array or object): the op belongs to a node, and an op
+// that takes regions takes the array as its argument.
+func (s *state) explainDataMisuse(f *failure) {
 	src := s.sourceLine(s.agentLine(f.Line))
-	if f.Member != "" && strings.Contains(f.Fix, "RECV") {
-		recv := receiverOf(src, f.Member)
-		if recv == "" {
-			recv = "regions"
-		}
-		f.Fix = strings.ReplaceAll(f.Fix, "RECV", recv)
-		return
-	}
 	if f.CV || f.Name != "TypeError" || src == "" {
 		return
 	}
-	if m := noMember.FindStringSubmatch(f.Message); m != nil {
-		if recv := receiverOf(src, m[1]); recv != "" {
-			for _, op := range s.eng.Registry().Find(m[1]) {
-				if op.On == graph.KindNone {
-					continue
-				}
-				on := map[graph.Kind]string{graph.KindImage: "img", graph.KindRegions: "regions", graph.KindValue: "value"}[op.On]
-				f.Hint = fmt.Sprintf("%s is plain data here, not a node, so it has no %s(). %q is %s method: call it on the node.", recv, m[1], m[1], graph.A(string(op.On)))
-				f.Fix = fmt.Sprintf("%s.%s(…)", on, m[1])
-				return
-			}
-		}
+	m := noMember.FindStringSubmatch(f.Message)
+	if m == nil {
+		return
 	}
-	for _, c := range trace.Collisions {
-		recv := receiverOf(src, c.Name)
-		if recv == "" {
+	recv := receiverOf(src, m[1])
+	if recv == "" {
+		return
+	}
+	if m[1] == "count" {
+		f.Hint = fmt.Sprintf("%s is plain data here (awaited regions are an array), so it has no count(); its length is the count.", recv)
+		f.Fix = recv + ".length"
+		return
+	}
+	for _, op := range s.eng.Registry().Find(m[1]) {
+		if op.On != graph.KindImage {
 			continue
 		}
-		what := "a value"
-		if _, err := strconv.ParseFloat(c.Value, 64); err == nil {
-			what = "a number"
+		f.Hint = fmt.Sprintf("%s is plain data here, not a node, so it has no %s(). %q is an Image method.", recv, m[1], m[1])
+		f.Fix = fmt.Sprintf("img.%s(…)", m[1])
+		for _, a := range op.Args {
+			if a.Positional && strings.Contains(a.Type, graph.ItemsType) {
+				f.Hint += " Regions are its argument: pass the array."
+				f.Fix = fmt.Sprintf("img.%s(%s, …)", m[1], recv)
+				break
+			}
 		}
-		f.Hint = fmt.Sprintf("After await, %s is data: %s.%s is %s (%s), not a method. Read it, or call %s() on the %s node before awaiting it.",
-			recv, recv, c.Name, what, c.Value, c.Name, c.Kind)
-		f.Fix = recv + "." + c.Name
 		return
 	}
 }
