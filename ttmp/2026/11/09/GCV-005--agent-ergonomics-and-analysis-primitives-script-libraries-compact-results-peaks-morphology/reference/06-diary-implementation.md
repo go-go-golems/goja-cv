@@ -223,3 +223,99 @@ error:
   hint: 'A disk costs about 2·radius passes per row. Crop first, or apply a smaller disk twice: x.dilate(64).dilate(64) reaches about 128.'
   fix: img.dilate(64).dilate(36)
 ```
+
+## Step 2: Merge the final GCV-004 (batch 2, Phases 5–8) into the GCV-005 branch
+
+GCV-004 finished batch 2 (regions as arrays, the workspace and `cv.save`, names, the documentation sweep) and its pi
+validation on `task/gcv-004-api-v2` (`a42c9d1`). This step merges it into the GCV-005 branch with a merge commit, so
+that A1–A4 build on the final v2 model: the `items` op, `graph.Workspace`, pending saves waited for by `__cv_run`, the
+`UNHANDLED` warning from goja's rejection tracker, and the Phase 8 instructions.
+
+Ten files conflicted, all where B1 and batch 2 touched the same lines (`grow`/`toMask`, the help concept table, the
+golden list, the docs). Each was resolved toward batch 2's code with B1's deletions kept: nothing calls `kernels.Grow`,
+no `grow` option exists, no op has a `Halo:` field.
+
+### Prompt Context
+
+**User prompt (verbatim):** "You are the GCV-005 implementer, batch A. First, merge the final GCV-004 into the GCV-005 branch. Then implement phases A1, A2, A3 and A4 of the GCV-005 guide. Stop after A4 and report back. [...] Run `git fetch origin && git merge origin/task/gcv-004-api-v2`. Use a merge commit, never a rebase. [...] Run the full gate, commit the merge, push, and write diary step 2 (the merge, what conflicted and how you resolved it)."
+
+**Assistant interpretation:** merge GCV-004's final branch with a merge commit, resolve conflicts toward batch 2 while
+keeping B1's deletions, gate, push, and record the resolution.
+
+**Inferred user intent:** put GCV-005 Part A on top of the finished v2 API without losing the B1 cutover.
+
+**Commit (code):** 259df82 — "Merge GCV-004 final (a42c9d1) into GCV-005"
+
+### What I did
+
+- `git fetch origin && git merge origin/task/gcv-004-api-v2` (11 commits, `7ffe54b..a42c9d1`).
+- Conflicts and their resolution:
+  - `pkg/cv/ops/regions.go`: batch 2's version (`mask.regions`, no `toMask`, no `where`/`sortBy`/`top`); its Doc said
+    "Grow it with .grow(r)" and `See` listed `grow`: now `.dilate(r)` and `dilate`.
+  - `pkg/cv/ops/regions_test.go`, `heal_test.go`: batch 2's tests with `call(…, "grow", mask.regions…)` replaced by
+    `dilate` (the heal test uses 3.0, B1's `grow(2.5)` → `dilate(r + 0.5)` equivalent).
+  - `pkg/cv/ops/ops_test.go`: batch 2's walk samples (the Regions ops are gone) and its typed-names test; B1's `erode`
+    and `dilate` samples were outside the conflict and stay.
+  - `pkg/cv/look/golden_test.go`: batch 2 deleted the tolerance classes (its deviation 49); B1's `dilate-mask` and
+    `tophat-gray` cases re-added without a class.
+  - `pkg/gojamod/cv/help.go`: batch 2's `mask`, `regions` and `names` concepts (its `mask` text listed `grow, shrink`:
+    now "… and erode/dilate need a one-channel receiver") plus B1's `opening`, `closing`, `tophat`.
+  - `pkg/gojamod/cv/help_test.go`: both sides (B1's `TestHelpMorphologyConcepts`, batch 2's `stringsOf`).
+  - `pkg/cv/docs/topics/05-masks-and-regions.md`: batch 2's "Regions are arrays" and "Literal items" sections; B1's
+    separate "Erosion and dilation" section folded into one clause of "Combining and refining" to stay under the
+    6,000-character topic cap; the Converting example uses `img.mask.regions(dust).dilate(2)`.
+  - `pkg/cv/docs/topics/08-errors.md`, `pkg/doc/02-concepts.md`: batch 2's rows and paragraph with B1's morphology text.
+- Not conflicting but wrong after the merge:
+  - `pkg/cv/ops/morph_test.go` called `toMask` (gone): it now checks that `mask.regions` refuses a `grow` option.
+  - The Phase 8 MCP instructions said "(crop last; rulers read absolute doc px)": now "(ops after a crop see only the
+    crop; …)", and "(a plain object that persists)" became "(it persists)" to stay under 4,000 characters (A4 replaces
+    the text).
+- `grep -rnE 'Halo:|kernels\.(Grow|Shrink)|CROP_FIRST|crop last|\bgrow\b|\bshrink\b' pkg cmd README.md` finds only
+  B1's deletion tests and comments.
+- Gate: `gate=0`.
+
+### Why
+
+- Batch 2's model is the base A1–A4 need (Appendix A); B1's deletions are the GCV-005 decisions D17, D18, D22, D25.
+- Merge, not rebase: the branch is pushed and other workers read it.
+
+### What worked
+
+- `git rerere` recorded every resolution; the gate passed on the first full run after the two cap fixes.
+- Batch 2 had already put `m.dilate(r)` in the instructions (the coordinator told it B1's names).
+
+### What didn't work
+
+- First test run after resolving: `masks-and-regions is 6017 characters; keep topics short` and
+  `instructions are 4019 characters, want < 4000`. Fixed by shortening the morphology clause and the `mem` note.
+
+### What I learned
+
+- Batch 2 already implements most of §7.4's runtime half: `__cv_run` waits for pending saves (GCV-004 deviation 43) and
+  `UNHANDLED` comes from a per-runtime rejection tracker. A1 adds loads to the same pending list rather than building it.
+
+### What was tricky to build
+
+- The masks topic: two independent additions (B1's morphology section, batch 2's array sections) each fitted the cap
+  alone and not together. The morphology text became one clause with a pointer to `cv.help("tophat")`.
+
+### What warrants a second pair of eyes
+
+- `pkg/cv/ops/regions.go`'s `mask.regions` Doc now says "Grow it with .dilate(r)"; `dilate(r)` grows by half a pixel
+  less than the old `grow(r)` (D18).
+
+### What should be done in the future
+
+- A4: the instructions still mention `UNUSED_NODE` and the old crop wording's successor; §12.1's text replaces them.
+
+### Code review instructions
+
+- `git show 259df82 --cc` shows only the conflict hunks; start with `pkg/cv/ops/regions.go`, `pkg/gojamod/cv/help.go`,
+  `pkg/cv/look/golden_test.go`.
+- Validate: `GATE_LOG=<scratch> bash ttmp/2026/11/09/GCV-004--*/scripts/04-gate.sh` → `gate=0`.
+
+### Technical details
+
+- `git diff --stat 17dbcb1 259df82`: 138 files, +4,844 / −4,192 (batch 2 itself). Against batch 2
+  (`git diff --stat origin/task/gcv-004-api-v2 259df82 -- pkg cmd README.md`): 37 files, +1,027 / −213, i.e. B1 on top
+  of v2.

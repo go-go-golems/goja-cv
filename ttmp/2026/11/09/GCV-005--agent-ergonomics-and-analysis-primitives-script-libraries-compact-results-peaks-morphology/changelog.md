@@ -15,3 +15,8 @@
 
 Phase B1 implemented: erode/dilate (disk <= 64 via chords grouped by half-width + exact squared-distance fast path; van Herk lines), opening/closing/tophat help concepts; deleted grow, shrink, toMask grow, kernels.Grow/Shrink, CROP_FIRST, OpDef.Halo; new goldens dilate-mask, tophat-gray (commits bcefb0a, 5c26122); diary reference/06; deviations 1-10 in the guide
 
+
+## 2026-11-09
+
+Merged GCV-004 final (a42c9d1, batch 2 Phases 5-8) into the branch: 10 conflicts resolved toward batch 2 with B1's deletions kept (commit 259df82); diary step 2
+
