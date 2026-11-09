@@ -264,3 +264,53 @@ func remove(xs []string, x string) []string {
 	}
 	return out
 }
+
+// memberFixes are literal fixes for names agents call on cv that are not
+// functions there.
+var memberFixes = map[string]string{
+	"info":     "await img   // or cv.describe(img)",
+	"meta":     "await img   // or cv.describe(img)",
+	"metadata": "await img   // or cv.describe(img)",
+	"load":     `img = cv.open("scan.tif")`,
+	"read":     `img = cv.open("scan.tif")`,
+	"show":     "show(node, { label })   // a global, not cv.show",
+	"look":     "node.look(\"label\")",
+}
+
+// UnknownMember is the structured error for obj.name when the cv module
+// object ("cv") or the params object ("P") has no such member: a did-you-mean
+// over the members, an op of that name on a node kind, or a help redirect.
+func UnknownMember(reg *graph.Registry, obj, name string, members []string) *graph.Error {
+	sort.Strings(members)
+	e := graph.Errorf(graph.EUnknownMethod, "%s has no %q.", obj, name).WithValid(members)
+	if fix, ok := memberFixes[name]; ok && obj == "cv" {
+		e.Fix = fix
+		if r, ok := helpRedirects[name]; ok {
+			e.Hint = r[1]
+		} else {
+			e.Hint = fmt.Sprintf("%q is not a cv function.", name)
+		}
+		return e
+	}
+	if sug := graph.Closest(name, members); sug != "" {
+		e.Hint = fmt.Sprintf("Did you mean %q?", sug)
+		e.Fix = fmt.Sprintf("%s.%s(…)", obj, sug)
+		return e
+	}
+	if obj == "cv" {
+		for _, op := range reg.Find(name) {
+			if op.On == graph.KindNone {
+				continue
+			}
+			recv := map[graph.Kind]string{graph.KindImage: "img", graph.KindMask: "mask", graph.KindRegions: "regions", graph.KindValue: "value"}[op.On]
+			if recv == "" {
+				recv = "node"
+			}
+			e.Hint = fmt.Sprintf("%q is %s method: call it on the node.", name, graph.A(string(op.On)))
+			e.Fix = fmt.Sprintf("%s.%s(…)", recv, name)
+			return e
+		}
+	}
+	e.Hint = fmt.Sprintf("%s members: %s. cv.help(%q) and cv.docs.search(%q) look it up.", obj, strings.Join(members, ", "), name, name)
+	return e
+}

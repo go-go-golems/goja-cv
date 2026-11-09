@@ -20,8 +20,23 @@
     return open(path);
   };
 
-  define("cv", cv);
-  define("P", cv.P);
+  // cv and P give a structured unknown-name error (with did-you-mean) instead
+  // of a raw TypeError when a script calls a member they do not have.
+  const PROBES = new Set(["then", "toJSON", "constructor", "inspect", "__proto__", "prototype", "nodeType", "$$typeof", "asymmetricMatch"]);
+  let guardedP;
+  function guard(obj, name) {
+    return new Proxy(obj, {
+      get(t, p, r) {
+        if (name === "cv" && p === "P") return guardedP;
+        if (typeof p === "symbol" || p in t || PROBES.has(p)) return Reflect.get(t, p, r);
+        return native.unknownMember(name, String(p), Object.keys(t));
+      },
+    });
+  }
+  guardedP = guard(cv.P, "P");
+
+  define("cv", guard(cv, "cv"));
+  define("P", guardedP);
   define("mem", {});
   define("show", function show(x, opts) {
     const l = cv.isNode(x) ? x.look(opts) : x;

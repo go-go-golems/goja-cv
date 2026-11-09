@@ -29,6 +29,7 @@ func (n *native) object() *goja.Object {
 	_ = o.Set("setImg", n.setImg)
 	_ = o.Set("noDoc", n.noDoc)
 	_ = o.Set("fail", n.fail)
+	_ = o.Set("unknownMember", n.unknownMember)
 	return o
 }
 
@@ -47,6 +48,13 @@ func (n *native) throw(e *graph.Error) {
 	}
 	if e.Fix != "" {
 		_ = obj.Set("fix", e.Fix)
+	}
+	if len(e.Valid) > 0 {
+		valid := make([]any, len(e.Valid))
+		for i, v := range e.Valid {
+			valid[i] = v
+		}
+		_ = obj.Set("valid", n.vm.NewArray(valid...))
 	}
 	panic(obj)
 }
@@ -76,6 +84,20 @@ func (n *native) checkPath(c goja.FunctionCall) goja.Value {
 	}
 	n.throw(graph.Errorf(EAccess, "cv.open(%q): the path is outside the directories this session may read.", p.String()).
 		WithHint("Allowed roots: " + strings.Join(roots, ", ")))
+	return nil
+}
+
+// unknownMember(obj, name, members) throws the structured unknown-name error
+// for cv.name / P.name.
+func (n *native) unknownMember(c goja.FunctionCall) goja.Value {
+	var members []string
+	if arr, ok := c.Argument(2).Export().([]any); ok {
+		for _, m := range arr {
+			members = append(members, fmt.Sprint(m))
+		}
+	}
+	e := cvmod.UnknownMember(n.st.eng.Registry(), c.Argument(0).String(), c.Argument(1).String(), members)
+	n.throw(e)
 	return nil
 }
 

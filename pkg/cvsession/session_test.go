@@ -397,3 +397,20 @@ func TestArgumentErrorsHaveFixesAndWarningsFold(t *testing.T) {
 		t.Fatalf("warnings not folded:\n%s", out)
 	}
 }
+
+// TestUnknownNamesOnCvAndP: pi run 3 call 1 was `await cv.info()`.
+func TestUnknownNamesOnCvAndP(t *testing.T) {
+	app, sid := newApp(t, cvsession.Options{Image: tiffPath})
+	for code, want := range map[string][]string{
+		`return await cv.info()`:                              {"code: E_UNKNOWN_METHOD", `cv has no "info"`, "fix: await img   // or cv.describe(img)"},
+		`return await cv.stats(img)`:                          {`cv has no "stats"`, `"stats" is an Image method`, "fix: img.stats(…)"},
+		`return cv.comapre([img, img])`:                       {`Did you mean "compare"?`, "fix: cv.compare(…)"},
+		`return P.slidr("a", { min: 0, max: 1, value: 0.5 })`: {`P has no "slidr"`, `Did you mean "slider"?`, "fix: P.slider(…)"},
+		`return cv.P.range("x")`:                              {`P has no "range"`, "valid: ["},
+	} {
+		mustContain(t, text(eval(t, app, sid, code)), want...)
+	}
+	// existing members, probes and feature checks still work
+	out := text(eval(t, app, sid, `return { v: typeof cv.version, open: typeof cv.open, then: cv.then === undefined, json: JSON.stringify(cv).length > 2, keys: Object.keys(cv).includes("docs"), has: "info" in cv, p: typeof P.slider, pp: cv.P === P }`))
+	mustContain(t, out, "v: string", "open: function", "then: true", "json: true", "keys: true", "has: false", "p: function", "pp: true")
+}
