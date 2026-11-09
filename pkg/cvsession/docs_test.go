@@ -12,6 +12,7 @@ import (
 	"github.com/go-go-golems/goja-cv/internal/testimage"
 	"github.com/go-go-golems/goja-cv/pkg/cv/docs"
 	"github.com/go-go-golems/goja-cv/pkg/cvsession"
+	guide "github.com/go-go-golems/goja-cv/pkg/doc"
 )
 
 var (
@@ -77,47 +78,72 @@ func TestDocsCodeBlocksRun(t *testing.T) {
 	img := planted(t)
 	total := 0
 	for _, topic := range docs.Topics() {
-		t.Run(topic.ID, func(t *testing.T) {
-			app, sid := newApp(t, cvsession.Options{Image: img})
-			for _, b := range jsBlocks(topic.Body) {
-				if strings.Contains(b.info, "fragment") {
-					continue
-				}
-				total++
-				resp := eval(t, app, sid, b.code)
-				out := text(resp)
-				exec := resp.Cell.Execution
-				where := topic.ID + ".md line " + strconv.Itoa(b.line)
-				switch {
-				case strings.Contains(b.info, "error="):
-					code := b.info[strings.Index(b.info, "error=")+len("error="):]
-					if exec.Status == "ok" || !strings.Contains(out, "code: "+code) {
-						t.Fatalf("%s: want error %s, got status %s:\n%s", where, code, exec.Status, out)
-					}
-				default:
-					if exec.Status != "ok" {
-						t.Fatalf("%s: status %s %s:\n%s", where, exec.Status, exec.Error, out)
-					}
-					if i := strings.Index(b.info, "warns="); i >= 0 {
-						if code := b.info[i+len("warns="):]; !strings.Contains(out, code+" line") {
-							t.Fatalf("%s: want warning %s:\n%s", where, code, out)
-						}
-					} else if strings.Contains(out, "warnings:") {
-						t.Fatalf("%s: unexpected warnings:\n%s", where, out)
-					}
-				}
-				for _, ref := range exec.Content {
-					if ref.Dropped != "" {
-						t.Fatalf("%s: look dropped: %s", where, ref.Dropped)
-					}
-				}
-			}
-		})
+		t.Run(topic.ID, func(t *testing.T) { total += runCodeBlocks(t, img, topic.ID+".md", topic.Body) })
 	}
 	t.Logf("%d code blocks ran", total)
 	if total < 25 {
 		t.Fatalf("only %d runnable blocks", total)
 	}
+}
+
+// TestGuideCodeBlocksRun runs every ```js block of the guidebook (pkg/doc).
+func TestGuideCodeBlocksRun(t *testing.T) {
+	img := planted(t)
+	pages, err := guide.Pages()
+	if err != nil {
+		t.Fatal(err)
+	}
+	total := 0
+	for _, p := range pages {
+		t.Run(p.Slug, func(t *testing.T) { total += runCodeBlocks(t, img, p.File, p.Body) })
+	}
+	t.Logf("%d guide code blocks ran", total)
+	if total < 10 {
+		t.Fatalf("only %d runnable guide blocks", total)
+	}
+}
+
+// runCodeBlocks evaluates the ```js blocks of md in order in one session:
+// "js" must succeed without warnings, "js warns=CODE" with that warning,
+// "js error=CODE" must fail with that code, "js fragment" is skipped.
+func runCodeBlocks(t *testing.T, img, name, md string) int {
+	t.Helper()
+	app, sid := newApp(t, cvsession.Options{Image: img})
+	n := 0
+	for _, b := range jsBlocks(md) {
+		if strings.Contains(b.info, "fragment") {
+			continue
+		}
+		n++
+		resp := eval(t, app, sid, b.code)
+		out := text(resp)
+		exec := resp.Cell.Execution
+		where := name + " line " + strconv.Itoa(b.line)
+		switch {
+		case strings.Contains(b.info, "error="):
+			code := b.info[strings.Index(b.info, "error=")+len("error="):]
+			if exec.Status == "ok" || !strings.Contains(out, "code: "+code) {
+				t.Fatalf("%s: want error %s, got status %s:\n%s", where, code, exec.Status, out)
+			}
+		default:
+			if exec.Status != "ok" {
+				t.Fatalf("%s: status %s %s:\n%s", where, exec.Status, exec.Error, out)
+			}
+			if i := strings.Index(b.info, "warns="); i >= 0 {
+				if code := b.info[i+len("warns="):]; !strings.Contains(out, code+" line") {
+					t.Fatalf("%s: want warning %s:\n%s", where, code, out)
+				}
+			} else if strings.Contains(out, "warnings:") {
+				t.Fatalf("%s: unexpected warnings:\n%s", where, out)
+			}
+		}
+		for _, ref := range exec.Content {
+			if ref.Dropped != "" {
+				t.Fatalf("%s: look dropped: %s", where, ref.Dropped)
+			}
+		}
+	}
+	return n
 }
 
 func TestDocsFromEval(t *testing.T) {

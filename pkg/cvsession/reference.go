@@ -34,7 +34,7 @@ Most used calls
 - Dust: img.detect.specks() → Regions; .where({ score: { gte: 0.5 } }), .sortBy("area").top(n), .without([id]), .count(); img.overlay(regions, { labels: "id" }).look(); img.heal(regions, { radius }); await img.check.dust().
 - Params: P.slider(name, { min, max, value }) can be used anywhere a number goes.
 
-More: cv.docs.list() (topics), cv.docs.search("heal dust") (sections with snippets), cv.docs.read(id, { section }) (Markdown); start with cv.docs.read("getting-started") and cv.docs.read("recipes"). cv.help(op) describes one op (arguments, units, defaults). Resources: cv://docs/<id> and cv://reference (every op).`
+More: cv.docs.list() (topics), cv.docs.search("heal dust") (sections with snippets), cv.docs.read(id, { section }) (Markdown); start with cv.docs.read("getting-started") and cv.docs.read("recipes"). cv.help(op) describes one op (arguments, units, defaults). Resources: cv://docs/<id>, cv://reference (every op) and cv://guide/<slug> (the guidebook).`
 
 // EvalToolDescription is the description of the cv eval tool (Part 3 §17.4).
 const EvalToolDescription = "Run JavaScript against the cv image API in a persistent session. The code is the body of an async function: use await, and return what you want to see (rendered as YAML, max 9000 chars). node.look(\"label\") in the returned value, or show(node), attaches an image. Top-level const/let do not survive between calls; store values on mem. Read the guides from inside eval: cv.docs.search(text), cv.docs.read(id); cv.help(op) describes one op."

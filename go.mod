@@ -5,6 +5,7 @@ go 1.26.1
 require (
 	github.com/dop251/goja v0.0.0-20261103151521-97b96e1e55f5
 	github.com/dop251/goja_nodejs v0.0.0-20260918173711-b481721df8a2
+	github.com/go-go-golems/glazed v1.3.5
 	github.com/go-go-golems/go-go-goja v0.10.8-0.20261109062017-5e1ba117462e
 	github.com/modelcontextprotocol/go-sdk v1.7.0
 	github.com/pkg/errors v0.9.1
@@ -57,7 +58,6 @@ require (
 	github.com/fatih/color v1.16.0 // indirect
 	github.com/go-go-golems/bobatea v0.1.5 // indirect
 	github.com/go-go-golems/geppetto v0.11.7 // indirect
-	github.com/go-go-golems/glazed v1.3.5 // indirect
 	github.com/go-go-golems/logcopter v0.1.0 // indirect
 	github.com/go-jose/go-jose/v4 v4.1.8 // indirect
 	github.com/go-openapi/errors v0.22.0 // indirect

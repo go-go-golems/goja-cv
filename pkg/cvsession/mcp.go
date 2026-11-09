@@ -10,6 +10,7 @@ import (
 	"github.com/go-go-golems/go-go-goja/pkg/replmcp"
 	"github.com/go-go-golems/go-go-goja/pkg/replsession"
 	"github.com/go-go-golems/goja-cv/pkg/cv/docs"
+	guide "github.com/go-go-golems/goja-cv/pkg/doc"
 	cvmod "github.com/go-go-golems/goja-cv/pkg/gojamod/cv"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/pkg/errors"
@@ -17,6 +18,10 @@ import (
 
 // ReferenceURI is the MCP resource with the generated op reference.
 const ReferenceURI = "cv://reference"
+
+// GuideURIPrefix prefixes the MCP resources of the guidebook pages
+// (pkg/doc, cv://guide/<slug>), the person-facing docs of goja-cv help.
+const GuideURIPrefix = "cv://guide/"
 
 // DocsURIPrefix prefixes the MCP resources of the docs topics (cv://docs/<id>).
 const DocsURIPrefix = "cv://docs/"
@@ -114,6 +119,20 @@ func (s *MCPServer) register(server *mcp.Server) {
 		}, func(context.Context, *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
 			return &mcp.ReadResourceResult{Contents: []*mcp.ResourceContents{{URI: uri, MIMEType: "text/markdown", Text: body}}}, nil
 		})
+	}
+	if pages, err := guide.Pages(); err == nil {
+		for _, p := range pages {
+			uri, body := GuideURIPrefix+p.Slug, "# "+p.Title+"\n\n"+p.Body
+			server.AddResource(&mcp.Resource{
+				URI:         uri,
+				Name:        "cv-guide-" + p.Slug,
+				Title:       p.Title,
+				Description: p.Short + " (guidebook page; goja-cv help " + p.Slug + ")",
+				MIMEType:    "text/markdown",
+			}, func(context.Context, *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
+				return &mcp.ReadResourceResult{Contents: []*mcp.ResourceContents{{URI: uri, MIMEType: "text/markdown", Text: body}}}, nil
+			})
+		}
 	}
 	server.AddPrompt(&mcp.Prompt{
 		Name:        "cv-agent",

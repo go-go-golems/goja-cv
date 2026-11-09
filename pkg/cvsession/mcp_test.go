@@ -9,6 +9,7 @@ import (
 	"github.com/go-go-golems/go-go-goja/pkg/replsession"
 	"github.com/go-go-golems/goja-cv/pkg/cv/docs"
 	"github.com/go-go-golems/goja-cv/pkg/cvsession"
+	guide "github.com/go-go-golems/goja-cv/pkg/doc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -176,7 +177,7 @@ func TestMCPInstructionsAreCompactAndDocsAreResources(t *testing.T) {
 	}
 	for _, s := range []string{"body of an async function", "mem", "node.look(", "show(", "doc px", "fix",
 		"img.stats()", "img.stats({ box:", "img.levels(", "cv.compare(", "img.mask.luminance(", "img.within(", "img.detect.specks()", "img.heal(",
-		"P.slider(", "cv.docs.search(", "cv.docs.read(", "cv.help(op)", "cv://docs/<id>", "cv://reference", "not available yet"} {
+		"P.slider(", "cv.docs.search(", "cv.docs.read(", "cv.help(op)", "cv://docs/<id>", "cv://reference", "cv://guide/<slug>", "not available yet"} {
 		if !strings.Contains(ins, s) {
 			t.Fatalf("instructions lack %q", s)
 		}
@@ -205,6 +206,19 @@ func TestMCPInstructionsAreCompactAndDocsAreResources(t *testing.T) {
 	}
 	if !uris[cvsession.ReferenceURI] {
 		t.Fatal("missing cv://reference")
+	}
+	pages, err := guide.Pages()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range pages {
+		if !uris[cvsession.GuideURIPrefix+p.Slug] {
+			t.Fatalf("missing guide resource %s", p.Slug)
+		}
+	}
+	gr, err := cs.ReadResource(ctx, &mcp.ReadResourceParams{URI: "cv://guide/setup-pi"})
+	if err != nil || !strings.HasPrefix(gr.Contents[0].Text, "# Setting up goja-cv in the pi coding agent") || !strings.Contains(gr.Contents[0].Text, "directTools") {
+		t.Fatalf("read cv://guide/setup-pi: %v", err)
 	}
 	rr, err := cs.ReadResource(ctx, &mcp.ReadResourceParams{URI: "cv://docs/recipes"})
 	if err != nil || !strings.HasPrefix(rr.Contents[0].Text, "# Recipes") || rr.Contents[0].MIMEType != "text/markdown" {

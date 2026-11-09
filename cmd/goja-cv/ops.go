@@ -8,8 +8,11 @@ import (
 	"strings"
 	"time"
 
+	help_cmd "github.com/go-go-golems/glazed/pkg/help/cmd"
 	"github.com/go-go-golems/goja-cv/pkg/cv/graph"
+	"github.com/go-go-golems/goja-cv/pkg/doc"
 	cvmod "github.com/go-go-golems/goja-cv/pkg/gojamod/cv"
+	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
@@ -99,40 +102,63 @@ func kindOrder(k string) int {
 	return len(order)
 }
 
-// newHelpOpCommand replaces cobra's help command: "help OP" describes an op,
-// "help COMMAND" (or no argument) shows command help.
-func newHelpOpCommand(opts *rootOptions) *cobra.Command {
-	var asJSON bool
-	cmd := &cobra.Command{
-		Use:   "help [OP | COMMAND]",
-		Short: "Describe one cv op (cv.help(OP)), or show help for a command",
-		Args:  cobra.MaximumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			root := cmd.Root()
-			if len(args) == 0 {
-				return root.Help()
-			}
-			if sub, _, err := root.Find(args); err == nil && sub != root {
-				return sub.Help()
-			}
-			h := cvmod.Help(cvmod.DefaultRegistry(), args[0])
-			var err error
-			if asJSON {
-				err = writeJSON(opts.stdout, h)
-			} else {
-				err = writeYAML(opts.stdout, h)
-			}
-			if err != nil {
-				return err
-			}
-			if found, ok := h["found"].(bool); ok && !found {
-				return silentFailure()
-			}
-			return nil
-		},
+// setupHelp installs the Glazed help system with the guidebook (pkg/doc).
+// `goja-cv help NAME` resolves NAME as a guide topic slug, then as a
+// command, then as a cv op / kind / function (the op registry), so
+// `goja-cv help levels` keeps working next to `goja-cv help concepts`.
+func setupHelp(root *cobra.Command, opts *rootOptions) error {
+	hs, err := doc.NewHelpSystem()
+	if err != nil {
+		return err
 	}
-	cmd.Flags().BoolVar(&asJSON, "json", false, "Print JSON")
-	return cmd
+	if err := help_cmd.SetupCobraRootCommandE(hs, root); err != nil {
+		return err
+	}
+	var helpCmd *cobra.Command
+	for _, c := range root.Commands() {
+		if c.Name() == "help" {
+			helpCmd = c
+		}
+	}
+	if helpCmd == nil {
+		return errors.New("help command not installed")
+	}
+	helpCmd.Use = "help [topic | command | op]"
+	helpCmd.Short = "Guide topics (goja-cv help what-is-goja-cv), command help, or one cv op (goja-cv help levels)"
+	var asJSON bool
+	helpCmd.Flags().BoolVar(&asJSON, "json", false, "Print op help as JSON")
+	glazedRun := helpCmd.Run
+	helpCmd.Run = nil
+	helpCmd.RunE = func(c *cobra.Command, args []string) error {
+		if len(args) == 1 {
+			if _, err := hs.GetSectionWithSlug(args[0]); err != nil {
+				if sub, _, ferr := root.Find(args); ferr != nil || sub == root {
+					return opHelp(opts, args[0], asJSON)
+				}
+			}
+		}
+		glazedRun(c, args)
+		return nil
+	}
+	return nil
+}
+
+// opHelp prints cv.help(name) as YAML (or JSON); exit 1 when nothing matches.
+func opHelp(opts *rootOptions, name string, asJSON bool) error {
+	h := cvmod.Help(cvmod.DefaultRegistry(), name)
+	var err error
+	if asJSON {
+		err = writeJSON(opts.stdout, h)
+	} else {
+		err = writeYAML(opts.stdout, h)
+	}
+	if err != nil {
+		return err
+	}
+	if found, ok := h["found"].(bool); ok && !found {
+		return silentFailure()
+	}
+	return nil
 }
 
 func writeYAML(w io.Writer, v any) error {
