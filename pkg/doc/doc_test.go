@@ -52,7 +52,7 @@ func TestHelpReferencesResolve(t *testing.T) {
 		slugs[p.Slug] = true
 	}
 	commands := map[string]bool{"run": true, "eval": true, "ops": true, "help": true, "mcp": true}
-	ref := regexp.MustCompile("goja-cv help ([A-Za-z][\\w.-]*)")
+	ref := regexp.MustCompile(`goja-cv help ([A-Za-z][\w.-]*)`)
 	n := 0
 	for _, p := range pages {
 		for _, m := range ref.FindAllStringSubmatch(p.Body, -1) {

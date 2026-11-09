@@ -70,12 +70,8 @@ func Help(reg *graph.Registry, name string) map[string]any {
 	if r, ok := helpRedirects[name]; ok {
 		return notFound(reg, name, []string{r[0]}, r[1])
 	}
-	if strings.HasPrefix(name, "cv.") {
-		name = strings.TrimPrefix(name, "cv.")
-	}
-	if strings.HasPrefix(name, "P.") {
-		name = strings.TrimPrefix(name, "P.")
-	}
+	name = strings.TrimPrefix(name, "cv.")
+	name = strings.TrimPrefix(name, "P.")
 	// exact op names first: "mask.box" is an op, not Mask.box
 	if strings.Contains(name, ".") && len(reg.Find(name)) > 0 {
 		return opHelp(reg, name, "")

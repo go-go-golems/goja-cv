@@ -70,13 +70,13 @@ func (n *native) checkPath(c goja.FunctionCall) goja.Value {
 		return goja.Undefined() // cv.open reports the missing path itself
 	}
 	abs := filepath.Clean(n.st.opts.resolve(p.String()))
-	if real, err := filepath.EvalSymlinks(abs); err == nil {
-		abs = real
+	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
+		abs = resolved
 	}
 	for _, r := range roots {
 		root := r
-		if real, err := filepath.EvalSymlinks(r); err == nil {
-			root = real
+		if resolved, err := filepath.EvalSymlinks(r); err == nil {
+			root = resolved
 		}
 		if rel, err := filepath.Rel(root, abs); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 			return goja.Undefined()

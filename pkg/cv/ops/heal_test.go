@@ -43,7 +43,8 @@ func speckDeviation(t *testing.T, b *buffer.Buffer, p testimage.Planted) []float
 	return out
 }
 
-func stat(xs []float64) (mean, worst float64) {
+func stat(xs []float64) (float64, float64) {
+	mean, worst := 0.0, 0.0
 	for _, x := range xs {
 		mean += x
 		worst = math.Max(worst, x)

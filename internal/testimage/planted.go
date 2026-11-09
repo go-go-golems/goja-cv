@@ -67,7 +67,7 @@ func (s Speck) coverage(px, py int) float64 {
 // elongated; contrast 0.07–0.3) and one soft, round, bright star that a
 // good detector must not report as dust. The result is deterministic.
 func PlantedScan() (*buffer.Buffer, Planted) {
-	rng := rand.New(rand.NewSource(20261108))
+	rng := rand.New(rand.NewSource(20261108)) // #nosec G404 -- a fixed seed: the test scan must be deterministic
 	p := Planted{Star: Star{X: 200.5, Y: 46.5, Sigma: 2.2, Peak: 0.45}}
 	far := func(x, y, d float64) bool {
 		if math.Hypot(x-p.Star.X, y-p.Star.Y) < d+12 {
@@ -95,7 +95,7 @@ func PlantedScan() (*buffer.Buffer, Planted) {
 			Contrast: 0.07 + rng.Float64()*0.23, Dark: len(p.Specks)%4 != 3})
 	}
 	b := buffer.New(PlantedW, PlantedH, 3, 1)
-	noise := rand.New(rand.NewSource(7))
+	noise := rand.New(rand.NewSource(7)) // #nosec G404 -- a fixed seed: the test scan must be deterministic
 	for y := 0; y < PlantedH; y++ {
 		for x := 0; x < PlantedW; x++ {
 			bg := PlantedBackground(float64(x)+0.5, float64(y)+0.5)

@@ -3,6 +3,7 @@ package buffer
 import (
 	"bufio"
 	"context"
+	"encoding/binary"
 	"image"
 	"image/color"
 	"image/jpeg"
@@ -32,7 +33,7 @@ func DecodeConfigFile(path string) (Info, error) {
 	if err != nil {
 		return Info{}, errors.Wrap(err, "open image")
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }() // read-only: a close error cannot lose data
 	cfg, format, err := image.DecodeConfig(bufio.NewReader(f))
 	if err != nil {
 		return Info{}, errors.Wrapf(err, "decode header of %s", path)
@@ -55,7 +56,7 @@ func DecodeFile(ctx context.Context, path string) (*Buffer, Info, error) {
 	if err != nil {
 		return nil, Info{}, errors.Wrap(err, "open image")
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }() // read-only: a close error cannot lose data
 	b, info, err := Decode(ctx, bufio.NewReader(f))
 	if err != nil {
 		return nil, Info{}, errors.Wrapf(err, "decode %s", path)
@@ -192,8 +193,7 @@ func ToImage(ctx context.Context, b *Buffer, bits int) (image.Image, error) {
 		p := b.Plane(0)
 		err := parallel.Rows(ctx, h, func(y0, y1 int) {
 			for i := y0 * w; i < y1*w; i++ {
-				v := EncodeSRGB16(p[i])
-				m.Pix[2*i], m.Pix[2*i+1] = uint8(v>>8), uint8(v)
+				binary.BigEndian.PutUint16(m.Pix[2*i:], EncodeSRGB16(p[i]))
 			}
 		})
 		return m, err
@@ -213,8 +213,10 @@ func ToImage(ctx context.Context, b *Buffer, bits int) (image.Image, error) {
 		err := parallel.Rows(ctx, h, func(y0, y1 int) {
 			for i := y0 * w; i < y1*w; i++ {
 				s := m.Pix[8*i : 8*i+8]
-				r, g, bl := EncodeSRGB16(rp[i]), EncodeSRGB16(gp[i]), EncodeSRGB16(bp[i])
-				s[0], s[1], s[2], s[3], s[4], s[5], s[6], s[7] = uint8(r>>8), uint8(r), uint8(g>>8), uint8(g), uint8(bl>>8), uint8(bl), 255, 255
+				binary.BigEndian.PutUint16(s[0:], EncodeSRGB16(rp[i]))
+				binary.BigEndian.PutUint16(s[2:], EncodeSRGB16(gp[i]))
+				binary.BigEndian.PutUint16(s[4:], EncodeSRGB16(bp[i]))
+				s[6], s[7] = 255, 255
 			}
 		})
 		return m, err

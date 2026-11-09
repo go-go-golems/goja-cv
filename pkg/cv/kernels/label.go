@@ -5,9 +5,12 @@ import "context"
 // unionFind is a disjoint-set forest over int32 labels with path halving.
 type unionFind struct{ parent []int32 }
 
+// make adds a label. Labels are bounded by the pixel count of one plane, which
+// buffer dimensions keep far below MaxInt32.
 func (u *unionFind) make() int32 {
-	u.parent = append(u.parent, int32(len(u.parent)))
-	return int32(len(u.parent) - 1)
+	id := int32(len(u.parent)) // #nosec G115 -- bounded by the pixel count, see above
+	u.parent = append(u.parent, id)
+	return id
 }
 
 func (u *unionFind) find(x int32) int32 {

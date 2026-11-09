@@ -201,7 +201,7 @@ func TestLookKindsAndChart(t *testing.T) {
 func TestLookMarshalsWithoutBytes(t *testing.T) {
 	e, img := newEngine(t, testTIFF)
 	l, _ := New(e, img.ID, Options{Label: "x"})
-	js, err := json.Marshal(l)
+	js, err := json.Marshal(l) //nolint:staticcheck // SA9005 is the point: Look must marshal to {} (no image bytes)
 	if err != nil {
 		t.Fatal(err)
 	}

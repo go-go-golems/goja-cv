@@ -28,7 +28,8 @@ func plantedEngine(t *testing.T) (*graph.Engine, *graph.Node, testimage.Planted)
 
 // matchSpecks matches regions to planted specks by centroid distance (≤ 2.5
 // doc px) and returns recall, false positives and whether the star matched.
-func matchSpecks(rv *graph.RegionsValue, p testimage.Planted) (found int, fp int, star bool) {
+func matchSpecks(rv *graph.RegionsValue, p testimage.Planted) (int, int, bool) {
+	found, fp, star := 0, 0, false
 	used := map[int]bool{}
 	for _, r := range rv.Items {
 		cx, cy := r.Centroid[0], r.Centroid[1]

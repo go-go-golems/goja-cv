@@ -155,7 +155,7 @@ func (r *Registry) UnknownMethod(k Kind, name string, path []string) *Error {
 // kind) on a node of kind k: pass the node to the op on the right receiver
 // when the op takes k as an input (img.heal(regions, …)), convert when a
 // conversion exists, or call it on the right receiver.
-func crossKind(k Kind, name string, op *OpDef) (hint, fix string) {
+func crossKind(k Kind, name string, op *OpDef) (string, string) {
 	if op.On == KindNone {
 		return fmt.Sprintf("%q is a cv function, not a method.", name), fmt.Sprintf("cv.%s(…)", name)
 	}
@@ -166,7 +166,8 @@ func crossKind(k Kind, name string, op *OpDef) (hint, fix string) {
 				fmt.Sprintf("%s.%s(%s, …)", on, name, self)
 		}
 	}
-	hint = fmt.Sprintf("%q is %s method%s.", name, A(string(op.On)), conversionHint(k, op.On))
+	hint := fmt.Sprintf("%q is %s method%s.", name, A(string(op.On)), conversionHint(k, op.On))
+	var fix string
 	switch {
 	case k == KindRegions && op.On == KindMask:
 		fix = fmt.Sprintf("%s.toMask().%s(…)", self, name)
