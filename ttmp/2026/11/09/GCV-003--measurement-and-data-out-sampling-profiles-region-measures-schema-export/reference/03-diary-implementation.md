@@ -217,3 +217,63 @@ with two masks and two whole-image `stats` calls.
 ### Technical details
 - Mapping (in `measure`'s Doc): `mem.probe(x, y, r)` = `img.measure([[x + 0.5, y + 0.5]], { coreRadius: r + 0.5, ringRadii: [r + 3.5, r + 9.5], gray: "average" })`.
 - `img.measure([[200.5, 46.5], [-20, 4]], { coreRadius: 2.5 })` → warning `OUTSIDE: measure: 1 of 2 points lie outside the frame [0, 0, 256, 192] (rows 1 have outside: true and null values).`
+
+## Step 4: Phase 4 - regions.measure
+
+`regions.measure(image, opts)` measures a region set on another image of the same frame and returns the same regions
+(same ids, same order) with new fields: statistics over each region's pixels (`{ stats: ["max"] }` → `maxL`) and the
+core/ring measure at each centroid (`{ ring: true }` → `step, spread, snr, stepChroma, …`). With it the colleague's
+where-to-zoom list is one chain: DoG blobs, measured on the DoG for their peak and on the scan for how much they stand
+out, ranked by `snr`.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 1)
+
+**Assistant interpretation:** Guide Phase 4 (§3.4, §7.4 regions part, §9.2) and the `meanMask` replacement of §6 item 3.
+
+**Inferred user intent:** Replace `mem.hot`'s per-blob loop of `mem.probe` calls with one op that keeps the region ids.
+
+**Commit (code):** 66318c0 - "GCV-003 Phase 4: regions.measure(image, { stats, channels, ring, coreRadius, prefix }) and Region coverage"
+
+### What I did
+- `pkg/cv/ops/regionmeasure.go`: op `measure` on Regions with explicit input `Image|Mask` (so `components().measure(mask, { stats: ["mean"] })` gives what `meanMask` gave), `Space: linear`, `analysisScale` 1. Options `stats` (string list validated with did-you-mean and synonyms `maximum → max`, `stddev → std`, …), `channels`, `ring` (`true` or `[r1, r2]`), `coreRadius`, `prefix` (identifier), `gray`.
+- Fields: the receiver's plus `prefix + Stat + Channel` and the prefixed core/ring names; `E_FIELD_EXISTS` when a name is taken (fix with a prefix); `E_FRAME` at build time (node frames) and at evaluation; `Produces` lists every unprefixed field with the call that adds it.
+- Per-region weights: the region's own pixels when the regions were found on the image's raster, else `RegionsValue.Coverage(r, raster)`, a new method that shares `Rasterize`'s overlap loop (`overlap`, callback per target pixel).
+- `kernels.StatsOf` (weighted mean, std, median, p10, p90 and min/max as the 0 and 1 quantiles, through `StatsWeighted`), `kernels.GrayPlane`, `kernels.ProbePoint`.
+- Tests (`pkg/cv/ops/regionmeasure_test.go`): stats equal `img.stats({ mask: regions.only([id]).toMask(), percentiles: [0, 0.1, 0.9, 1] })` for each of six regions found at `analysisScale` 1 and 0.5 (within 1e-9); ring fields equal `img.measure` at the centroid with the default core radius (1e-12); prefixed names in order; ids kept and the receiver's items untouched; `sortBy("linSnr")`; errors (`E_FIELD_EXISTS`, no stats or ring, `maximum`, `E_FRAME` against a crop, the snr producer hint on specks); a mask measured over its components.
+
+### Why
+- Guide §6 item 3, §7.4, §9.2, Phase 4.
+
+### What worked
+- The guide's hot-list recipe runs as written on the planted scan: 8 blobs, top one `{ id: 4, cx: 43.35, cy: 67.02, dogMaxL: 0.1605, step: 0.0937, spread: 0.014, snr: 6.7159, stepChroma: 0.0982, ringCoverage: 1 }`.
+- Factoring `Rasterize`'s inner loop into `overlap` kept its arithmetic order, so overlay golden looks did not move.
+
+### What didn't work
+- `{ stats: ["maximum"] }` produced no hint (`Closest` finds nothing within its edit distance); added `statSynonyms`.
+- I first declared `stats` as `enum:mean,…[]`: the binder's `enum:` case comes before the `[]` case, so the list type would have been read as an enum whose last value is `p90[]`. `stats` is `string[]` validated by the op.
+
+### What I learned
+- Default core radius uses π where the helper used 3.14; they differ only at area 95 (guide §7.4). The centre is the exact centroid, not the helper's `round(centroid) + 0.5`.
+
+### What was tricky to build
+- Ring channels versus stats channels: `channels` means "stats per channel too" for stats, but the ring's channel steps are wanted by default (stepChroma is the neutrality cue). The rule: stats per channel only with `channels: true`; ring channel steps on colour images unless `channels: false`.
+
+### What warrants a second pair of eyes
+- With an explicit `ring: [r1, r2]` and the per-region default core, a large region whose core exceeds r1 fails the whole evaluation with `E_ARG_RANGE` naming the ring rule.
+- `regionWeights` decides "same raster" from sizes and the buffer origin; a crop's regions measured on the crop's image take the fast path.
+
+### What should be done in the future
+- Open question 1 of the guide (rings shaped like the region for hairs) remains open.
+
+### Code review instructions
+- `pkg/cv/ops/regionmeasure.go` (`validateRegionMeasure`, `runRegionMeasure`, `regionWeights`), `pkg/cv/graph/regions.go` (`overlap`, `Coverage`), `pkg/cv/kernels/probe.go` (`StatsOf`).
+- `go test ./pkg/cv/ops -run 'RegionMeasure|Schema' -v`.
+
+### Technical details
+```js
+const dog = img.toGray("average").dog(1, 4, { polarity: "bright" })
+const hot = dog.levels({ black: 0, white: dog.stats().p99.mul(2) }).mask.luminance({ above: 0.99 }).components({ minArea: 4 })
+const ranked = hot.measure(dog, { stats: ["max"], prefix: "dog" }).measure(img, { ring: true }).sortBy("snr").top(30)
+```

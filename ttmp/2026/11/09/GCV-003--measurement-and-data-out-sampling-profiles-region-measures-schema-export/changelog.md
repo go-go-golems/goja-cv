@@ -19,3 +19,8 @@ Step 2: Phase 2 no item cap, E_TOO_MANY (commit e5adb68)
 
 Step 3: Phase 3 probe kernel, sample/measure/profile (commit 5ddd78a)
 
+
+## 2026-11-09
+
+Step 4: Phase 4 regions.measure (commit 66318c0)
+
