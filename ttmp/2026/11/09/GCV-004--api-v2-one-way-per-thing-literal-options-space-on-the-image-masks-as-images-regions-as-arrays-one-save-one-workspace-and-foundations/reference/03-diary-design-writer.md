@@ -9,13 +9,24 @@ Topics:
 DocType: reference
 Intent: long-term
 Owners: []
-RelatedFiles: []
+RelatedFiles:
+    - Path: repo://pkg/cv/graph/args.go
+      Note: binder, lifting and silent accessors read for sections 5.1-5.3
+    - Path: repo://pkg/cv/ops/views.go
+      Note: speck view lifting found at 219-236 (levelsAt)
+    - Path: repo://ttmp/2026/11/09/GCV-004--api-v2-one-way-per-thing-literal-options-space-on-the-image-masks-as-images-regions-as-arrays-one-save-one-workspace-and-foundations/design-doc/01-design-and-implementation-guide.md
+      Note: the guide this diary records
+    - Path: repo://ttmp/2026/11/09/GCV-004--api-v2-one-way-per-thing-literal-options-space-on-the-image-masks-as-images-regions-as-arrays-one-save-one-workspace-and-foundations/scripts/02-pi-names-typed.py
+      Note: typed-name evidence behind guide 7.13
+    - Path: repo://ttmp/2026/11/09/GCV-004--api-v2-one-way-per-thing-literal-options-space-on-the-image-masks-as-images-regions-as-arrays-one-save-one-workspace-and-foundations/scripts/03-goja-panic-and-spread.go.txt
+      Note: goja panic and symbol-spread evidence (guide 5.12, D6)
 ExternalSources: []
-Summary: "Design writer's diary for GCV-004: reading the code and the pi evidence, the choices the brief left open, and writing the design and implementation guide."
+Summary: 'Design writer''s diary for GCV-004: reading the code and the pi evidence, the choices the brief left open, and writing the design and implementation guide.'
 LastUpdated: 2026-11-09T14:00:00-05:00
-WhatFor: "Reviewing how the GCV-004 guide was written and why its open choices fell the way they did."
-WhenToUse: "Before reviewing or revising design-doc/01-design-and-implementation-guide.md."
+WhatFor: Reviewing how the GCV-004 guide was written and why its open choices fell the way they did.
+WhenToUse: Before reviewing or revising design-doc/01-design-and-implementation-guide.md.
 ---
+
 
 # Diary — design writer (GCV-004)
 
@@ -188,3 +199,88 @@ review-found bug classes become impossible to write.
   resample; Redirects box, maxArea, ringRadii; lookRedirects box, crop. Wrong method names typed: save, write,
   export, store, persist, download, toFile, writeTiff, meta, resample, as, evaluate, field, crop (on old builds),
   mask.stats, Mask.coverage, Regions.filter, mask.components, heal (on Regions).
+
+## Step 2: Writing the guide, deciding the open choices, verifying goja
+
+I wrote the guide in four appends (sections 1–2, 3–5, 6, 7; then 8–9, 10–12, 13–18), committed the first seven
+sections as a draft (`903846f`), and finished it (`411ed29`, 2,170 lines). Where the brief left a choice I decided it
+from the code and the evidence and wrote a decision record for it. Two facts the design rests on (goja's handling of
+Go panics, and whether object spread copies symbol-keyed properties) I checked with a scratch program rather than
+assume.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 1)
+
+**Assistant interpretation:** Same task; this step is the writing.
+
+**Inferred user intent:** (see Step 1)
+
+**Commit (docs):** `903846f` — "GCV-004: guide draft (sections 1-7 …); names-typed evidence script"; `411ed29` —
+"GCV-004: design and implementation guide complete (…); tasks; goja panic/spread evidence"
+
+### What I did
+- Wrote `design-doc/01-design-and-implementation-guide.md`: revision history and reading guide; 1 executive summary;
+  2 architecture tour with an end-to-end trace; 3 problem (review classes, evidence, scope); 4 concepts; 5 current
+  state with `path:line`; 6 the v2 API with before/after and the reference table; 7 architecture (14 subsections);
+  8 decision records D1–D14; 9 deletion checklist with the estimate; 10 pseudocode and two traces; 11 errors; 12 docs;
+  13 phases 0–8; 14 test strategy; 15 pi validation plan; 16 DUST-002 migration; 17 risks and open questions; 18
+  references.
+- Decided: `look()` stays and queues (D9); Regions nodes have no methods and arrays become internal `items` nodes via
+  an enumerable symbol link (D5, D6); one `measure(items)` (D7); `await` at scale 1 (D8); one writable workspace,
+  default the working directory, `--read-only` delivers `cv.save` inline (D11); images open in encoded space and the
+  output-space rule of §7.4; physical ops `exposure`, `heal`, `inpaint`, `toGray("rec709")`, `toLab`, `encode`;
+  `gaussian`, `blend`, `within` follow (D3); channel count as a node static (D4); `E_NOT_AWAITED` (D13); internal
+  `levelsAt` for the speck view's white point.
+- Removed two migration-style redirects I had first written (`{ space }` → `as`, `cv.evaluate` → `await`): the brief
+  excludes migration diagnostics, and an agent only types a removed name if a document showed it.
+- Wrote `scripts/03-goja-panic-and-spread.go.txt` and ran it against goja-cv's goja version.
+- Filled `tasks.md` (Phases 0–8 plus review and upload), updated the changelog, related files, added the vocabulary
+  topics `api`, `architecture`, `refactor` that `docmgr doctor` asked for (`ttmp/vocabulary.yaml`).
+
+### Why
+- The brief asks for decisions with alternatives, not options; each open choice has a record in §8.
+
+### What worked
+- goja check: a native panic with a goja value is catchable in JavaScript; a Go runtime panic escapes `RunString`
+  (`recovered at top: true`); object spread copies symbol-keyed properties while `Object.keys` and `JSON` ignore them
+  (`spread: 7:1:{"a":1}`). This turned D6 from "pending a test" into a verified decision.
+- `docmgr doctor --ticket GCV-004`: all checks passed after the vocabulary additions.
+
+### What didn't work
+- First `go run` of the scratch program: `module lookup disabled by GOPROXY=off` for `github.com/google/pprof`;
+  pinned goja's indirect dependencies to goja-cv's `go.mod` versions, which are in the module cache.
+- Writing the guide in one pass left two inconsistencies that I fixed: NaN handling first said "in the evaluator's
+  stamp" and later "in `dataout.plain`" (now only `plain`, at encoding time), and §6.5 and D9 disagreed on look order
+  (now: returned looks first, then the others in creation order).
+
+### What I learned
+- The validation inputs for the GCV-001 questions are not kept in the run directories; the guide shows how to rebuild
+  them with GCV-001's `scripts/01-make-v-tile.py` from tile `1d955ef4b27d3d88_1536_1536`.
+- The pi harness always passes `--root OUT/img`, which becomes the v2 workspace, so v2 needs no harness change as long
+  as `OUT_ROOT` is not set (v2 has no `--out-root`).
+
+### What was tricky to build
+- The output-space rule with derived receivers: a derived image's `Space` is linear, so `d.add(img)` converts `img` to
+  linear while `img.add(d)` works in file units. I kept "the receiver decides" and documented it in §7.4 rather than add
+  a special case.
+- The deletion estimate: measured where a file or range goes whole, estimated elsewhere; stated as ±25 % with a request
+  that the implementer record `git diff --stat` per phase.
+
+### What warrants a second pair of eyes
+- D3 (`gaussian` follows; `exposure` physical) and open questions 1–6 in §17.
+- The writable-by-default workspace (D11) for the MCP server started by Claude Code in a project directory.
+- Whether the guide's `Args` redesign (inputs and values carried by `Args`, build-time functions taking only `Args`) is
+  too large for Phase 1; it touches every op file mechanically.
+
+### What should be done in the future
+- Review read of the guide, revision, reMarkable upload (tasks 2 and 12).
+
+### Code review instructions
+- Read §1, §6.9 and §8 first; then §7 against the code it cites; then §13 for the phase order.
+- `docmgr doctor --ticket GCV-004`; `python3 scripts/02-pi-names-typed.py PI_RUNS_DIR .`.
+
+### Technical details
+- Guide: 2,170 lines, sections 1–18. Deletion estimate: ~2,900 lines removed, ~800 added, net ~−2,100 of 23,154
+  non-test lines (−9 %), ±25 %.
+- Goldens expected to move, Phase 3 only: `gaussian`, `levels-gamma`, `levels-stats`, `profile-chart`.
