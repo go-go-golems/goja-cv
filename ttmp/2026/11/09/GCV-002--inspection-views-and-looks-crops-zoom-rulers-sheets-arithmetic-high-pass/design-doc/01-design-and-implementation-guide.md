@@ -54,6 +54,7 @@ WhenToUse: "Read before touching looks, overlays, compare, blend, or adding insp
 |---|---|---|
 | 2026-11-09 | 1 | First version (commit e1855d5). |
 | 2026-11-09 | 2 | Revised from the review read (`reference/01-review-read-findings.md`, disposition table at its end). Pixel and scale vocabulary moved to Foundations §F5 and used consistently. Three op classes (pixel, geometric, decoration) with render windows, so decorations work before a crop. Captions use GCV-001's macro nodes instead of a mutable field. Sheets are layout ops at scale 1 with a size fixed at build time and defaults that fit 36 cells. `compare` diff removed in favour of `sub`. One registration rule for module functions (ops vs functions). Evaluation-time warnings. Acceptance checklist per issue. |
+| 2026-11-09 | 3 | Revised from the re-check (rows N1–N4 in the disposition). Box items in sheets render at a cell scale that keeps every cell `size · zoom` px; memory claim narrowed to upsampled and decorated buffers; label-size rule for small cells; `Render` lives on the Evaluator and cell windows have integer origins; Gaussian widths are named `sigma`, `sigma1`, `sigma2` and distances `radius`, following GCV-003's naming rule. |
 
 ## How to read this guide
 
@@ -195,8 +196,9 @@ levels at scale 1 on an image whose outlines were drawn at scale 1, and its perc
 warns (`DECORATION_FIRST`, §10).
 
 The **render window** (Foundations §F5) keeps memory bounded: at scale s > 1 the request carries the visible doc-px
-rectangle, a crop narrows it, and upsampling and drawing touch only that rectangle. No buffer is larger than the
-look, at most 1568 × 1568 image px.
+rectangle, a crop narrows it, and upsampling and drawing touch only that rectangle. Upsampled and decorated buffers
+are therefore never larger than the look, at most 1568 × 1568 image px. Pixel ops are still computed at scale 1 over
+the image's whole frame (Foundations §F5, step 3): 12 MB for a 1024² tile, 638 MB for a whole DNG (§14).
 
 ### 3.5 Crops and frames
 
@@ -213,7 +215,7 @@ negative values blue, zero white and positive values red.
 
 ### 3.7 High-pass, difference of Gaussians and local contrast
 
-goja-cv's `gaussian(r)` takes the Gaussian's standard deviation σ = r in doc px (`pkg/cv/ops/filter.go:14-15`); the
+goja-cv's `gaussian(r)` takes the Gaussian's standard deviation σ = r in doc px (`pkg/cv/ops/filter.go:14-15`; this ticket renames the argument `sigma`, §7.5); the
 blur reaches about 3σ, which is its **halo**: the border in doc px an op needs around each output pixel
 (`OpDef.Halo`, `registry.go:108`). A blur of σ keeps structures larger than about σ and suppresses smaller ones.
 
@@ -409,7 +411,10 @@ const MaxRenderScale = 16
 
 // Render computes node id for a look or a sheet cell. At scale ≤ 1 it is
 // Evaluate (cut to the window). Above 1 it dispatches on the op class.
-func (e *Engine) Render(ctx context.Context, id NodeID, o RenderOptions) (Value, error)
+// It lives on the Evaluator so that op Run functions (sheet) can call it
+// through EvalCtx; Engine.Render delegates. Window origins are integers.
+func (e *Evaluator) Render(ctx context.Context, id NodeID, o RenderOptions) (Value, error)
+func (e *Engine) Render(ctx context.Context, id NodeID, o RenderOptions) (Value, error) // = e.ev.Render
 
 // OpDef gains:
 //   Class OpClass // PixelOp (default), GeometricOp, Decoration
@@ -517,10 +522,10 @@ the `{ space: "linear" }` matches `blend`'s linear default.
 before calling `Expand`, so `args.String("space")` is always set:
 
 ```go
-// highpass(r, { polarity, space }): d = a − G_r(a) in space, then polarity
+// highpass(sigma, { polarity, space }): d = a − G_sigma(a) in space, then polarity
 func expandHighpass(x *graph.Expander, a *graph.Node, args graph.Args) ([]*graph.Node, error) {
     sp := args.String("space") // resolved: "encoded" unless the call said otherwise
-    g, err := x.Call("gaussian", a, args.Raw("r"), map[string]any{"space": sp})
+    g, err := x.Call("gaussian", a, args.Raw("sigma"), map[string]any{"space": sp})
     if err != nil {
         return nil, err
     }
@@ -534,12 +539,17 @@ func expandHighpass(x *graph.Expander, a *graph.Node, args graph.Args) ([]*graph
 
 | call | expansion | defaults |
 |---|---|---|
-| `img.highpass(r, { polarity, space })` | `a − G_r(a)`, then polarity | polarity `"both"`, space encoded |
-| `img.dog(r1, r2, { polarity, space })` | `G_r1(a) − G_r2(a)`, then polarity; `r2 > r1` | polarity `"both"`, space encoded |
-| `img.localContrast(r, { space })` | primitive kernel: (a − G_r a) / (s_r + 1e-3) | space encoded; derived |
+| `img.highpass(sigma, { polarity, space })` | `a − G_sigma(a)`, then polarity | polarity `"both"`, space encoded |
+| `img.dog(sigma1, sigma2, { polarity, space })` | `G_sigma1(a) − G_sigma2(a)`, then polarity; `sigma2 > sigma1` | polarity `"both"`, space encoded |
+| `img.localContrast(sigma, { space })` | primitive kernel: (a − G_sigma a) / (s_sigma + 1e-3) | space encoded; derived |
 
-`r`, `r1`, `r2` are σ in doc px, as for `gaussian`. Polarity `"bright"` keeps `d.max(0)`; `"dark"` keeps
-`d.mul(-1).max(0)`. `dog` with `r2 ≤ r1` is `E_ARG_RANGE` with the swapped call as the fix. Because the expansion's
+`sigma`, `sigma1`, `sigma2` are σ in doc px. Names follow the rule GCV-003 §3.5 states for every op: a Gaussian
+width is called `sigma`, a distance `radius`, and no option is called `r`, so no option can be read as a red channel.
+This ticket therefore renames `gaussian`'s argument from `r` to `sigma` (`pkg/cv/ops/filter.go:14`), and the `r` of
+`feather`, `grow` and `shrink` (`pkg/cv/ops/mask.go:314`) to `radius`. Calls are positional in practice
+(`img.gaussian(3)`), and the option synonym table maps `r` to `sigma` or `radius`, whichever the op has (its current
+entries `radius → r` and `sigma → r`, `pkg/cv/graph/args.go:594`, are reversed). Polarity `"bright"` keeps `d.max(0)`; `"dark"` keeps
+`d.mul(-1).max(0)`. `dog` with `sigma2 ≤ sigma1` is `E_ARG_RANGE` with the swapped call as the fix. Because the expansion's
 nodes are hash-consed, the macro node of `img.highpass(3)` has as its last input exactly the node of the hand-written
 chain `img.sub(img.gaussian(3, { space: "encoded" }))`; tests assert this identity. `localContrast` is a kernel
 because it needs a square and a square root, which are not worth public ops.
@@ -679,7 +689,8 @@ return cv.sheet(top, { views: img.view("speck"), size: 64, zoom: 4 }).look("cand
 
 **Layout arithmetic.** A cell is `size · zoom` image px square; at the defaults 64 · 4 = 256. Cells are separated by
 a 6 px gap. Labels are drawn inside the cell, in a dark box at its top-left corner (the item's centre stays visible),
-with font size 2: `7 (1337, 131)`. With one view, a row holds ⌊(1568 + 6) / (256 + 6)⌋ = 6 cells (6 · 256 + 5 · 6 =
+with font size 2: `7 (1337, 131)`, about 156 × 14 px. When the label is wider than the cell minus 4 px (a 64 px cell
+at `zoom: 1`, or `size: 32, zoom: 2`), it is drawn at font size 1; if it is still too wide, only the id is drawn. With one view, a row holds ⌊(1568 + 6) / (256 + 6)⌋ = 6 cells (6 · 256 + 5 · 6 =
 1566 px), and 6 rows fit: **36 cells at the defaults**, issue 3's acceptance. With several views, a group is the
 item's cells side by side with a 2 px inner gap (two views: 2 · 256 + 2 = 514 px); groups are laid out in a grid: 3
 groups per row and 6 rows, so **18 items with two views** at the defaults.
@@ -693,11 +704,15 @@ in list order and warns at evaluation (`SHEET_TRUNCATED: 52 items, 36 shown. fix
 §7.13).
 
 **Evaluation.** The sheet has `AnalysisScale` 1 (Foundations §F4), so it is always evaluated at scale 1 and `await`
-returns the scale-1 sheet. Each cell is produced by `Engine.Render` of its view at the cell's zoom with the cell's
-window, the same path a look uses. So views that end in a decoration (an overlay) draw thin outlines in cells too.
-Windows that extend past the image are filled with dark grey, and the label says `(edge)`. Region items are centred on
-their centroid; points are centres; boxes are centred on the box centre with window side `max(w, h, size)`, so a long
-hair box is not cut.
+returns the scale-1 sheet. Each cell is produced by `Evaluator.Render` (§7.2) of its view with the cell's window, the
+same path a look uses. So views that end in a decoration (an overlay) draw thin outlines in cells too. Windows that
+extend past the image are filled with dark grey, and the label says `(edge)`.
+
+Region items are centred on their centroid; points are centres; boxes are centred on the box centre. A cell's window
+has side `side = max(w, h, size)` doc px, so a long hair box is not cut, and its origin is rounded to integer doc px so
+the nearest-neighbour cut is exact (centroids are fractional, `regions.go:97`). The cell is rendered at scale
+`zoom · size / side`, so every cell is exactly `size · zoom` image px whatever the item's size: a 200 px hair box at
+the defaults is shown at scale 4 · 64 / 200 = 1.28 instead of 4, and its label says `×1.28`.
 
 **Picture frames.** A sheet's pixels are image px, not doc px. Its frame is a **picture frame** (`Frame.Picture =
 true`, extending GCV-001's `Frame`), as is the frame of `cv.compare` side and split layouts. The binder refuses any
@@ -822,7 +837,8 @@ The key points:
   render scale; (c) a decoration flag only; (d) pixel, geometric and decoration classes with render windows.
 - **Decision:** (d).
 - **Rationale:** (a) gives 8 px outlines; (b) changes filter values with the zoom; (c) breaks for decorations before a
-  crop (they would be computed at 1 and upsampled). (d) handles both orders, and windows keep buffers at look size.
+  crop (they would be computed at 1 and upsampled). (d) handles both orders, and windows keep upsampled and decorated
+  buffers at look size (pixel ops are still computed whole at scale 1).
 - **Consequences:** A render-only entry point (`Engine.Render`), a class field on `OpDef`, and a memo keyed by window.
 - **Status:** accepted
 
@@ -953,8 +969,9 @@ sheet.Run(items, views, opts) at scale 1:
   if len(centres) > cells: ec.Warn("SHEET_TRUNCATED", …); centres = centres[:cells]
   out := New(frame.W, frame.H, 3) filled with the sheet background
   for each item i, each view v:
-      win := window(centre_i, side_i)                        // doc px
-      cell := Engine.Render(v, {Scale: zoom, Window: win})   // same path as a look; outside the image → dark grey
+      side := max(w_i, h_i, size)                            // w_i = h_i = 0 for regions and points
+      win := window(centre_i, side) with integer origin      // doc px
+      cell := ec.Eval.Render(v, {Scale: zoom·size/side, Window: win})   // every cell is size·zoom px; outside → dark grey
       if stretch == cell: cell = levelsAuto(cell)
       paste(out, cell, x, y); text.Draw(out, label_i in the cell's top-left box)
   return NewImage(out)                                       // Enc srgb (display), Space encoded
@@ -974,7 +991,7 @@ renderEval(crop#21, s = 8, W = frame of #21):
 | situation | code | message and fix |
 |---|---|---|
 | `look({ box })`, `look({ crop })` | `E_UNKNOWN_OPTION` | redirect: `node.crop([x, y, w, h]).look({ zoom: 8 })` |
-| `look({ stretch })`, `levels({ box })`, `highpass(r, { stretch })` | `E_UNKNOWN_OPTION` | redirect: `node.crop(box).levels({ auto: true })`, or `img.view("speck")` for a stretched high-pass |
+| `look({ stretch })`, `levels({ box })`, `highpass(sigma, { stretch })` | `E_UNKNOWN_OPTION` | redirect: `node.crop(box).levels({ auto: true })`, or `img.view("speck")` for a stretched high-pass |
 | zoomed look too large | `E_ARG_RANGE` | both fixes with numbers |
 | `zoom` with `maxSide` | `E_ARG_TYPE` | "zoom sets the scale; maxSide fits it" |
 | `zoom`/`ruler` on a chart | `E_ARG_TYPE` | "charts have no doc px" |

@@ -16,3 +16,5 @@
 - [ ] Phase 6: cv.sheet layout op (AnalysisScale 1, static max, labels in cells, groups for several views, picture frame, SHEET_TRUNCATED); format auto rule <!-- t:hw6o -->
 - [ ] Phase 7: docs (topic 11-views with preset drift test, rewrite 06-looks, recipes, MCP instructions), synonyms, TestOpSynonymsDoNotShadowOps, UnknownMember synonym lookup, js looks=N <!-- t:8ec3 -->
 - [ ] Phase 7: acceptance tests per issue (13.6); gated view-ranking test reading ~/dustds/gold and ~/dustdet/cv_tiles; pi harness questions-gcv-002.md before/after <!-- t:vamq -->
+- [ ] Phase 5: rename gaussian r -> sigma, feather/grow/shrink r -> radius, highpass/dog/localContrast sigma names; reverse option synonyms (r -> sigma|radius) <!-- t:zsur -->
+- [ ] Phase 6: sheet cells via Evaluator.Render at scale zoom*size/side with integer window origins; label size rule (2, 1, id only) <!-- t:rmcw -->

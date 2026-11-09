@@ -667,3 +667,13 @@ No new P1.
 - **N4 (P3). `sheet.Run` calls `Engine.Render`, but `Run` sees an `EvalCtx` whose handle is the `Evaluator`.** Put
   `Render` on the `Evaluator` (with `Engine.Render` delegating), and round each cell window's origin to integer doc px
   (centroids are fractional, `regions.go:97`), so the nearest-neighbour cut is exact.
+
+### Disposition of the re-check (revision 3 of the guide)
+
+| finding | disposition | where |
+|---|---|---|
+| N1 | fixed: cell window side `max(w, h, size)` with an integer origin, rendered at scale `zoom · size / side`, so every cell is `size · zoom` px; the label shows the reduced scale | §7.9, §9.2 |
+| N2 | fixed: only upsampled and decorated buffers are bounded by the look; pixel ops stay whole at scale 1 (12 MB per tile, 638 MB per DNG) | §3.4, §8 (three classes record) |
+| N3 | fixed: font size 2, then 1, then id only when the label is wider than the cell minus 4 px | §7.9 |
+| N4 | fixed: `Evaluator.Render` (with `Engine.Render` delegating), called by `sheet.Run` through `EvalCtx`; integer window origins | §7.2, §7.9, §9.2 |
+| GCV-003 re-check P3-20 | fixed here: `highpass(sigma)`, `dog(sigma1, sigma2)`, `localContrast(sigma)`; `gaussian`'s `r` renamed `sigma`, `feather`/`grow`/`shrink`'s `r` renamed `radius`; option synonyms map `r` to whichever the op has | §3.7, §7.5 |
