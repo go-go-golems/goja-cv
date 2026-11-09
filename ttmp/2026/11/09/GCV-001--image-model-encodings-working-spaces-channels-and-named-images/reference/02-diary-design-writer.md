@@ -540,3 +540,88 @@ inputs)`; goja-cv writes named data files itself; own writers with an honest rou
 ### Technical details
 
 - Column count of the §7.9 example: 9 geometry fields + `dogMaxL` + 10 ring fields = 20.
+
+## Step 7: Revision 3 of the three guides from the re-check
+
+The re-check of revision 2 (commit 3b5c033) found all P1s of GCV-002 and GCV-003 resolved and five new P2s in
+GCV-001 (N1–N5), one new P2 and three P3s in GCV-002, and two P2s and six P3s in GCV-003. I fixed each in place with
+targeted edits (no rewrites), added a revision-3 row to each guide's history and a re-check disposition table to each
+findings document, added tasks where phases gained steps, and committed per guide.
+
+The substantive changes are three. Golden looks cannot stay byte-identical across the space refactor (float32
+storage and exact transfer functions flip codes), so GCV-001 now has a tolerance and regeneration rule. The
+evaluator must never rewrite another node's cached value, so it stamps copies. And a sheet cell for a large box is
+rendered at a reduced scale so the static layout holds.
+
+### Prompt Context
+
+**User prompt (verbatim):** Revision 3 from the re-check findings.
+
+**Assistant interpretation:** Apply the re-check's new findings (GCV-001 N1–N5; GCV-002 N1–N4 plus the sigma/radius
+naming; GCV-003 P2-14, P2-15, P3-18–P3-23), update dispositions, histories, tasks, doctor, commit and push.
+
+**Inferred user intent:** Close the last gaps so the guides can go to implementers.
+
+**Commit (docs):** 82f93a6 (GCV-001), 92d026e (GCV-002), ff3bf42 (GCV-003)
+
+### What I did
+
+- GCV-001: golden rule in §13.3 (levels and mask looks change; others ≤ 1 code on ≤ 1 % of samples; equal speck
+  counts; then `-update`); test-only source `graphtest.RegisterSource` in Phase 2 and "open nodes are srgb until
+  Phase 4"; `Gray` returns input positions (`refine` → `[1]`); `detect.specks`' `meanL` listed as a change; the
+  evaluator stamps shallow copies for returned inputs (`eval.go:291-293`, `ops/tone.go:81-83`, macro nodes);
+  macro-node statics are the last input's.
+- GCV-002: sheet cells for boxes at scale `zoom · size / side` with integer window origins; memory claim narrowed;
+  label size rule; `Evaluator.Render` with `Engine.Render` delegating; `highpass(sigma)`, `dog(sigma1, sigma2)`,
+  `localContrast(sigma)`, `gaussian`'s `r` → `sigma`, `feather`/`grow`/`shrink`'s `r` → `radius`, option synonyms
+  reversed (`args.go:594`).
+- GCV-003: identifier data names with default `data-<N>`; `mem.hot` centring offset (round(cx) + 0.5) stated; the
+  MCP data limit inside `Data.ResultContent`; `EllipseCoverage(rx, ry)`; "within 1e-9"; masks saved with the linear
+  note; `internal/testimage` moves to the production writers (`testimage.go:42,45`, `planted.go:127` checked);
+  default depths; no `marshal` for `data` arguments; CLI counts rows.
+- Verified `pkg/cv/ops/tone.go:79-84`, `pkg/cv/ops/mask.go:314`, `pkg/cv/graph/args.go:594` and
+  `internal/testimage` call sites with `nl -ba`/`grep`.
+
+### Why
+
+- Without the golden rule an intern would read expected 1-code flips as design bugs in Phase 3.
+- Stamping a returned input in place would rewrite another node's cached frame and encoding.
+
+### What worked
+
+- The re-check's evidence was precise enough that each fix was a local edit with a clear section.
+
+### What didn't work
+
+- My first GCV-003 edit script failed on its first anchor (`AssertionError: own writers with an honest round-trip
+  table…`): the revision-2 history row says "Writers for TIFF (uint and float)…", not "own writers". I anchored on the
+  row's last sentence instead and re-ran; the file was untouched by the failed run.
+
+### What I learned
+
+- `toGray` already returns its input for 1-channel images (`ops/tone.go:81-83`), a third aliasing path besides the
+  identity short-circuit and macro nodes.
+
+### What was tricky to build
+
+- Naming: Gaussian widths are σ, not radii, so the shared rule became "`sigma` for widths, `radius` for distances, no
+  option called `r`", which also required renaming existing arguments and reversing two synonym entries.
+
+### What warrants a second pair of eyes
+
+- The golden tolerance numbers (1 code, 1 %) against the re-check's measurements (22/3M; 0.26 %).
+- Whether renaming `gaussian`'s `r` is welcome in GCV-002 rather than as its own small change.
+
+### What should be done in the future
+
+- N/A
+
+### Code review instructions
+
+- Read each findings document's "Disposition of the re-check (revision 3 of the guide)" table and follow the section
+  references.
+
+### Technical details
+
+- `docmgr task add` (2 tasks in GCV-001, 2 in GCV-002, 1 in GCV-003); `docmgr doctor --ticket GCV-00N --stale-after 30`
+  passed for all three.
