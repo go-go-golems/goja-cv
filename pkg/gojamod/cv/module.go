@@ -20,7 +20,7 @@ import (
 )
 
 // Version is the cv module version reported as cv.version.
-const Version = "0.1.0-m1"
+const Version = "0.1.0-m3"
 
 // EngineValueKey is the runtime Values key under which Registrar stores the
 // session engine.
