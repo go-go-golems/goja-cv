@@ -251,3 +251,38 @@ func TestStatsInsideBoxAndMask(t *testing.T) {
 		t.Fatalf("empty box: %v", err)
 	}
 }
+
+// TestOptionSynonyms: pi runs 3 and 4 both wrote mask.luminance({ min: 0.99 }).
+func TestOptionSynonyms(t *testing.T) {
+	e, img := newEngine(t)
+	m := call(t, e, "mask.box", img.ID, []any{0.0, 0.0, 10.0, 10.0})
+	for _, tc := range []struct {
+		op   string
+		recv graph.NodeID
+		raw  []any
+		sug  string
+		fix  string
+	}{
+		{"mask.luminance", img.ID, []any{map[string]any{"min": 0.99}}, "above", "mask.luminance({ above: 0.99 })"},
+		{"mask.luminance", img.ID, []any{map[string]any{"max": 0.1}}, "below", "mask.luminance({ below: 0.1 })"},
+		{"mask.luminance", img.ID, []any{map[string]any{"threshold": 0.8}}, "above", ""},
+		{"gaussian", img.ID, []any{map[string]any{"radius": 2.0}}, "r", ""},
+		{"gaussian", img.ID, []any{map[string]any{"sigma": 2.0}}, "r", ""},
+		{"detect.specks", img.ID, []any{map[string]any{"threshold": 0.05}}, "minContrast", ""},
+		{"detect.specks", img.ID, []any{map[string]any{"maxSize": 50.0}}, "maxArea", ""},
+		{"overlay", img.ID, []any{graph.NodeArg{ID: m.ID}, map[string]any{"opacity": 0.3}}, "alpha", ""},
+		{"overlay", img.ID, []any{graph.NodeArg{ID: m.ID}, map[string]any{"colour": "red"}}, "color", ""},
+		{"levels", img.ID, []any{map[string]any{"low": 0.01}}, "black", ""},
+		{"mask.flood", img.ID, []any{[]any{1.0, 1.0}, map[string]any{"tolerance": 0.1}}, "tol", ""},
+		{"stats", img.ID, []any{map[string]any{"region": graph.NodeArg{ID: m.ID}}}, "mask", ""},
+	} {
+		_, _, err := e.Call(tc.op, tc.recv, tc.raw)
+		ce, ok := graph.AsError(err)
+		if !ok || ce.Code != graph.EUnknownOption || !strings.Contains(ce.Hint, `Did you mean "`+tc.sug+`"?`) {
+			t.Fatalf("%s %v: %+v, want did-you-mean %q", tc.op, tc.raw, err, tc.sug)
+		}
+		if tc.fix != "" && ce.Fix != tc.fix {
+			t.Fatalf("%s %v: fix %q, want %q", tc.op, tc.raw, ce.Fix, tc.fix)
+		}
+	}
+}

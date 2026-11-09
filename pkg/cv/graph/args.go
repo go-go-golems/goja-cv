@@ -567,14 +567,52 @@ func checkKeys(specs []ArgSpec, m map[string]any, what string, fix func(sug stri
 	for _, k := range sortedKeys(m) {
 		if !known[k] {
 			e := Errorf(EUnknownOption, "%s has no option %q. Valid options: %s.", what, k, strings.Join(valid, ", ")).WithValid(valid)
-			if sug := closest(k, valid); sug != "" {
+			sug := optionSynonym(k, known)
+			if sug == "" {
+				sug = closest(k, valid)
+			}
+			if sug != "" {
 				e.Hint = fmt.Sprintf("Did you mean %q?", sug)
+				for _, s := range specs {
+					if s.Name == sug && s.Doc != "" {
+						e.Hint += " (" + s.Doc + ")"
+					}
+				}
 				e.Fix = fix(sug)
 			}
 			return e
 		}
 	}
 	return nil
+}
+
+// OptionSynonyms maps option names agents reach for to the cv option names
+// they usually mean, in order of preference; the first one the op has wins
+// ({ min: 0.99 } on mask.luminance → above; { radius } on gaussian → r).
+var OptionSynonyms = map[string][]string{
+	"min": {"above", "minArea", "minContrast"}, "minimum": {"above", "minArea"}, "lower": {"above"}, "from": {"above"},
+	"max": {"below", "maxArea"}, "maximum": {"below", "maxArea"}, "upper": {"below"}, "to": {"below"},
+	"threshold": {"above", "minContrast", "threshold"}, "thresh": {"above", "minContrast", "threshold"}, "cutoff": {"above", "minContrast"},
+	"radius": {"r", "radius"}, "sigma": {"r"}, "size": {"r", "maxArea"}, "blur": {"r"}, "kernel": {"r"}, "width": {"r"},
+	"maxSize": {"maxArea"}, "minSize": {"minArea"}, "area": {"maxArea", "minArea"}, "contrast": {"minContrast"},
+	"opacity": {"alpha", "opacity"}, "alpha": {"opacity", "alpha"}, "strength": {"amount", "opacity", "alpha"}, "intensity": {"amount", "opacity"},
+	"colour": {"color"}, "label": {"labels", "label"}, "showIds": {"labels"}, "ids": {"labels"},
+	"tolerance": {"tol"}, "soft": {"softness"}, "feather": {"softness"}, "smooth": {"softness"},
+	"scale": {"analysisScale"}, "type": {"polarity", "mode", "method"}, "kind": {"polarity", "mode"},
+	"low": {"black", "below"}, "lo": {"black", "below"}, "blackPoint": {"black"}, "shadows": {"black", "below"},
+	"high": {"white", "above"}, "hi": {"white", "above"}, "whitePoint": {"white"}, "highlights": {"white", "above"},
+	"midtones": {"gamma"}, "mid": {"gamma"}, "quantiles": {"percentiles"}, "percentile": {"percentiles"},
+	"region": {"mask"}, "regions": {"mask"}, "selection": {"mask"}, "rect": {"box"}, "rectangle": {"box"}, "roi": {"box", "mask"},
+	"amount": {"amount", "ev", "opacity"}, "stops": {"ev"}, "exposure": {"ev"},
+}
+
+func optionSynonym(k string, known map[string]bool) string {
+	for _, c := range OptionSynonyms[k] {
+		if known[c] {
+			return c
+		}
+	}
+	return ""
 }
 
 func lenHint(n int) string {
