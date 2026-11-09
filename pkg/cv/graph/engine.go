@@ -17,6 +17,9 @@ type EngineOptions struct {
 	LookLong       int    // long side of the look scale (default 1568)
 	PyramidMinLong int    // pyramids stop at this long side (default 256)
 	BaseDir        string // relative paths given to Open resolve against it (default: cwd)
+	// OutRoot is the only directory save may write under (absolute; empty:
+	// saving is disabled).
+	OutRoot string
 }
 
 func (o EngineOptions) withDefaults() EngineOptions {

@@ -8,6 +8,7 @@ import (
 	"image/color"
 	"image/jpeg"
 	"image/png"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -52,7 +53,11 @@ func writeFlat(t *testing.T, w, h int, v float32) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := buffer.WriteFile(context.Background(), p, enc, "png8"); err != nil {
+	var out bytes.Buffer
+	if err := buffer.EncodePNG(context.Background(), &out, enc, 8, buffer.Meta{Encoding: buffer.EncSRGB}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p, out.Bytes(), 0o644); err != nil { // #nosec G306 -- test data
 		t.Fatal(err)
 	}
 	return p

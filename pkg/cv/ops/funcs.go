@@ -6,6 +6,10 @@ import "github.com/go-go-golems/goja-cv/pkg/cv/graph"
 // something other than a node. look and show share the look options; the
 // look package reads them by name (look.OptionsFrom).
 
+// DataKind is the receiver name of functions on Data handles (cv.json,
+// cv.csv) in the registry.
+const DataKind = "Data"
+
 // MaxLookSide is the largest look side when fitting (the engine's default
 // LookLong).
 const MaxLookSide = 1568
@@ -72,6 +76,17 @@ func funcDefs() []graph.FuncDef {
 		{
 			Name: "warnings", Bespoke: true, Usage: "cv.warnings({ clear })",
 			Doc: "Build-time warnings collected while building nodes (they also appear under warnings: in every result).",
+		},
+		{
+			Name: "save", On: []string{string(graph.KindImage), string(graph.KindMask), DataKind},
+			Args: []graph.ArgSpec{
+				{Name: "path", Type: "string", Positional: true, Doc: "file path relative to the out-root (--out-root); the extension picks the format: .tif, .png, .npy, .jpg for images, .csv or .json for data"},
+				{Name: "depth", Type: "number", Optional: true, Doc: "bits per sample: TIFF 16 (default), 8 or 32 (float); PNG 16 or 8; NPY 32 (float) or 16"},
+			},
+			Usage: "node.save(path, { depth }) · cv.csv(x).save(path)",
+			Doc: "Write an image (evaluated at scale 1, its encoding and frame origin recorded in TIFF and PNG) or a Data handle to a file under the out-root; " +
+				"resolves to { path, format, depth, encoding, frame, bytes, replaced }. Without --out-root saving is disabled (E_ACCESS).",
+			See: []string{"json", "csv", "look"},
 		},
 		{
 			Name: "show", Global: true, Args: LookArgs(), Bespoke: true,

@@ -20,13 +20,15 @@ import (
 type evalFlags struct {
 	image   string
 	out     string
+	outRoot string
 	json    bool
 	timeout int
 }
 
 func (f *evalFlags) register(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&f.image, "image", "", "Image file to open and bind to img")
-	cmd.Flags().StringVar(&f.out, "out", "", "Directory for look files (default: a new temporary directory)")
+	cmd.Flags().StringVar(&f.out, "out", "", "Directory for the delivered looks and data files (default: a new temporary directory)")
+	cmd.Flags().StringVar(&f.outRoot, "out-root", "", "The only directory save() may write under (default: saving is disabled)")
 	cmd.Flags().BoolVar(&f.json, "json", false, "Print a JSON object instead of YAML")
 	cmd.Flags().IntVar(&f.timeout, "timeout-ms", 0, "Eval timeout in milliseconds (default 60000)")
 }
@@ -95,7 +97,10 @@ func runCode(ctx context.Context, opts *rootOptions, f *evalFlags, code string) 
 		}
 	}
 	logger := opts.logger()
-	sopts := cvsession.Options{Image: f.image, Logger: &logger}
+	if err := checkOutRoot(f.outRoot); err != nil {
+		return err
+	}
+	sopts := cvsession.Options{Image: f.image, OutRoot: f.outRoot, Logger: &logger}
 	if f.timeout > 0 {
 		sopts.EvalTimeout = msDuration(f.timeout)
 	}
@@ -234,4 +239,15 @@ func slug(s string) string {
 		return "look"
 	}
 	return s
+}
+
+// checkOutRoot requires --out-root, when given, to be an existing directory.
+func checkOutRoot(dir string) error {
+	if dir == "" {
+		return nil
+	}
+	if st, err := os.Stat(dir); err != nil || !st.IsDir() {
+		return usageErr("--out-root %q is not a directory", dir)
+	}
+	return nil
 }

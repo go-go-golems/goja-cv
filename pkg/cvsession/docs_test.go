@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/go-go-golems/goja-cv/internal/testimage"
+	"github.com/go-go-golems/goja-cv/pkg/cv/buffer"
 	"github.com/go-go-golems/goja-cv/pkg/cv/docs"
 	"github.com/go-go-golems/goja-cv/pkg/cvsession"
 	guide "github.com/go-go-golems/goja-cv/pkg/doc"
@@ -37,10 +38,10 @@ func planted(t *testing.T) string {
 		// linear fixtures the encodings topic opens by relative name: the
 		// planted scan's linear values as a plain 16-bit TIFF and as .npy
 		lin, _ := testimage.PlantedScan()
-		if plantedErr = testimage.WriteTIFF(filepath.Join(dir, "planted-linear.tif"), lin, testimage.TIFFOptions{Bits: 16}); plantedErr != nil {
+		if plantedErr = testimage.WriteFile(filepath.Join(dir, "planted-linear.tif"), lin, 16, buffer.Meta{}); plantedErr != nil {
 			return
 		}
-		plantedErr = testimage.WriteNPY(filepath.Join(dir, "planted.npy"), lin, "<f4")
+		plantedErr = testimage.WriteFile(filepath.Join(dir, "planted.npy"), lin, 32, buffer.Meta{})
 	})
 	if plantedErr != nil {
 		t.Fatal(plantedErr)

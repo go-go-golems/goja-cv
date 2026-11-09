@@ -74,7 +74,7 @@
     Object.defineProperty(v, NODE, { value: node });
     const tab = tables[node.__kind];
     const names = tab ? Object.keys(tab) : [];
-    names.push("look");
+    names.push("look", "save");
     for (const name of names) {
       if (name === "then") continue;
       if (name in v) {
@@ -246,6 +246,11 @@
         return function (opts) {
           return native.__look(t.__id, opts === undefined ? null : opts);
         };
+      case "save":
+        // save(path, { depth }) → a promise of the saved file (under --out-root)
+        return function (path, opts) {
+          return native.__save(t.__id, path === undefined ? null : path, opts === undefined ? null : opts);
+        };
     }
     if (PROBES.has(prop)) return undefined;
     if (t.__kind === "Param") {
@@ -277,7 +282,7 @@
     has(t, prop) {
       if (typeof prop !== "string") return false;
       const tab = tables[t.__kind];
-      return prop === "then" || prop === "__id" || prop === "__kind" || prop === "look" || !!(tab && tab[prop]);
+      return prop === "then" || prop === "__id" || prop === "__kind" || prop === "look" || prop === "save" || !!(tab && tab[prop]);
     },
     ownKeys() {
       return [];

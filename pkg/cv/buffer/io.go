@@ -1,21 +1,15 @@
 package buffer
 
 import (
-	"bufio"
 	"context"
 	"encoding/binary"
 	"image"
 	"image/jpeg"
-	"image/png"
 	"io"
 	"math"
-	"os"
-	"path/filepath"
-	"strings"
 
 	"github.com/go-go-golems/goja-cv/pkg/cv/parallel"
 	"github.com/pkg/errors"
-	"golang.org/x/image/tiff"
 )
 
 // Quantize converts a buffer of encoded values to a Go image with 8 or 16
@@ -78,15 +72,6 @@ func Quantize(ctx context.Context, b *Buffer, bits int) (image.Image, error) {
 	}
 }
 
-// EncodePNG writes b (encoded values) as an 8- or 16-bit PNG.
-func EncodePNG(ctx context.Context, w io.Writer, b *Buffer, bits int) error {
-	m, err := Quantize(ctx, b, bits)
-	if err != nil {
-		return err
-	}
-	return errors.Wrap(png.Encode(w, m), "encode png")
-}
-
 // EncodeJPEG writes b (encoded values) as an 8-bit JPEG.
 func EncodeJPEG(ctx context.Context, w io.Writer, b *Buffer, quality int) error {
 	m, err := Quantize(ctx, b, 8)
@@ -94,57 +79,4 @@ func EncodeJPEG(ctx context.Context, w io.Writer, b *Buffer, quality int) error 
 		return err
 	}
 	return errors.Wrap(jpeg.Encode(w, m, &jpeg.Options{Quality: quality}), "encode jpeg")
-}
-
-// EncodeTIFF16 writes b (encoded values) as a 16-bit TIFF (Deflate).
-// x/image/tiff stores RGB images with an (opaque) alpha sample.
-func EncodeTIFF16(ctx context.Context, w io.Writer, b *Buffer) error {
-	m, err := Quantize(ctx, b, 16)
-	if err != nil {
-		return err
-	}
-	return errors.Wrap(tiff.Encode(w, m, &tiff.Options{Compression: tiff.Deflate}), "encode tiff")
-}
-
-// WriteFile writes b, which holds encoded values (convert linear values with
-// Convert first), by format: "png8", "png16", "jpeg", "tiff16". An empty
-// format is inferred from the extension (.png → png16, .jpg/.jpeg → jpeg,
-// .tif/.tiff → tiff16).
-func WriteFile(ctx context.Context, path string, b *Buffer, format string) error {
-	if format == "" {
-		switch strings.ToLower(filepath.Ext(path)) {
-		case ".png":
-			format = "png16"
-		case ".jpg", ".jpeg":
-			format = "jpeg"
-		case ".tif", ".tiff":
-			format = "tiff16"
-		default:
-			return errors.Errorf("cannot infer image format from %q", path)
-		}
-	}
-	f, err := os.Create(path)
-	if err != nil {
-		return errors.Wrap(err, "create image file")
-	}
-	bw := bufio.NewWriter(f)
-	switch format {
-	case "png8":
-		err = EncodePNG(ctx, bw, b, 8)
-	case "png16":
-		err = EncodePNG(ctx, bw, b, 16)
-	case "jpeg":
-		err = EncodeJPEG(ctx, bw, b, 92)
-	case "tiff16":
-		err = EncodeTIFF16(ctx, bw, b)
-	default:
-		err = errors.Errorf("unknown image format %q", format)
-	}
-	if err == nil {
-		err = bw.Flush()
-	}
-	if cerr := f.Close(); err == nil {
-		err = cerr
-	}
-	return err
 }

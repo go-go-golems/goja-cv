@@ -14,9 +14,11 @@ import (
 	"github.com/pkg/errors"
 )
 
-// Fixture writers for the decoder tests (GCV-001 Phase 4): small, explicit
-// writers of the formats goja-cv reads. They store the values of a buffer as
-// they are (code = round(v · max) for integers, the float itself for float
+// Fixture writers for the decoder tests (GCV-001 Phase 4): the variants
+// goja-cv reads but its own writers (buffer.Encode, WriteFile) never produce
+// - LZW and PackBits strips, predictors, big-endian TIFF, |u1, >u2, >f4 and
+// <f8 NPY - and the minimal DNG. They store the values of a buffer as they
+// are (code = round(v · max) for integers, the float itself for float
 // samples); what those values mean is the encoding the file declares.
 
 // TIFFOptions select how WriteTIFF stores a buffer.

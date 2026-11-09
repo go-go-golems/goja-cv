@@ -41,8 +41,6 @@ const (
 	DefaultMaxLooks = 4
 	// DefaultMaxLookBytes bounds the total bytes of the images of one eval.
 	DefaultMaxLookBytes = 8 << 20
-	// EAccess is the error code of cv.open on a path outside the allowed roots.
-	EAccess = "E_ACCESS"
 	// ENoDocument is the error code of any use of doc before the document layer exists.
 	ENoDocument = "E_NO_DOCUMENT"
 	// ENoImage is the error code of using img when no image is open.
@@ -55,6 +53,10 @@ type Options struct {
 	Image string
 	// Roots, when non-empty, are the only directories cv.open may read from.
 	Roots []string
+	// OutRoot is the only directory save may write under (relative paths
+	// resolve against BaseDir; empty: saving is disabled). It is separate
+	// from the read roots.
+	OutRoot string
 	// BaseDir resolves relative paths (default: the working directory).
 	BaseDir string
 	// Engine options for each session's engine (BaseDir is filled from BaseDir).
@@ -102,6 +104,14 @@ func (o Options) withDefaults() (Options, error) {
 		roots = append(roots, filepath.Clean(abs))
 	}
 	o.Roots = roots
+	if o.OutRoot != "" {
+		abs, err := filepath.Abs(o.resolve(o.OutRoot))
+		if err != nil {
+			return o, errors.Wrapf(err, "out-root %q", o.OutRoot)
+		}
+		o.OutRoot = filepath.Clean(abs)
+	}
+	o.Engine.OutRoot = o.OutRoot
 	return o, nil
 }
 

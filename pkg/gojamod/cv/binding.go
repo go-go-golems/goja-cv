@@ -124,6 +124,7 @@ func (b *binding) object() *goja.Object {
 	set("__builders", b.builders)
 	set("__placeholder", b.placeholder)
 	set("__look", b.look)
+	set("__save", b.saveNode)
 	b.addDocs(o)
 	set("__fieldNames", b.fieldNames)
 	set("__removedFields", b.removedFields)
