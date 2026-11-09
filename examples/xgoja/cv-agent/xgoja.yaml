@@ -1,0 +1,58 @@
+# cv-agent: a generated binary with require("cv") available to run, repl and
+# an MCP eval server (`cv-agent mcp serve`), built from the goja-cv provider
+# and go-go-goja's mcp command-set provider. The replace paths point at local
+# checkouts (goja-cv is this repository; go-go-goja is its sibling).
+#
+#   xgoja doctor -f examples/xgoja/cv-agent/xgoja.yaml
+#   xgoja build  -f examples/xgoja/cv-agent/xgoja.yaml
+#   claude mcp add cv-agent -- ./dist/cv-agent mcp serve
+#
+# The generic mcp command set renders results with go-go-goja's default
+# processor (looks arrive as images, no cv YAML/lints); `goja-cv mcp` is the
+# full cv eval session. Provider ids must equal the provider package IDs
+# (goja-cv, go-go-goja-mcp): runtime modules and command sets are resolved by
+# package ID.
+schema: xgoja/v2
+name: cv-agent
+app:
+  name: cv-agent
+go:
+  module: xgoja.generated/cv-agent
+  version: "1.26"
+workspace:
+  mode: auto
+providers:
+  - id: goja-cv
+    import: github.com/go-go-golems/goja-cv/pkg/xgoja/providers/cv
+    register: Register
+    module:
+      replace: ../../..
+  - id: go-go-goja-mcp
+    import: github.com/go-go-golems/go-go-goja/pkg/xgoja/providers/mcp
+    register: Register
+    module:
+      replace: ../../../../go-go-goja
+runtime:
+  modules:
+    - provider: goja-cv
+      name: cv
+      as: cv
+commands:
+  - id: run
+    type: builtin.run
+    name: run
+  - id: repl
+    type: builtin.repl
+    name: repl
+  - id: mcp
+    type: provider.command-set
+    provider: go-go-goja-mcp
+    name: mcp
+    mount: mcp
+    config:
+      name: cv-agent
+      evalTimeoutMs: 60000
+artifacts:
+  - id: binary
+    type: binary
+    output: dist/cv-agent
