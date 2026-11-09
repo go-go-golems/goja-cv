@@ -5,6 +5,26 @@ topics:
       description: Backend services
     - slug: websocket
       description: WebSocket lifecycle & events
+    - slug: cv
+      description: Computer vision
+    - slug: agents
+      description: LLM agents
+    - slug: image-model
+      description: Image representation
+    - slug: io
+      description: File input/output
+    - slug: color
+      description: Colour and channels
+    - slug: looks
+      description: Looks (images returned to agents)
+    - slug: views
+      description: Inspection views
+    - slug: measurement
+      description: Measurement ops
+    - slug: regions
+      description: Regions
+    - slug: export
+      description: Data export
 docTypes:
     - slug: design-doc
       description: Structured rationale and architecture notes
