@@ -264,6 +264,18 @@
     help(name) {
       return native.__help(name === undefined ? null : name);
     },
+    // docs: the guides (pkg/cv/docs): list(), search(text, { limit }), read(id, { section })
+    docs: Object.freeze({
+      list() {
+        return native.__docsList();
+      },
+      search(text, opts) {
+        return native.__docsSearch(text, opts === undefined ? null : opts);
+      },
+      read(id, opts) {
+        return native.__docsRead(id, opts === undefined ? null : opts);
+      },
+    }),
     // evaluate(node, { scale }) evaluates at an explicit scale: a number in
     // (0, 1], "preview" (default for await), "look" or "full" (1.0).
     evaluate(node, opts) {
