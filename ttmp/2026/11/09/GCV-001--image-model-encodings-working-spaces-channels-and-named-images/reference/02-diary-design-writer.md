@@ -12,6 +12,10 @@ Owners: []
 RelatedFiles:
     - Path: ttmp/2026/11/09/GCV-001--image-model-encodings-working-spaces-channels-and-named-images/design-doc/01-design-and-implementation-guide.md
       Note: GCV-001 guide (Step 1)
+    - Path: ttmp/2026/11/09/GCV-002--inspection-views-and-looks-crops-zoom-rulers-sheets-arithmetic-high-pass/design-doc/01-design-and-implementation-guide.md
+      Note: GCV-002 guide (Step 2)
+    - Path: ttmp/2026/11/09/GCV-003--measurement-and-data-out-sampling-profiles-region-measures-schema-export/design-doc/01-design-and-implementation-guide.md
+      Note: GCV-003 guide (Step 3)
 ExternalSources:
     - /Users/manuel/code/wesen/2026-11-07--dust-scanning/ttmp/2026/11/07/DUST-002--film-dust-detector-model-exploration/reference/07-goja-cv-handover-issues.md
 Summary: "Diary of writing the three design-and-implementation guides GCV-001..003 (one step per guide and per revision round)."
@@ -146,3 +150,168 @@ of growing special cases.
   `docmgr task add --ticket GCV-001 --text "…"` (19 tasks), `docmgr doctor --ticket GCV-001 --stale-after 30`.
 - Measurement: `goja-cv eval --image ~/dustdet/cv_tiles/1d955ef4b27d3d88_1536_1536.tif -e '…stats, histogram,
   components…'`.
+
+## Step 2: GCV-002 guide — render scale, decorations, crops, sheets, signed arithmetic, views
+
+The GCV-002 guide turns the colleague's look requests into one rule: anything that depends on pixel content or
+data is a node (crop, arithmetic, highpass/dog/localContrast, levels auto, annotate, overlay, sheet, view
+presets); anything that depends only on the output raster is a look option (zoom, interp, maxSide, ruler, grid,
+format, label). Two engine changes carry it: evaluation at a render scale above 1, where pixel ops still run at
+scale ≤ 1 and are upsampled, and a `Decoration` flag for ops that draw at the render scale (thin lines, readable
+text under zoom).
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 1)
+
+**Assistant interpretation:** Second guide of the three, consistent with GCV-001's model.
+
+**Inferred user intent:** Make inspection native to goja-cv without growing look-time special cases.
+
+**Commit (docs):** e1855d5 — "GCV-002: design and implementation guide (render scale and decorations, crop, zoom/ruler looks, sheets, signed arithmetic, high-pass views, presets) and tasks"
+
+### What I did
+
+- Re-read look.go (options, scale fit, Encode), look/font.go and kernels/draw.go (two digit fonts),
+  ops/present.go (overlay at evaluation scale, unsigned compare diff), kernels/composite.go (blend modes),
+  evaltrack.go (hand-parsed look options), prelude.js (`cv.compare`), help.go (`cvFuncs`, crop redirect),
+  eval.go (scale check), the colleague's `85-cv-views.py` (rank metric) and `80-vlm-render.py` (nearest zoom,
+  ticks).
+- Wrote the guide; added 15 tasks with `docmgr task add --ticket GCV-002`; doctor passed; committed.
+- Fixed two statements after a review read: ruler tick placement now follows goja-cv's continuous coordinate
+  convention (pixel i covers [i, i + 1), centroid 1312.5 is the centre of pixel 1312; `regions.go:97`), and the
+  annotate note no longer used flat item fields that only exist after GCV-003.
+
+### Why
+
+- Under "everything as look options", a crop could not be measured or reused in a sheet, and a per-crop stretch
+  would duplicate `levels`. Under "everything as nodes", zoom and rulers would produce pixels that are not doc px.
+- No `offset` option on arithmetic: it is exactly `.add(0.5)`; one mechanism, per the project's no-alias rule.
+- `img.view(name)` instead of `cv.view(name)`: GCV-001's named images make an implicit `img` ambiguous.
+
+### What worked
+
+- Macros (from GCV-001) make `img.highpass(3)` the same node as the hand-written chain; tests can assert node
+  identity instead of pixel equality.
+- `OpDef.Halo`, declared since M1 and never read, gets a first reader (`CROP_FIRST` warning).
+
+### What didn't work
+
+- N/A (no tool failures in this step).
+
+### What I learned
+
+- Region rasterization is already area-exact at any target size, so overlay as a decoration at scale 8 needs no
+  new rasterizer.
+- The colleague's ranking numbers (median rank 18 vs ~715, 78 % vs 1 % in the top 50) are a ready-made
+  regression metric for the `speck` preset.
+
+### What was tricky to build
+
+- Zoom versus filters: evaluating everything at the render scale would change filter values with the zoom;
+  evaluating everything at ≤ 1 would make overlay outlines 8 px wide at 8×. The decoration flag separates the
+  two with one branch in `evalRun.eval`.
+- Sheets: their pixels are not doc px, so the guide gives them a sheet frame that coordinate ops and rulers
+  refuse.
+
+### What warrants a second pair of eyes
+
+- The rule "content = node, raster = look option", especially rulers as look options (they draw pixels, but
+  only from frame and scale).
+- Removing blend modes `add`, `difference`, `lighten`, `darken` in favour of arithmetic ops.
+- The `format: auto` rule and the look byte budget for PNG sheets.
+
+### What should be done in the future
+
+- Windowed evaluation (Halo-driven) for crops of full-resolution DNGs, listed as a risk.
+
+### Code review instructions
+
+- Read §7.1 (the rule), §7.2 (evaluator change), §7.7 (looks), §8 decision records.
+
+### Technical details
+
+- `docmgr task add --ticket GCV-002 --text "…"` (15 tasks); `docmgr doctor --ticket GCV-002 --stale-after 30`.
+
+## Step 3: GCV-003 guide — measurements, one region schema, data out, saving, preludes
+
+The GCV-003 guide adds `sample`, `profile`, `measure` and `regions.measure` on one shared probe kernel, replaces
+the four hand-maintained region field lists with a per-node schema of flat scalar fields, removes the 100-item
+cap, and adds data out (`cv.json`, `cv.csv` as result content), saving under a separate `--out-root`, and CLI
+preludes. It also moves module functions into the registry (`graph.FuncDef`), ending the hand-written `cvFuncs`
+help table.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 1)
+
+**Assistant interpretation:** Third guide, completing the set, with cross-references to GCV-001 and GCV-002.
+
+**Inferred user intent:** Give agents numbers and data channels that match what they already trust, without
+aliases or caps disguised as API.
+
+**Commit (docs):** b30efec — "GCV-003: design and implementation guide (sample, profile, ring measures, regions.measure, one region schema, no item cap, JSON/CSV content, save under out-root, preludes) and tasks; GCV-001: decoders read saved metadata"
+
+### What I did
+
+- Re-read graph/regions.go (Field vs Data, RegionFields, KnownRegionFields, SummaryLimit), ops/regions.go
+  (where/sortBy validation, meanMask), detect.go (speckFields), measure.go and measure_weighted.go, args.go box
+  and point conventions, yaml.go caps, processor.go `collect`, cmd/goja-cv/eval.go `writeLooks`,
+  go-go-goja `resultcontent/files.go` and `replmcp/tools.go` (text content mapping and the shared item limit).
+- Re-read `84-cv-helpers.js` with line numbers to specify `measure` against `mem.probe`.
+- Wrote the guide; added 13 GCV-003 tasks and one GCV-001 task (decoders read goja-cv's saved metadata);
+  doctor passed for both; committed. After commit, added `E_FRAME` to GCV-001's error table for consistency
+  with GCV-002.
+
+### Why
+
+- Flat scalar fields win over `box`/`centroid` because filters need scalars; region items become acceptable
+  wherever a box or point is expected, which removes the reason arrays were convenient.
+- The 100-item cap truncated data inside JavaScript; caps belong to the YAML presentation layer.
+- `cv.json`/`cv.csv` return Go objects, so they cannot be ops; a module-function table in the registry gives
+  them help and option checking without the hand-written table.
+
+### What worked
+
+- go-go-goja already maps `application/json` and `text/*` to MCP text and has `WriteFiles` with proper
+  extensions, so data out needs no transport changes, only goja-cv-side budgets.
+
+### What didn't work
+
+- My first draft said `measure` would equal `mem.probe` within 1e-6 directly. Reading the helper with line
+  numbers showed two mismatches: its disks are centred on pixel centres with radius r + 0.5 (boxes
+  `[x − r, y − r, 2r + 1, 2r + 1]`), and its `step` averages channels while its `spread` uses Rec. 709 luminance
+  percentiles. The guide now gives the exact mapping and a `gray` option, and the test compares under it.
+- My first draft registered `cv.json`/`cv.csv` as `KindNone` ops, which cannot work because ops return nodes;
+  replaced with `graph.FuncDef`.
+
+### What I learned
+
+- replmcp counts every content item (images and text) against `MaxImages`, which goja-cv sets to 4; data
+  content needs its own budget in the session.
+
+### What was tricky to build
+
+- Keeping old agent habits (`item.box`) from failing silently without adding aliases: the guide uses
+  non-enumerable throwing accessors that return no data and carry a literal fix.
+- Points versus boxes from region objects: a region's `x, y` is its box corner, so point coercion accepts only
+  `cx, cy` objects and refuses `{ x, y }` with an explanation.
+
+### What warrants a second pair of eyes
+
+- The schema decision (no `box`/`centroid` arrays at all) and the throwing accessors.
+- Data budgets: 4 looks + 4 data items, 256 KiB MCP data limit.
+- Write access via `--out-root` and its containment checks.
+
+### What should be done in the future
+
+- Revision round after the reviewer's findings.
+
+### Code review instructions
+
+- Read §3.3 (core/ring with numbers), §7.5 (schema), §7.9–7.10 (data out, saving), §13.2 (probe equivalence).
+
+### Technical details
+
+- `docmgr task add --ticket GCV-003 --text "…"` (13 tasks), `docmgr task add --ticket GCV-001 --text "Phase 2:
+  TIFF and PNG decoders read goja-cv ImageDescription …"`, `docmgr doctor --ticket GCV-00N --stale-after 30`.

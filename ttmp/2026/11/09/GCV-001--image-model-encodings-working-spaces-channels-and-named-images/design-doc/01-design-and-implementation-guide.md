@@ -1080,6 +1080,7 @@ literal fix, a `valid` list, and did-you-mean (`pkg/cv/graph/args.go:556-585`).
 | lifted level from another space | `SPACE` warning | §7.6 |
 | mixed encodings in encoded space | `ENCODING` warning | §7.10 |
 | channel out of range | `E_ARG_RANGE` | fix `img.toGray()` or the valid channel names |
+| two-image op on different frames | `E_FRAME` | both frames; GCV-002 adds the crop-specific fix |
 | colormap on 3 channels | `E_WRONG_KIND` | fix `img.channel("g").colormap("viridis")` |
 
 Synonyms (`OptionSynonyms`, `pkg/cv/graph/args.go:590-605`) gain entries that map words agents use to the new
