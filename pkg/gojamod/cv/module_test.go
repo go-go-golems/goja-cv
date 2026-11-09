@@ -279,8 +279,8 @@ func TestDiagnostics(t *testing.T) {
 			t.Fatalf("%s: %+v", tc.body, e)
 		}
 	}
-	e := mustFail(t, rt, "E_UNKNOWN_METHOD", `return img.exposure(0.3).heal(3)`)
-	if strings.Join(e.Path, " → ") != "open(gradient-64x48-16bit.tif) → exposure → ✗ heal" {
+	e := mustFail(t, rt, "E_UNKNOWN_METHOD", `return img.exposure(0.3).frobnicate(3)`)
+	if strings.Join(e.Path, " → ") != "open(gradient-64x48-16bit.tif) → exposure → ✗ frobnicate" {
 		t.Fatalf("path: %v", e.Path)
 	}
 	// evaluation errors reject the awaited promise with the node path

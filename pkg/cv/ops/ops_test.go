@@ -139,6 +139,8 @@ var walkSamples = map[string]func(w walkNodes) []any{
 	"top":            func(walkNodes) []any { return []any{3} },
 	"toMask":         func(walkNodes) []any { return []any{map[string]any{"grow": 1}} },
 	"within":         func(w walkNodes) []any { return []any{nodeArg(w.mask), nodeArg(w.edited)} },
+	"heal":           func(w walkNodes) []any { return []any{nodeArg(w.regions), map[string]any{"radius": 1}} },
+	"inpaint":        func(w walkNodes) []any { return []any{nodeArg(w.mask2)} },
 	"blend": func(w walkNodes) []any {
 		return []any{nodeArg(w.edited), map[string]any{"mode": "screen", "mask": nodeArg(w.mask)}}
 	},

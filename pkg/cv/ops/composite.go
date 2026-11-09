@@ -64,4 +64,83 @@ func compositeOps() []graph.OpDef {
 	}
 }
 
+// targetMask returns the pixels a heal or inpaint must replace at the
+// evaluation scale: rasterized regions (any coverage) or mask values ≥ 0.5.
+func targetMask(ctx context.Context, op string, v graph.Value, base *graph.ImageValue) ([]bool, error) {
+	var m *buffer.Buffer
+	var thr float32 = 0.5
+	switch x := v.(type) {
+	case *graph.RegionsValue:
+		if x.DocW != base.DocW || x.DocH != base.DocH {
+			return nil, graph.Errorf(graph.EWrongKind, "%s: the regions belong to a %d×%d image, this one is %d×%d.", op, x.DocW, x.DocH, base.DocW, base.DocH)
+		}
+		var err error
+		if m, err = x.Rasterize(ctx, base.Buf.W, base.Buf.H, base.Buf.Scale); err != nil {
+			return nil, err
+		}
+		thr = 1e-3
+	case *graph.ImageValue:
+		if err := sameSize(op, base, x); err != nil {
+			return nil, err
+		}
+		m = x.Buf
+	default:
+		return nil, graph.Errorf(graph.EWrongKind, "%s needs Regions or a Mask.", op)
+	}
+	pl := m.Plane(0)
+	out := make([]bool, len(pl))
+	for i, p := range pl {
+		out[i] = p >= thr
+	}
+	return out, nil
+}
+
+func healOps() []graph.OpDef {
+	return []graph.OpDef{
+		{
+			Name: "heal", On: graph.KindImage, Inputs: []graph.Kind{"Regions|Mask"}, Returns: graph.KindImage, Space: "linear",
+			Args: []graph.ArgSpec{
+				{Name: "radius", Type: "number", Unit: graph.DocPx, Default: 3.0, Min: graph.F(0), Max: graph.F(200), Usual: [2]float64{0.5, 20},
+					Doc: "margin in doc px: each target is grown by this much before it is replaced"},
+				{Name: "method", Type: "enum:patch,diffuse", Default: "patch",
+					Doc: "patch: copy the best-matching nearby patch and correct the seam (keeps grain); diffuse: smooth harmonic fill"},
+			},
+			Halo: func(a graph.Args) float64 { return 4*a.DocLength("radius") + 64 },
+			Run: func(ctx context.Context, _ *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
+				base := image(in[0])
+				t, err := targetMask(ctx, "heal", in[1], base)
+				if err != nil {
+					return nil, err
+				}
+				out, err := kernels.Heal(ctx, base.Buf, t, kernels.HealOptions{Margin: a.Length("radius", base.Buf.Scale), Method: a.String("method")})
+				if err != nil {
+					return nil, err
+				}
+				return graph.NewImage(out, base.DocW, base.DocH), nil
+			},
+			Doc: "Replace each target (regions, or a mask ≥ 0.5) with texture from its surroundings: patch search over clean nearby offsets, then seam correction; or a smooth harmonic fill.",
+			See: []string{"inpaint", "detect.specks", "check.dust"},
+		},
+		{
+			Name: "inpaint", On: graph.KindImage, Inputs: []graph.Kind{graph.KindMask}, Returns: graph.KindImage, Space: "linear",
+			Args: []graph.ArgSpec{{Name: "method", Type: "enum:diffuse,patch", Default: "diffuse"}},
+			Halo: func(graph.Args) float64 { return 64 },
+			Run: func(ctx context.Context, _ *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
+				base := image(in[0])
+				t, err := targetMask(ctx, "inpaint", in[1], base)
+				if err != nil {
+					return nil, err
+				}
+				out, err := kernels.Heal(ctx, base.Buf, t, kernels.HealOptions{Method: a.String("method")})
+				if err != nil {
+					return nil, err
+				}
+				return graph.NewImage(out, base.DocW, base.DocH), nil
+			},
+			Doc: "Fill the mask (≥ 0.5) from its boundary: a smooth harmonic (membrane) fill, or a patch with seam correction.",
+			See: []string{"heal"},
+		},
+	}
+}
+
 func joinModes() string { return strings.Join(kernels.BlendModeNames, ",") }
