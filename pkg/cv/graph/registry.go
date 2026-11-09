@@ -73,6 +73,20 @@ type SpaceRule struct {
 	Default buffer.Space
 	// Fixed: the op only works in Default (toLab, encode); no space option.
 	Fixed bool
+	// For, when set, is the default of a call that passes no { space }
+	// (a view preset's own space); Default otherwise.
+	For func(args Args) buffer.Space
+}
+
+// DefaultSpace is the working space of a call of op that passes no
+// { space }.
+func (op *OpDef) DefaultSpace(args Args) buffer.Space {
+	if op.Space.For != nil && op.Space.Default != buffer.SpaceNone {
+		if s := op.Space.For(args); s != buffer.SpaceNone {
+			return s
+		}
+	}
+	return op.Space.Default
 }
 
 // ResultEnc computes the encoding and space of an Image result. s is the

@@ -222,3 +222,32 @@ func TestAwaitingTooManyRegionsIsAnError(t *testing.T) {
 		t.Fatalf("summary at the limit: %v", err)
 	}
 }
+
+// TestCacheWarningsLeaveWithTheirEntry: evaluation-time warnings are kept
+// with the cached value and dropped when it is evicted or too large.
+func TestCacheWarningsLeaveWithTheirEntry(t *testing.T) {
+	c := NewCache(100)
+	v := &DataValue{Data: 1.0} // Bytes() > 0
+	n := v.Bytes()
+	k := func(i byte) Signature { return Signature{i} }
+	w := []Warning{{Code: "X", Message: "m"}}
+	c.SetWarnings(k(1), w)
+	if !c.Put(k(1), v) || len(c.Warnings(k(1))) != 1 {
+		t.Fatal("warnings not kept with their value")
+	}
+	for i := byte(2); int64(i-1)*n <= 100; i++ {
+		c.SetWarnings(k(i), w)
+		c.Put(k(i), v)
+	}
+	if c.Contains(k(1)) || c.Warnings(k(1)) != nil {
+		t.Fatal("an evicted value kept its warnings")
+	}
+	big := NewCache(1)
+	big.SetWarnings(k(9), w)
+	if big.Put(k(9), v) || big.Warnings(k(9)) != nil {
+		t.Fatal("a value too large for the cache kept its warnings")
+	}
+	if len(c.warns) > len(c.items) {
+		t.Fatalf("%d warning entries for %d values", len(c.warns), len(c.items))
+	}
+}

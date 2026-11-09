@@ -138,6 +138,22 @@ type Preset struct {
 	Expand func(x *graph.Expander, a *graph.Node, s float64, sp string) (*graph.Node, error)
 }
 
+// presetSpaces are the presets whose working space is not encoded when the
+// call passes no { space }. The speck views run in linear space: on the
+// colleague's density tiles (linear = density) a labelled speck ranks 18th
+// (median) with 79.6 % in the top 50, against 20th and 70.4 % in encoded
+// space (TestRealViewRanking, 142 points on 15 tiles; GCV-003).
+var presetSpaces = map[string]buffer.Space{"speck": buffer.SpaceLinear, "speckColor": buffer.SpaceLinear}
+
+// presetSpace is the default space of a view call: its preset's.
+func presetSpace(a graph.Args) buffer.Space {
+	name, _ := a.Raw("name").(string)
+	if s, ok := presetSpaces[name]; ok {
+		return s
+	}
+	return buffer.SpaceEncoded
+}
+
 // Presets are the view presets of img.view(name, { size }).
 var Presets = []Preset{
 	{"scene", "the image stretched 1–99 %: judging what belongs to the scene", func(x *graph.Expander, a *graph.Node, _ float64, sp string) (*graph.Node, error) {
@@ -238,7 +254,7 @@ func presetDocs() map[string]string {
 
 func viewOp() graph.OpDef {
 	return graph.OpDef{
-		Name: "view", On: graph.KindImage, Returns: graph.KindImage, Space: graph.SpaceRule{Default: buffer.SpaceEncoded},
+		Name: "view", On: graph.KindImage, Returns: graph.KindImage, Space: graph.SpaceRule{Default: buffer.SpaceEncoded, For: presetSpace},
 		Args: []graph.ArgSpec{
 			{Name: "name", Type: "enum:" + strings.Join(presetNames(), ","), Positional: true, ValueDocs: presetDocs(),
 				ValueSynonyms: map[string]string{"dust": "speck", "specks": "speck", "stars": "speck", "dog": "speck", "highpass": "signed",

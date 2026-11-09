@@ -41,7 +41,7 @@ func OpSpace(op *OpDef, args Args) buffer.Space {
 			}
 		}
 	}
-	return op.Space.Default
+	return op.DefaultSpace(args)
 }
 
 // internOp interns op name on recv with raw arguments through Intern

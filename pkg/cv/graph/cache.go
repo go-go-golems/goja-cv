@@ -19,6 +19,10 @@ type Cache struct {
 	hits      int64
 	misses    int64
 	evictions int64
+	// warns are the evaluation-time warnings of cached values (EvalCtx.Warn),
+	// replayed when a value is served from the cache; they leave with their
+	// entry (eviction, Clear, a value too large to keep).
+	warns map[Signature][]Warning
 }
 
 type cacheEntry struct {
@@ -39,7 +43,7 @@ type CacheStats struct {
 
 // NewCache returns a cache holding at most capBytes of values.
 func NewCache(capBytes int64) *Cache {
-	return &Cache{capBytes: capBytes, ll: list.New(), items: map[Signature]*list.Element{}}
+	return &Cache{capBytes: capBytes, ll: list.New(), items: map[Signature]*list.Element{}, warns: map[Signature][]Warning{}}
 }
 
 // Get returns a cached value and marks it recently used.
@@ -63,14 +67,34 @@ func (c *Cache) Contains(k Signature) bool {
 	return ok
 }
 
-// Put stores v, evicting least recently used entries until the total fits.
-// Values larger than the whole cache are not stored.
-func (c *Cache) Put(k Signature, v Value) {
+// SetWarnings records the evaluation-time warnings of the value stored (or
+// about to be stored) under k.
+func (c *Cache) SetWarnings(k Signature, ws []Warning) {
+	if len(ws) == 0 {
+		return
+	}
+	c.mu.Lock()
+	c.warns[k] = ws
+	c.mu.Unlock()
+}
+
+// Warnings are the evaluation-time warnings recorded under k.
+func (c *Cache) Warnings(k Signature) []Warning {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.warns[k]
+}
+
+// Put stores v, evicting least recently used entries until the total fits,
+// and reports whether v was stored. Values larger than the whole cache are
+// not stored (and their warnings are dropped).
+func (c *Cache) Put(k Signature, v Value) bool {
 	n := v.Bytes()
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if n > c.capBytes {
-		return
+		delete(c.warns, k)
+		return false
 	}
 	if el, ok := c.items[k]; ok {
 		e := el.Value.(*cacheEntry)
@@ -86,9 +110,12 @@ func (c *Cache) Put(k Signature, v Value) {
 		e := el.Value.(*cacheEntry)
 		c.ll.Remove(el)
 		delete(c.items, e.key)
+		delete(c.warns, e.key)
 		c.used -= e.bytes
 		c.evictions++
 	}
+	_, kept := c.items[k]
+	return kept
 }
 
 // Stats returns a snapshot of the counters.
@@ -104,5 +131,6 @@ func (c *Cache) Clear() {
 	defer c.mu.Unlock()
 	c.ll.Init()
 	c.items = map[Signature]*list.Element{}
+	c.warns = map[Signature][]Warning{}
 	c.used = 0
 }
