@@ -109,3 +109,48 @@ asked for the guide, the reMarkable upload, then implementation, with simplicity
 
 ### Code review instructions
 - `ttmp/2026/11/09/GCV-005--…/` on `task/gcv-005-agent-ergonomics-and-primitives`.
+
+## Step 3: Guide, review read, revisions 2–3, reMarkable
+
+The writer produced revision 1 (2,471 lines, D1–D21); the cold reviewer found 33 issues (4 P1, 12 P2, 17 P3);
+I sent one decision list for revision 2 and a deletion-shaped revision 3; uploaded the result.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 2)
+
+**Assistant interpretation:** Same writer → review → revision → upload loop as GCV-004, judged against "simplicity, composability, consistency; cut complexity".
+
+**Inferred user intent:** A guide an intern can implement from, with nothing in it that isn't needed.
+
+### What I did
+- Revision 1 (`67fa07b` … `f676f60`): `cv.load` instead of an MCP-only `eval_file` (a paste is ~3 KB; `eval_file` would save ~20 characters over `await cv.load(...)`), loads not cached, `--prelude` = a load at start, function docs from the body's leading comment, `peaks({ radius, snr, polarity })` as a Regions node of disks with measure's core/ring fields, morphology, automatic tables, no `white` option.
+- Review (`2e8cde3`, `8c7ab17`): P1s — CROP_FIRST lint contradicts crop-first use; dilate/erode ≠ grow/shrink (r + 0.5); preludes hide function docs; the 9,000-char cap never fired (the 2,000-char string cap and 48-item array cap did). Evidence counts inherited from the hand-off and script 91 were wrong (39 pastes, not 29; UNUSED_NODE 19 with 18 false).
+- Decisions for revision 2: delete CROP_FIRST; standard disk (≤ r) with a brute-force test; preludes don't mark functions seen; tables exempt from item/string caps; docs from a comment that is the body's first token, shown when the name is new or its source changed; one `UNHANDLED` warning from goja's rejection tracker; `__cv_run` waits for loads; load depth, not count; only `erode`/`dilate` (opening/closing/top-hat as recipes with help concepts); peaks in row bands, snr default 1 pending a sweep; disk cap 64. Revision 2: `6bb71a8` (merge of GCV-004 batch 1), `47c4470`, `e4af848`; numpy prototype on 4 gold tiles: snr ≥ 1 covers 101/102 dust points, ≥ 1.4 covers 77/102.
+- Revision 2 had grown a jsparse source rewrite to keep UNUSED_NODE alive; I cut it. Revision 3 (`d8be267`, `4b17382`): UNUSED_NODE deleted outright (18/19 false; the one true positive silent under the new rule; dropped lazy nodes are no-ops in v2), `OpDef.Halo` deleted, sheet captions settled; 2,398 lines, no open questions.
+- Sent GCV-004 batch 2: one `items|point[]` binding with a Point shape, labels, ids may repeat; no `mask.regions` `grow`; `cv.save` promises on the eval's pending list.
+- Uploaded guide + analysis + review findings: `/ai/2026/11/09/GCV-005/GCV-005 agent ergonomics and analysis primitives guide.pdf`.
+
+### Why
+- Every decision picked the option that deletes a mechanism.
+
+### What worked
+- The reviewer re-verified the evidence against the raw evals and caught counting errors in the source hand-off.
+
+### What didn't work
+- Revision 2 added complexity (source rewriting) to keep a warning with no true positives; caught at coordination.
+
+### What I learned
+- A warning should be judged by its true positives in the field: UNUSED_NODE had one, and the redesign would have lost it.
+
+### What was tricky to build
+- Keeping GCV-005 consistent with GCV-004 while batch 2 is still changing items, points and the workspace.
+
+### What warrants a second pair of eyes
+- The colleague's DUST-002 `reference/11`, `summary.md` and script 91 still carry the wrong counts; asked the user whether to fix them.
+
+### What should be done in the future
+- Implementation: B1 (morphology) depends only on GCV-004 Phase 4 and can start now; the rest after GCV-004 batch 2.
+
+### Code review instructions
+- Guide revision 3, Appendix B (dispositions), §8 decision records, §9 deletion checklist.
