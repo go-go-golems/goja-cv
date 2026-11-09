@@ -1,8 +1,8 @@
 // Package cvsession is the cv eval session: a go-go-goja replapi app whose
 // runtimes load only the cv module (and timer), with pre-bound globals (cv, P,
 // mem, show, img, doc) and the cv result processor (YAML results capped at
-// 9000 characters, structured errors with the agent's line, RANGE and
-// UNUSED_NODE warnings, a context block, and looks delivered as image
+// 9000 characters, compact tables, structured errors with the agent's line,
+// warnings with lines, a context block, and looks delivered as image
 // content).
 //
 // Agent code is the body of an async function: App.Evaluate wraps it before

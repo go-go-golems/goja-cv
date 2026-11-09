@@ -188,15 +188,3 @@ func (s *state) imagesLine(vm *goja.Runtime) string {
 	}
 	return strings.Join(parts, ", ")
 }
-
-// namedNodes are the nodes bound to names (they count as used).
-func (s *state) namedNodes() []graph.NodeID {
-	var out []graph.NodeID
-	for _, name := range s.names.order {
-		v, _ := s.names.get(name)
-		if id, ok := cvmod.NodeOf(v); ok {
-			out = append(out, id)
-		}
-	}
-	return out
-}

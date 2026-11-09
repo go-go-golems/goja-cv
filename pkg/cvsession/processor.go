@@ -84,7 +84,7 @@ func (p *ResultProcessor) Process(_ context.Context, vm *goja.Runtime, value goj
 	} else {
 		sb.WriteString(encodeYAML(r.render(value, 0, "")))
 	}
-	warnings := append(st.warnings(vm, trace, r.nodes, true), lookWarnings...)
+	warnings := append(st.warnings(vm, trace), lookWarnings...)
 	return replsession.ProcessedResult{Text: st.finish(vm, sb.String(), warnings), Providers: providers}, nil
 }
 
@@ -101,7 +101,7 @@ func (p *ResultProcessor) ProcessFailure(_ context.Context, vm *goja.Runtime, ev
 	providers, _, lookWarnings := st.collect(vm, nil, trace)
 	var sb strings.Builder
 	sb.WriteString(encodeYAML(mapping(str("error"), st.errorNode(vm, evalErr, trace))))
-	warnings := append(st.warnings(vm, trace, nil, false), lookWarnings...)
+	warnings := append(st.warnings(vm, trace), lookWarnings...)
 	return replsession.ProcessedResult{Text: st.finish(vm, sb.String(), warnings), Providers: providers}, nil
 }
 
@@ -236,10 +236,9 @@ func (s *state) finish(vm *goja.Runtime, body string, warnings []string) string 
 	return capText(sb.String(), s.opts.MaxResultChars)
 }
 
-// warnings renders RANGE warnings (with lines) and, after a successful eval,
-// UNUSED_NODE for nodes built by the eval and never returned, awaited,
-// looked at, shown, stored in mem or used as an input (owner).
-func (s *state) warnings(vm *goja.Runtime, trace cvmod.EvalTrace, returned []graph.NodeID, lint bool) []string {
+// warnings renders the warnings of the eval's calls with their lines (RANGE,
+// UNHANDLED, …) (owner).
+func (s *state) warnings(vm *goja.Runtime, trace cvmod.EvalTrace) []string {
 	var out []string
 	for _, w := range trace.Warnings {
 		out = append(out, s.lineTag(vm, w.Code, w.Site)+w.Message)
@@ -250,9 +249,6 @@ func (s *state) warnings(vm *goja.Runtime, trace cvmod.EvalTrace, returned []gra
 		}
 	} else {
 		cvmod.DrainWarnings(vm)
-	}
-	if lint {
-		out = append(out, s.unusedNodes(vm, trace, returned)...)
 	}
 	return dedupe(out)
 }
@@ -311,87 +307,6 @@ func (s *state) lineTag(vm *goja.Runtime, code string, site cvmod.Site) string {
 		return code + " " + t + ": "
 	}
 	return code + ": "
-}
-
-func (s *state) unusedNodes(vm *goja.Runtime, trace cvmod.EvalTrace, returned []graph.NodeID) []string {
-	if len(trace.Created) == 0 {
-		return nil
-	}
-	roots := append(append([]graph.NodeID{}, trace.Used...), returned...)
-	// nodes kept in mem or img count as used
-	if mem, ok := vm.GlobalObject().Get("mem").(*goja.Object); ok {
-		r := newRenderer(vm, s.eng)
-		r.render(mem, 0, "")
-		roots = append(roots, r.nodes...)
-	}
-	roots = append(roots, s.namedNodes()...)
-	used := map[graph.NodeID]bool{}
-	var mark func(id graph.NodeID)
-	mark = func(id graph.NodeID) {
-		if used[id] {
-			return
-		}
-		used[id] = true
-		if n, ok := s.eng.Node(id); ok {
-			for _, in := range n.Inputs {
-				mark(in)
-			}
-		}
-	}
-	for _, id := range roots {
-		mark(id)
-	}
-	// report only the last node of each discarded chain
-	feeds := map[graph.NodeID]bool{}
-	for _, c := range trace.Created {
-		if used[c.ID] {
-			continue
-		}
-		if n, ok := s.eng.Node(c.ID); ok {
-			for _, in := range n.Inputs {
-				feeds[in] = true
-			}
-		}
-	}
-	var out []string
-	for _, c := range trace.Created {
-		if used[c.ID] || feeds[c.ID] || s.onPlaceholder(c.ID, map[graph.NodeID]bool{}) {
-			continue
-		}
-		what := s.sourceLine(s.agentLine(c.Site.Line))
-		if c.Site.Source != "" || what == "" {
-			what = cvmod.DescribeNode(s.eng, c.ID)
-		}
-		if len(what) > 80 {
-			what = what[:77] + "…"
-		}
-		out = append(out, s.lineTag(vm, graph.WUnusedNode, c.Site)+what+
-			" builds a node and discards it. Nodes are lazy: nothing ran. Return it, await it, look at it, or keep it in mem.")
-	}
-	return out
-}
-
-// onPlaceholder reports whether node id is built on a builder-lambda
-// placeholder (within(mask, i => i.exposure(-0.4)) builds i.exposure on a
-// placeholder that Go substitutes); such nodes are intermediate, not discarded.
-func (s *state) onPlaceholder(id graph.NodeID, seen map[graph.NodeID]bool) bool {
-	if seen[id] {
-		return false
-	}
-	seen[id] = true
-	n, ok := s.eng.Node(id)
-	if !ok {
-		return false
-	}
-	if n.Op.On == graph.KindNone && n.Op.Name == "placeholder" {
-		return true
-	}
-	for _, in := range n.Inputs {
-		if s.onPlaceholder(in, seen) {
-			return true
-		}
-	}
-	return false
 }
 
 var syntaxPos = regexp.MustCompile(`Line (\d+):(\d+)\s*`)

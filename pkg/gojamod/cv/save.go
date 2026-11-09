@@ -111,9 +111,6 @@ func (b *binding) save(c goja.FunctionCall) goja.Value {
 		b.track.saved[rel] = site.Line
 	}
 	b.mu.Unlock()
-	if node != nil {
-		b.noteUsed(node.ID)
-	}
 	return b.startSave(rel, site, func(ctx context.Context, warn func(graph.Warning)) (any, error) {
 		var data []byte
 		var s dataout.Saved

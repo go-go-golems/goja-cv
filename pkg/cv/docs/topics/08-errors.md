@@ -58,7 +58,6 @@ return await img.toGray().dilate(100).stats()   // fix: img.dilate(64).dilate(36
 ## Warnings
 
 - `RANGE line N: …` an argument is outside its usual range (it still runs). The same warning from a loop is listed once with `(×N)`.
-- `UNUSED_NODE line N: …` a node was built and discarded (see `cv.docs.read("nodes-and-evaluation")`).
 - `LOOKS line N: …` more than 4 looks in one eval: the extra ones, named by line, were not rendered. Split the work over several calls, or return one `cv.sheet` of many crops.
 - `ITEMS line N: …` objects that look like region items lost their link (a `map` that built new objects); they are used as plain boxes.
 - `UNHANDLED line N: …` a promise was rejected and never handled (an unawaited `cv.load` or async helper that failed; `file:line` when it failed in a loaded file); await it. An unawaited `cv.save` that fails fails the eval instead.

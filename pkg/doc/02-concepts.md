@@ -40,8 +40,8 @@ return { same: a === img.exposure(0.3), graph: cv.explain(b).graph, summary: awa
 ```
 
 Awaited regions are a plain array: `const r = await img.detect.specks()`, then `r.filter(...)`, `r.sort(...)`,
-`r.slice(...)` are JavaScript, and the array goes back wherever regions go. A node that is built and
-thrown away produces an `UNUSED_NODE` warning, and reading a field of an unawaited measurement
+`r.slice(...)` are JavaScript, and the array goes back wherever regions go. A node that nobody awaits,
+looks at or saves does nothing (and nothing warns), and reading a field of an unawaited measurement
 (`img.stats().p99`) or comparing a node with `<` is `E_NOT_AWAITED` — await it first.
 
 Options are literal values. A measurement that feeds an option is awaited first:
@@ -112,7 +112,7 @@ four images arrive per eval.
 
 Every error has the same shape: `code`, `message`, `where` (the agent's line), `path` (the graph path),
 `hint` and usually a literal `fix`. Raw JavaScript errors that involve cv objects are translated into the same
-shape. Warnings (`RANGE`, `UNUSED_NODE`) travel with results instead of failing them. `cv.help(name)` never
+shape. Warnings (`RANGE`, `LOOKS`, `UNHANDLED`) travel with results instead of failing them. `cv.help(name)` never
 throws: unknown names return `{ found: false, didYouMean }`.
 
 ```js error=E_NOT_AWAITED

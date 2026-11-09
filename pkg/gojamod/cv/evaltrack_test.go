@@ -67,7 +67,7 @@ func TestLookOptionsSynonymsAndRedirects(t *testing.T) {
 	}
 }
 
-func TestEvalTrackingRecordsSitesUsesAndWarnings(t *testing.T) {
+func TestEvalTrackingRecordsWarningSites(t *testing.T) {
 	rt := newRuntime(t)
 	ctx := context.Background()
 	if _, err := rt.Owner.Call(ctx, "begin", func(_ context.Context, vm *goja.Runtime) (any, error) {
@@ -107,40 +107,10 @@ func TestEvalTrackingRecordsSitesUsesAndWarnings(t *testing.T) {
 	if len(opened) != 1 {
 		t.Fatalf("opened %v", opened)
 	}
-	if len(trace.Created) != 4 {
-		t.Fatalf("created %+v", trace.Created)
-	}
-	lines := []int{}
-	for _, c := range trace.Created {
-		lines = append(lines, c.Site.Line)
-		if c.Site.Source != "" {
-			t.Fatalf("site source %q, want the RunString script", c.Site.Source)
-		}
-	}
-	if want := []int{3, 4, 5, 6}; !equalInts(lines, want) {
-		t.Fatalf("lines %v, want %v", lines, want)
-	}
-	// Returning a node from an async body resolves the promise with a
-	// thenable, so the returned gaussian is evaluated (used) as well.
-	if len(trace.Used) != 2 || trace.Used[0] != trace.Created[1].ID || trace.Used[1] != trace.Created[3].ID {
-		t.Fatalf("used %v, want the stats and gaussian nodes", trace.Used)
-	}
-	if len(trace.Warnings) != 1 || trace.Warnings[0].Code != graph.WRange || trace.Warnings[0].Site.Line != 5 {
+	if len(trace.Warnings) != 1 || trace.Warnings[0].Code != graph.WRange || trace.Warnings[0].Site.Line != 5 || trace.Warnings[0].Site.Source != "" {
 		t.Fatalf("warnings %+v", trace.Warnings)
 	}
-	if returnedID != trace.Created[3].ID {
-		t.Fatalf("NodeOf = %d, want the hash-consed gaussian node %d", returnedID, trace.Created[3].ID)
+	if returnedID == 0 {
+		t.Fatal("NodeOf found no node")
 	}
-}
-
-func equalInts(a, b []int) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
 }

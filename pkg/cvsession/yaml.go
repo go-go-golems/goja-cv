@@ -35,8 +35,7 @@ var (
 
 // renderer turns a settled goja value into a YAML node tree, on the owner
 // goroutine. It never reads "then", never runs proxy traps and never invokes
-// getters. cv nodes render as one-line summaries and looks as their caption;
-// the node ids it meets are collected for the UNUSED_NODE lint.
+// getters. cv nodes render as one-line summaries and looks as their caption.
 type renderer struct {
 	vm        *goja.Runtime
 	eng       *graph.Engine
@@ -44,7 +43,6 @@ type renderer struct {
 	providers map[resultcontent.Provider]int    // other providers → content number
 	dropped   map[resultcontent.Provider]string // providers left out by the session's budgets → why
 	props     int
-	nodes     []graph.NodeID
 	stack     map[*goja.Object]bool
 	tableLeft int // characters the tables of this result may still use (tables.go)
 }
@@ -93,7 +91,6 @@ func (r *renderer) render(v goja.Value, depth int, path string) *yaml.Node {
 		return r.primitive(v)
 	}
 	if id, ok := cvmod.NodeOf(obj); ok {
-		r.nodes = append(r.nodes, id)
 		return str(cvmod.DescribeNode(r.eng, id) + " (lazy: await it, or return node.look())")
 	}
 	if l, ok := cvmod.LookOf(obj); ok {
