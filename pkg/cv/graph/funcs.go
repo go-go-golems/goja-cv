@@ -141,13 +141,8 @@ func (r *Registry) FuncsOn(k Kind) []*FuncDef {
 // arguments: defaults, types, limits, unknown keys with synonyms,
 // did-you-mean and redirects. Nodes are refused (options are literals).
 func BindOptions(call string, specs []ArgSpec, raw []any) (Args, []Warning, error) {
-	st := make([]ArgSpec, len(specs))
-	for i, s := range specs {
-		s.Static = true
-		st[i] = s
-	}
-	op := &OpDef{Name: call, Args: st}
-	bd, err := bind(op, call, false, raw, func(NodeID) (Kind, bool) { return "", false })
+	op := &OpDef{Name: call, Args: specs}
+	bd, err := bind(op, call, false, raw, func(NodeID) (*Node, bool) { return nil, false })
 	if err != nil {
 		return Args{}, nil, err
 	}

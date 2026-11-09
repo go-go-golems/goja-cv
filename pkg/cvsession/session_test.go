@@ -122,10 +122,10 @@ func TestUnusedNodeWarning(t *testing.T) {
 	}
 	for _, code := range []string{
 		`const a = img.exposure(0.3); return a.look()`,
-		`const a = img.exposure(0.3); return { m: await a.stats().meanL }`,
+		`const a = img.exposure(0.3); return { m: (await a.stats()).meanL }`,
 		`mem.a = img.exposure(0.3); return 1`,
 		`const a = img.exposure(0.3); show(a); return 1`,
-		`const s = img.stats(); const f = img.levels({ black: s.p01, white: s.p99 }); return f.look()`,
+		`const s = await img.stats(); const f = img.levels({ black: s.p01, white: s.p99 }); return f.look()`,
 		`return img.exposure(0.4)`,
 	} {
 		mustNotContain(t, text(eval(t, app, sid, code)), "UNUSED_NODE")
@@ -151,7 +151,11 @@ func TestErrorYAMLHasCodeFixAndLine(t *testing.T) {
 	mustContain(t, out, "code: E_UNKNOWN_OPTION", "where: 'line 2: ", "fix: 'levels({ black: 0.02 })'", "valid: [black, white, gamma, auto, space]")
 
 	out = text(eval(t, app, sid, "if (img.stats().meanL > 0.5) return 1"))
-	mustContain(t, out, "code: E_LAZY_COMPARE", "where: 'line 1: ")
+	mustContain(t, out, "code: E_NOT_AWAITED", "where: 'line 1: ", "fix: (await img.stats()).meanL")
+	out = text(eval(t, app, sid, "if (img.stats() > 0.5) return 1"))
+	mustContain(t, out, "code: E_NOT_AWAITED", "fix: (await img.stats()).p99")
+	out = text(eval(t, app, sid, "const d = img.dog(1, 4)\nreturn d.levels({ black: 0, white: d.stats() })"))
+	mustContain(t, out, "code: E_ARG_TYPE", "where: 'line 2: ", "fix: '{ white: (await node.stats()).p99 }'")
 
 	out = text(eval(t, app, sid, "const a = 1\nreturn a +* 2"))
 	mustContain(t, out, "code: SyntaxError", "where: 'line 2: return a +* 2'")
@@ -180,14 +184,6 @@ func TestRootsRestrictOpen(t *testing.T) {
 	app2, sid2 := newApp(t, cvsession.Options{Roots: []string{filepath.Dir(tiffPath)}})
 	out = text(eval(t, app2, sid2, "img = cv.open("+quote(tiffPath)+"); return await img"))
 	mustContain(t, out, "kind: Image")
-}
-
-func TestParamsInContextAndPerson(t *testing.T) {
-	app, sid := newApp(t, cvsession.Options{Image: tiffPath})
-	out := text(eval(t, app, sid, `const ev = P.slider("ev", { min: -2, max: 2, value: 0.3 }); return (await img.exposure(ev).stats()).meanL`))
-	mustContain(t, out, "params: ev = 0.3")
-	out = text(eval(t, app, sid, `P.set("ev", 1); return 1`))
-	mustContain(t, out, "params: ev = 1 (moved by the person)", "person: 'since your last eval: moved ev 0.3 → 1'")
 }
 
 func TestLongResultsAreCut(t *testing.T) {
@@ -287,12 +283,11 @@ return img.overlay(r, { labels: "id" }).look("regions")`)
 func TestCrossKindErrorsHaveALiteralFixAndGrammar(t *testing.T) {
 	app, sid := newApp(t, cvsession.Options{Image: tiffPath})
 	for code, want := range map[string][]string{
-		"const specks = img.detect.specks()\nreturn specks.heal()": {"code: E_UNKNOWN_METHOD", `hint: '"heal" is an Image method that takes Regions`, "fix: img.heal(regions, …)"},
+		"const specks = img.detect.specks()\nreturn specks.heal()": {"code: E_NOT_AWAITED", "regions are arguments of image methods", "fix: img.heal(regions, …)"},
 		`return img.mask.box([0, 0, 10, 10]).exposure(1)`:          {"fix: img.within(mask, i => i.exposure(…))", "an Image method"},
 		`return img.detect.specks().feather(2)`:                    {`"feather" is a Mask method`, "fix: regions.toMask().feather(…)"},
-		`return img.pick("meanL")`:                                 {`"pick" is a Value method`, "fix: img.stats().pick(…)"},
 		`return img.stats().exposure(1)`:                           {"Value has no method \"exposure\"", "fix: img.exposure(…)"},
-		`if (img > 1) return 1`:                                    {"An Image node was used as a number"},
+		`if (img > 1) return 1`:                                    {"code: E_NOT_AWAITED", "fix: (await img).w"},
 		`img.foo = 1`:                                              {`cannot set "foo" on an Image node`},
 		`return img.stats().look()`:                                {"stats is a Value node"},
 	} {
@@ -300,8 +295,9 @@ func TestCrossKindErrorsHaveALiteralFixAndGrammar(t *testing.T) {
 		mustContain(t, out, want...)
 		mustNotContain(t, out, " a Image", " an Mask", " an Value", " an Regions", "TypeError")
 	}
-	// derived fields that share a name with a method of another kind still work
-	mustContain(t, text(eval(t, app, sid, `return await img.check.dust().count`)), "0")
+	// a field that shares its name with a method of another kind is read after await
+	mustContain(t, text(eval(t, app, sid, `return await img.check.dust().count`)), "code: E_NOT_AWAITED", "fix: (await img.check.dust()).count")
+	mustContain(t, text(eval(t, app, sid, `return (await img.check.dust()).count`)), "0")
 }
 
 // TestConcurrentEvalsKeepTheirOwnSource: agents (pi) issue parallel tool
@@ -410,21 +406,19 @@ func TestArgumentErrorsHaveFixesAndWarningsFold(t *testing.T) {
 	}
 }
 
-// TestUnknownNamesOnCvAndP: pi run 3 call 1 was `await cv.info()`.
-func TestUnknownNamesOnCvAndP(t *testing.T) {
+// TestUnknownNamesOnCv: pi run 3 call 1 was `await cv.info()`.
+func TestUnknownNamesOnCv(t *testing.T) {
 	app, sid := newApp(t, cvsession.Options{Image: tiffPath})
 	for code, want := range map[string][]string{
-		`return await cv.info()`:                              {"code: E_UNKNOWN_METHOD", `cv has no "info"`, "fix: await img   // or cv.describe(img)"},
-		`return await cv.stats(img)`:                          {`cv has no "stats"`, `"stats" is an Image method`, "fix: img.stats(…)"},
-		`return cv.comapre([img, img])`:                       {`Did you mean "compare"?`, "fix: cv.compare(…)"},
-		`return P.slidr("a", { min: 0, max: 1, value: 0.5 })`: {`P has no "slidr"`, `Did you mean "slider"?`, "fix: P.slider(…)"},
-		`return cv.P.range("x")`:                              {`P has no "range"`, "valid: ["},
+		`return await cv.info()`:        {"code: E_UNKNOWN_METHOD", `cv has no "info"`, "fix: await img   // or cv.describe(img)"},
+		`return await cv.stats(img)`:    {`cv has no "stats"`, `"stats" is an Image method`, "fix: img.stats(…)"},
+		`return cv.comapre([img, img])`: {`Did you mean "compare"?`, "fix: cv.compare(…)"},
 	} {
 		mustContain(t, text(eval(t, app, sid, code)), want...)
 	}
 	// existing members, probes and feature checks still work
-	out := text(eval(t, app, sid, `return { v: typeof cv.version, open: typeof cv.open, then: cv.then === undefined, json: JSON.stringify(cv).length > 2, keys: Object.keys(cv).includes("docs"), has: "info" in cv, p: typeof P.slider, pp: cv.P === P }`))
-	mustContain(t, out, "v: string", "open: function", "then: true", "json: true", "keys: true", "has: false", "p: function", "pp: true")
+	out := text(eval(t, app, sid, `return { v: typeof cv.version, open: typeof cv.open, then: cv.then === undefined, json: JSON.stringify(cv).length > 2, keys: Object.keys(cv).includes("docs"), has: "info" in cv }`))
+	mustContain(t, out, "v: string", "open: function", "then: true", "json: true", "keys: true", "has: false")
 }
 
 // TestAwaitedRegionsMisuseGetsStructuredErrors: pi run 3 calls 7 and 8, run 4

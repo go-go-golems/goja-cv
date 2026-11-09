@@ -1,37 +1,9 @@
 package cvmod
 
 import (
-	"sort"
-
 	"github.com/dop251/goja"
 	"github.com/go-go-golems/goja-cv/pkg/cv/graph"
 )
-
-// __fieldNames() → the documented fields of every Value-returning op (its
-// schema with default arguments and the fields it produces with others).
-// The prelude uses it to tell a derived field (stats().meanL,
-// check.dust().count) from a method of another kind called on a Value
-// (stats().exposure(…)).
-func (b *binding) fieldNames(goja.FunctionCall) goja.Value {
-	seen := map[string]bool{}
-	for _, op := range b.eng.Registry().Ops() {
-		if op.Returns != graph.KindValue {
-			continue
-		}
-		for _, f := range op.DocFields() {
-			seen[f.Name] = true
-		}
-		for f := range op.Produces {
-			seen[f] = true
-		}
-	}
-	out := make([]string, 0, len(seen))
-	for f := range seen {
-		out = append(out, f)
-	}
-	sort.Strings(out)
-	return toJS(b.vm, toAny(out))
-}
 
 // __removedFields() → { box: fix, centroid: fix, meanMask: fix }: the field
 // names awaited region items throw E_NO_FIELD for (graph.RemovedFields).

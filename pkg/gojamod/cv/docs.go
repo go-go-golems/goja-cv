@@ -93,10 +93,3 @@ func (b *binding) docsRead(c goja.FunctionCall) goja.Value {
 	}
 	return b.vm.ToValue(md)
 }
-
-func capitalize(s string) string {
-	if s == "" {
-		return s
-	}
-	return strings.ToUpper(s[:1]) + s[1:]
-}

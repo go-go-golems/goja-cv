@@ -1,7 +1,7 @@
 ---
 Title: Concepts tour
 Slug: concepts
-Short: Values and kinds, lazy nodes, doc px and scales, masks vs regions, lambdas, looks, params and errors
+Short: Values and kinds, lazy nodes, literal options, doc px and scales, masks vs regions, lambdas, looks and errors
 Topics:
 - goja-cv
 - concepts
@@ -27,12 +27,11 @@ Every node has one kind, and every op says which kinds it takes and returns.
 | Mask | one channel of weights in [0, 1] | `img.mask.luminance`, `img.mask.box`, `regions.toMask()` |
 | Regions | discrete areas with flat fields id, x, y, w, h (box), cx, cy (centroid), area, aspect and measures | `img.detect.specks()`, `mask.components()` |
 | Value | plain data: numbers, objects, arrays | `stats`, `histogram`, `coverage`, `count` |
-| Param | a value a person can move | `P.slider`, `P.toggle`, `P.choice` |
 
 ## Lazy, immutable, shared nodes
 
 `img.exposure(0.3)` computes nothing: it returns a node. The same call returns the same node, so shared work
-is cached by node, scale and param values. Evaluation happens when you `await` a node, return a look, or
+is cached by node and scale. Evaluation happens when you `await` a node, return a look, or
 `show()` one.
 
 ```js
@@ -43,7 +42,12 @@ return { same: a === img.exposure(0.3), graph: b.explain(), summary: await b }
 
 Awaited data still remembers its node, so `const r = await img.detect.specks()` followed by
 `r.where(...)` works; data fields win where names collide (`r.count` is the number). A node that is built and
-thrown away produces an `UNUSED_NODE` warning, and comparing a node with `<` is `E_LAZY_COMPARE` — await it first.
+thrown away produces an `UNUSED_NODE` warning, and reading a field of an unawaited measurement
+(`img.stats().p99`) or comparing a node with `<` is `E_NOT_AWAITED` — await it first.
+
+Options are literal values. A measurement that feeds an option is awaited first:
+`img.levels({ black: s.p01, white: s.p99 })` with `const s = await img.stats()`. A node passed where an option is
+expected is `E_ARG_TYPE` with that fix.
 
 ## Doc px and scales
 
@@ -75,7 +79,7 @@ const sel = img.mask.luminance({ above: 0.45 }).minus(img.mask.box([0, 0, 40, 40
 const specks = img.detect.specks().where({ score: { gte: 0.5 } }).sortBy("area").top(3)
 return {
   coverage: await sel.coverage(),
-  inside: await img.stats({ mask: sel }).pick("meanL", "area"),
+  inside: (({ meanL, area }) => ({ meanL, area }))(await img.stats({ mask: sel })),
   biggest: (await specks).items.map(r => ({ id: r.id, x: r.x, y: r.y, w: r.w, h: r.h })),
 }
 ```
@@ -85,7 +89,7 @@ return {
 Two kinds of function can be passed in. **Builder** lambdas run once while the graph is built and return
 nodes: `img.within(mask, i => i.exposure(-0.5))`. **Data** lambdas run at evaluation time on small data:
 `regions.filter(r => r.aspect > 2)`. There are no per-pixel JavaScript functions; prefer `where({ … })`, which
-runs in Go and follows params.
+runs in Go.
 
 ## Looks
 
@@ -97,12 +101,6 @@ so coordinates read off a look convert to doc px. To judge small things, crop an
 (`img.view("speck")`), and put many candidates in one contact sheet (`cv.sheet(regions, { views })`). At most
 four images arrive per eval.
 
-## Params
-
-`P.slider("ev", { min: -2, max: 2, value: 0.3 })` is a node that goes wherever a number goes. When it moves
-(`P.set` stands in for a person moving a slider; there is no slider UI yet), only nodes downstream recompute,
-and the context block reports the move.
-
 ## Errors and warnings
 
 Every error has the same shape: `code`, `message`, `where` (the agent's line), `path` (the graph path),
@@ -110,7 +108,7 @@ Every error has the same shape: `code`, `message`, `where` (the agent's line), `
 shape. Warnings (`RANGE`, `UNUSED_NODE`) travel with results instead of failing them. `cv.help(name)` never
 throws: unknown names return `{ found: false, didYouMean }`.
 
-```js error=E_UNKNOWN_METHOD
+```js error=E_NOT_AWAITED
 const specks = img.detect.specks()
 return specks.heal()   // fix: img.heal(regions, …)
 ```

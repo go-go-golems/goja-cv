@@ -45,15 +45,10 @@ return img.mask.luminance({ above: 0.9 }).explain()
 
 ## Numbers carry their space
 
-`stats()` runs in linear space by default, so `levels({ black: s.p01, white: s.p99 })` with `s = img.stats()` matches. When a level comes from another space than the op that uses it, you get a `SPACE` warning with the fix:
-
-```js warns=SPACE
-const s = img.stats()
-return await img.mask.luminance({ above: s.p99 }).coverage()
-```
+`stats()` runs in linear space by default, so `levels({ black: s.p01, white: s.p99 })` with `s = await img.stats()` matches. A level passed to an op in another space is a number in the wrong space: measure in the space of the op that uses it (`mask.luminance` works in encoded space):
 
 ```js
-const s = img.stats({ space: "encoded" })
+const s = await img.stats({ space: "encoded" })
 return await img.mask.luminance({ above: s.p99 }).coverage()
 ```
 
@@ -76,7 +71,8 @@ return { raw: raw.look("as stored"), photo: raw.encode("srgb").look("encoded as 
 
 ```js
 const c = img.chroma({ relative: true })
-return { neutral: await c.stats().pick("meanL", "p99"), look: c.colormap("viridis").look("chroma") }
+const { meanL, p99 } = await c.stats()
+return { neutral: { meanL, p99 }, look: c.colormap("viridis").look("chroma") }
 ```
 
 ## Frames and names
@@ -85,5 +81,5 @@ An image's **frame** is the rectangle it covers in the coordinates of its file: 
 
 ```js
 cv.open("planted.npy", { as: "ref", origin: [0, 0] })
-return { same: (await ref).frame, diff: await img.blend(ref, { opacity: 0.5 }).stats().pick("meanL") }
+return { same: (await ref).frame, diff: (await img.blend(ref, { opacity: 0.5 }).stats()).meanL }
 ```

@@ -161,7 +161,7 @@ Project `.mcp.json`:
 }
 ```
 
-- `"lifecycle": "keep-alive"` keeps one server process for the conversation, so `mem`, `img`, params and look
+- `"lifecycle": "keep-alive"` keeps one server process for the conversation, so `mem`, `img` and look
   numbers persist between calls.
 - `"directTools": ["eval"]` exposes the eval tool directly (the model sees `cv_eval`) instead of behind the
   adapter's search proxy — important for small models.
@@ -209,11 +209,11 @@ In the binary (`goja-cv help <slug>`; also MCP resources `cv://guide/<slug>`):
 | slug | page |
 |---|---|
 | `what-is-goja-cv` | what it is, when to use it, what is implemented |
-| `concepts` | kinds, lazy nodes, doc px and scales, masks vs regions, lambdas, looks, params, errors |
+| `concepts` | kinds, lazy nodes, literal options, doc px and scales, masks vs regions, lambdas, looks, errors |
 | `cli` | every command and flag, look and data files, saving, preludes, JSON output, exit codes |
 | `agents` | what an agent sees over MCP, the eval contract, `cv.docs`, limits, security |
 | `setup-claude-code`, `setup-codex`, `setup-pi` | client setup |
-| `recipes` | exposure, dust, measuring spots and regions, masked edits, comparisons, params |
+| `recipes` | exposure, dust, measuring spots and regions, masked edits, comparisons |
 | `embedding` | Go API and xgoja |
 | `troubleshooting` | errors, sessions, timeouts, the goja interrupt caveat |
 

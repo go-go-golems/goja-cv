@@ -70,10 +70,12 @@ func goldenCases() []goldenCase {
 		{"gaussian", classStrict, c("gaussian", 2.0), Options{}},
 		{"contrast", classStrict, c("contrast", 0.3), Options{}},
 		{"levels-stats", classLevels, func(t *testing.T, e *graph.Engine, img graph.NodeID) graph.NodeID {
-			s := call(t, e, "stats", img)
-			p01 := call(t, e, "field", s.ID, "p01")
-			p99 := call(t, e, "field", s.ID, "p99")
-			return call(t, e, "levels", img, map[string]any{"black": graph.NodeArg{ID: p01.ID}, "white": graph.NodeArg{ID: p99.ID}}).ID
+			v, err := e.Evaluate(context.Background(), call(t, e, "stats", img).ID, graph.EvalOptions{Scale: 1})
+			if err != nil {
+				t.Fatal(err)
+			}
+			s := v.(*graph.DataValue).Data.(map[string]any) // awaited first: options are literals
+			return call(t, e, "levels", img, map[string]any{"black": s["p01"], "white": s["p99"]}).ID
 		}, Options{}},
 		{"levels-gamma", classLevels, c("levels", map[string]any{"black": 0.02, "white": 0.6, "gamma": 1.4}), Options{}},
 		{"togray", classStrict, c("toGray"), Options{}},

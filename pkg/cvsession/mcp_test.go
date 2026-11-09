@@ -156,7 +156,8 @@ return {
 	text, images, isErr = callEval(t, cs, `const fixed = img.levels({ black: 0.0, white: 0.74 }).exposure(0.35)
 show(cv.compare([img, fixed], { mode: "side" }), { label: "before / after" })
 show(fixed.histogram())
-return await fixed.stats().pick("meanL", "clipLow", "clipHigh")`)
+const { meanL, clipLow, clipHigh } = await fixed.stats()
+return { meanL, clipLow, clipHigh }`)
 	t.Logf("session A step 2:\n%s", text)
 	if isErr || len(images) != 2 {
 		t.Fatalf("correction: isErr=%v images=%d\n%s", isErr, len(images), text)
@@ -178,7 +179,7 @@ func TestMCPInstructionsAreCompactAndDocsAreResources(t *testing.T) {
 	}
 	for _, s := range []string{"body of an async function", "mem", "node.look(", "show(", "doc px", "fix",
 		"img.stats()", "img.stats({ box:", "img.levels(", "cv.compare(", "img.mask.luminance(", "img.within(", "img.detect.specks()", "img.heal(",
-		"P.slider(", "cv.docs.search(", "cv.docs.read(", "cv.help(op)", "cv://docs/<id>", "cv://reference", "cv://guide/<slug>", "not available yet"} {
+		"cv.docs.search(", "cv.docs.read(", "cv.help(op)", "cv://docs/<id>", "cv://reference", "cv://guide/<slug>", "not available yet"} {
 		if !strings.Contains(ins, s) {
 			t.Fatalf("instructions lack %q", s)
 		}

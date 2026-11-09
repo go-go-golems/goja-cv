@@ -30,7 +30,7 @@ func m3Engine(t *testing.T) *Engine {
 			Args: []ArgSpec{
 				{Name: "box", Type: "number[]", Unit: DocPx, Len: 4, Positional: true},
 				{Name: "minArea", Type: "number", Unit: DocPx2, Default: 0.0},
-				{Name: "analysisScale", Type: "number", Default: 1.0, Static: true, Min: F(0.01), Max: F(1)},
+				{Name: "analysisScale", Type: "number", Default: 1.0, Min: F(0.01), Max: F(1)},
 			},
 			AnalysisScale: func(a Args) float64 { return a.Raw("analysisScale").(float64) },
 			Run: func(_ context.Context, ec *EvalCtx, in []Value, a Args) (Value, error) {
@@ -108,14 +108,10 @@ func TestKindTypedArgsStaticLenValidate(t *testing.T) {
 	if ce := codeOf(t, err); ce.Code != EArgType || !strings.Contains(ce.Hint, "[x, y, w, h]") {
 		t.Fatalf("box len: %+v", ce)
 	}
-	// Static
-	par, _, err := e.DeclareParam(ParamDef{Name: "s", Type: "slider", Min: 0.1, Max: 1, Value: 0.5}, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = e.Call("blobs", src.ID, []any{[]any{0, 0, 4, 4}, map[string]any{"analysisScale": NodeArg{par.ID}}})
+	// options are literal values
+	_, err = e.Call("blobs", src.ID, []any{[]any{0, 0, 4, 4}, map[string]any{"analysisScale": NodeArg{m.ID}}})
 	if ce := codeOf(t, err); ce.Code != EArgType || !strings.Contains(ce.Message, "literal") {
-		t.Fatalf("static: %+v", ce)
+		t.Fatalf("literal: %+v", ce)
 	}
 	// Validate runs at build time
 	_, err = e.Call("pred", src.ID, []any{3})

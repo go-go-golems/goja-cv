@@ -81,9 +81,8 @@ func TestAccessorsAreLoud(t *testing.T) {
 func TestNodeArgumentsAreOwnInputs(t *testing.T) {
 	e, _ := newTestEngine(t)
 	src := mustCall(t, e, "fill", 0, 0.5)
-	mean := mustCall(t, e, "field", mustCall(t, e, "sum", src.ID).ID, "mean")
-	m := mustCall(t, e, "mix", src.ID, NodeArg{src.ID}, map[string]any{"w": NodeArg{mean.ID}})
-	if len(m.Inputs) != 3 || m.Inputs[0] != src.ID || m.Inputs[1] != src.ID || m.Inputs[2] != mean.ID {
+	m := mustCall(t, e, "mix", src.ID, NodeArg{src.ID}, map[string]any{"w": 0.25})
+	if len(m.Inputs) != 2 || m.Inputs[0] != src.ID || m.Inputs[1] != src.ID {
 		t.Fatalf("inputs %v", m.Inputs)
 	}
 	if m.Args.Input("other") != src || m.Args.Receiver() != src {

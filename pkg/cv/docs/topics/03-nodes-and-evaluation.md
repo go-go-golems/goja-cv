@@ -1,6 +1,6 @@
 # Nodes and evaluation
 
-Calls build lazy, immutable, hash-consed nodes; nothing runs until you await a node, return a look, or use the node in something that is evaluated. explain() shows the graph; UNUSED_NODE and E_LAZY_COMPARE catch the usual mistakes.
+Calls build lazy, immutable, hash-consed nodes; nothing runs until you await a node, return a look, or use the node in something that is evaluated. Options are literal values. explain() shows the graph; UNUSED_NODE and E_NOT_AWAITED catch the usual mistakes.
 
 ## Kinds
 
@@ -11,12 +11,11 @@ Every node has one kind, and every op says which kind it takes and returns.
 | Image | linear float32 pixels (awaits to a summary) | `img`, `exposure`, `levels`, `within`, `heal`, `overlay`, `compare` |
 | Mask | one channel in [0, 1] | `mask.luminance`, `mask.box`, `regions.toMask()`, `a.and(b)` |
 | Regions | a list of areas with flat fields id, x, y, w, h, cx, cy, area, aspect and measures | `detect.specks`, `mask.components()`, `regions.where()` |
-| Value | plain data | `stats`, `histogram`, `coverage`, `count`, `stats().meanL` |
-| Param | a value the person can move | `P.slider`, `P.toggle`, `P.choice` |
+| Value | plain data | `stats`, `histogram`, `coverage`, `count` |
 
 ## Lazy and hash-consed
 
-`img.exposure(0.3)` computes nothing; it returns a node. The same call returns the same node (`===`), so shared sub-graphs are computed once and cached by node, scale and param values.
+`img.exposure(0.3)` computes nothing; it returns a node. The same call returns the same node (`===`), so shared sub-graphs are computed once and cached by node and scale.
 
 ```js
 const a = img.exposure(0.3)
@@ -33,14 +32,25 @@ Evaluation happens when you:
 - return a look (`node.look()`) or `show(node)`;
 - `cv.evaluate(node, { scale })` for an explicit scale.
 
-Fields of a Value node are Value nodes too, so they can feed other ops before anything runs:
+## Options are literal values
+
+Every option is a number, string, boolean, list or object: written in the script or computed by JavaScript. A measurement that feeds an option is a **data dependency**: await it first, then build the node. The cache makes the extra evaluation cheap (the `stats` node and its inputs are reused).
 
 ```js
-const s = img.stats()
-const fixed = img.levels({ black: s.p01, white: s.p99 })    // s.p01 is a lazy Value node
-const after = await fixed.stats().pick("meanL", "p01", "p99")
-return { after, look: fixed.look("levels") }
+const s = await img.stats()
+const fixed = img.levels({ black: s.p01, white: s.p99 })    // numbers: s was awaited
+const { meanL, p01, p99 } = await fixed.stats()
+return { after: { meanL, p01, p99 }, look: fixed.look("levels") }
 ```
+
+Passing a node where an option is expected is `E_ARG_TYPE` with the fix:
+
+```js error=E_ARG_TYPE
+const d = img.dog(1, 4)
+return d.levels({ black: 0, white: d.stats() }).look()   // fix: { white: (await node.stats()).p99 }
+```
+
+Node inputs exist only where an op takes an image, a mask or regions: `a.sub(b)`, `img.within(mask, fn)`, `img.overlay(regions)`.
 
 ## Awaited data remembers its node
 
@@ -52,7 +62,7 @@ const dust = specks.where({ score: { gte: 0.5 } })  // a Regions node again
 return { all: specks.count, dust: await dust.count(), look: img.overlay(dust).look("dust") }
 ```
 
-Data wins where names collide: `specks.count` is the number; the method form is `img.detect.specks().count()`. Ops recompute the node, so after a param moved they see the new value, not the awaited snapshot.
+Data wins where names collide: `specks.count` is the number; the method form is `img.detect.specks().count()`. Ops recompute the node: they see its value, not an edited copy of the awaited data.
 
 Awaited Regions are an object `{ count, items: [...] }`, not an array: the list is `.items`, and it holds every region (up to 100000; more is `E_TOO_MANY`). The YAML result shows at most 48 items of a list; return `cv.json(x)` or `cv.csv(x)` to hand a program all of them.
 
@@ -80,12 +90,12 @@ warnings:
   - 'UNUSED_NODE line 1: img.exposure(0.3) builds a node and discards it. Nodes are lazy: nothing ran. Return it, await it, show() it, or keep it in mem.'
 ```
 
-## E_LAZY_COMPARE
+## E_NOT_AWAITED
 
-Comparing or adding a node with `<`, `>`, `+` is an error: the node has no value yet. Await first.
+A Value or Regions node has no data until it is awaited. Reading a property that is not one of its methods (`img.stats().p99`), or using it as a number (`img.stats() > 0.5`), is `E_NOT_AWAITED` with the fix:
 
-```js error=E_LAZY_COMPARE
-if (img.stats().meanL > 0.5) return "bright"
+```js error=E_NOT_AWAITED
+if (img.stats().meanL > 0.5) return "bright"    // fix: (await img.stats()).meanL
 return "dark"
 ```
 

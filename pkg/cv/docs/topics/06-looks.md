@@ -7,9 +7,9 @@ A look is an image you return: node.look(options) in the result, or show(node). 
 `node.look("label")` or `node.look({ label, zoom, interp, maxSide, ruler, grid, format })` returns a look object. Put it anywhere in the returned value; the YAML shows a placeholder with the caption and the image arrives next to the text.
 
 ```js looks=2
-const s = img.stats()
+const s = await img.stats()
 const fixed = img.levels({ black: s.p01, white: s.p99 })
-return { meanL: await fixed.stats().meanL, before: img.look("before"), after: fixed.look({ label: "after", maxSide: 800 }) }
+return { meanL: (await fixed.stats()).meanL, before: img.look("before"), after: fixed.look({ label: "after", maxSide: 800 }) }
 ```
 
 ```yaml
@@ -90,7 +90,8 @@ A look shows **encoded** values: an sRGB photo looks as usual, a linear-encoded 
 const fixed = img.exposure(0.4)
 show(cv.compare([img, fixed], { mode: "side" }), { label: "before / after" })
 show(fixed.histogram())
-return await fixed.stats().pick("meanL", "clipHigh")
+const { meanL, clipHigh } = await fixed.stats()
+return { meanL, clipHigh }
 ```
 
 Other Value nodes have no look (`E_WRONG_KIND`): await them instead.

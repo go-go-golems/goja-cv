@@ -23,7 +23,7 @@ const WOutside = "OUTSIDE"
 // MaxProfileSamples bounds a profile.
 const MaxProfileSamples = 4096
 
-var grayArg = graph.ArgSpec{Name: "gray", Type: "enum:rec709,average", Default: "rec709", Static: true,
+var grayArg = graph.ArgSpec{Name: "gray", Type: "enum:rec709,average", Default: "rec709",
 	Doc:       "weights of the gray plane: rec709 (luminance) or average (equal weights)",
 	ValueDocs: map[string]string{"rec709": "Rec. 709 luminance weights 0.2126, 0.7152, 0.0722", "average": "(r + g + b) / 3"}}
 
@@ -447,11 +447,11 @@ func measurementOps() []graph.OpDef {
 			Name: "measure", On: graph.KindImage, Returns: graph.KindValue, Space: linear,
 			Args: []graph.ArgSpec{
 				pointsArg("points in absolute doc px: [x, y] lists or objects with cx, cy (region items, measurement rows)"),
-				{Name: "coreRadius", Type: "number", Unit: graph.DocPx, Default: coreDefault, Min: graph.F(0.5), Max: graph.F(200), Static: true,
+				{Name: "coreRadius", Type: "number", Unit: graph.DocPx, Default: coreDefault, Min: graph.F(0.5), Max: graph.F(200),
 					Doc: "radius of the core disk (doc px)"},
-				{Name: "ringRadii", Type: "number[]", Unit: graph.DocPx, Len: 2, Optional: true, Static: true, Min: graph.F(0), Max: graph.F(400),
+				{Name: "ringRadii", Type: "number[]", Unit: graph.DocPx, Len: 2, Optional: true, Min: graph.F(0), Max: graph.F(400),
 					Doc: "[r1, r2]: the ring between r1 and r2 (doc px); default [coreRadius + 3, coreRadius + 9]"},
-				{Name: "channels", Type: "bool", Optional: true, Static: true, Doc: "add stepR, stepG, stepB and stepChroma (default: on colour images)"},
+				{Name: "channels", Type: "bool", Optional: true, Doc: "add stepR, stepG, stepB and stepChroma (default: on colour images)"},
 				grayArg, analysisScaleArg,
 			},
 			AnalysisScale: analysisScale,
@@ -476,7 +476,7 @@ func measurementOps() []graph.OpDef {
 				{Name: "from", Type: "point", Unit: graph.DocPx, Positional: true, Doc: "start point (doc px; [x, y] or an object with cx, cy)"},
 				{Name: "to", Type: "point", Unit: graph.DocPx, Positional: true, Doc: "end point"},
 				{Name: "step", Type: "number", Unit: graph.DocPx, Default: 1.0, Min: graph.F(0.05), Max: graph.F(1000), Doc: "distance between samples (doc px)"},
-				{Name: "width", Type: "number", Unit: graph.DocPx, Default: 1.0, Min: graph.F(1), Max: graph.F(64), Static: true,
+				{Name: "width", Type: "number", Unit: graph.DocPx, Default: 1.0, Min: graph.F(1), Max: graph.F(64),
 					Doc: "samples averaged across the line, 1 doc px apart (suppresses grain without blurring along the line)"},
 				grayArg, analysisScaleArg,
 			},
@@ -486,7 +486,7 @@ func measurementOps() []graph.OpDef {
 				to, ok2 := literalPoint(a.Raw("to"))
 				step, ok3 := a.Raw("step").(float64)
 				if !ok1 || !ok2 || !ok3 {
-					return nil // lifted: checked when evaluated
+					return nil // regions or items as points: checked when evaluated
 				}
 				_, err := profileSamples("profile", from, to, step)
 				return err

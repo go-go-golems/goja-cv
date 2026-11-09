@@ -38,23 +38,16 @@ func TestComponentsAndRegionOps(t *testing.T) {
 	if rv2 := regionsAt(t, e, comps, 0.25); rv2.Items[0].Box != big.Box || len(rv2.Items) != 2 {
 		t.Fatalf("components at 0.25 differ: %+v", rv2.Items[0])
 	}
-	// where with a param: moving it changes the result, recomputing only where
-	par, _, err := e.DeclareParam(graph.ParamDef{Name: "minA", Type: "slider", Min: 0, Max: 200, Value: 50.0}, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	w := call(t, e, "where", comps.ID, map[string]any{"area": map[string]any{"gte": graph.NodeArg{ID: par.ID}}})
-	cnt := call(t, e, "count", w.ID)
+	// where: another threshold recomputes only where (components is cached)
+	cnt := call(t, e, "count", call(t, e, "where", comps.ID, map[string]any{"area": map[string]any{"gte": 50.0}}).ID)
 	if got := evalValue(t, e, cnt, 1).(*graph.DataValue).Data; got != 1.0 {
 		t.Fatalf("count(area ≥ 50) = %v", got)
 	}
-	if err := e.Params().Set("minA", 10.0); err != nil {
-		t.Fatal(err)
-	}
-	if got := evalValue(t, e, cnt, 1).(*graph.DataValue).Data; got != 2.0 {
+	w := call(t, e, "where", comps.ID, map[string]any{"area": map[string]any{"gte": 10.0}})
+	if got := evalValue(t, e, call(t, e, "count", w.ID), 1).(*graph.DataValue).Data; got != 2.0 {
 		t.Fatalf("count(area ≥ 10) = %v", got)
 	}
-	if e.Evaluator().Runs(comps.ID) != 1 || e.Evaluator().Runs(w.ID) != 2 {
+	if e.Evaluator().Runs(comps.ID) != 1 || e.Evaluator().Runs(w.ID) != 1 {
 		t.Fatalf("runs components=%d where=%d", e.Evaluator().Runs(comps.ID), e.Evaluator().Runs(w.ID))
 	}
 	// without / only / sortBy / top / shorthand eq

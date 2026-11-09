@@ -142,25 +142,16 @@ func TestSpaceOptionAndStatics(t *testing.T) {
 	if a.Space != buffer.SpaceLinear || c.Space != buffer.SpaceEncoded || c.Enc != buffer.EncSRGB {
 		t.Fatalf("statics %s / %s", graph.Statics(a), graph.Statics(c))
 	}
-	if got := graph.Describe(e.Builder(), a, 1, nil); got != "exposure(ev: 0.3)" {
+	if got := graph.Describe(e.Builder(), a, 1); got != "exposure(ev: 0.3)" {
 		t.Errorf("default space shown: %q", got)
 	}
-	if got := graph.Describe(e.Builder(), c, 1, nil); got != `exposure(ev: 0.3, space: "encoded")` {
+	if got := graph.Describe(e.Builder(), c, 1); got != `exposure(ev: 0.3, space: "encoded")` {
 		t.Errorf("explicit space hidden: %q", got)
 	}
-	// a param cannot move the space: it changes the graph's shape
-	p, _, err := e.DeclareParam(graph.ParamDef{Name: "sp", Type: "choice", Options: []string{"linear", "encoded"}, Value: "linear"}, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := e.Call("exposure", img.ID, []any{0.3, map[string]any{"space": graph.NodeArg{ID: p.ID}}}); err == nil {
-		t.Fatal("a node for space was accepted")
-	}
-	// Value statics: stats measured img (srgb) in linear space; fields inherit
+	// Value statics: stats measured img (srgb) in linear space
 	s, _ := mustCall(t, e, "stats", img)
-	p99, _ := mustCall(t, e, "field", s, "p99")
-	if s.Enc != buffer.EncSRGB || s.Space != buffer.SpaceLinear || p99.Enc != buffer.EncSRGB || p99.Space != buffer.SpaceLinear {
-		t.Fatalf("value statics: stats %v/%v, p99 %v/%v", s.Enc, s.Space, p99.Enc, p99.Space)
+	if s.Enc != buffer.EncSRGB || s.Space != buffer.SpaceLinear {
+		t.Fatalf("value statics: stats %v/%v", s.Enc, s.Space)
 	}
 	// masks have no encoding and no space
 	m, _ := mustCall(t, e, "mask.luminance", img, map[string]any{"above": 0.5})
@@ -341,28 +332,7 @@ func TestCompareConvertsEachInput(t *testing.T) {
 	}
 }
 
-func TestSpaceAndEncodingWarnings(t *testing.T) {
-	for _, tc := range []struct {
-		enc  string
-		warn bool
-	}{{"srgb", true}, {"linear", false}} {
-		e := spaceEngine(t)
-		img := src(t, e, tc.enc, 0.2, 0.3, 0.4)
-		s, _ := mustCall(t, e, "stats", img) // linear
-		p99, _ := mustCall(t, e, "field", s, "p99")
-		_, ws := mustCall(t, e, "mask.luminance", img, map[string]any{"above": graph.NodeArg{ID: p99.ID}}) // encoded
-		if hasWarning(ws, graph.WSpace) != tc.warn {
-			t.Fatalf("%s: SPACE warning %v, want %v: %v", tc.enc, hasWarning(ws, graph.WSpace), tc.warn, ws)
-		}
-		if tc.warn && !strings.Contains(ws[len(ws)-1].Message, `mask.luminance.above comes from stats() in linear space, but mask.luminance runs in encoded space here. fix: img.stats({ space: "encoded" })`) {
-			t.Fatalf("SPACE message: %v", ws)
-		}
-		// the idiom levels({ black: s.p01, white: s.p99 }) stays quiet: both linear
-		p01, _ := mustCall(t, e, "field", s, "p01")
-		if _, ws := mustCall(t, e, "levels", img, map[string]any{"black": graph.NodeArg{ID: p01.ID}, "white": graph.NodeArg{ID: p99.ID}}); len(ws) != 0 {
-			t.Fatalf("%s: levels idiom warns: %v", tc.enc, ws)
-		}
-	}
+func TestEncodingWarnings(t *testing.T) {
 	e := spaceEngine(t)
 	a := src(t, e, "srgb", 0.2, 0.3, 0.4)
 	b := src(t, e, "linear", 0.2, 0.3, 0.4)

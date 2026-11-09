@@ -39,7 +39,7 @@ func polarity(x *graph.Expander, d *graph.Node, p, space string) ([]*graph.Node,
 
 func expandHighpass(x *graph.Expander, a *graph.Node, args graph.Args) ([]*graph.Node, error) {
 	sp := args.String(graph.SpaceArg) // resolved: encoded unless the call said otherwise
-	g, err := x.Call("gaussian", a, x.Arg(args, "sigma"), map[string]any{graph.SpaceArg: sp})
+	g, err := x.Call("gaussian", a, args.DocLength("sigma"), map[string]any{graph.SpaceArg: sp})
 	if err != nil {
 		return nil, err
 	}
@@ -53,11 +53,11 @@ func expandHighpass(x *graph.Expander, a *graph.Node, args graph.Args) ([]*graph
 func expandDoG(x *graph.Expander, a *graph.Node, args graph.Args) ([]*graph.Node, error) {
 	sp := args.String(graph.SpaceArg)
 	o := map[string]any{graph.SpaceArg: sp}
-	g1, err := x.Call("gaussian", a, x.Arg(args, "sigma1"), o)
+	g1, err := x.Call("gaussian", a, args.DocLength("sigma1"), o)
 	if err != nil {
 		return nil, err
 	}
-	g2, err := x.Call("gaussian", a, x.Arg(args, "sigma2"), o)
+	g2, err := x.Call("gaussian", a, args.DocLength("sigma2"), o)
 	if err != nil {
 		return nil, err
 	}
@@ -66,11 +66,6 @@ func expandDoG(x *graph.Expander, a *graph.Node, args graph.Args) ([]*graph.Node
 		return nil, err
 	}
 	return polarity(x, d, args.String("polarity"), sp)
-}
-
-func literal(a graph.Args, name string) (float64, bool) {
-	v, ok := a.Raw(name).(float64)
-	return v, ok
 }
 
 func filterViewOps() []graph.OpDef {
@@ -95,9 +90,8 @@ func filterViewOps() []graph.OpDef {
 				polarityArg,
 			},
 			Validate: func(a graph.Args) error {
-				s1, ok1 := literal(a, "sigma1")
-				s2, ok2 := literal(a, "sigma2")
-				if ok1 && ok2 && !(s2 > s1) {
+				s1, s2 := a.DocLength("sigma1"), a.DocLength("sigma2")
+				if !(s2 > s1) {
 					lo, hi := min(s1, s2), max(s1, s2)
 					if lo == hi {
 						hi = 4 * lo
@@ -218,22 +212,34 @@ func speckView(x *graph.Expander, a *graph.Node, s float64, sp, pol string, gray
 	if err != nil {
 		return nil, err
 	}
-	st, err := x.Call("stats", d, o)
-	if err != nil {
-		return nil, err
+	return x.Call("levelsAt", d, o) // white = max(5 × p99, 1e-4), computed when it runs
+}
+
+// levelsAtOp is levels with black 0 and white = max(times × the p-quantile
+// of the receiver's luminance, floor), computed when it runs: the speck
+// view's stretch. Internal: not callable from JavaScript.
+func levelsAtOp() graph.OpDef {
+	return graph.OpDef{
+		Name: "levelsAt", On: graph.KindImage, Returns: graph.KindImage, Internal: true, Global: true,
+		Space: graph.SpaceRule{Default: buffer.SpaceLinear},
+		Args: []graph.ArgSpec{
+			{Name: "p", Type: "number", Default: 0.99, Min: graph.F(0), Max: graph.F(1)},
+			{Name: "times", Type: "number", Default: 5.0},
+			{Name: "floor", Type: "number", Default: 1e-4},
+		},
+		Run: func(ctx context.Context, _ *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
+			src := image(in[0])
+			lum := make([]float32, src.Buf.N())
+			copy(lum, src.Buf.Luminance()) // Percentile reorders; the quantile is the one stats reports
+			w := max(a.Number("times")*kernels.Percentile(lum, a.Number("p")), a.Number("floor"))
+			out, err := kernels.Levels(ctx, src.Buf, 0, w, 1)
+			if err != nil {
+				return nil, err
+			}
+			return graph.NewImage(out), nil
+		},
+		Doc: "levels({ black: 0, white: max(times × p-quantile, floor) }) with the quantile of the receiver's luminance (the speck view's stretch; internal).",
 	}
-	p99, err := x.Call("field", st, "p99")
-	if err != nil {
-		return nil, err
-	}
-	w, err := x.Call("mul", p99, 5.0)
-	if err != nil {
-		return nil, err
-	}
-	if w, err = x.Call("max", w, 1e-4); err != nil { // a flat window has p99 0
-		return nil, err
-	}
-	return x.Call("levels", d, map[string]any{"black": 0.0, "white": graph.NodeArg{ID: w.ID}, graph.SpaceArg: sp})
 }
 
 func presetNames() []string {
@@ -262,7 +268,7 @@ func viewOp() graph.OpDef {
 					"color": "neutral", "colour": "neutral", "chroma": "neutral", "stretch": "scene", "auto": "scene", "plain": "scene",
 					"darkSpeck": "speckDark", "speckColour": "speckColor"},
 				Doc: "the preset: " + strings.Join(presetNames(), ", ") + " (cv.docs.read(\"views\") describes each)"},
-			{Name: "size", Type: "number", Unit: graph.DocPx, Default: 3.0, Min: graph.F(0.5), Max: graph.F(200), Usual: [2]float64{1, 30}, Static: true,
+			{Name: "size", Type: "number", Unit: graph.DocPx, Default: 3.0, Min: graph.F(0.5), Max: graph.F(200), Usual: [2]float64{1, 30},
 				Doc: "typical size of the target in doc px; the presets derive their σ from it"},
 		},
 		Halo: func(a graph.Args) float64 { return 4 * a.DocLength("size") },

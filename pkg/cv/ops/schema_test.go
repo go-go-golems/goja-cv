@@ -47,8 +47,7 @@ var schemaCalls = map[string]func(s schemaNodes) (graph.NodeID, []any){
 // schemaScalar are Value ops whose result is a number or a derived value of
 // their receiver, and ops the Go-only walk cannot run (data lambdas).
 var schemaScalar = map[string]bool{
-	"count": true, "coverage": true, "explain": true, "field": true, "pick": true, "percentile": true,
-	"abs": true, "add": true, "sub": true, "mul": true, "div": true, "min": true, "max": true, "distance": true,
+	"count": true, "coverage": true, "explain": true,
 	"filter": true, // a data lambda: covered by the runtime tests (TestRegionItemsAreFlat)
 }
 

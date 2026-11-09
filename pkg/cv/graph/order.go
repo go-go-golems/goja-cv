@@ -54,15 +54,7 @@ func (b *Builder) inChain(n *Node, match func(*Node) bool) *Node {
 }
 
 // hasHalo reports whether the op reads a border around each output pixel
-// with these arguments (a lifted length counts as one).
-func hasHalo(op *OpDef, args Args) (out bool) { //nolint:nonamedreturns // recover needs a named result
-	if op.Halo == nil {
-		return false
-	}
-	defer func() {
-		if recover() != nil {
-			out = true // a lifted argument (param, measurement): assume a halo
-		}
-	}()
-	return op.Halo(args) > 0
+// with these arguments.
+func hasHalo(op *OpDef, args Args) bool {
+	return op.Halo != nil && op.Halo(args) > 0
 }

@@ -52,9 +52,12 @@ func hotList(t testing.TB, e *graph.Engine, img *graph.Node) *graph.Node {
 	}
 	gray := mk("toGray", img.ID, "average")
 	dog := mk("dog", gray.ID, 1.0, 4.0, opts)
-	p99 := mk("field", mk("stats", dog.ID).ID, "p99")
-	white := mk("mul", p99.ID, 2.0)
-	lv := mk("levels", dog.ID, map[string]any{"black": 0.0, "white": graph.NodeArg{ID: white.ID}})
+	st, err := e.Evaluate(context.Background(), mk("stats", dog.ID).ID, graph.EvalOptions{Scale: 1})
+	if err != nil {
+		t.Fatalf("stats: %v", err)
+	}
+	white := 2 * st.(*graph.DataValue).Data.(map[string]any)["p99"].(float64) // awaited first: options are literals
+	lv := mk("levels", dog.ID, map[string]any{"black": 0.0, "white": white})
 	hot := mk("components", mk("mask.luminance", lv.ID, map[string]any{"above": 0.99}).ID, map[string]any{"minArea": 4.0})
 	m := mk("measure", hot.ID, graph.NodeArg{ID: dog.ID}, map[string]any{"stats": []any{"max"}, "prefix": "dog"})
 	m = mk("measure", m.ID, graph.NodeArg{ID: img.ID}, map[string]any{"ring": true})

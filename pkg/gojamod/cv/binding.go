@@ -112,14 +112,10 @@ func (b *binding) object() *goja.Object {
 	set("__evaluate", b.evaluate)
 	set("__describe", b.describe)
 	set("__unknown", b.unknown)
-	set("__lazy", b.lazy)
+	set("__notAwaited", b.notAwaited)
 	set("__immutable", b.immutable)
 	set("__help", b.help)
 	set("__warnings", b.warningsJS)
-	set("__param", b.param)
-	set("__paramInfo", b.paramInfo)
-	set("__paramSet", b.paramSet)
-	set("__params", b.params)
 	set("__func", b.funcJS)
 	set("__builders", b.builders)
 	set("__placeholder", b.placeholder)
@@ -127,7 +123,6 @@ func (b *binding) object() *goja.Object {
 	set("__save", b.saveNode)
 	set("__data", b.dataJS)
 	b.addDocs(o)
-	set("__fieldNames", b.fieldNames)
 	set("__removedFields", b.removedFields)
 	set("__noField", b.noField)
 	set("__itemProto", b.itemProtoJS)
@@ -423,7 +418,7 @@ func (b *binding) describe(c goja.FunctionCall) goja.Value {
 	scale := b.eng.PreviewScale(n.ID)
 	d := map[string]any{
 		"id": float64(n.ID), "kind": string(n.Kind), "op": n.Op.Name, "label": graph.Label(n),
-		"call":  graph.Describe(b.eng.Builder(), n, scale, b.eng.Params().Snapshot()),
+		"call":  graph.Describe(b.eng.Builder(), n, scale),
 		"frame": n.Frame.Data(),
 		"path":  toAny(b.eng.Path(n.ID)),
 		"scale": scale,
@@ -448,19 +443,87 @@ func (b *binding) unknown(c goja.FunctionCall) goja.Value {
 	return nil
 }
 
-// __lazy(id, hint) throws E_LAZY_COMPARE.
-func (b *binding) lazy(c goja.FunctionCall) goja.Value {
+// __notAwaited(id, prop, hint) throws E_NOT_AWAITED: a property read on a
+// lazy Value or Regions node that is not one of its methods (prop), or a
+// node used as a primitive (prop "", hint "number" or "primitive").
+// Nothing has been computed; the fix awaits the node first.
+func (b *binding) notAwaited(c goja.FunctionCall) goja.Value {
 	n := b.nodeArg(c.Argument(0))
-	e := graph.Errorf(graph.ELazyCompare, "%s node was used as %s, but nodes are lazy: nothing has been computed yet.", capitalize(graph.A(string(n.Kind))), graph.A(c.Argument(1).String()))
+	prop := c.Argument(1).String()
+	if goja.IsUndefined(c.Argument(1)) || goja.IsNull(c.Argument(1)) {
+		prop = ""
+	}
+	call := n.Op.Name + "()"
+	expr := graph.AwaitExpr(n)
+	if n.Kind == graph.KindImage || n.Kind == graph.KindMask {
+		call = graph.Label(n)
+	}
+	var e *graph.Error
+	switch {
+	case prop == "":
+		e = graph.Errorf(graph.ENotAwaited, "%s is a lazy node used as %s: nothing has been computed yet.", call, graph.A(c.Argument(2).String()))
+		e.Hint = "Await the node first; awaited, a Value is its data and an Image its summary { kind, w, h, … }."
+		if n.Kind == graph.KindImage || n.Kind == graph.KindMask {
+			e.Fix = "(await img).w"
+		} else {
+			e.Fix = fmt.Sprintf("(await %s).%s", expr, sampleField(n))
+		}
+	case n.Kind == graph.KindRegions && b.takesRegions(prop):
+		e = graph.Errorf(graph.ENotAwaited, "%s is a lazy Regions node and has no method %q: regions are arguments of image methods.", call, prop)
+		e.Hint = "Pass the regions to the image method."
+		e.Fix = fmt.Sprintf("img.%s(regions, …)", prop)
+	case len(b.eng.Registry().Find(prop)) > 0 && !hasField(n, prop):
+		// a method of another kind (stats().exposure, regions.feather): the cross-kind hint
+		b.throw(b.eng.Registry().UnknownMethod(n.Kind, prop, b.eng.Path(n.ID)))
+	default:
+		e = graph.Errorf(graph.ENotAwaited, "%s is a lazy node: read .%s after awaiting it.", call, prop)
+		e.Hint = "Nothing has been computed yet; awaiting the node evaluates it."
+		e.Fix = fmt.Sprintf("(await %s).%s", expr, prop)
+	}
 	e.Path = b.eng.Path(n.ID)
-	e.Hint = "Await the node to get its value."
-	if n.Kind == graph.KindValue || n.Kind == graph.KindParam {
-		e.Fix = "(await node) > 0.5   // e.g. (await img.stats()).meanL > 0.5"
-	} else {
-		e.Fix = "const v = await node   // an Image awaits to a summary { kind, w, h, scale }"
+	if prop != "" {
+		e.Path = append(e.Path, "✗ "+prop)
 	}
 	b.throw(e)
 	return nil
+}
+
+// sampleField is a field of node n's schema to show in a fix: p99 when it
+// has one, else its first field.
+func sampleField(n *graph.Node) string {
+	for _, f := range n.Fields {
+		if f.Name == "p99" {
+			return "p99"
+		}
+	}
+	if len(n.Fields) > 0 {
+		return n.Fields[0].Name
+	}
+	if n.Kind == graph.KindRegions {
+		return "items"
+	}
+	return "<field>"
+}
+
+func hasField(n *graph.Node, name string) bool {
+	_, ok := graph.FindField(n.Fields, name)
+	return ok
+}
+
+// takesRegions reports whether name is an Image method with a positional
+// argument that takes regions (overlay, heal, measure): regions are passed
+// to it, not called on.
+func (b *binding) takesRegions(name string) bool {
+	op, ok := b.eng.Registry().Lookup(graph.KindImage, name)
+	if !ok {
+		return false
+	}
+	for _, s := range op.Args {
+		if s.Positional && strings.Contains(s.Type, string(graph.KindRegions)) {
+			return true
+		}
+	}
+	return false
 }
 
 // __immutable(id, prop) throws E_IMMUTABLE.
@@ -499,108 +562,6 @@ func (b *binding) warningsJS(c goja.FunctionCall) goja.Value {
 	out := make([]any, len(ws))
 	for i, w := range ws {
 		out[i] = map[string]any{"code": w.Code, "message": w.Message}
-	}
-	return toJS(b.vm, out)
-}
-
-var paramKeys = map[string][]string{
-	"slider": {"min", "max", "value", "step", "label", "unit", "reset"},
-	"toggle": {"value", "label", "reset"},
-	"choice": {"options", "value", "label", "reset"},
-}
-
-// __param(type, name, opts) → {id, kind}
-func (b *binding) param(c goja.FunctionCall) goja.Value {
-	typ := c.Argument(0).String()
-	name := c.Argument(1)
-	if goja.IsUndefined(name) || name.String() == "" {
-		b.throw(graph.Errorf(graph.EArgType, "P.%s needs a name.", typ).WithFix(fmt.Sprintf(`P.%s("ev", { … })`, typ)))
-	}
-	opts, _ := fromJS(c.Argument(2).Export()).(map[string]any)
-	valid := paramKeys[typ]
-	for _, k := range sortedKeys(opts) {
-		if !contains(valid, k) {
-			b.throw(graph.Errorf(graph.EUnknownOption, "P.%s has no option %q. Valid options: %s.", typ, k, strings.Join(valid, ", ")).WithValid(valid))
-		}
-	}
-	def := graph.ParamDef{Name: name.String(), Type: typ, Value: opts["value"]}
-	def.Label, _ = opts["label"].(string)
-	def.Unit, _ = opts["unit"].(string)
-	num := func(k string, required bool) float64 {
-		v, ok := opts[k].(float64)
-		if !ok && (required || opts[k] != nil) {
-			b.throw(graph.Errorf(graph.EArgType, "P.%s(%q): %s must be a number.", typ, def.Name, k))
-		}
-		return v
-	}
-	switch typ {
-	case "slider":
-		def.Min, def.Max, def.Step = num("min", true), num("max", true), num("step", false)
-	case "choice":
-		list, ok := opts["options"].([]any)
-		if !ok {
-			b.throw(graph.Errorf(graph.EArgType, "P.choice(%q) needs options: [\"a\", \"b\"].", def.Name))
-		}
-		for _, o := range list {
-			s, ok := o.(string)
-			if !ok {
-				b.throw(graph.Errorf(graph.EArgType, "P.choice(%q): options must be strings.", def.Name))
-			}
-			def.Options = append(def.Options, s)
-		}
-	}
-	reset, _ := opts["reset"].(bool)
-	n, _, err := b.eng.DeclareParam(def, reset)
-	if err != nil {
-		b.throw(err)
-	}
-	return handle(b.vm, n)
-}
-
-func paramData(d graph.ParamDef) map[string]any {
-	m := map[string]any{"name": d.Name, "type": d.Type, "value": d.Value, "default": d.Default, "touched": d.Touched}
-	if d.Type == "slider" {
-		m["min"], m["max"] = d.Min, d.Max
-		if d.Step != 0 {
-			m["step"] = d.Step
-		}
-	}
-	if len(d.Options) > 0 {
-		m["options"] = toAny(d.Options)
-	}
-	if d.Label != "" {
-		m["label"] = d.Label
-	}
-	if d.Unit != "" {
-		m["unit"] = d.Unit
-	}
-	return m
-}
-
-// __paramInfo(id) → the param definition with its current value
-func (b *binding) paramInfo(c goja.FunctionCall) goja.Value {
-	n := b.nodeArg(c.Argument(0))
-	d, ok := b.eng.Params().Get(n.Args.String("name"))
-	if !ok {
-		b.throw(graph.Errorf(graph.EInternal, "param node #%d has no definition", n.ID))
-	}
-	return toJS(b.vm, paramData(d))
-}
-
-// __paramSet(name, value) moves a param, as the person would.
-func (b *binding) paramSet(c goja.FunctionCall) goja.Value {
-	if err := b.eng.Params().Set(c.Argument(0).String(), graph.Normalize(c.Argument(1).Export())); err != nil {
-		b.throw(err)
-	}
-	return goja.Undefined()
-}
-
-// __params() → [definition…]
-func (b *binding) params(goja.FunctionCall) goja.Value {
-	list := b.eng.Params().List()
-	out := make([]any, len(list))
-	for i, d := range list {
-		out[i] = paramData(d)
 	}
 	return toJS(b.vm, out)
 }

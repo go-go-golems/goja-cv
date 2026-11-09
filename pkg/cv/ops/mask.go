@@ -101,7 +101,7 @@ func parseColor(v any, where string) ([3]float32, error) {
 func validateColor(arg string) func(graph.Args) error {
 	return func(a graph.Args) error {
 		v := a.Raw(arg)
-		if _, ok := v.(graph.InputRef); ok || v == nil {
+		if v == nil {
 			return nil
 		}
 		_, err := parseColor(v, arg)
@@ -110,8 +110,6 @@ func validateColor(arg string) func(graph.Args) error {
 }
 
 var edges = []string{"top", "bottom", "left", "right"}
-
-func isRef(v any) bool { _, ok := v.(graph.InputRef); return ok }
 
 func validateGradient(a graph.Args) error {
 	from, to := a.Raw("from"), a.Raw("to")
@@ -122,7 +120,7 @@ func validateGradient(a graph.Args) error {
 		}
 		if t, ok := to.(float64); ok && !(t > 0 && t <= 1) {
 			return graph.Errorf(graph.EArgRange, "mask.gradient.to = %g: from an edge, to is the fraction of the height/width where the mask reaches 0, in (0, 1].", t)
-		} else if !ok && !isRef(to) {
+		} else if !ok {
 			return graph.Errorf(graph.EArgType, "mask.gradient.to must be a fraction in (0, 1] when from is an edge.").
 				WithFix(`img.mask.gradient({ from: "top", to: 0.45 })`)
 		}

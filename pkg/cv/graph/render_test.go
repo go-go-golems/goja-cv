@@ -173,23 +173,19 @@ func TestRenderDataIsNotUpsampled(t *testing.T) {
 	s := &seen{}
 	e, img := renderEngine(t, s)
 	st, _ := mustCall(t, e, "stats", img)
-	mean, _ := mustCall(t, e, "field", st, "meanL")
 	sp, _ := mustCall(t, e, "detect.specks", img)
-	lv, _ := mustCall(t, e, "testlevel", img, graph.NodeArg{ID: sp.ID}, graph.NodeArg{ID: mean.ID})
+	lv, _ := mustCall(t, e, "testlevel", img, graph.NodeArg{ID: sp.ID}, 0.25)
 	render(t, e, lv, graph.RenderOptions{Scale: 8, Window: &graph.Frame{X: 0, Y: 0, W: 32, H: 32}})
-	want, err := e.Evaluate(ctx, mean.ID, graph.EvalOptions{Scale: 1})
+	if s.level != 0.25 || s.regions != 1 {
+		t.Fatalf("level %g, regions at scale %g, want 0.25 and 1", s.level, s.regions)
+	}
+	// rendering a Value node returns its data
+	want, err := e.Evaluate(ctx, st.ID, graph.EvalOptions{Scale: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if w, _ := want.(*graph.DataValue).Number(); s.level != w {
-		t.Fatalf("lifted value %g, want the scale-1 number %g", s.level, w)
-	}
-	if s.regions != 1 {
-		t.Fatalf("regions at scale %g, want 1", s.regions)
-	}
-	// rendering a Value node returns its data
-	v, err := e.Render(ctx, mean.ID, graph.RenderOptions{Scale: 8})
-	if err != nil || v.(*graph.DataValue).Data != want.(*graph.DataValue).Data {
+	v, err := e.Render(ctx, st.ID, graph.RenderOptions{Scale: 8})
+	if err != nil || v.(*graph.DataValue).Data.(map[string]any)["meanL"] != want.(*graph.DataValue).Data.(map[string]any)["meanL"] {
 		t.Fatalf("render of a Value: %v %v", v, err)
 	}
 }

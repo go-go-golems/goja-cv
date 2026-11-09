@@ -46,7 +46,8 @@ An image's **frame** is the rectangle it covers in doc px, `[x, y, w, h]`: `(awa
 
 ```js
 const f = (await img).frame
-return { frame: f, inside: await img.stats({ box: [f[0] + 10, f[1] + 10, 32, 32] }).pick("meanL", "area") }
+const { meanL, area } = await img.stats({ box: [f[0] + 10, f[1] + 10, 32, 32] })
+return { frame: f, inside: { meanL, area } }
 ```
 
 ## Working spaces

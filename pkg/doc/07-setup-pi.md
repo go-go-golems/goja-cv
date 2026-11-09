@@ -39,7 +39,7 @@ pi install npm:pi-mcp-adapter
 ```
 
 - `"lifecycle": "keep-alive"` keeps one server process for the whole conversation, so the cv session — `mem`,
-  `img`, params, look numbers — persists between calls. Without it a server may be restarted and `mem` lost.
+  `img`, look numbers — persists between calls. Without it a server may be restarted and `mem` lost.
 - `"directTools": ["eval"]` exposes goja-cv's eval as a first-class tool (`cv_eval`). Otherwise the model only
   sees the adapter's search/proxy tool and has to discover `eval` first, which costs calls and confuses small
   models.

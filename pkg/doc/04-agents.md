@@ -38,7 +38,7 @@ and point to `cv.docs` and `cv.help`. They are deliberately short: some clients 
 - The code is the **body of an async function**: use `await`, end with `return`. The last expression is not
   returned.
 - The value comes back as **YAML**, capped at 9000 characters (`# CUT` note), followed by `warnings:` and a
-  `context:` block (open images with size and bit depth, params, `mem` keys).
+  `context:` block (open images with size and bit depth, `mem` keys).
 - `const`/`let` do not survive between calls; `mem` is a plain object that does.
 - `img` is the open image (`img = cv.open(path)` rebinds it); `doc` is not available yet.
 - Images come back as **looks** (`node.look()`, `show(node)`), at most four per eval.

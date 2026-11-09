@@ -13,7 +13,7 @@ import (
 // and one bad name used to kill the whole eval. It accepts op names
 // ("levels", "mask.box"), kind names ("Mask" → its methods), Kind.method
 // ("Mask.coverage", "Regions.filter"), cv functions and globals ("evaluate",
-// "compare", "docs", "show", "P.slider"), with or without a "cv." prefix.
+// "compare", "docs", "show"), with or without a "cv." prefix.
 // Anything else returns { found: false, name, didYouMean, hint }.
 
 type cvFunc struct {
@@ -25,7 +25,7 @@ type cvFunc struct {
 // function: cv properties, session globals and concepts.
 var cvFuncs = map[string]cvFunc{
 	"version":  {"cv.version", "The cv module version.", nil},
-	"kinds":    {"cv.kinds", "The node kinds: Image, Mask, Regions, Value, Param.", nil},
+	"kinds":    {"cv.kinds", "The node kinds: Image, Mask, Regions, Value.", nil},
 	"mem":      {"mem.name = value", "A plain object that persists between evals (const/let do not).", nil},
 	"img":      {"img · img = cv.open(path)", "The open image (an Image node); assigning a cv.open node rebinds it. More images: cv.open(path, { as: \"ref\" }).", []string{"open", "names"}},
 	"encoding": {"cv.open(path, { encoding: \"srgb\" | \"linear\" }) · (await img).encoding · img.encode(\"srgb\")", "How a file's values relate to the quantity: srgb (photographs) or linear (float TIFF, DNG, .npy, density data). Decoders report it; cv.open's option overrides it. Read cv.docs.read(\"encodings-and-spaces\").", []string{"open", "encode", "space"}},
@@ -33,10 +33,6 @@ var cvFuncs = map[string]cvFunc{
 	"frame":    {"(await img).frame · cv.open(path, { box, origin })", "The rectangle an image covers in doc px, [x, y, w, h]; boxes, points and region geometry are absolute in it. Read cv.docs.read(\"units-and-scales\", { section: \"Frames\" }).", []string{"open"}},
 	"names":    {"cv.open(path, { as: \"ref\" })", "Several images per session: as binds a global that persists between evals (img is the first); the context block lists every name with file, frame and encoding. Read cv.docs.read(\"encodings-and-spaces\", { section: \"Frames and names\" }).", []string{"open", "img"}},
 	"doc":      {"doc", "The document layer (history, apply, propose, undo, export) is not available yet; any use throws E_NO_DOCUMENT.", nil},
-	"P":        {"P.slider(name, { min, max, value, step, label, unit }) · P.toggle(name, { value }) · P.choice(name, { options, value }) · P.set(name, v) · P.list()", "Params: named values the person can move. They are nodes and go anywhere a number goes.", []string{"where"}},
-	"slider":   {"P.slider(name, { min, max, value, step, label, unit })", "A numeric param.", []string{"P"}},
-	"toggle":   {"P.toggle(name, { value })", "A boolean param.", []string{"P"}},
-	"choice":   {"P.choice(name, { options, value })", "A string param from a list of options.", []string{"P"}},
 }
 
 // helpRedirects map names agents reach for to the call that does it.
@@ -55,7 +51,6 @@ func Help(reg *graph.Registry, name string) map[string]any {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		h, _ := reg.Help("")
-		h["params"] = "P.slider(name, { min, max, value, step, label, unit }), P.toggle(name, { value }), P.choice(name, { options, value })"
 		h["sources"] = toAny([]string{"cv.open(path, { encoding, box, origin, as })"})
 		h["functions"] = toAny(functionNames(reg))
 		h["docs"] = "Guides: cv.docs.list(), cv.docs.search(text), cv.docs.read(id, { section }). Start with cv.docs.read(\"getting-started\")."
@@ -67,7 +62,6 @@ func Help(reg *graph.Registry, name string) map[string]any {
 		return notFound(reg, name, []string{r[0]}, r[1])
 	}
 	name = strings.TrimPrefix(name, "cv.")
-	name = strings.TrimPrefix(name, "P.")
 	// exact op names first: "mask.box" is an op, not Mask.box
 	if strings.Contains(name, ".") && len(reg.Find(name)) > 0 {
 		return opHelp(reg, name, "")
@@ -298,7 +292,7 @@ var memberFixes = map[string]string{
 }
 
 // UnknownMember is the structured error for obj.name when the cv module
-// object ("cv") or the params object ("P") has no such member: a did-you-mean
+// object ("cv") has no such member: a did-you-mean
 // over the members, an op of that name on a node kind, or a help redirect.
 func UnknownMember(reg *graph.Registry, obj, name string, members []string) *graph.Error {
 	sort.Strings(members)

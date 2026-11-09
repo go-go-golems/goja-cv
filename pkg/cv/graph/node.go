@@ -62,14 +62,6 @@ func (b *Builder) Len() int {
 	return len(b.nodes)
 }
 
-func (b *Builder) kindOf(id NodeID) (Kind, bool) {
-	n, ok := b.Node(id)
-	if !ok {
-		return "", false
-	}
-	return n.Kind, true
-}
-
 // Intern checks raw call arguments against op (types, units, hard limits,
 // unknown option keys), lifts node-valued arguments into inputs, resolves
 // the op's working space and inserts the toGray and convert nodes its inputs
@@ -131,7 +123,7 @@ func (b *Builder) call(op *OpDef, receiver NodeID, raw []any, meta any, nested b
 	if err != nil {
 		return CallResult{}, err
 	}
-	bd, err := bind(op, callName(op), recv != nil, raw, b.kindOf)
+	bd, err := bind(op, callName(op), recv != nil, raw, b.Node)
 	if err != nil {
 		return CallResult{}, err
 	}
@@ -247,11 +239,7 @@ func checkInFrame(op *OpDef, args Args, frame Frame) error {
 		}
 		f := make([]float64, len(l))
 		for j, e := range l {
-			v, ok := e.(float64)
-			if !ok {
-				return nil // a lifted coordinate: checked when evaluated
-			}
-			f[j] = v
+			f[j] = e.(float64) // the binder checked the coordinates: literal numbers
 		}
 		where := op.Name + "." + s.Name
 		switch len(f) {

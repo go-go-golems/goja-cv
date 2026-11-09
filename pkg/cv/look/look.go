@@ -185,7 +185,7 @@ func New(eng *graph.Engine, id graph.NodeID, opt Options) (*Look, error) {
 		}
 		l.chart, l.scale, l.png = n.Op.Chart, 1, true
 		l.w, l.h = chartSize(maxLong)
-	case graph.KindRegions, graph.KindParam, graph.KindNone:
+	case graph.KindRegions, graph.KindNone:
 		return nil, lookKindError(n)
 	default:
 		return nil, lookKindError(n)
@@ -219,7 +219,7 @@ func lookKindError(n *graph.Node) error {
 	case graph.KindRegions:
 		e.Hint = "Regions are areas, not an image: draw them as a mask over the image."
 		e.Fix = "img.overlay(regions).look(\"regions\")"
-	case graph.KindImage, graph.KindMask, graph.KindParam, graph.KindNone:
+	case graph.KindImage, graph.KindMask, graph.KindNone:
 		// the generic hint applies
 	}
 	return e

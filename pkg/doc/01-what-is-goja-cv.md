@@ -69,7 +69,7 @@ mistakes and you do not hand them a shell.
 ## What is implemented (and what is not yet)
 
 Implemented: tone (exposure, levels, contrast, gray), blur, statistics and histograms, masks and regions,
-`within`/`blend`, dust detection and healing, inpainting, overlays and comparisons, params, looks, point and
+`within`/`blend`, dust detection and healing, inpainting, overlays and comparisons, looks, point and
 region measurements, data out (JSON, CSV, saved TIFF/PNG/NPY), the eval session (YAML results, warnings, context
 block, preludes), the `cv.docs` guides, the CLI, the MCP server, an xgoja provider.
 

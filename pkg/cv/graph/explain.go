@@ -41,21 +41,16 @@ func Label(n *Node) string {
 		switch n.Op.Name {
 		case "open":
 			return "open(" + filepath.Base(n.Args.String("path")) + ")"
-		case "param":
-			return "param(" + n.Args.String("name") + ")"
 		case PlaceholderOp:
 			return "placeholder"
 		}
-	}
-	if n.Op.On == KindValue && n.Op.Name == "field" {
-		return "." + n.Args.String("name")
 	}
 	return n.Op.Name
 }
 
 // ShortCall is the compact form of a call for captions and fixes: the op
 // name with its non-default positional arguments ("gaussian(2)",
-// "view(speck)", "crop[300,100,64,64]"); lifted arguments show as "…".
+// "view(speck)", "crop[300,100,64,64]").
 func ShortCall(op *OpDef, args Args) string {
 	if op.Name == "crop" && op.Class == GeometricOp {
 		if b, ok := literalList(args.vals["box"]); ok {
@@ -203,21 +198,14 @@ func insertedGray(n, next *Node) bool {
 // Describe renders a node as a call, e.g. "gaussian(sigma: 2 px → 0.5 at scale
 // 0.25)". Arguments equal to their default are omitted; lifted arguments
 // show the input node id.
-func Describe(b *Builder, n *Node, scale float64, params map[string]any) string {
+func Describe(b *Builder, n *Node, scale float64) string {
 	if n.Op.On == KindNone {
 		switch n.Op.Name {
 		case "open":
 			return "source " + filepath.Base(n.Args.String("path"))
-		case "param":
-			name := n.Args.String("name")
-			v, _ := json.Marshal(params[name])
-			return fmt.Sprintf("param %s = %s", name, v)
 		case PlaceholderOp:
 			return "placeholder (within builder)"
 		}
-	}
-	if n.Op.On == KindValue && n.Op.Name == "field" {
-		return "." + n.Args.String("name")
 	}
 	if n.Op.Name == ConvertOp && n.Op.Internal {
 		return "convert(→ " + n.Args.String("to") + ")"
@@ -309,7 +297,7 @@ func (e *Evaluator) Explain(id NodeID, scale float64) []string {
 		if run.scale != parentScale {
 			right += fmt.Sprintf("  (analysed at scale %s)", fmtNum(run.scale))
 		}
-		rows = append(rows, row{fmt.Sprintf("%s#%d %s", indent, id, Describe(e.b, n, run.scale, run.params)), right, Statics(n)})
+		rows = append(rows, row{fmt.Sprintf("%s#%d %s", indent, id, Describe(e.b, n, run.scale)), right, Statics(n)})
 		if n.Op.Expand != nil { // a macro: its expansion below it
 			walk(run, n.Inputs[len(n.Inputs)-1], depth+1)
 			return

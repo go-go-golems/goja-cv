@@ -19,11 +19,10 @@ const (
 	EArgType          = "E_ARG_TYPE"
 	EArgRange         = "E_ARG_RANGE"
 	EUnknownOption    = "E_UNKNOWN_OPTION"
-	ELazyCompare      = "E_LAZY_COMPARE"
-	EParamRedeclare   = "E_PARAM_REDECLARE"
+	ENotAwaited       = "E_NOT_AWAITED" // a property of, or a primitive from, a lazy node
 	ETimeout          = "E_TIMEOUT"
 	ECancelled        = "E_CANCELLED"
-	ENoField          = "E_NO_FIELD"    // a derived field does not exist in the evaluated value
+	ENoField          = "E_NO_FIELD"    // a removed field name read on an awaited region item
 	EImmutable        = "E_IMMUTABLE"   // assignment to a node property
 	EEval             = "E_EVAL"        // a kernel or IO failure during evaluation
 	EInternal         = "E_INTERNAL"    // a bug: an op panicked

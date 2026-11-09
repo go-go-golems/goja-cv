@@ -498,8 +498,8 @@ func jsHint(f *failure) string {
 	return ""
 }
 
-// contextBlock is rebuilt for every eval: named and unnamed images, params,
-// mem (owner).
+// contextBlock is rebuilt for every eval: named and unnamed images and the
+// keys of mem (owner).
 func (s *state) contextBlock(vm *goja.Runtime) *yaml.Node {
 	n := &yaml.Node{Kind: yaml.MappingNode}
 	add := func(k, v string) {
@@ -508,26 +508,6 @@ func (s *state) contextBlock(vm *goja.Runtime) *yaml.Node {
 		}
 	}
 	add("images", s.imagesLine(vm))
-
-	params := s.eng.Params().List()
-	var ps, moved []string
-	now := map[string]any{}
-	for _, d := range params {
-		now[d.Name] = d.Value
-		item := fmt.Sprintf("%s = %s", d.Name, formatAny(d.Value))
-		if d.Touched {
-			item += " (moved by the person)"
-		}
-		ps = append(ps, item)
-		if prev, ok := s.lastParams[d.Name]; ok && !reflect.DeepEqual(prev, d.Value) {
-			moved = append(moved, fmt.Sprintf("moved %s %s → %s", d.Name, formatAny(prev), formatAny(d.Value)))
-		}
-	}
-	s.lastParams = now
-	add("params", strings.Join(ps, ", "))
-	if len(moved) > 0 {
-		add("person", "since your last eval: "+strings.Join(moved, "; "))
-	}
 
 	if mem, ok := vm.GlobalObject().Get("mem").(*goja.Object); ok {
 		keys := mem.Keys()
@@ -583,16 +563,4 @@ func nodeKind(obj *goja.Object, _ graph.NodeID) string {
 		}
 	}
 	return "node"
-}
-
-func formatAny(v any) string {
-	switch x := graph.Normalize(v).(type) {
-	case float64:
-		return FormatNumber(x)
-	case string:
-		return strconv.Quote(x)
-	case nil:
-		return "null"
-	}
-	return fmt.Sprint(v)
 }

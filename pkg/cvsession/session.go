@@ -352,15 +352,14 @@ type state struct {
 	pending string // body of the next eval (set by App.Evaluate)
 
 	// (owner)
-	wrapped    bool     // the current eval came through App.Evaluate
-	lines      []string // agent code of the current eval
-	shows      []*look.Look
-	failure    *failure
-	lookSeq    int
-	names      *nameTable // named images (img first)
-	lastParams map[string]any
-	broken     bool // the VM can no longer run promise jobs (see probePromises)
-	watchdog   *watchdog
+	wrapped  bool     // the current eval came through App.Evaluate
+	lines    []string // agent code of the current eval
+	shows    []*look.Look
+	failure  *failure
+	lookSeq  int
+	names    *nameTable // named images (img first)
+	broken   bool       // the VM can no longer run promise jobs (see probePromises)
+	watchdog *watchdog
 }
 
 // watchdog interrupts the VM when the eval deadline passes. replsession only

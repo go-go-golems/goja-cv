@@ -22,11 +22,9 @@ const (
 	ToGrayOp  = "toGray"
 )
 
-// WSpace and WEncoding are the build-time space warnings.
-const (
-	WSpace    = "SPACE"    // a lifted level comes from another space
-	WEncoding = "ENCODING" // images of different encodings mixed in encoded space
-)
+// WEncoding is the build-time space warning: images of different encodings
+// mixed in encoded space.
+const WEncoding = "ENCODING"
 
 // OpSpace is the working space of a node of op with canonical args: the
 // resolved { space } option, the fixed space, or SpaceNone.
@@ -67,7 +65,7 @@ func (b *Builder) internOp(name string, recv *Node, raw ...any) (*Node, []Warnin
 // resolveSpace stores the op's working space in args (so the hash and the
 // cache signature include it), replaces luminance inputs by toGray of linear
 // light, replaces Image inputs in another space by convert nodes, and returns
-// the new inputs with the SPACE and ENCODING warnings.
+// the new inputs with the ENCODING warning.
 func (b *Builder) resolveSpace(op *OpDef, args Args) ([]*Node, []Warning, error) {
 	inputs := args.ins
 	s := OpSpace(op, args)
@@ -108,7 +106,6 @@ func (b *Builder) resolveSpace(op *OpDef, args Args) ([]*Node, []Warning, error)
 			ws = append(ws, w)
 		}
 	}
-	ws = append(ws, b.spaceWarnings(op, args, out, s)...)
 	return out, ws, nil
 }
 
@@ -151,66 +148,6 @@ func (b *Builder) sourceLabel(n *Node) string {
 	return Label(n)
 }
 
-// spaceWarnings are SPACE warnings for lifted Level arguments whose value
-// node measured another space than the op's (a percentile survives a
-// conversion, a mean does not, so the number is not converted).
-func (b *Builder) spaceWarnings(op *OpDef, args Args, inputs []*Node, s buffer.Space) []Warning {
-	var ws []Warning
-	for i := range op.Args {
-		spec := &op.Args[i]
-		if spec.Unit != Level {
-			continue
-		}
-		for _, ref := range inputRefs(args.vals[spec.Name]) {
-			if ref.Index >= len(inputs) {
-				continue
-			}
-			v := inputs[ref.Index]
-			if v.Space == buffer.SpaceNone || v.Space == s || buffer.Identity(v.Enc, v.Space, s) {
-				continue
-			}
-			root := b.measuringOp(v)
-			ws = append(ws, Warning{Code: WSpace, Message: fmt.Sprintf(
-				"%s.%s comes from %s() in %s space, but %s runs in %s space here. fix: img.%s({ space: %q })",
-				op.Name, spec.Name, root, v.Space, op.Name, s, root, s.String())})
-		}
-	}
-	return ws
-}
-
-// measuringOp is the name of the op that measured a Value node: the root
-// of its chain of field, pick and arithmetic nodes.
-func (b *Builder) measuringOp(n *Node) string {
-	for n.Op.On == KindValue && len(n.Inputs) > 0 {
-		in, ok := b.Node(n.Inputs[0])
-		if !ok {
-			break
-		}
-		n = in
-	}
-	return n.Op.Name
-}
-
-func inputRefs(v any) []InputRef {
-	switch x := v.(type) {
-	case InputRef:
-		return []InputRef{x}
-	case []any:
-		var out []InputRef
-		for _, e := range x {
-			out = append(out, inputRefs(e)...)
-		}
-		return out
-	case map[string]any:
-		var out []InputRef
-		for _, e := range x {
-			out = append(out, inputRefs(e)...)
-		}
-		return out
-	}
-	return nil
-}
-
 // nodeStatics computes a node's encoding and space from (op, args with its
 // inputs) alone, so a hash hit has exactly the statics a new node would get.
 func nodeStatics(op *OpDef, args Args) (buffer.Encoding, buffer.Space) {
@@ -229,11 +166,8 @@ func nodeStatics(op *OpDef, args Args) (buffer.Encoding, buffer.Space) {
 		if in := args.imageSource(); in != nil {
 			return in.Enc, s
 		}
-		if s == buffer.SpaceNone && op.On != KindNone && len(args.ins) > 0 && (args.ins[0].Kind == KindValue || args.ins[0].Kind == KindParam) {
-			return args.ins[0].Enc, args.ins[0].Space // field, pick, arithmetic: the receiver's
-		}
 		return buffer.EncNone, s
-	case KindMask, KindRegions, KindParam, KindNone:
+	case KindMask, KindRegions, KindNone:
 	}
 	return buffer.EncNone, buffer.SpaceNone
 }

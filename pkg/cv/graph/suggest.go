@@ -43,8 +43,6 @@ var Synonyms = map[string]string{
 	"tone":          "levels",
 	"describe":      "explain",
 	"graph":         "explain",
-	"get":           "field",
-	"quantile":      "percentile",
 	"lab":           "toLab",
 	"toLAB":         "toLab",
 	"saturation":    "chroma",
@@ -289,8 +287,6 @@ func receiverVar(k Kind) string {
 		return "mask"
 	case KindRegions:
 		return "regions"
-	case KindParam:
-		return "param"
 	case KindNone:
 		return "cv"
 	case KindValue:
@@ -314,18 +310,6 @@ func sortStrings(xs []string) {
 			xs[j], xs[j-1] = xs[j-1], xs[j]
 		}
 	}
-}
-
-// NoField builds the E_NO_FIELD error for a derived field missing from an
-// evaluated value, with did-you-mean over the available keys.
-func NoField(field string, keys []string) *Error {
-	e := Errorf(ENoField, "The value has no field %q.", field).WithValid(keys)
-	if sug := closest(field, keys); sug != "" {
-		e.Hint = fmt.Sprintf("Did you mean %q?", sug)
-	} else if len(keys) > 0 {
-		e.Hint = "Fields: " + strings.Join(keys, ", ") + "."
-	}
-	return e
 }
 
 // needsArgs reports whether op has a required argument (so op() alone is

@@ -6,7 +6,8 @@ How an eval runs: your code is the body of an async function, you `return` what 
 
 - The code is the **body of an async function**. Use `await` anywhere; end with `return`. The last expression is not returned.
 - The returned value comes back as **YAML**, capped at 9000 characters. Return small things: pick fields, slice arrays.
-- After the value come `warnings:` (RANGE, UNUSED_NODE, SPACE, with your line number) and a `context:` block (the images by name with file, frame and encoding, params, `mem` keys).
+- After the value come `warnings:` (RANGE, UNUSED_NODE, with your line number) and a `context:` block (the images by name with file, frame and encoding, `mem` keys).
+- Options are **literal values**. A measurement that feeds an option is awaited first: `img.levels({ white: (await img.stats()).p99 })`.
 - `const` and `let` do **not** survive to the next eval. Keep anything you need later on `mem`.
 - One eval may run 60 s. Heavy work runs in Go; JavaScript only builds graphs and handles small data.
 
@@ -22,13 +23,13 @@ return { meanL: s.meanL, p01: s.p01, p99: s.p99 }
 | `img` | the open image (an Image node); `img = cv.open("scan.tif")` rebinds it |
 | names | more images: `cv.open(path, { as: "ref" })` binds `ref` as a global that persists like `img`; the context block lists every name |
 | `cv` | the module: `cv.open(path, { encoding, box, origin, as })`, `cv.help(op)`, `cv.docs`, `cv.compare([...])`, `cv.evaluate(node, { scale })` |
-| `P` | params: `P.slider`, `P.toggle`, `P.choice` |
 | `mem` | a plain object that persists between evals |
 | `show(node, opts)` | queue a look of a node (it is delivered even if the eval throws later) |
 | `doc` | the document layer (history, apply, propose, export) is **not available yet**: any use throws `E_NO_DOCUMENT` |
 
 ```js
-mem.base = await img.stats().pick("meanL", "p99")
+const { meanL, p99 } = await img.stats()
+mem.base = { meanL, p99 }
 const info = await img      // file, format, bitDepth, encoding, frame [x, y, w, h], …
 return { base: mem.base, file: info.file, bitDepth: info.bitDepth, encoding: info.encoding, frame: info.frame }
 ```

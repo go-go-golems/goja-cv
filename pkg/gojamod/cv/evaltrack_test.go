@@ -56,7 +56,8 @@ func TestLookOptionsSynonymsAndRedirects(t *testing.T) {
 		{`return img.look({ zoom: 2, maxSide: 64 })`, graph.EArgType, "", "node.look({ zoom: 2 })"},
 		{`return img.look({ zoom: 32 })`, graph.EArgRange, "", ""},
 		{`return img.look({ interp: "cubic" })`, graph.EArgType, "", `node.look({ interp: "nearest" })`},
-		{`return img.look({ label: img.stats().meanL })`, graph.EArgType, "", ""},
+		{`return img.look({ label: img.stats().meanL })`, graph.ENotAwaited, "", "(await img.stats()).meanL"},
+		{`return img.look({ zoom: img.stats() })`, graph.EArgType, "A measurement used as an option is awaited first", "{ zoom: (await x).<field> }"},
 	} {
 		_, jerr := run(t, rt, tc.body)
 		if jerr == nil || jerr.Code != tc.code || (tc.hint != "" && !strings.HasPrefix(jerr.Hint, tc.hint)) || jerr.Fix != tc.fix {

@@ -43,7 +43,19 @@ func evalData(t *testing.T, e *graph.Engine, n *graph.Node, scale float64) any {
 	return v.(*graph.DataValue).Data
 }
 
-func TestStatsLevelsLiftingOnTestImage(t *testing.T) {
+// statOf evaluates a Value node at scale 1 and reads one of its fields: the
+// literal an agent gets with (await node).name.
+func statOf(t *testing.T, e *graph.Engine, n *graph.Node, name string) float64 {
+	t.Helper()
+	m := evalData(t, e, n, 1).(map[string]any)
+	f, ok := m[name].(float64)
+	if !ok {
+		t.Fatalf("%s.%s is %v", n.Op.Name, name, m[name])
+	}
+	return f
+}
+
+func TestStatsLevelsOnTestImage(t *testing.T) {
 	e, img := newEngine(t)
 	if img.Frame != (graph.Frame{W: 64, H: 48}) || e.PreviewScale(img.ID) != 1 {
 		t.Fatalf("source %dx%d preview %g", img.Frame.W, img.Frame.H, e.PreviewScale(img.ID))
@@ -53,9 +65,7 @@ func TestStatsLevelsLiftingOnTestImage(t *testing.T) {
 	if st["w"] != 64.0 || st["clipLow"].(float64) <= 0 {
 		t.Fatalf("stats: %v", st)
 	}
-	p01 := call(t, e, "field", s.ID, "p01")
-	p99 := call(t, e, "field", s.ID, "p99")
-	fixed := call(t, e, "levels", img.ID, map[string]any{"black": graph.NodeArg{ID: p01.ID}, "white": graph.NodeArg{ID: p99.ID}})
+	fixed := call(t, e, "levels", img.ID, map[string]any{"black": statOf(t, e, s, "p01"), "white": statOf(t, e, s, "p99")})
 	fs := evalData(t, e, call(t, e, "stats", fixed.ID), 1).(map[string]any)
 	// levels maps each channel; luminance is a weighted sum, so its
 	// percentiles land near (not exactly on) 0 and 1 for a colour image...
@@ -65,24 +75,20 @@ func TestStatsLevelsLiftingOnTestImage(t *testing.T) {
 	// ...and exactly for a gray one (the map is monotone).
 	gray := call(t, e, "toGray", img.ID)
 	gs := call(t, e, "stats", gray.ID)
-	gfixed := call(t, e, "levels", gray.ID, map[string]any{"black": graph.NodeArg{ID: call(t, e, "field", gs.ID, "p01").ID}, "white": graph.NodeArg{ID: call(t, e, "field", gs.ID, "p99").ID}})
+	gfixed := call(t, e, "levels", gray.ID, map[string]any{"black": statOf(t, e, gs, "p01"), "white": statOf(t, e, gs, "p99")})
 	gfs := evalData(t, e, call(t, e, "stats", gfixed.ID), 1).(map[string]any)
 	if math.Abs(gfs["p01"].(float64)) > 2e-3 || math.Abs(gfs["p99"].(float64)-1) > 2e-3 {
 		t.Fatalf("gray levels from stats: p01 %v p99 %v", gfs["p01"], gfs["p99"])
 	}
 	// +1 EV doubles mean luminance (no clipping in the kernel)
-	m0 := evalData(t, e, call(t, e, "field", s.ID, "meanL"), 1).(float64)
-	m1 := evalData(t, e, call(t, e, "field", call(t, e, "stats", call(t, e, "exposure", img.ID, 1).ID).ID, "meanL"), 1).(float64)
+	m0 := statOf(t, e, s, "meanL")
+	m1 := statOf(t, e, call(t, e, "stats", call(t, e, "exposure", img.ID, 1).ID), "meanL")
 	if math.Abs(m1-2*m0) > 1e-6 {
 		t.Fatalf("meanL %g -> %g", m0, m1)
 	}
-	q := call(t, e, "percentile", call(t, e, "stats", img.ID, map[string]any{"percentiles": []any{0.25}}).ID, 0.25)
-	if v := evalData(t, e, q, 1).(float64); v <= 0 || v >= m0*2 {
+	q := evalData(t, e, call(t, e, "stats", img.ID, map[string]any{"percentiles": []any{0.25}}), 1).(map[string]any)["percentiles"]
+	if v := q.(map[string]any)["0.25"].(float64); v <= 0 || v >= m0*2 {
 		t.Fatalf("percentile 0.25 = %v", v)
-	}
-	_, err := e.Evaluate(context.Background(), call(t, e, "percentile", s.ID, 0.3).ID, graph.EvalOptions{Scale: 1})
-	if ce, ok := graph.AsError(err); !ok || ce.Code != graph.ENoField || ce.Fix == "" {
-		t.Fatalf("missing percentile: %v", err)
 	}
 }
 
@@ -106,7 +112,7 @@ func TestPreviewScaleEvaluatesSmallerBuffers(t *testing.T) {
 
 // walkNodes are the receivers and node inputs the registry walk uses.
 type walkNodes struct {
-	img, stats, num, mask, mask2, regions, edited *graph.Node
+	img, stats, mask, mask2, regions, edited *graph.Node
 }
 
 func nodeArg(n *graph.Node) graph.NodeArg { return graph.NodeArg{ID: n.ID} }
@@ -116,9 +122,8 @@ func nodeArg(n *graph.Node) graph.NodeArg { return graph.NodeArg{ID: n.ID} }
 var walkSamples = map[string]func(w walkNodes) []any{
 	"channel": func(walkNodes) []any { return []any{"g"} }, "encode": func(walkNodes) []any { return []any{"srgb"} },
 	"exposure": func(walkNodes) []any { return []any{0.5} }, "contrast": func(walkNodes) []any { return []any{0.2} },
-	"gaussian": func(walkNodes) []any { return []any{1.5} }, "field": func(walkNodes) []any { return []any{"meanL"} },
-	"pick": func(walkNodes) []any { return []any{"meanL", "p99"} }, "percentile": func(walkNodes) []any { return []any{0.5} },
-	"add": func(walkNodes) []any { return []any{1} }, "sub": func(walkNodes) []any { return []any{1} },
+	"gaussian": func(walkNodes) []any { return []any{1.5} },
+	"add":      func(walkNodes) []any { return []any{1} }, "sub": func(walkNodes) []any { return []any{1} },
 	"mul": func(walkNodes) []any { return []any{2} }, "div": func(walkNodes) []any { return []any{2} },
 	"min": func(walkNodes) []any { return []any{0} }, "max": func(walkNodes) []any { return []any{0} },
 	"distance": func(walkNodes) []any { return []any{0.18} },
@@ -180,7 +185,7 @@ var walkSkip = map[string]bool{"filter": true, "split": true, "colormap": true} 
 func TestRegistryWalk(t *testing.T) {
 	e, img := newEngine(t)
 	stats := call(t, e, "stats", img.ID)
-	w := walkNodes{img: img, stats: stats, num: call(t, e, "field", stats.ID, "meanL"),
+	w := walkNodes{img: img, stats: stats,
 		mask:  call(t, e, "mask.luminance", img.ID, map[string]any{"above": 0.3}),
 		mask2: call(t, e, "mask.box", img.ID, []any{8, 8, 30, 20})}
 	w.regions = call(t, e, "components", w.mask.ID)
@@ -192,10 +197,7 @@ func TestRegistryWalk(t *testing.T) {
 		}
 		r, ok := recv[op.On]
 		if !ok || walkSkip[op.Name] {
-			continue // sources are covered by Open/DeclareParam; Param has no receiver here
-		}
-		if op.On == graph.KindValue && op.Name != "field" && op.Name != "pick" && op.Name != "percentile" && op.Name != "explain" {
-			r = w.num.ID
+			continue // sources are covered by Open
 		}
 		var raw []any
 		if f, ok := walkSamples[string(op.On)+":"+op.Name]; ok {
@@ -213,11 +215,7 @@ func TestRegistryWalk(t *testing.T) {
 			if err != nil {
 				t.Fatalf("%s:%s at %g: %v", op.On, op.Name, scale, err)
 			}
-			want := op.Returns
-			if want == graph.KindParam {
-				want = graph.KindValue
-			}
-			if v.Kind() != want {
+			if want := op.Returns; v.Kind() != want {
 				t.Fatalf("%s returned %s, declared %s", op.Name, v.Kind(), op.Returns)
 			}
 			if iv, ok := v.(*graph.ImageValue); ok && iv.IsMask() {

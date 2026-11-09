@@ -87,7 +87,7 @@ func (n *native) checkPath(c goja.FunctionCall) goja.Value {
 }
 
 // unknownMember(obj, name, members) throws the structured unknown-name error
-// for cv.name / P.name.
+// for cv.name.
 func (n *native) unknownMember(c goja.FunctionCall) goja.Value {
 	var members []string
 	if arr, ok := c.Argument(2).Export().([]any); ok {

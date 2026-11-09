@@ -62,7 +62,7 @@ func TestOneNodeMacro(t *testing.T) {
 		Space: graph.SpaceRule{Default: buffer.SpaceEncoded},
 		Args:  []graph.ArgSpec{{Name: "r", Type: "number", Unit: graph.DocPx, Positional: true, Default: 2.0}},
 		Expand: func(x *graph.Expander, recv *graph.Node, a graph.Args) ([]*graph.Node, error) {
-			blur, err := x.Call("gaussian", recv, x.Arg(a, "r"))
+			blur, err := x.Call("gaussian", recv, a.DocLength("r"))
 			if err != nil {
 				return nil, err
 			}
@@ -84,8 +84,8 @@ func TestOneNodeMacro(t *testing.T) {
 	if m.Enc != buffer.EncLinear || m.Space != buffer.SpaceLinear || m.Frame != window {
 		t.Fatalf("a derived expansion makes a derived macro node: %s", graph.Statics(m))
 	}
-	if graph.Label(m) != "testview" || !strings.HasPrefix(graph.Describe(e.Builder(), m, 1, nil), "testview(r: 3 px)") {
-		t.Fatalf("macro label %q / %q", graph.Label(m), graph.Describe(e.Builder(), m, 1, nil))
+	if graph.Label(m) != "testview" || !strings.HasPrefix(graph.Describe(e.Builder(), m, 1), "testview(r: 3 px)") {
+		t.Fatalf("macro label %q / %q", graph.Label(m), graph.Describe(e.Builder(), m, 1))
 	}
 	mv := evalValue(t, e, m, 1).(*graph.ImageValue)
 	cv := evalValue(t, e, chain, 1).(*graph.ImageValue)
@@ -99,18 +99,6 @@ func TestOneNodeMacro(t *testing.T) {
 	if len(lines) != 5 || !strings.HasPrefix(lines[0], "#") || !strings.Contains(lines[0], "testview") ||
 		!strings.HasPrefix(lines[1], "  #") || !strings.Contains(lines[1], "chroma") {
 		t.Fatalf("explain: %q", lines)
-	}
-	// a param passed to the macro reaches the expansion
-	p, _, err := e.DeclareParam(graph.ParamDef{Name: "r", Type: "slider", Min: 0, Max: 10, Value: 3.0}, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	mp := call(t, e, "testview", img.ID, graph.NodeArg{ID: p.ID})
-	last, _ := e.Node(mp.Inputs[len(mp.Inputs)-1]) // chroma ← convert(→ encoded) ← gaussian
-	conv, _ := e.Node(last.Inputs[0])
-	blur, _ := e.Node(conv.Inputs[0])
-	if blur.Op.Name != "gaussian" || blur.Inputs[1] != p.ID {
-		t.Fatalf("the param did not reach the expansion: %v", blur.Inputs)
 	}
 }
 
@@ -229,20 +217,21 @@ func TestToLabWarnsOnCameraRGB(t *testing.T) {
 	}
 }
 
-// TestEncodingArgsAreStatic: the encoding of a source or an encode node is
-// decided at build time, so a param or measurement there is refused instead of
-// silently falling back to srgb (review of PR #2).
-func TestEncodingArgsAreStatic(t *testing.T) {
+// TestNodeAsOptionIsArgType: options are literal values (GCV-004 D1); a
+// node where one is expected is E_ARG_TYPE with the (await …) fix, so the
+// encoding of a source or an encode node can never silently fall back to
+// srgb (review of PR #2).
+func TestNodeAsOptionIsArgType(t *testing.T) {
 	e, img := newEngine(t)
-	p, _, err := e.DeclareParam(graph.ParamDef{Name: "enc", Type: "choice", Options: []string{"linear", "srgb"}, Value: "linear"}, false)
-	if err != nil {
-		t.Fatal(err)
+	st := call(t, e, "stats", img.ID)
+	if ce := callErr(t, e, "encode", img.ID, graph.NodeArg{ID: st.ID}); ce.Code != graph.EArgType || ce.Fix != "(await img.stats()).p99" {
+		t.Fatalf("encode(node): want E_ARG_TYPE, got %+v", ce)
 	}
-	if ce := callErr(t, e, "encode", img.ID, graph.NodeArg{ID: p.ID}); ce.Code != graph.EArgType {
-		t.Fatalf("encode(param): want E_ARG_TYPE, got %v", ce)
-	}
-	_, err = e.Open(testTIFF, map[string]any{"encoding": graph.NodeArg{ID: p.ID}})
+	_, err := e.Open(testTIFF, map[string]any{"encoding": graph.NodeArg{ID: st.ID}})
 	if ce, ok := graph.AsError(err); !ok || ce.Code != graph.EArgType {
-		t.Fatalf("cv.open({ encoding: param }): want E_ARG_TYPE, got %v", err)
+		t.Fatalf("cv.open({ encoding: node }): want E_ARG_TYPE, got %v", err)
+	}
+	if ce := callErr(t, e, "levels", img.ID, map[string]any{"white": graph.NodeArg{ID: st.ID}}); ce.Code != graph.EArgType || ce.Fix != "{ white: (await img.stats()).p99 }" {
+		t.Fatalf("levels({ white: node }): %+v", ce)
 	}
 }

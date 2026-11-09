@@ -97,7 +97,7 @@ func (v *ImageValue) Summary() map[string]any {
 	return m
 }
 
-// DataValue is an evaluated Value or Param node: plain data made of float64,
+// DataValue is an evaluated Value node: plain data made of float64,
 // string, bool, []any and map[string]any. Data held by the cache is shared
 // and must not be modified.
 type DataValue struct {

@@ -4,18 +4,18 @@ Every cv error has the same YAML shape: a stable code, a message, where (your li
 
 ## Reading an error
 
-```js error=E_UNKNOWN_METHOD
+```js error=E_NOT_AWAITED
 const specks = img.detect.specks()
 return specks.heal()
 ```
 
 ```yaml
 error:
-  code: E_UNKNOWN_METHOD
-  message: Regions has no method "heal".
+  code: E_NOT_AWAITED
+  message: 'detect.specks() is a lazy Regions node and has no method "heal": regions are arguments of image methods.'
   where: 'line 2: return specks.heal()'
-  path: open(planted-256x192-16bit.tif) → detect.specks → ✗ heal
-  hint: '"heal" is an Image method that takes Regions: call it on the image and pass this node.'
+  path: open(planted-256x192-16bit.tif) → toGray → convert → detect.specks → ✗ heal
+  hint: Pass the regions to the image method.
   fix: img.heal(regions, …)
 ```
 
@@ -32,8 +32,8 @@ error:
 | E_UNKNOWN_OPTION | an option key is misspelt or named differently (`min` → `above`, `radius` → `sigma` on a blur, `opacity` → `alpha`) | the `fix` / `valid` list |
 | E_ARG_TYPE, E_ARG_RANGE | wrong type or outside the hard limits | read `cv.help(op)` |
 | E_WRONG_KIND | the receiver or an input has the wrong kind | convert: `.toMask()`, `.components()` |
-| E_LAZY_COMPARE | a node used as a number | `(await node) > x` |
-| E_NO_FIELD | a derived field does not exist | `valid` lists the fields |
+| E_NOT_AWAITED | a property of, or a number from, a lazy Value or Regions node (`img.stats().p99`, `img.stats() > 0.5`) | `(await img.stats()).p99` |
+| E_ARG_TYPE (a node as an option) | options are literal values: `levels({ white: d.stats() })` | `levels({ white: (await d.stats()).p99 })` |
 | E_NO_IMAGE | no image is open | `img = cv.open("scan.tif")` |
 | E_NO_DOCUMENT | `doc` is not available yet | return looks instead |
 | E_UNKNOWN_TOPIC | no such docs topic or section | `cv.docs.list()` |
@@ -54,7 +54,7 @@ return await img.mask.luminance({ min: 0.99 }).coverage()   // hint: Did you mea
 
 ```js warns=RANGE
 const loud = img.exposure(4)
-return await loud.stats().meanL
+return (await loud.stats()).meanL
 ```
 
 ## Help

@@ -1,5 +1,5 @@
-// Package graph holds the cv op registry, the hash-consed node graph, the
-// param store and the caching evaluator.
+// Package graph holds the cv op registry, the hash-consed node graph and the
+// caching evaluator.
 package graph
 
 import (
@@ -20,19 +20,19 @@ const (
 	KindMask    Kind = "Mask"
 	KindRegions Kind = "Regions"
 	KindValue   Kind = "Value"
-	KindParam   Kind = "Param"
-	// KindNone is the receiver "kind" of source ops (cv.open, P.slider).
+	// KindNone is the receiver "kind" of source and module ops (cv.open,
+	// cv.compare).
 	KindNone Kind = ""
 )
 
 // Kinds lists every kind in display order.
-var Kinds = []Kind{KindImage, KindMask, KindRegions, KindValue, KindParam}
+var Kinds = []Kind{KindImage, KindMask, KindRegions, KindValue}
 
 // accepts reports whether a node of kind k satisfies a declared input kind
-// such as "Image" or "Regions|Mask". Param satisfies Value.
+// such as "Image" or "Regions|Mask".
 func accepts(decl Kind, k Kind) bool {
 	for _, d := range strings.Split(string(decl), "|") {
-		if Kind(d) == k || (Kind(d) == KindValue && k == KindParam) {
+		if Kind(d) == k {
 			return true
 		}
 	}
@@ -137,7 +137,7 @@ const SpaceArg = "space"
 
 // spaceOption is the option Register appends to every op with a working
 // space that is not fixed.
-var spaceOption = ArgSpec{Name: SpaceArg, Type: "enum:linear,encoded", Optional: true, Static: true,
+var spaceOption = ArgSpec{Name: SpaceArg, Type: "enum:linear,encoded", Optional: true,
 	Doc:           "working space: linear (the encoding undone) or encoded (the file's values, what looks show)",
 	ValueSynonyms: SpaceValueSynonyms}
 
@@ -168,7 +168,6 @@ type ArgSpec struct {
 	Optional   bool       // may be absent without a default
 	Positional bool       // may be passed positionally (in declaration order)
 	Variadic   bool       // a positional "...[]" argument that takes all remaining positional values
-	Static     bool       // must be a literal: a node (Value/Param) is rejected
 	Len        int        // for list types: the exact number of elements
 	InFrame    bool       // "box"/"point": a box must overlap, a point lie in, the receiver's frame (E_ARG_RANGE)
 	Min, Max   *float64   // hard limits: violation is E_ARG_RANGE
@@ -252,10 +251,10 @@ type OpDef struct {
 	Lossless bool                  // looks of its result are PNG by default (format "auto"): contact sheets
 	Chart    ChartKind             // look() of a Value result draws this chart (histogram: bars, profile: lines)
 	// MaxItems is a static upper bound on the item count of a Regions
-	// result (top(n)); ok false when unknown (a lifted n). A sheet sizes
+	// result (top(n)); ok false when unknown. A sheet sizes
 	// itself by it.
 	MaxItems func(args Args) (n int, ok bool)
-	Bespoke  bool // a module op bound by hand (cv.open, P.slider, the builder placeholder): the prelude does not generate cv.<name>
+	Bespoke  bool // a module op bound by hand (cv.open, the builder placeholder): the prelude does not generate cv.<name>
 	// Expand makes the op a macro: a graph of other ops built at intern
 	// time (exactly one of Run and Expand is set). See ExpandFunc.
 	Expand ExpandFunc
@@ -269,7 +268,7 @@ type OpDef struct {
 	DocFrame func(a Args) Frame   // the result's frame; nil: the first input with a non-empty frame
 	// Fields is the schema of the result: the items of a Regions result, the
 	// rows or the object of a Value result (schema.go). It runs at intern
-	// time with the bound args (lifted values are InputRefs; Args carries the
+	// time with the bound args (node arguments are InputRefs; Args carries the
 	// input nodes), and is called with Args without inputs for help. nil: a
 	// Regions op on Regions keeps its receiver's fields; other results have
 	// none.
@@ -280,7 +279,7 @@ type OpDef struct {
 	Produces map[string]string
 	// Validate checks bound args at build time (after defaults and types);
 	// the input nodes (their statics, such as Fields) are read through
-	// Args; lifted values are still InputRefs. Errors fail the call.
+	// Args. Errors fail the call.
 	Validate func(a Args) error
 	// AnalysisScale, when set and > 0, is the scale at which the node's
 	// inputs are evaluated whatever the evaluation scale: the node's value is
@@ -389,19 +388,12 @@ func (r *Registry) MustRegister(defs ...OpDef) {
 	}
 }
 
-// Lookup finds the op name on receiver kind on. Param receivers fall back to
-// Value ops, since a param evaluates to a value.
+// Lookup finds the op name on receiver kind on.
 func (r *Registry) Lookup(on Kind, name string) (*OpDef, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	if op, ok := r.ops[string(on)+":"+name]; ok {
-		return op, true
-	}
-	if on == KindParam {
-		op, ok := r.ops[string(KindValue)+":"+name]
-		return op, ok
-	}
-	return nil, false
+	op, ok := r.ops[string(on)+":"+name]
+	return op, ok
 }
 
 // Ops returns all ops callable from JavaScript (not Internal ones), sorted
@@ -433,11 +425,11 @@ func kindOrder(k Kind) int {
 	return 0
 }
 
-// Methods returns the op names callable on kind (including Value ops for Param).
+// Methods returns the op names callable on kind.
 func (r *Registry) Methods(on Kind) []string {
 	set := map[string]bool{}
 	for _, op := range r.Ops() {
-		if op.On == on || (on == KindParam && op.On == KindValue) {
+		if op.On == on {
 			set[op.Name] = true
 		}
 	}

@@ -291,7 +291,7 @@ func annotateOp() graph.OpDef {
 		Name: "annotate", On: graph.KindImage, Returns: graph.KindImage, Class: graph.Decoration,
 		Space: graph.SpaceRule{Default: buffer.SpaceEncoded},
 		Args: []graph.ArgSpec{
-			{Name: "marks", Type: "any", Positional: true, Static: true,
+			{Name: "marks", Type: "any", Positional: true,
 				Doc: "list of marks in absolute doc px: { circle: [x, y, r] }, { point: [x, y] }, { box: [x, y, w, h] }, { polyline: [[x, y], …] }, { text, at: [x, y] }; each may have color (display colour) and label"},
 			{Name: "width", Type: "number", Default: 1.0, Min: graph.F(1), Max: graph.F(8), Doc: "line width in image px (stays thin at any zoom)"},
 		},

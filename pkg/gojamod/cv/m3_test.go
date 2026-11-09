@@ -19,11 +19,8 @@ func TestMasksAndRegionsFromJS(t *testing.T) {
 		const big = regs.filter(x => x.area > 50)
 		const f = await big
 		const same = regs.filter(x => x.area > 50) === big
-		const minA = P.slider("minA", { min: 0, max: 100, value: 50 })
-		const w = regs.where({ area: { gte: minA } }).count()
-		const n1 = await w
-		P.set("minA", 5)
-		const n2 = await w
+		const n1 = await regs.where({ area: { gte: 50 } }).count()
+		const n2 = await regs.where({ area: { gte: 5 } }).count()
 		return { m, count: r.count, first: r.items[0], fcount: f.count, fid: f.items[0].id, same, n1, n2 }`).(map[string]any)
 	m := got["m"].(map[string]any)
 	if m["kind"] != "Mask" || m["coverage"] == nil {
@@ -38,7 +35,7 @@ func TestMasksAndRegionsFromJS(t *testing.T) {
 		t.Fatalf("filter %v", got)
 	}
 	if got["n1"] != int64(1) || got["n2"] != int64(2) {
-		t.Fatalf("where param %v", got)
+		t.Fatalf("where %v", got)
 	}
 	// the same function object gives the same node
 	same := mustRun(t, rt, `const regs = img.mask.box([4, 4, 10, 8]).components(); const fn = x => x.area > 1; return regs.filter(fn) === regs.filter(fn)`)
@@ -56,23 +53,21 @@ func TestWithinBuilderFromJS(t *testing.T) {
 	rt := newRuntime(t)
 	got := mustRun(t, rt, `
 		const sky = img.mask.luminance({ above: 0.3 }).and(img.mask.gradient({ from: "top", to: 0.6 })).feather(4)
-		const ev = P.slider("skyEv", { min: -2, max: 2, value: -0.4 })
 		let seen = 0
-		const out = img.within(sky, i => { seen++; return i.exposure(ev) })
-		const again = img.within(sky, i => i.exposure(ev))
-		const direct = img.within(sky, img.exposure(ev))
-		const a = await out.stats().meanL
-		P.set("skyEv", -1.5)
-		const b = await out.stats().meanL
+		const out = img.within(sky, i => { seen++; return i.exposure(-0.4) })
+		const again = img.within(sky, i => i.exposure(-0.4))
+		const direct = img.within(sky, img.exposure(-0.4))
+		const a = (await out.stats()).meanL
+		const b = (await img.within(sky, i => i.exposure(-1.5)).stats()).meanL
 		return { seen, same: out === again && out === direct, a, b, explain: await out.explain() }`).(map[string]any)
 	if got["seen"] != int64(1) || got["same"] != true {
 		t.Fatalf("builder: %v", got)
 	}
 	if !(got["b"].(float64) < got["a"].(float64)) {
-		t.Fatalf("param inside within did not apply: %v", got)
+		t.Fatalf("a darker edit inside within did not darken: %v", got)
 	}
 	lines := fmt.Sprint(got["explain"])
-	if !strings.Contains(lines, "within(mask: #") || !strings.Contains(lines, "exposure(ev: #") || strings.Contains(lines, "placeholder") {
+	if !strings.Contains(lines, "within(mask: #") || !strings.Contains(lines, "exposure(ev: -0.4)") || strings.Contains(lines, "placeholder") {
 		t.Fatalf("explain: %s", lines)
 	}
 	mustFail(t, rt, "E_ARG_TYPE", `return img.within(img.mask.box([0, 0, 4, 4]), i => 3)`)

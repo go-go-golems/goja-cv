@@ -13,8 +13,7 @@ import "github.com/go-go-golems/goja-cv/pkg/cv/buffer"
 
 // ExpandFunc builds the op's graph from other ops at intern time. args are
 // bound and the space is resolved (args.String("space") is set for macros
-// with a space option). Lifted arguments are InputRefs; pass them on with
-// Expander.Arg.
+// with a space option).
 type ExpandFunc func(x *Expander, recv *Node, args Args) ([]*Node, error)
 
 // Expander lets an ExpandFunc call other ops; it collects their warnings.
@@ -32,34 +31,6 @@ func (x *Expander) Call(name string, recv *Node, args ...any) (*Node, error) {
 	}
 	x.warnings = append(x.warnings, ws...)
 	return n, nil
-}
-
-// Arg returns the macro's argument name as a raw call value: lifted nodes
-// (InputRefs) become node arguments again, so they can be passed on.
-func (x *Expander) Arg(args Args, name string) any {
-	return unref(args, args.vals[name])
-}
-
-func unref(args Args, v any) any {
-	switch t := v.(type) {
-	case InputRef:
-		if t.Index < len(args.ins) {
-			return NodeArg{ID: args.ins[t.Index].ID}
-		}
-	case []any:
-		out := make([]any, len(t))
-		for i, e := range t {
-			out[i] = unref(args, e)
-		}
-		return out
-	case map[string]any:
-		out := make(map[string]any, len(t))
-		for k, e := range t {
-			out[k] = unref(args, e)
-		}
-		return out
-	}
-	return v
 }
 
 // expand runs a macro's Expand and interns its macro node (one output) or

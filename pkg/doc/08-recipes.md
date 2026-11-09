@@ -36,10 +36,11 @@ return {
 ## Fix exposure and compare
 
 ```js
-const s = img.stats()
+const s = await img.stats()     // options are numbers: await the measurement first
 const fixed = img.levels({ black: s.p01, white: s.p99 }).exposure(0.25)
 show(cv.compare([img, fixed], { mode: "side" }), { label: "before / after" })
-return await fixed.stats().pick("meanL", "clipLow", "clipHigh")
+const { meanL, clipLow, clipHigh } = await fixed.stats()
+return { meanL, clipLow, clipHigh }
 ```
 
 ## Find dust, look at it, heal it
@@ -97,16 +98,15 @@ return {
 ```js
 const top = img.mask.gradient({ from: "top", to: 0.5 }).feather(10)
 const darker = img.within(top, i => i.exposure(-0.6))
-return { mask: top.look("mask"), result: darker.look("darker top"), meanTop: await darker.stats({ mask: top }).meanL }
+return { mask: top.look("mask"), result: darker.look("darker top"), meanTop: (await darker.stats({ mask: top })).meanL }
 ```
 
-## Hand a person a slider
+## Explore a value
+
+Options are literal values: to try another exposure, run the eval again with another number, or compare
+several in one look.
 
 ```js
-const ev = P.slider("ev", { min: -2, max: 2, value: 0.3, label: "Exposure", unit: "EV" })
-const out = img.exposure(ev)
-return { meanL: await out.stats().meanL, look: out.look("ev") }
+const evs = [-0.5, 0, 0.5]
+return cv.compare(evs.map(ev => img.exposure(ev)), { mode: "side" }).look("ev -0.5 / 0 / +0.5")
 ```
-
-Moving the param (a host UI, or `P.set("ev", 0.8)` in a later eval) recomputes only what depends on it; the
-context block reports the move.

@@ -170,7 +170,7 @@ func TestHelp(t *testing.T) {
 		const h = cv.help()
 		const e = cv.help("exposure")
 		return { kinds: h.kinds.join(","), image: h.ops.Image.join(","), ev: e.exposure.args.ev, usage: e.exposure.usage, version: cv.version }`).(map[string]any)
-	if got["kinds"] != "Image,Mask,Regions,Value,Param" || !strings.Contains(got["image"].(string), "gaussian") {
+	if got["kinds"] != "Image,Mask,Regions,Value" || !strings.Contains(got["image"].(string), "gaussian") {
 		t.Fatalf("help: %v", got)
 	}
 	if got["ev"] != "number in [-10, 10], usual [-3, 3], required, positional. stops: values are multiplied by 2^ev" || got["usage"] != "exposure(ev)" {
@@ -234,14 +234,10 @@ func TestPart2Section3NodesAndEvaluation(t *testing.T) {
 func TestPart2Section4Ops(t *testing.T) {
 	rt := newRuntime(t)
 	got := mustRun(t, rt, `
-		const s = img.toGray().stats()
-		const fixed = img.toGray().levels({ black: s.p01, white: s.p99 })   // s.p01 is a Value node: stats().p01
-		const before = await s
+		const s = await img.toGray().stats()                                  // options are literals: await first
+		const fixed = img.toGray().levels({ black: s.p01, white: s.p99 })
 		const after = await fixed.stats()
-		return { p01: s.p01.__kind, before: [before.p01, before.p99], after: [after.p01, after.p99] }`).(map[string]any)
-	if got["p01"] != "Value" {
-		t.Fatalf("derived field kind %v", got["p01"])
-	}
+		return { before: [s.p01, s.p99], after: [after.p01, after.p99] }`).(map[string]any)
 	after := got["after"].([]any)
 	near(t, "levels p01", after[0], 0, 2e-3)
 	near(t, "levels p99", after[1], 1, 2e-3)
@@ -252,7 +248,12 @@ func TestPart2Section4Ops(t *testing.T) {
 	}
 	mustFail(t, rt, "E_ARG_TYPE", `return img.exposure("bright")`)
 	mustFail(t, rt, "E_ARG_RANGE", `return img.exposure(12)`)
-	mustFail(t, rt, "E_WRONG_KIND", `return img.exposure(img)`)
+	if e := mustFail(t, rt, "E_ARG_TYPE", `return img.exposure(img)`); e.Fix != "(await img.stats()).p99" {
+		t.Fatalf("a node as an option: %+v", e)
+	}
+	if e := mustFail(t, rt, "E_ARG_TYPE", `return img.levels({ white: img.stats() })`); e.Fix != "{ white: (await img.stats()).p99 }" {
+		t.Fatalf("a measurement as an option: %+v", e)
+	}
 	mustFail(t, rt, "E_ARG_TYPE", `return img.gaussian(r => r * 2)`)
 
 	w := mustRun(t, rt, `cv.warnings({ clear: true }); img.exposure(4.2); return cv.warnings()`).([]any)
@@ -269,9 +270,12 @@ func TestDiagnostics(t *testing.T) {
 		{`return img.blur(2)`, "E_UNKNOWN_METHOD", `Did you mean "gaussian"?`, "img.gaussian(…)"},
 		{`return img.exposre(1)`, "E_UNKNOWN_METHOD", `Did you mean "exposure"?`, "img.exposure(…)"},
 		{`return img.meanL`, "E_UNKNOWN_METHOD", `"meanL" is a field of the Value returned by stats().`, ""},
-		{`return img.percentile(0.5)`, "E_UNKNOWN_METHOD", `"percentile" is a Value method; measure the image first, e.g. img.stats()`, ""},
-		{`if (img.stats().meanL > 0.5) return 1`, "E_LAZY_COMPARE", "Await the node to get its value.", ""},
-		{`return img.stats().meanL + 1`, "E_LAZY_COMPARE", "", ""},
+		{`if (img.stats().meanL > 0.5) return 1`, "E_NOT_AWAITED", "", "(await img.stats()).meanL"},
+		{`return img.stats() + 1`, "E_NOT_AWAITED", "Await the node first", "(await img.stats()).p99"},
+		{`return img.stats().p99`, "E_NOT_AWAITED", "", "(await img.stats()).p99"},
+		{`return img.exposure(1).stats().p99`, "E_NOT_AWAITED", "", "(await node.stats()).p99"},
+		{`return img.detect.specks().items`, "E_NOT_AWAITED", "", "(await img.detect.specks()).items"},
+		{`return img.detect.specks().heal()`, "E_NOT_AWAITED", "Pass the regions to the image method.", "img.heal(regions, …)"},
 		{`img.ev = 0.3`, "E_IMMUTABLE", "", ""},
 		{`img.exposure = 1`, "E_IMMUTABLE", "", "const next = node.exposure(…)"},
 		{`delete img.foo`, "E_IMMUTABLE", "", ""},
@@ -290,9 +294,9 @@ func TestDiagnostics(t *testing.T) {
 	if strings.Join(e.Path, " → ") != "open(gradient-64x48-16bit.tif) → ✗ levels" {
 		t.Fatalf("eval path: %v", e.Path)
 	}
-	e = mustFail(t, rt, "E_NO_FIELD", `return await img.stats().meanl`)
-	if e.Hint != `Did you mean "meanL"?` {
-		t.Fatalf("no field: %+v", e)
+	// a method of a Regions node still resolves (Regions keep their methods until they become arrays)
+	if got := mustRun(t, rt, `return typeof img.detect.specks().count`); got != "function" {
+		t.Fatalf("Regions method: %v", got)
 	}
 	// errors are catchable JS errors with code and name
 	got := mustRun(t, rt, `try { img.levels({ blak: 1 }) } catch (e) { return [e.name, e.code, e instanceof Error, String(e).startsWith("E_UNKNOWN_OPTION: levels has no option \"blak\"")] }`).([]any)
@@ -310,43 +314,16 @@ func TestDiagnostics(t *testing.T) {
 	}
 }
 
-func TestParamsRecomputeOnlyDownstream(t *testing.T) {
-	rt := newRuntime(t)
-	got := mustRun(t, rt, `
-		const ev = P.slider("ev", { min: -2, max: 2, step: 0.05, value: 0.3, label: "Exposure", unit: "EV" })
-		const m = img.exposure(ev).stats().meanL
-		const base = await img.stats().meanL
-		const a = await m
-		P.set("ev", 1)
-		const b = await m
-		return { base, a, b, value: ev.value, touched: ev.touched, again: P.slider("ev", { min: -2, max: 2, value: 0 }).value }`).(map[string]any)
-	base := got["base"].(float64)
-	near(t, "meanL at 0.3 EV", got["a"], base*math.Exp2(0.3), 1e-6)
-	near(t, "meanL at 1 EV", got["b"], base*2, 1e-6)
-	if got["value"] != int64(1) || got["touched"] != true || got["again"] != int64(1) {
-		t.Fatalf("param state: %v", got)
-	}
-	eng := engineOf(t, rt)
-	img, _ := eng.Open(tiffPath, nil)
-	if eng.Evaluator().Runs(img.ID) != 1 {
-		t.Fatalf("source decoded/resampled %d times", eng.Evaluator().Runs(img.ID))
-	}
-	mustFail(t, rt, "E_ARG_RANGE", `P.slider("x", { min: -2, max: 2, value: 3 })`)
-	mustFail(t, rt, "E_PARAM_REDECLARE", `P.slider("ev", { min: -5, max: 5 })`)
-	mustFail(t, rt, "E_UNKNOWN_OPTION", `P.slider("y", { min: 0, max: 1, valeu: 0.5 })`)
-	mustFail(t, rt, "E_ARG_RANGE", `P.set("ev", 9)`)
-}
-
 func TestEvaluateScalesAndConcurrency(t *testing.T) {
 	rt := newRuntime(t)
 	got := mustRun(t, rt, `
 		const g = img.gaussian(4)
 		const half = await cv.evaluate(g, { scale: 0.5 })
 		const full = await cv.evaluate(g, { scale: "full" })
-		const all = await Promise.all([img.stats(), img.exposure(1).stats(), img.histogram({ bins: 16 }), img.stats().pick("meanL", "p99")])
+		const all = await Promise.all([img.stats(), img.exposure(1).stats(), img.histogram({ bins: 16 }), img.stats({ percentiles: [0.5] })])
 		const png = await cv.open(`+fmt.Sprintf("%q", pngPath)+`).stats()
-		return { half: [half.w, half.h, half.scale], full: full.w, n: all.length, bins: all[2].counts.length, total: all[2].total, pick: Object.keys(all[3]).join(","), png: png.meanL, tif: all[0].meanL }`).(map[string]any)
-	if fmt.Sprint(got["half"]) != "[32 24 0.5]" || got["full"] != int64(64) || got["bins"] != int64(16) || got["total"] != int64(64*48) || got["pick"] != "meanL,p99" {
+		return { half: [half.w, half.h, half.scale], full: full.w, n: all.length, bins: all[2].counts.length, total: all[2].total, pick: Object.keys(all[3].percentiles).join(","), png: png.meanL, tif: all[0].meanL }`).(map[string]any)
+	if fmt.Sprint(got["half"]) != "[32 24 0.5]" || got["full"] != int64(64) || got["bins"] != int64(16) || got["total"] != int64(64*48) || got["pick"] != "0.5" {
 		t.Fatalf("evaluate: %v", got)
 	}
 	near(t, "png vs tiff meanL", got["png"], got["tif"].(float64), 5e-3)

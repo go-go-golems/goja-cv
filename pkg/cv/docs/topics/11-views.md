@@ -39,7 +39,7 @@ return {
 
 ## Stretch
 
-`levels({ auto: true })` maps the image's own 1st and 99th percentiles to black and white (`auto: [0.005, 0.995]` for other percentiles). After a crop it stretches by the crop's pixels: `img.crop(box).levels({ auto: true })` is the per-window stretch. A fixed stretch is `levels({ black, white })`, and `white` may be a measurement: `d.levels({ black: 0, white: d.stats().p99.mul(5) })`.
+`levels({ auto: true })` maps the image's own 1st and 99th percentiles to black and white (`auto: [0.005, 0.995]` for other percentiles). After a crop it stretches by the crop's pixels: `img.crop(box).levels({ auto: true })` is the per-window stretch. A fixed stretch is `levels({ black, white })`, and `white` may come from a measurement awaited first: `d.levels({ black: 0, white: 5 * (await d.stats()).p99 })`.
 
 ```js
 const box = [150, 20, 64, 64]

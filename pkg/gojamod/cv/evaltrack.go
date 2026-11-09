@@ -289,7 +289,7 @@ func DescribeNode(eng *graph.Engine, id graph.NodeID) string {
 		return fmt.Sprintf("[node #%d]", id)
 	}
 	scale := eng.PreviewScale(id)
-	return fmt.Sprintf("[%s #%d %s]", n.Kind, n.ID, graph.Describe(eng.Builder(), n, scale, eng.Params().Snapshot()))
+	return fmt.Sprintf("[%s #%d %s]", n.Kind, n.ID, graph.Describe(eng.Builder(), n, scale))
 }
 
 // ENotArray is the error code of array methods called on awaited Regions.

@@ -51,7 +51,8 @@ The old helper `mem.probe(x, y, r)` is `img.measure([[x + 0.5, y + 0.5]], { core
 
 ```js
 const dog = img.toGray("average").dog(1, 4, { polarity: "bright" })
-const hot = dog.levels({ black: 0, white: dog.stats().p99.mul(2) }).mask.luminance({ above: 0.99 }).components({ minArea: 4 })
+const white = 2 * (await dog.stats()).p99     // a measurement used as an option is awaited first
+const hot = dog.levels({ black: 0, white }).mask.luminance({ above: 0.99 }).components({ minArea: 4 })
 const ranked = hot.measure(dog, { stats: ["max"], prefix: "dog" }).measure(img, { ring: true }).sortBy("snr").top(5)
 return (await ranked).items.map(r => [r.id, r.cx, r.cy, r.dogMaxL, r.snr.toFixed(2), r.stepChroma.toFixed(2)].join(" "))
 ```

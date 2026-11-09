@@ -6,7 +6,7 @@ import (
 )
 
 // Signature is an evaluation cache key: node hash + quantized scale + the
-// values of the params the node depends on (through its inputs).
+// signatures of its inputs.
 type Signature [32]byte
 
 // Cache is a byte-capped LRU of evaluated values.

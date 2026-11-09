@@ -27,7 +27,7 @@ func (f FuncArg) MarshalJSON() ([]byte, error) {
 	return []byte(`{"$fn":` + strconv.FormatInt(int64(f.ID), 10) + `}`), nil
 }
 
-// InputRef is a lifted node argument inside canonical args: it refers to
+// InputRef is a node argument inside canonical args: it refers to
 // node.Inputs[Index].
 type InputRef struct{ Index int }
 
@@ -540,29 +540,88 @@ func typeAcceptsObject(t string) bool { return t == "object" || t == "any" }
 // binder carries the state of binding one call.
 type binder struct {
 	op       *OpDef
-	kindOf   func(NodeID) (Kind, bool)
+	nodeOf   func(NodeID) (*Node, bool)
 	base     int      // index of the first node argument in node.Inputs (1 after a receiver)
 	inputs   []NodeID // one per node argument, in binding order, repetitions kept
 	warnings []Warning
 }
 
-func (b *binder) lift(id NodeID, where string, want string) (any, error) {
-	k, ok := b.kindOf(id)
+// lift makes node id an input of the node being built, for an argument of
+// node type want. Options are literal values: a node anywhere else is
+// E_ARG_TYPE with the (await …) fix.
+func (b *binder) lift(s *ArgSpec, id NodeID, where string, want string) (any, error) {
+	n, ok := b.nodeOf(id)
+	if !isKindType(want) {
+		if !ok {
+			n = nil
+		}
+		return nil, literalError(n, where, want, !s.Positional)
+	}
 	if !ok {
 		return nil, Errorf(EArgType, "%s: unknown node #%d", where, id)
 	}
-	if isKindType(want) {
-		if !accepts(Kind(want), k) {
-			return nil, Errorf(EWrongKind, "%s wants %s node, got %s node.", where, A(want), A(string(k))).
-				WithHint(kindHint(Kind(want), k))
-		}
-	} else if k != KindValue && k != KindParam {
-		return nil, Errorf(EWrongKind, "%s wants %s, got %s node.", where, A(t2noun(want)), A(string(k))).
-			WithHint("Only Value and Param nodes can stand in for plain values; measure the image first.").
-			WithFix(fmt.Sprintf("e.g. %s: img.stats().p01", lastSegment(where)))
+	if !accepts(Kind(want), n.Kind) {
+		return nil, Errorf(EWrongKind, "%s wants %s node, got %s node.", where, A(want), A(string(n.Kind))).
+			WithHint(kindHint(Kind(want), n.Kind))
 	}
 	b.inputs = append(b.inputs, id) // every node argument is its own input: [img, img] is two
 	return InputRef{Index: b.base + len(b.inputs) - 1}, nil
+}
+
+// AwaitExpr is the expression a fix awaits for node n: img.stats() for an
+// op called on the opened image, node.stats() on another node, img for an
+// image.
+func AwaitExpr(n *Node) string {
+	if n.Kind == KindImage || n.Kind == KindMask {
+		return "img"
+	}
+	if !n.HasReceiver() || len(n.Args.ins) == 0 {
+		return callName(n.Op) + "(…)"
+	}
+	recv := "node"
+	r := n.Args.ins[0]
+	for r.HasReceiver() && (r.Op.Name == ConvertOp || r.Op.Name == ToGrayOp) && len(r.Args.ins) > 0 {
+		r = r.Args.ins[0] // conversions the builder inserts (and a grey plane) do not change what to write
+	}
+	if r.Op.On == KindNone {
+		recv = "img"
+	}
+	return recv + "." + n.Op.Name + "()"
+}
+
+// literalError is the E_ARG_TYPE of a node passed where an option (a literal
+// value) is expected; its fix awaits the node and reads a field (n is nil
+// when the node is not known, as for function options).
+func literalError(n *Node, where, want string, option bool) *Error {
+	field := "<field>"
+	expr := "x"
+	if n != nil {
+		for _, f := range n.Fields {
+			if f.Name == "p99" {
+				field = "p99"
+				break
+			}
+		}
+		if field == "<field>" && len(n.Fields) > 0 {
+			field = n.Fields[0].Name
+		}
+		switch n.Kind {
+		case KindValue:
+			expr = AwaitExpr(n)
+		case KindImage, KindMask:
+			expr, field = "img.stats()", "p99"
+		case KindRegions:
+			expr, field = AwaitExpr(n), "items"
+		case KindNone:
+		}
+	}
+	fix := fmt.Sprintf("(await %s).%s", expr, field)
+	if seg := lastSegment(where); option && identifier(seg) {
+		fix = fmt.Sprintf("{ %s: %s }", seg, fix)
+	}
+	return Errorf(EArgType, "%s must be %s, not a node: options are literal values.", where, A(t2noun(want))).
+		WithHint("A measurement used as an option is awaited first; the number is then known when the node is built.").
+		WithFix(fix)
 }
 
 // isKindType reports whether typ names node kinds ("Mask", "Regions|Mask").
@@ -590,6 +649,21 @@ func kindHint(want, got Kind) string {
 	return ""
 }
 
+// identifier reports whether s is a plain JavaScript identifier (an option
+// name, not a list index).
+func identifier(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i, r := range s {
+		letter := r == '_' || r == '$' || r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z'
+		if !letter && (i == 0 || r < '0' || r > '9') {
+			return false
+		}
+	}
+	return true
+}
+
 func lastSegment(where string) string {
 	if i := strings.LastIndexAny(where, ".("); i >= 0 {
 		return strings.TrimSuffix(where[i+1:], ")")
@@ -611,25 +685,17 @@ func t2noun(t string) string {
 	return t
 }
 
-// check validates and canonicalizes v against type typ of spec s. With b
-// non-nil, NodeArgs are lifted; with b nil (evaluation time, after
-// substitution) they are an error.
+// check validates and canonicalizes v against type typ of spec s. A node is
+// accepted only for an argument of node type (it becomes an input).
 func (b *binder) check(s *ArgSpec, typ string, v any, where string) (any, error) {
 	if typ == "data" { // a node or plain data, kept as given (cv.json, cv.csv)
 		return v, nil
 	}
 	if na, ok := v.(NodeArg); ok {
-		if b == nil {
-			return nil, Errorf(EInternal, "%s: unresolved node argument", where)
-		}
-		if s.Static {
-			return nil, Errorf(EArgType, "%s must be a literal value, not a node.", where).
-				WithHint("This argument decides how the node is evaluated; it cannot depend on a measurement or a param.")
-		}
 		if isUnionType(typ) {
 			return b.checkUnion(s, typ, v, where)
 		}
-		return b.lift(na.ID, where, typ)
+		return b.lift(s, na.ID, where, typ)
 	}
 	if isKindType(typ) {
 		e := Errorf(EWrongKind, "%s needs %s node, got %s.", where, A(typ), describeRaw(v))
@@ -657,9 +723,6 @@ func (b *binder) check(s *ArgSpec, typ string, v any, where string) (any, error)
 		return nil, Errorf(EArgType, "%s must be a function, got %s.", where, describeRaw(v)).
 			WithFix("regions.filter(r => r.contrast > 3 * r.localNoise)")
 	}
-	if _, ok := v.(InputRef); ok && b == nil {
-		return nil, Errorf(EInternal, "%s: unresolved input reference", where)
-	}
 	switch {
 	case isUnionType(typ):
 		return b.checkUnion(s, typ, v, where)
@@ -675,7 +738,7 @@ func (b *binder) check(s *ArgSpec, typ string, v any, where string) (any, error)
 			return nil, Errorf(EArgRange, "%s = %s is outside the allowed range %s.", where, fmtNum(f), fmtLimits(s)).
 				WithValid([]string{fmtLimits(s)})
 		}
-		if b != nil && s.hasUsual() && (f < s.Usual[0] || f > s.Usual[1]) {
+		if s.hasUsual() && (f < s.Usual[0] || f > s.Usual[1]) {
 			b.warnings = append(b.warnings, Warning{Code: WRange,
 				Message: fmt.Sprintf("%s = %s is outside the usual range [%s, %s].", where, fmtNum(f), fmtNum(s.Usual[0]), fmtNum(s.Usual[1]))})
 		}
@@ -763,17 +826,15 @@ func isUnionType(typ string) bool {
 // lists and objects against the others.
 func (b *binder) checkUnion(s *ArgSpec, typ string, v any, where string) (any, error) {
 	alts := strings.Split(typ, "|")
-	if na, isNode := v.(NodeArg); isNode {
-		if b != nil { // a node of a kind alternative ("Image|number") is an input of that kind
-			if k, ok := b.kindOf(na.ID); ok {
-				for _, alt := range alts {
-					if isKindType(alt) && accepts(Kind(alt), k) {
-						return b.check(s, alt, v, where)
-					}
+	if na, isNode := v.(NodeArg); isNode { // a node of a kind alternative ("Image|number") is an input of that kind
+		if n, ok := b.nodeOf(na.ID); ok {
+			for _, alt := range alts {
+				if isKindType(alt) && accepts(Kind(alt), n.Kind) {
+					return b.check(s, alt, v, where)
 				}
 			}
 		}
-		return b.check(s, "number", v, where) // a lifted Value: checked again after substitution
+		return b.lift(s, na.ID, where, typ)
 	}
 	pick := func(match func(alt string) bool) (string, bool) {
 		for _, alt := range alts {
@@ -819,7 +880,7 @@ var (
 func hasNumericKeys(m map[string]any, keys []string) bool {
 	for _, k := range keys {
 		switch m[k].(type) {
-		case float64, NodeArg, InputRef:
+		case float64:
 		default:
 			return false
 		}
@@ -850,8 +911,8 @@ func isCoordinateObject(typ string, v any) bool {
 	return false
 }
 
-// coords checks the elements of a box or point list (numbers or lifted
-// Values) and returns the canonical list.
+// coords checks the elements of a box or point list (numbers) and returns
+// the canonical list.
 func (b *binder) coords(s *ArgSpec, list []any, where string) (any, error) {
 	out := make([]any, len(list))
 	for i, e := range list {
@@ -1127,7 +1188,7 @@ type bound struct {
 }
 
 func (b *binder) callName() string {
-	if b == nil || b.op == nil {
+	if b.op == nil {
 		return "op"
 	}
 	return callName(b.op)
@@ -1136,7 +1197,7 @@ func (b *binder) callName() string {
 // bind maps raw call arguments onto op: explicit node inputs first, then
 // positional args in declaration order, then an optional trailing options
 // object whose keys may name any argument.
-func bind(op *OpDef, call string, hasReceiver bool, raw []any, kindOf func(NodeID) (Kind, bool)) (*bound, error) {
+func bind(op *OpDef, call string, hasReceiver bool, raw []any, nodeOf func(NodeID) (*Node, bool)) (*bound, error) {
 	raw = normalize(trimUndefined(raw)).([]any)
 	res := &bound{}
 	i := 0
@@ -1194,7 +1255,7 @@ func bind(op *OpDef, call string, hasReceiver bool, raw []any, kindOf func(NodeI
 		}
 	}
 
-	b := &binder{op: op, kindOf: kindOf}
+	b := &binder{op: op, nodeOf: nodeOf}
 	if hasReceiver {
 		b.base = 1
 	}
@@ -1300,70 +1361,12 @@ func isSpaceOption(op *OpDef, a *ArgSpec) bool {
 	return a.Name == SpaceArg && op.Space.Default != buffer.SpaceNone && !op.Space.Fixed
 }
 
-// resolveArgs gives a node's canonical args their evaluated inputs: lifted
-// Value nodes are substituted with their data (and re-checked: a lifted
-// number is checked when it is known); node arguments stay InputRefs that
-// Value and Values resolve.
-func resolveArgs(n *Node, ins []Value) (Args, error) {
-	out := make(map[string]any, len(n.Args.vals))
-	for k, v := range n.Args.vals {
-		r, changed := substitute(v, ins)
-		if s := n.Op.spec(k); s != nil && changed {
-			c, err := (*binder)(nil).check(s, s.Type, normalize(r), n.Op.Name+"."+k)
-			if err != nil {
-				return Args{}, err
-			}
-			r = c
-		}
-		out[k] = r
-	}
-	return Args{op: n.Op, vals: out, meta: n.Args.meta, ins: n.Args.ins, vs: ins}, nil
-}
-
-// substitute replaces InputRefs to data values (lifted Value nodes) by their
-// data; changed reports whether it replaced any.
-func substitute(v any, ins []Value) (any, bool) {
-	switch x := v.(type) {
-	case InputRef:
-		if d, ok := ins[x.Index].(*DataValue); ok {
-			return d.Data, true
-		}
-		return x, false
-	case []any:
-		var out []any
-		for i, e := range x {
-			r, ch := substitute(e, ins)
-			if ch && out == nil {
-				out = append([]any(nil), x...)
-			}
-			if out != nil {
-				out[i] = r
-			}
-		}
-		if out == nil {
-			return x, false
-		}
-		return out, true
-	case map[string]any:
-		var out map[string]any
-		for k, e := range x {
-			r, ch := substitute(e, ins)
-			if ch && out == nil {
-				out = make(map[string]any, len(x))
-				for kk, ee := range x {
-					out[kk] = ee
-				}
-			}
-			if out != nil {
-				out[k] = r
-			}
-		}
-		if out == nil {
-			return x, false
-		}
-		return out, true
-	}
-	return v, false
+// resolveArgs gives a node's canonical args their evaluated inputs: node
+// arguments stay InputRefs that Value and Values resolve.
+func resolveArgs(n *Node, ins []Value) Args {
+	a := n.Args
+	a.vs = ins
+	return a
 }
 
 // Normalize converts exported JavaScript values (int64, float32, typed

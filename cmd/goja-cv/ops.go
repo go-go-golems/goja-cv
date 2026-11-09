@@ -87,13 +87,13 @@ func newOpsCommand(opts *rootOptions) *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&kind, "kind", "", "Receiver kind: cv (sources), Image, Mask, Regions, Value, Param")
+	cmd.Flags().StringVar(&kind, "kind", "", "Receiver kind: cv (sources), Image, Mask, Regions, Value")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "Print JSON")
 	return cmd
 }
 
 func kindOrder(k string) int {
-	order := []string{"cv", "Image", "Mask", "Regions", "Value", "Param"}
+	order := []string{"cv", "Image", "Mask", "Regions", "Value"}
 	for i, x := range order {
 		if x == k {
 			return i

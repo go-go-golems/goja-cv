@@ -16,14 +16,14 @@ import (
 const Instructions = `cv is a lazy image-analysis API. You drive it with the eval tool.
 
 Eval contract
-- The code is the body of an async function: use await and end with return; the last expression is not returned. The value comes back as YAML (max 9000 chars), then warnings (RANGE, UNUSED_NODE with your line) and a context block (images, params, mem keys).
+- The code is the body of an async function: use await and end with return; the last expression is not returned. The value comes back as YAML (max 9000 chars), then warnings (RANGE, UNUSED_NODE with your line) and a context block (images, mem keys).
 - const/let do not survive between evals: keep values on mem (a plain object that persists).
-- Calls build lazy, immutable nodes; nothing runs until you await a node, return a look, or show() it. A node built and discarded gets UNUSED_NODE. Comparing a node with < or > is E_LAZY_COMPARE: await it first.
+- Calls build lazy, immutable nodes; nothing runs until you await a node, return a look, or show() it. A node built and discarded gets UNUSED_NODE. Options are literal values: await a measurement first, levels({ white: (await d.stats()).p99 }).
 - Lengths, boxes and points are in doc px (original-image pixels) at every scale; areas in doc px².
 - Errors are YAML with code, message, where (your line), path, hint and a literal fix: apply the fix.
 - The document layer (doc.apply, propose, undo, export) is not available yet: describe edits and show them as looks.
 
-Globals: img (the open image; img = cv.open(path) rebinds it; await img gives its file, format, bitDepth, encoding, frame), cv, P, mem, show. cv.open(path, { encoding, box, origin, as }): encoding "linear" for linear data in integer files; box reads a window and keeps file coordinates; as: "ref" binds another global name.
+Globals: img (the open image; img = cv.open(path) rebinds it; await img gives its file, format, bitDepth, encoding, frame), cv, mem, show. cv.open(path, { encoding, box, origin, as }): encoding "linear" for linear data in integer files; box reads a window and keeps file coordinates; as: "ref" binds another global name.
 
 Most used calls
 - Numbers are in the op's space: linear (exposure, blur, blend, stats, levels) or encoded (what looks show: thresholds, contrast, histogram, specks); pass { space } to change it; cv.docs.read("encodings-and-spaces").
@@ -39,7 +39,6 @@ Most used calls
 - Dust: img.detect.specks() → Regions with flat items { id, x, y, w, h, cx, cy, area, … } (pass an item as box, point or id); .where({ score: { gte: 0.5 } }), .sortBy("area").top(n), .without([id]); img.overlay(regions, { labels: "id" }).look(); img.heal(regions, { radius }).
 - Measure: img.measure(points) (step, spread, snr, stepChroma), img.sample, img.profile(a, b).look(), regions.measure(img, { ring: true }); cv.docs.read("measuring").
 - Data: return cv.csv(x, { name }) or cv.json(x) for all rows; node.save(path) under --out-root; cv.docs.read("data-out").
-- Params: P.slider(name, { min, max, value }) go anywhere a number goes.
 
 More: cv.docs.list() (topics), cv.docs.search("heal dust") (sections with snippets), cv.docs.read(id, { section }) (Markdown); start with cv.docs.read("getting-started") and cv.docs.read("recipes"). cv.help(op) describes one op (arguments, units, defaults). Resources: cv://docs/<id>, cv://reference (every op) and cv://guide/<slug> (the guidebook).`
 
@@ -80,7 +79,6 @@ func Reference(reg *graph.Registry) string {
 	sb.WriteString("\n")
 	sb.WriteString("## Globals\n\n")
 	sb.WriteString("- `cv.open(path, { encoding, box, origin, as })` → Image source; `cv.help(name?)`; `cv.evaluate(node, { scale })` (number, \"preview\", \"look\", \"full\")\n")
-	sb.WriteString("- `P.slider(name, { min, max, value, step, label, unit })`, `P.toggle(name, { value })`, `P.choice(name, { options, value })`\n")
 	sb.WriteString("- `show(node, opts)` / `show(look)`; `mem` (persists); `img` (the open image)\n")
 	return sb.String()
 }

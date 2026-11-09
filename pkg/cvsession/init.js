@@ -1,6 +1,6 @@
 // cv session globals. Evaluates to function (native, cv) that defines the
 // pre-bound globals of an eval session:
-//   cv, P     the module and its params
+//   cv        the module
 //   mem       a plain object that persists between evals
 //   show      show(node, opts) / show(look): queue a look and return it
 //   img       the first named image (a getter/setter; throws E_NO_IMAGE when unset);
@@ -50,23 +50,19 @@
     return node;
   };
 
-  // cv and P give a structured unknown-name error (with did-you-mean) instead
-  // of a raw TypeError when a script calls a member they do not have.
+  // cv gives a structured unknown-name error (with did-you-mean) instead of a
+  // raw TypeError when a script calls a member it does not have.
   const PROBES = new Set(["then", "toJSON", "constructor", "inspect", "__proto__", "prototype", "nodeType", "$$typeof", "asymmetricMatch"]);
-  let guardedP;
   function guard(obj, name) {
     return new Proxy(obj, {
       get(t, p, r) {
-        if (name === "cv" && p === "P") return guardedP;
         if (typeof p === "symbol" || p in t || PROBES.has(p)) return Reflect.get(t, p, r);
         return native.unknownMember(name, String(p), Object.keys(t));
       },
     });
   }
-  guardedP = guard(cv.P, "P");
 
   define("cv", guard(cv, "cv"));
-  define("P", guardedP);
   define("mem", {});
   define("show", function show(x, opts) {
     const l = cv.isNode(x) ? x.look(opts) : x;

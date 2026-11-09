@@ -16,7 +16,7 @@ func regions(v graph.Value) *graph.RegionsValue { return v.(*graph.RegionsValue)
 
 // analysisScaleArg is the static argument of Regions-producing ops that
 // fixes the scale they analyse at (see OpDef.AnalysisScale).
-var analysisScaleArg = graph.ArgSpec{Name: "analysisScale", Type: "number", Default: 1.0, Static: true, Min: graph.F(0.05), Max: graph.F(1),
+var analysisScaleArg = graph.ArgSpec{Name: "analysisScale", Type: "number", Default: 1.0, Min: graph.F(0.05), Max: graph.F(1),
 	Doc: "scale the input is analysed at, whatever the evaluation scale, so region ids and doc-px coordinates are the same in preview and export"}
 
 func analysisScale(a graph.Args) float64 {
@@ -37,8 +37,7 @@ func sortByArea(items []*graph.Region) {
 var predOps = []string{"lt", "lte", "gt", "gte", "eq", "ne", "in"}
 
 // validatePredicate checks a where() predicate against the receiver's
-// fields: { field: { op: value } } or { field: value } (eq). Values may be
-// lifted nodes (InputRefs).
+// fields: { field: { op: value } } or { field: value } (eq).
 func validatePredicate(a graph.Args) error {
 	pred, ok := a.Raw("pred").(map[string]any)
 	if !ok {
@@ -66,9 +65,6 @@ func validatePredicate(a graph.Args) error {
 				return e
 			}
 			v := cond[op]
-			if isRef(v) {
-				continue
-			}
 			switch op {
 			case "in":
 				if _, ok := v.([]any); !ok {
@@ -76,7 +72,7 @@ func validatePredicate(a graph.Args) error {
 				}
 			case "lt", "lte", "gt", "gte":
 				if _, ok := v.(float64); !ok {
-					return graph.Errorf(graph.EArgType, "where.%s.%s must be a number (or a Value/Param node).", f, op).WithFix(fmt.Sprintf("where({ %s: { %s: 0.5 } })", f, op))
+					return graph.Errorf(graph.EArgType, "where.%s.%s must be a number.", f, op).WithFix(fmt.Sprintf("where({ %s: { %s: 0.5 } })", f, op))
 				}
 			}
 		}
@@ -192,18 +188,7 @@ func idSet(v any) (map[int]bool, error) {
 }
 
 func validateIDs(a graph.Args) error {
-	v := a.Raw("ids")
-	if isRef(v) {
-		return nil
-	}
-	if l, ok := v.([]any); ok {
-		for _, e := range l {
-			if isRef(e) {
-				return nil
-			}
-		}
-	}
-	_, err := idSet(v)
+	_, err := idSet(a.Raw("ids"))
 	return err
 }
 
@@ -273,7 +258,7 @@ func regionOps() []graph.OpDef {
 		{
 			Name: "where", On: graph.KindRegions, Returns: graph.KindRegions,
 			Args: []graph.ArgSpec{{Name: "pred", Type: "any", Positional: true,
-				Doc: "{ field: { lt, lte, gt, gte, eq, ne, in } } or { field: value }; values may be Value or Param nodes"}},
+				Doc: "{ field: { lt, lte, gt, gte, eq, ne, in } } or { field: value }"}},
 			Validate: validatePredicate,
 			Run: func(_ context.Context, _ *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
 				rv := regions(in[0])
@@ -290,7 +275,7 @@ func regionOps() []graph.OpDef {
 				}
 				return rv.With(out), nil
 			},
-			Doc: "Keep the regions matching a declarative predicate (all conditions must hold). Param values follow the person's slider.",
+			Doc: "Keep the regions matching a declarative predicate (all conditions must hold).",
 			See: []string{"filter", "without", "sortBy"},
 		},
 		idFilterOp("without", false, "Drop the regions with these ids."),

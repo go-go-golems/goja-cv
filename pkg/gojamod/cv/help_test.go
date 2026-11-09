@@ -12,14 +12,14 @@ func TestHelpNeverFailsAndResolvesEveryForm(t *testing.T) {
 	for name, key := range map[string]string{
 		"levels": "levels", "mask.box": "mask.box", "cv.compare": "compare", "Mask.coverage": "coverage",
 		"Regions.filter": "filter", "Regions.explain": "explain", "evaluate": "evaluate", "describe": "describe",
-		"docs": "docs", "open": "open", "show": "show", "P.slider": "slider", "look": "look",
+		"docs": "docs", "open": "open", "show": "show", "look": "look",
 	} {
 		h := cvmod.Help(reg, name)
 		if _, ok := h[key]; !ok {
 			t.Fatalf("help(%q) = %v, want key %q", name, h, key)
 		}
 	}
-	for _, k := range []string{"Image", "Mask", "Regions", "Value", "Param", "mask"} {
+	for _, k := range []string{"Image", "Mask", "Regions", "Value", "mask"} {
 		h := cvmod.Help(reg, k)
 		if h["kind"] == nil || len(h["methods"].(map[string]any)) == 0 {
 			t.Fatalf("help(%q) = %v", k, h)

@@ -24,7 +24,7 @@ func cropOp(on graph.Kind) graph.OpDef {
 	recv := map[graph.Kind]string{graph.KindImage: "img", graph.KindMask: "mask"}[on]
 	return graph.OpDef{
 		Name: "crop", On: on, Returns: on, Class: graph.GeometricOp,
-		Args: []graph.ArgSpec{{Name: "box", Type: "box", Unit: graph.DocPx, Positional: true, Static: true, InFrame: true,
+		Args: []graph.ArgSpec{{Name: "box", Type: "box", Unit: graph.DocPx, Positional: true, InFrame: true,
 			Doc: "[x, y, w, h] in doc px (absolute, in the frame of the file); rounded outward to whole px and clipped to the image"}},
 		Validate: func(a graph.Args) error {
 			b := a.Box("box")

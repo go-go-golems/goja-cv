@@ -95,11 +95,11 @@ func sourceOps() []graph.OpDef {
 			Name: "open", On: graph.KindNone, Returns: graph.KindImage, Result: sourceEnc, Bespoke: true,
 			Args: []graph.ArgSpec{
 				{Name: "path", Type: "string", Positional: true, Doc: "image file: " + buffer.SupportedFormats},
-				{Name: "encoding", Type: "enum:srgb,linear", Static: true, Optional: true, ValueSynonyms: graph.EncodingValueSynonyms,
+				{Name: "encoding", Type: "enum:srgb,linear", Optional: true, ValueSynonyms: graph.EncodingValueSynonyms,
 					Doc: "how to read the file's values: srgb (photographs) or linear (scientific data, raw scans, density maps); omit it to use what the file says"},
-				{Name: "box", Type: "box", Static: true, Optional: true,
+				{Name: "box", Type: "box", Optional: true,
 					Doc: "read only this window [x, y, w, h] of the file (file px); the image keeps the file's coordinates"},
-				{Name: "origin", Type: "point", Static: true, Optional: true,
+				{Name: "origin", Type: "point", Optional: true,
 					Doc: "declare where a file that is itself a window starts [x, y] (doc px); omit it for whole files"},
 			},
 			DocFrame: openFrame,
@@ -123,18 +123,6 @@ func sourceOps() []graph.OpDef {
 			},
 			Doc: "Open an image file as a source node: cv.open(path, { encoding, box, origin }). Decoded on first evaluation; the node holds linear values (the file's encoding undone) in the file's coordinates.",
 			See: []string{"stats", "explain"},
-		},
-		{
-			Name: "param", On: graph.KindNone, Returns: graph.KindParam, Bespoke: true,
-			Args: []graph.ArgSpec{{Name: "name", Type: "string", Positional: true}},
-			Run: func(_ context.Context, ec *graph.EvalCtx, _ []graph.Value, a graph.Args) (graph.Value, error) {
-				v, ok := ec.Params[a.String("name")]
-				if !ok {
-					return nil, graph.Errorf(graph.EArgType, "param %q is not declared.", a.String("name"))
-				}
-				return data(v), nil
-			},
-			Doc: "A named value a person can move (declare with P.slider / P.toggle / P.choice).",
 		},
 		{
 			Name: graph.PlaceholderOp, On: graph.KindNone, Returns: graph.KindImage, Result: placeholderEnc, Bespoke: true,

@@ -33,7 +33,7 @@ func compositeOps() []graph.OpDef {
 				}
 				return graph.NewImage(out), nil
 			},
-			Doc: "Apply an edit inside a mask: within(mask, i => i.exposure(-0.4)). The function runs once while the graph is built, with a placeholder for this image; its result is blended through the mask in the working space (linear by default), so params inside it are tracked like any other.",
+			Doc: "Apply an edit inside a mask: within(mask, i => i.exposure(-0.4)). The function runs once while the graph is built, with a placeholder for this image; its result is blended through the mask in the working space (linear by default).",
 			See: []string{"blend", "mask.luminance", "feather"},
 		},
 		{

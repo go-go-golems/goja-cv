@@ -38,13 +38,12 @@ func (o EngineOptions) withDefaults() EngineOptions {
 	return o
 }
 
-// Engine is one session's cv engine: registry, graph, params, sources,
-// cache and evaluator.
+// Engine is one session's cv engine: registry, graph, sources, cache and
+// evaluator.
 type Engine struct {
 	opts EngineOptions
 	reg  *Registry
 	b    *Builder
-	par  *ParamStore
 	ev   *Evaluator
 }
 
@@ -52,15 +51,13 @@ type Engine struct {
 func NewEngine(reg *Registry, opts EngineOptions) *Engine {
 	opts = opts.withDefaults()
 	b := NewBuilder(reg)
-	par := NewParamStore()
-	ev := NewEvaluator(b, par, NewCache(opts.CacheBytes), NewSourceStore(opts.PyramidMinLong))
-	return &Engine{opts: opts, reg: reg, b: b, par: par, ev: ev}
+	ev := NewEvaluator(b, NewCache(opts.CacheBytes), NewSourceStore(opts.PyramidMinLong))
+	return &Engine{opts: opts, reg: reg, b: b, ev: ev}
 }
 
 func (e *Engine) Options() EngineOptions       { return e.opts }
 func (e *Engine) Registry() *Registry          { return e.reg }
 func (e *Engine) Builder() *Builder            { return e.b }
-func (e *Engine) Params() *ParamStore          { return e.par }
 func (e *Engine) Evaluator() *Evaluator        { return e.ev }
 func (e *Engine) Cache() *Cache                { return e.ev.cache }
 func (e *Engine) Node(id NodeID) (*Node, bool) { return e.b.Node(id) }
@@ -168,20 +165,6 @@ func (e *Engine) Display(id NodeID) (NodeID, error) {
 		return 0, err
 	}
 	return c.ID, nil
-}
-
-// DeclareParam declares (or re-declares) a param and returns its node.
-func (e *Engine) DeclareParam(def ParamDef, reset bool) (*Node, ParamDef, error) {
-	op, ok := e.reg.Lookup(KindNone, "param")
-	if !ok {
-		return nil, ParamDef{}, Errorf(EInternal, "no param op registered")
-	}
-	d, err := e.par.Declare(def, reset)
-	if err != nil {
-		return nil, ParamDef{}, err
-	}
-	n, _, err := e.b.Intern(op, 0, []any{def.Name})
-	return n, d, err
 }
 
 // PreviewScale is min(1, PreviewLong / long side) for node id.

@@ -20,11 +20,12 @@ return {
 Stretch the 1st–99th percentiles to black and white, then lift the midtones, and compare.
 
 ```js
-const s = img.stats()
+const s = await img.stats()                 // options are numbers: await the measurement first
 const fixed = img.levels({ black: s.p01, white: s.p99 }).exposure(0.25)
 show(cv.compare([img, fixed], { mode: "side" }), { label: "before / after" })
 mem.fixed = fixed
-return await fixed.stats().pick("meanL", "clipLow", "clipHigh")
+const { meanL, clipLow, clipHigh } = await fixed.stats()
+return { meanL, clipLow, clipHigh }
 ```
 
 ## Remove dust
@@ -58,7 +59,7 @@ To keep a speck that is real detail, drop it by id before healing: `img.heal(mem
 const top = (await img.detect.specks().sortBy("area").top(2)).items
 return {
   measured: (await img.measure(top)).map(r => [r.cx, r.cy, r.snr.toFixed(2)].join(" ")),
-  inside: await img.stats({ box: top[0] }).pick("meanL", "area"),
+  inside: (({ meanL, area }) => ({ meanL, area }))(await img.stats({ box: top[0] })),
 }
 ```
 
@@ -145,6 +146,6 @@ return { encoding: (await v).encoding, p01: s.p01, p99: s.p99, look: v.levels({ 
 ```js
 const spots = img.detect.specks().where({ score: { gte: 0.5 } }).top(5)
 const c = img.chroma({ relative: true })
-return { spotChroma: await c.stats({ mask: spots }).pick("meanL"), look: c.colormap("viridis").look("chroma") }
+return { spotChroma: (await c.stats({ mask: spots })).meanL, look: c.colormap("viridis").look("chroma") }
 ```
 

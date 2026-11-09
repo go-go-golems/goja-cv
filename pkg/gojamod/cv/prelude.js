@@ -4,10 +4,12 @@
 // registry (native.__registry()), so there is one source of truth. Rules:
 //   - `then` makes nodes awaitable (Value → data, Image → summary); helpers in
 //     this file never touch `then` on a node: they check isNode() and read __id.
-//   - Symbol.toPrimitive / valueOf throw E_LAZY_COMPARE (string hint: a label).
+//   - Symbol.toPrimitive / valueOf throw E_NOT_AWAITED (string hint: a label).
 //   - Assigning, defining or deleting properties throws E_IMMUTABLE.
-//   - Unknown properties on Value nodes are derived fields (stats().meanL);
-//     on other kinds they throw E_UNKNOWN_METHOD with suggestions from Go.
+//   - On a Value or Regions node, a property that is not a method throws
+//     E_NOT_AWAITED (stats().p99: await it first); on an Image node an
+//     unknown property throws E_UNKNOWN_METHOD with suggestions from Go.
+//   - Options are literal values: a node passed as an option is E_ARG_TYPE.
 // Evaluates to function (native) returning the module exports.
 (function (native) {
   "use strict";
@@ -31,15 +33,8 @@
     tables[kind] = t;
   }
 
-  const FIELDS = new Set(native.__fieldNames());
-  const OTHER_METHODS = new Set();
-  for (const kind of Object.keys(METHODS)) {
-    if (kind === "Value") continue;
-    for (const name of METHODS[kind]) OTHER_METHODS.add(name.split(".")[0]);
-  }
-
-  // properties that generic JS machinery probes; they must not derive fields
-  // or throw (console formatting, JSON, frameworks).
+  // properties that generic JS machinery probes; they must not throw
+  // (console formatting, JSON, frameworks).
   const PROBES = new Set(["constructor", "__proto__", "prototype", "inspect", "nodeType", "$$typeof", "asymmetricMatch"]);
 
   const nodeSet = new WeakSet();
@@ -117,7 +112,8 @@
 
   // marshal converts call arguments for the native side: nodes become
   // { __cvnode: id }, functions { __cvfunc: id }; arrays and plain objects
-  // are walked (nodes inside options objects are lifted by Go).
+  // are walked (a node is accepted only where an op takes an image, a mask
+  // or regions; elsewhere Go refuses it: options are literal values).
   function marshal(x) {
     if (x === null || x === undefined) return x;
     if (isNode(x)) return { __cvnode: x.__id };
@@ -193,25 +189,11 @@
     });
   }
 
-  function paramProp(t, prop) {
-    switch (prop) {
-      case "value":
-        return native.__paramInfo(t.__id).value;
-      case "touched":
-        return native.__paramInfo(t.__id).touched;
-      case "name":
-        return native.__paramInfo(t.__id).name;
-      case "def":
-        return native.__paramInfo(t.__id);
-    }
-    return undefined;
-  }
-
   function lookup(t, prop) {
     if (typeof prop === "symbol") {
       if (prop === Symbol.toPrimitive) {
         return function (hint) {
-          return hint === "string" ? label(t) : native.__lazy(t.__id, hint === "default" ? "primitive" : hint);
+          return hint === "string" ? label(t) : native.__notAwaited(t.__id, null, hint === "default" ? "primitive" : hint);
         };
       }
       if (prop === Symbol.toStringTag) return "cv." + t.__kind;
@@ -235,7 +217,7 @@
         };
       case "valueOf":
         return function () {
-          return native.__lazy(t.__id, "number");
+          return native.__notAwaited(t.__id, null, "number");
         };
       case "toJSON":
         return function () {
@@ -244,7 +226,7 @@
       case "look":
         // look({ label, maxSide }) → a Go-backed look (an image the eval returns)
         return function (opts) {
-          return native.__look(t.__id, opts === undefined ? null : opts);
+          return native.__look(t.__id, opts === undefined ? null : marshal(opts));
         };
       case "save":
         // save(path, { depth }) → a promise of the saved file (under --out-root)
@@ -252,17 +234,12 @@
           return native.__save(t.__id, path === undefined ? null : path, opts === undefined ? null : opts);
         };
     }
-    if (PROBES.has(prop)) return undefined;
-    if (t.__kind === "Param") {
-      const v = paramProp(t, prop);
-      if (v !== undefined) return v;
-    }
     const tab = tables[t.__kind];
     const entry = tab && tab[prop];
     if (entry) return entry.ns ? namespaceFor(t, prop, entry.ns) : method(t, entry.op);
-    // a method of another kind on a Value (stats().exposure) is an error with
-    // a cross-kind hint, unless it is also a documented field (dust().count)
-    if (t.__kind === "Value" && (!OTHER_METHODS.has(prop) || FIELDS.has(prop))) return callOp(t, "field", [prop]);
+    if (PROBES.has(prop)) return undefined;
+    // lazy data: reading .p99 of stats() means "after awaiting it"
+    if (t.__kind === "Value" || t.__kind === "Regions") return native.__notAwaited(t.__id, prop);
     return native.__unknown(t.__kind, prop, t.__id);
   }
 
@@ -310,29 +287,9 @@
     return x;
   }
 
-  const P = {
-    slider(name, opts) {
-      return nodeFor(native.__param("slider", name, marshal(opts || {})));
-    },
-    toggle(name, opts) {
-      return nodeFor(native.__param("toggle", name, marshal(opts || {})));
-    },
-    choice(name, opts) {
-      return nodeFor(native.__param("choice", name, marshal(opts || {})));
-    },
-    // set moves a param as the person would (tests, hosts).
-    set(name, value) {
-      native.__paramSet(isNode(name) ? name.name : name, value);
-    },
-    list() {
-      return native.__params();
-    },
-  };
-
   const cv = {
     version: native.__version,
     kinds: native.__kinds(), // graph.Kinds
-    P: P,
     // open(path, { encoding, box, origin }) → Image
     open(path, opts) {
       return nodeFor(native.__open(path, opts === undefined ? null : marshal(opts)));

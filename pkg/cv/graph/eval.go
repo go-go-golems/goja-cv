@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/binary"
-	"encoding/json"
 	"fmt"
 	"math"
 	"sync"
@@ -26,10 +25,9 @@ type EvalOptions struct {
 
 // EvalCtx is what an op's Run sees besides its inputs and args.
 type EvalCtx struct {
-	Eval   *Evaluator
-	Node   *Node
-	Scale  float64        // quantized evaluation scale (the render scale for a decoration in a render)
-	Params map[string]any // param values snapshotted at the start of the evaluation
+	Eval  *Evaluator
+	Node  *Node
+	Scale float64 // quantized evaluation scale (the render scale for a decoration in a render)
 	// Window is the doc-px rectangle a decoration draws in during a render
 	// above scale 1 (its inputs cover it); the node's frame otherwise.
 	Window Frame
@@ -69,7 +67,6 @@ type Callbacks interface {
 // in-flight work, the identity short-circuit and parallel input evaluation.
 type Evaluator struct {
 	b       *Builder
-	params  *ParamStore
 	cache   *Cache
 	sources *SourceStore
 	flight  singleflight.Group
@@ -80,9 +77,9 @@ type Evaluator struct {
 	total int
 }
 
-// NewEvaluator wires an evaluator to its graph, params, cache and sources.
-func NewEvaluator(b *Builder, params *ParamStore, cache *Cache, sources *SourceStore) *Evaluator {
-	return &Evaluator{b: b, params: params, cache: cache, sources: sources, runs: map[NodeID]int{}}
+// NewEvaluator wires an evaluator to its graph, cache and sources.
+func NewEvaluator(b *Builder, cache *Cache, sources *SourceStore) *Evaluator {
+	return &Evaluator{b: b, cache: cache, sources: sources, runs: map[NodeID]int{}}
 }
 
 // SetCallbacks installs the runner for JavaScript data lambdas.
@@ -105,7 +102,6 @@ func (e *Evaluator) CallEach(ctx context.Context, id FuncID, args []any) ([]any,
 }
 
 func (e *Evaluator) Builder() *Builder            { return e.b }
-func (e *Evaluator) Params() *ParamStore          { return e.params }
 func (e *Evaluator) Cache() *Cache                { return e.cache }
 func (e *Evaluator) Sources() *SourceStore        { return e.sources }
 func (e *Evaluator) node(id NodeID) *Node         { n, _ := e.b.Node(id); return n }
@@ -145,15 +141,14 @@ func QuantizeScale(s float64) float64 {
 
 // evalRun is the state of one Evaluate call at one scale: memoized
 // signatures and values. Nodes with an AnalysisScale are evaluated in a
-// sibling run at that scale, which shares the param snapshot.
+// sibling run at that scale.
 type evalRun struct {
-	e      *Evaluator
-	scale  float64
-	params map[string]any
-	group  *runGroup
-	mu     sync.Mutex
-	sigs   map[NodeID]Signature
-	vals   map[Signature]Value
+	e     *Evaluator
+	scale float64
+	group *runGroup
+	mu    sync.Mutex
+	sigs  map[NodeID]Signature
+	vals  map[Signature]Value
 }
 
 // runGroup holds the runs of one Evaluate call, one per scale, and reports
@@ -166,7 +161,7 @@ type runGroup struct {
 }
 
 func (e *Evaluator) newRun(scale float64, onWarn func(Warning)) *evalRun {
-	r := &evalRun{e: e, scale: QuantizeScale(scale), params: e.params.Snapshot(),
+	r := &evalRun{e: e, scale: QuantizeScale(scale),
 		sigs: map[NodeID]Signature{}, vals: map[Signature]Value{}}
 	r.group = &runGroup{runs: map[float64]*evalRun{r.scale: r}, onWarn: onWarn, emitted: map[Signature]bool{}}
 	return r
@@ -210,7 +205,7 @@ func (r *evalRun) at(scale float64) *evalRun {
 	if s, ok := r.group.runs[scale]; ok {
 		return s
 	}
-	s := &evalRun{e: r.e, scale: scale, params: r.params, group: r.group,
+	s := &evalRun{e: r.e, scale: scale, group: r.group,
 		sigs: map[NodeID]Signature{}, vals: map[Signature]Value{}}
 	r.group.runs[scale] = s
 	return s
@@ -263,7 +258,7 @@ func (r *evalRun) replayTree(id NodeID, seen map[NodeID]bool) {
 	}
 }
 
-// Signature returns the cache key of node id at scale with the current params.
+// Signature returns the cache key of node id at scale.
 func (e *Evaluator) Signature(id NodeID, scale float64) Signature {
 	return e.newRun(scale, nil).sig(id)
 }
@@ -286,10 +281,6 @@ func (r *evalRun) sig(id NodeID) Signature {
 	h := sha256.New()
 	h.Write(n.Hash[:])
 	_ = binary.Write(h, binary.LittleEndian, int64(math.Round(r.scale*1e4)))
-	if n.Op.On == KindNone && n.Op.Name == "param" {
-		js, _ := json.Marshal(r.params[n.Args.String("name")])
-		h.Write(js)
-	}
 	for _, in := range n.Inputs {
 		is := r.sig(in)
 		h.Write(is[:])
@@ -364,19 +355,14 @@ func (r *evalRun) compute(ctx context.Context, n *Node, sig Signature) (Value, e
 			return nil, err
 		}
 	}
-	var args Args
-	if n.Op.Lazy {
-		args = n.Args
-	} else {
-		var err error
-		if args, err = resolveArgs(n, ins); err != nil {
-			return nil, r.e.wrapWithPath(err, n)
-		}
+	args := n.Args
+	if !n.Op.Lazy {
+		args = resolveArgs(n, ins)
 	}
 	if n.Op.Identity != nil && n.HasReceiver() && n.Op.Identity(args) {
 		return stamp(n, ins[0], ins), nil // neutral args: the receiver's value (a stamped copy); not cached twice
 	}
-	ec := &EvalCtx{Eval: r.e, Node: n, Scale: r.scale, Params: r.params, Window: n.Frame}
+	ec := &EvalCtx{Eval: r.e, Node: n, Scale: r.scale, Window: n.Frame}
 	out, err := safeRun(ctx, n.Op, ec, receiverValue(n, ins), args)
 	if err != nil {
 		return nil, r.e.wrapWithPath(err, n)
