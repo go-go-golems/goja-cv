@@ -62,12 +62,9 @@ var reservedNames = map[string]bool{
 
 var nameRE = regexp.MustCompile(`^[A-Za-z_$][A-Za-z0-9_$]*$`)
 
-// asSynonyms are the option keys agents use for as.
-var asSynonyms = []string{"name", "bind", "alias"}
-
 // nameError is E_NAME with a free name as the fix.
 func (n *native) nameError(name, why string) *graph.Error {
-	e := graph.Errorf(ENameCode, "cv.open(…, { as: %q }): %s.", name, why)
+	e := graph.Errorf(ENameCode, "cv.open(…, { name: %q }): %s.", name, why)
 	e.Hint = "A name is a global for an opened image (img is the first). Pick an identifier that is not a session global."
 	base := name
 	if !nameRE.MatchString(base) || reservedNames[base] {
@@ -79,7 +76,7 @@ func (n *native) nameError(name, why string) *graph.Error {
 	for i := 2; i < 100; i++ {
 		cand := base + strconv.Itoa(i)
 		if n.nameFree(cand) {
-			e.Fix = fmt.Sprintf(`{ as: %q }`, cand)
+			e.Fix = fmt.Sprintf(`{ name: %q }`, cand)
 			break
 		}
 	}
@@ -98,15 +95,6 @@ func (n *native) nameFree(name string) bool {
 	return n.vm.GlobalObject().Get(name) == nil
 }
 
-func containsString(xs []string, x string) bool {
-	for _, e := range xs {
-		if e == x {
-			return true
-		}
-	}
-	return false
-}
-
 // checkName(name) throws E_NAME when name cannot be bound.
 func (n *native) checkName(c goja.FunctionCall) goja.Value {
 	v := c.Argument(0)
@@ -116,7 +104,7 @@ func (n *native) checkName(c goja.FunctionCall) goja.Value {
 	name, ok := v.Export().(string)
 	switch {
 	case !ok:
-		n.throw(graph.Errorf(ENameCode, "cv.open(…, { as }): the name must be a string, got %s.", v.String()).WithFix(`{ as: "ref" }`))
+		n.throw(graph.Errorf(ENameCode, "cv.open(…, { name }): the name must be a string, got %s.", v.String()).WithFix(`{ name: "ref" }`))
 	case !nameRE.MatchString(name):
 		n.throw(n.nameError(name, "a name must be an identifier (letters, digits, _ and $, not starting with a digit)"))
 	case reservedNames[name]:
@@ -150,26 +138,6 @@ func (n *native) getName(c goja.FunctionCall) goja.Value {
 func (n *native) setName(c goja.FunctionCall) goja.Value {
 	n.st.names.set(c.Argument(0).String(), c.Argument(1))
 	return goja.Undefined()
-}
-
-// asKey(keys) returns the key of an options object that means as: as
-// itself, else a synonym (name, bind, alias); null when there is none.
-func (n *native) asKey(c goja.FunctionCall) goja.Value {
-	var keys []string
-	if arr, ok := c.Argument(0).Export().([]any); ok {
-		for _, k := range arr {
-			keys = append(keys, fmt.Sprint(k))
-		}
-	}
-	if containsString(keys, "as") {
-		return n.vm.ToValue("as")
-	}
-	for _, s := range asSynonyms {
-		if containsString(keys, s) {
-			return n.vm.ToValue(s)
-		}
-	}
-	return goja.Null()
 }
 
 // imageDesc describes an opened source for the context block:

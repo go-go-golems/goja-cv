@@ -87,7 +87,7 @@ func TestLocalContrast(t *testing.T) {
 	ctx := context.Background()
 	reg := NewRegistry()
 	graphtest.RegisterSource(reg)
-	e := graph.NewEngine(reg, graph.EngineOptions{})
+	e := graph.NewEngine(reg, graphtest.Options(t))
 	flat, err := graphtest.Source(e, "linear", graph.Frame{W: 64, H: 48}, 0.4)
 	if err != nil {
 		t.Fatal(err)
@@ -154,7 +154,7 @@ func TestLevelsAuto(t *testing.T) {
 		t.Fatalf("auto with white: %+v", err)
 	}
 	_, err = e.Call("levels", img.ID, []any{map[string]any{"box": []any{0.0, 0.0, 8.0, 8.0}}})
-	if ce, ok := graph.AsError(err); !ok || ce.Code != graph.EUnknownOption || ce.Fix != "img.crop([x, y, w, h]).levels({ auto: true })" {
+	if ce, ok := graph.AsError(err); !ok || ce.Code != graph.EUnknownOption || ce.Fix != "" {
 		t.Fatalf("levels box: %+v", err)
 	}
 	if _, err := e.Call("levels", img.ID, []any{map[string]any{"auto": []any{0.9, 0.1}}}); err == nil {
@@ -193,7 +193,7 @@ func TestEveryViewPresetBuildsAndRenders(t *testing.T) {
 			t.Fatalf("view(%s) has no description", p.Name)
 		}
 	}
-	_, err := e.Call("view", img.ID, []any{"dust"})
+	_, err := e.Call("view", img.ID, []any{"specks"})
 	if ce, ok := graph.AsError(err); !ok || !strings.HasPrefix(ce.Hint, `Did you mean "speck"? scene: `) || ce.Fix != `view("speck")` {
 		t.Fatalf("unknown preset: %+v / hint %q fix %q", err, ce.Hint, ce.Fix)
 	}

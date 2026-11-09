@@ -20,12 +20,13 @@ goja-cv speaks MCP over stdio, so Claude starts it as a subprocess. Put the `goj
 ## Claude Code, one command
 
 ```bash
-claude mcp add cv -- goja-cv mcp --image scan.tif --root /path/to/images
+claude mcp add cv -- goja-cv mcp --root ~/cv-work --read /path/to/images --image /path/to/images/scan.tif
 ```
 
-Everything after `--` is the server command. `--image` binds `img` at start (optional: the agent can also call
-the `open` tool or `img = cv.open(path)`); `--root` limits what `cv.open` may read (repeat it for several
-directories). Add `-s project` to write the entry to the project's `.mcp.json` instead of your local config,
+Everything after `--` is the server command. `--root` (required) is the workspace: the one directory the agent
+writes (`cv.save`) and where `cv.open` reads relative paths first. `--read` (repeatable) adds a directory
+`cv.open` may read but never write. `--image` binds `img` at start (optional: the agent can also call the `open`
+tool or `img = cv.open(path)`); it must lie in one of them. Add `-s project` to write the entry to the project's `.mcp.json` instead of your local config,
 or `-s user` for every project. Check with `claude mcp list`.
 
 ## Claude Code, project .mcp.json
@@ -35,7 +36,7 @@ or `-s user` for every project. Check with `claude mcp list`.
   "mcpServers": {
     "cv": {
       "command": "goja-cv",
-      "args": ["mcp", "--image", "scan.tif", "--root", "/path/to/images"]
+      "args": ["mcp", "--root", "cv-work", "--read", "/path/to/images", "--image", "/path/to/images/scan.tif"]
     }
   }
 }
@@ -55,7 +56,7 @@ absolute paths because Desktop does not start servers in a project directory:
   "mcpServers": {
     "cv": {
       "command": "/usr/local/bin/goja-cv",
-      "args": ["mcp", "--root", "/Users/me/Pictures/scans"]
+      "args": ["mcp", "--root", "/Users/me/cv-work", "--read", "/Users/me/Pictures/scans"]
     }
   }
 }

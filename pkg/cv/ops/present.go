@@ -3,7 +3,6 @@ package ops
 import (
 	"context"
 	"math"
-	"strconv"
 
 	"github.com/go-go-golems/goja-cv/pkg/cv/buffer"
 	"github.com/go-go-golems/goja-cv/pkg/cv/graph"
@@ -15,7 +14,7 @@ func overlayArgs() []graph.ArgSpec {
 	return []graph.ArgSpec{
 		{Name: "color", Type: "any", Default: "red", Doc: "colour name or display [r, g, b] in [0, 1] (encoded values)"},
 		{Name: "alpha", Type: "number", Default: 0.5, Min: graph.F(0), Max: graph.F(1), Doc: "opacity of the fill (outlines are drawn opaque)"},
-		{Name: "labels", Type: "enum:none,id", Default: "none", Doc: `"id" draws each region's id next to its box`},
+		{Name: "labels", Type: "enum:none,id", Default: "none", Doc: `"id" draws each item's label (else its id) next to its box`},
 	}
 }
 
@@ -45,7 +44,7 @@ func decorationWidth(w, h int) int {
 // alpha·0.6, a box outline around each (at least 5 px, 2 px margin) and
 // optionally the id above the box (font size 2).
 func drawRegions(ctx context.Context, img *graph.ImageValue, rv *graph.RegionsValue, a graph.Args) (graph.Value, error) {
-	if err := containsFrame("overlay", rv.Frame, img.Frame); err != nil {
+	if err := itemsCover("overlay", rv, img.Frame); err != nil {
 		return nil, err
 	}
 	col, err := parseColor(a.Raw("color"), "overlay.color")
@@ -91,7 +90,7 @@ func drawRegions(ctx context.Context, img *graph.ImageValue, rv *graph.RegionsVa
 			if ty < 0 {
 				ty = y1 + lw + 1
 			}
-			kernels.DrawText(out, x0, ty, strconv.Itoa(r.ID), px, col)
+			kernels.DrawText(out, x0, ty, r.Text(), px, col)
 		}
 	}
 	return graph.NewImage(out), nil
@@ -108,8 +107,8 @@ func presentOps() []graph.OpDef {
 	return []graph.OpDef{
 		{
 			Name: "overlay", On: graph.KindImage, Returns: graph.KindImage, Space: graph.Display, Class: graph.Decoration, Channels: graph.Three,
-			Args: append([]graph.ArgSpec{{Name: "target", Type: "Regions|Mask", Positional: true,
-				Doc: "what to draw: regions (outlines, tint, ids) or a mask, any one-channel image (tint)"}}, overlayArgs()...),
+			Args: append([]graph.ArgSpec{itemsArg("target", graph.ItemsType+"|"+graph.MaskType,
+				"what to draw: regions (a Regions node or an array of items: region items, boxes, circles; outlines, tint, labels) or a mask, any one-channel image (tint)")}, overlayArgs()...),
 			Validate: validateColor("color"),
 			Run: func(ctx context.Context, _ *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
 				img := image(in[0])
@@ -120,7 +119,7 @@ func presentOps() []graph.OpDef {
 				return tint(ctx, img, image(target), a)
 			},
 			DocFrame: func(a graph.Args) graph.Frame { return a.Receiver().Frame },
-			Doc:      "The image with regions (tinted pixels, box outlines, optional ids) or a mask (tint) drawn over it, for looking. A decoration: in a zoomed look outlines stay 1 image px and ids readable, before or after a crop; regions found on the whole image can be drawn on a crop.",
+			Doc:      "The image with items (tinted area, box outlines, optional labels: label, else id) or a mask (tint) drawn over it, for looking. A decoration: in a zoomed look outlines stay 1 image px and labels readable, before or after a crop; regions found on the whole image can be drawn on a crop.",
 			See:      []string{"compare", "detect.specks"},
 		},
 		{
@@ -128,10 +127,7 @@ func presentOps() []graph.OpDef {
 			Space: graph.Display, // a layout of what looks show
 			Args: []graph.ArgSpec{
 				{Name: "images", Type: "Image[]", Positional: true, Doc: "the images to compare: [before, after, …]"},
-				{Name: "mode", Type: "enum:side,split", Default: "side", Doc: "side by side (top-aligned, 4 doc px apart) or split into vertical strips (same frame)",
-					Redirects: map[string]graph.Redirect{"diff": {
-						Hint: "compare lays images out; a difference is an image of its own: subtract (signed, zero = grey with .mul(4).add(0.5)).",
-						Fix:  "a.sub(b).mul(4).add(0.5)"}}},
+				{Name: "mode", Type: "enum:side,split", Default: "side", Doc: "side by side (top-aligned, 4 doc px apart) or split into vertical strips (same frame)"},
 			},
 			Validate: func(a graph.Args) error {
 				if n := len(a.Raw("images").([]any)); n == 0 {

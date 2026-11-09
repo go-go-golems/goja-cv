@@ -179,7 +179,7 @@ func EllipseMask(ctx context.Context, w, h int, scale, x, y, bw, bh float64) (*b
 // [i, i+1) × [j, j+1)) inside the ellipse centred at (cx, cy) with radii rx,
 // ry (buffer px), by 4×4 supersampling: a multiple of 1/16. It is the one
 // coverage rule of mask.ellipse and of every measurement (sample, measure,
-// profile, regions.measure), so their numbers agree.
+// profile, measure), so their numbers agree.
 func EllipseCoverage(i, j int, cx, cy, rx, ry float64) float32 {
 	if rx <= 0 || ry <= 0 {
 		return 0

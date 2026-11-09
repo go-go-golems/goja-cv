@@ -85,10 +85,10 @@ func TestErodeDilateOps(t *testing.T) {
 			t.Fatalf("%s: %+v", old, err)
 		}
 	}
-	// toMask has no grow option (and no options at all)
-	_, err = e.Call("toMask", call(t, e, "components", m.ID).ID, []any{map[string]any{"grow": 2.0}})
-	if ce, ok := graph.AsError(err); !ok || ce.Code != graph.EUnknownOption || ce.Message != `toMask has no option "grow": it takes none.` {
-		t.Fatalf("toMask({ grow }): %+v", err)
+	// mask.regions has no grow option
+	_, err = e.Call("mask.regions", img.ID, []any{nodeArg(call(t, e, "components", m.ID)), map[string]any{"grow": 2.0}})
+	if ce, ok := graph.AsError(err); !ok || ce.Code != graph.EUnknownOption {
+		t.Fatalf("mask.regions({ grow }): %+v", err)
 	}
 	// a mask's selection grows by the disk: a box of 20 × 12 dilated by 2
 	// covers 24 × 16 minus the corners outside the disk

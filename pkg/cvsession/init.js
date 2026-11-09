@@ -3,7 +3,7 @@
 //   cv        the module
 //   mem       a plain object that persists between evals
 //   img       the first named image (a getter/setter; throws E_NO_IMAGE when unset);
-//             cv.open(path, { as: "ref" }) binds more names the same way
+//             cv.open(path, { name: "ref" }) binds more names the same way
 //   __cv_run  the eval wrapper used by cvsession.App.Evaluate
 (function (native, cv) {
   "use strict";
@@ -26,25 +26,21 @@
     });
   }
 
-  // cv.open is restricted to the session's roots (when configured), and
-  // takes { as } (or name, bind, alias) to bind the image to a global; the
-  // module's open does not know as.
+  // cv.open reads in the session's workspace and read directories, and
+  // takes { name } to bind the image to a global; the module's open does not
+  // know name.
   const open = cv.open;
   cv.open = function (path, opts) {
-    native.checkPath(path);
-    let as;
+    let name;
     let rest = opts;
-    if (opts !== null && typeof opts === "object" && !Array.isArray(opts)) {
-      const key = native.asKey(Object.keys(opts));
-      if (key !== null) {
-        as = opts[key];
-        rest = Object.assign({}, opts);
-        delete rest[key];
-        native.checkName(as);
-      }
+    if (opts !== null && typeof opts === "object" && !Array.isArray(opts) && "name" in opts) {
+      name = opts.name;
+      rest = Object.assign({}, opts);
+      delete rest.name;
+      native.checkName(name);
     }
     const node = open(path, rest);
-    if (as !== undefined && native.bindName(as, node)) defineName(as);
+    if (name !== undefined && native.bindName(name, node)) defineName(name);
     return node;
   };
 
@@ -71,12 +67,36 @@
     writable: false,
     // The body starts from a promise job: goja survives an interrupt
     // (timeout) in the synchronous part of an async function only when it was
-    // started from a job.
+    // started from a job. Every cv.save the eval started completes before it
+    // returns, awaited or not; an unawaited save that failed fails the eval.
     value: function (body) {
+      function saves() {
+        return Promise.allSettled(native.pendingSaves()).then(function () {
+          const e = native.saveFailure();
+          if (e !== null) throw e;
+        });
+      }
       return Promise.resolve()
         .then(function () {
           return body();
         })
+        .then(
+          function (v) {
+            return saves().then(function () {
+              return v;
+            });
+          },
+          function (e) {
+            return saves().then(
+              function () {
+                throw e;
+              },
+              function () {
+                throw e;
+              },
+            );
+          },
+        )
         .then(undefined, function (e) {
           native.fail(e);
           throw e;

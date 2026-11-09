@@ -17,11 +17,28 @@ func chartSize(maxLong int) (int, int) {
 	return w, max(w*2/5, MinSide)
 }
 
-// renderChart draws data["counts"] (a histogram) as a bar chart on white.
+// column is one field of a value's rows ({ rows: [{ key: v }, …] }) as a
+// list, nil where a row lacks it.
+func column(m map[string]any, key string) []any {
+	rows, _ := m["rows"].([]any)
+	if len(rows) == 0 {
+		return nil
+	}
+	out := make([]any, len(rows))
+	for i, r := range rows {
+		if row, ok := r.(map[string]any); ok {
+			out[i] = row[key]
+		}
+	}
+	return out
+}
+
+// renderChart draws a histogram's rows (count per bin) as a bar chart on
+// white.
 func renderChart(data any, w, h int) (draw.Image, error) {
 	m, _ := data.(map[string]any)
-	counts, ok := m["counts"].([]any)
-	if !ok || len(counts) == 0 {
+	counts := column(m, "count")
+	if len(counts) == 0 {
 		return nil, graph.Errorf(graph.EWrongKind, "look(): this Value has no histogram counts to chart.")
 	}
 	vals := make([]float64, len(counts))
@@ -70,11 +87,15 @@ var lineSeries = []struct {
 // chartLabelPx is the font size of chart axis labels.
 const chartLabelPx = 2
 
-// renderLines draws a profile ({ t, meanL, meanR, … }) as a line chart on
+// renderLines draws a profile's rows ({ t, meanL, meanR, … }) as a line chart on
 // white: t (doc px) on x, one line per channel and meanL in black, gaps
 // where samples are null; axis labels give the t and value ranges.
 func renderLines(data any, w, h int) (draw.Image, error) {
-	m, _ := data.(map[string]any)
+	rm, _ := data.(map[string]any)
+	m := map[string]any{"t": column(rm, "t")}
+	for _, s := range lineSeries {
+		m[s.key] = column(rm, s.key)
+	}
 	ts, ok := m["t"].([]any)
 	if !ok || len(ts) == 0 {
 		return nil, graph.Errorf(graph.EWrongKind, "look(): this Value has no profile samples (t) to chart.")

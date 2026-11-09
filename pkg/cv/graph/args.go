@@ -12,19 +12,6 @@ import (
 // NodeArg is a node passed as an argument value in a raw call (from JS).
 type NodeArg struct{ ID NodeID }
 
-// FuncID identifies a JavaScript function registered by the binding.
-type FuncID int64
-
-// FuncArg is a JavaScript function passed as an argument. Only arguments of
-// type "func" (data lambdas such as Regions.filter) accept it; builder
-// lambdas (within) are run by the prelude and arrive as BuiltArg.
-type FuncArg struct{ ID FuncID }
-
-// MarshalJSON encodes the function reference for hashing and display.
-func (f FuncArg) MarshalJSON() ([]byte, error) {
-	return []byte(`{"$fn":` + strconv.FormatInt(int64(f.ID), 10) + `}`), nil
-}
-
 // InputRef is a node argument inside canonical args: it refers to
 // node.Inputs[Index].
 type InputRef struct{ Index int }
@@ -235,16 +222,6 @@ func (a Args) Box(name string) [4]float64 {
 // value along x and y.
 func AxisScales(v *ImageValue) (float64, float64) {
 	return float64(v.Buf.W) / float64(max(1, v.Frame.W)), float64(v.Buf.H) / float64(max(1, v.Frame.H))
-}
-
-// Func reads a "func" argument.
-func (a Args) Func(name string) FuncID {
-	_, x := a.present(name)
-	f, ok := x.(FuncArg)
-	if !ok {
-		a.wrongType(name, x, "a function")
-	}
-	return f.ID
 }
 
 // Luma is the evaluated luminance input of an op with OpDef.Luma: one
@@ -485,7 +462,7 @@ func (a Args) canonicalJSON() []byte {
 }
 
 // normalize converts exported JS/Go values into the canonical value space:
-// float64, string, bool, []any, map[string]any, NodeArg, FuncArg, nil.
+// float64, string, bool, []any, map[string]any, NodeArg, nil.
 func normalize(v any) any {
 	switch x := v.(type) {
 	case int:
@@ -557,8 +534,9 @@ func typeAcceptsObject(t string) bool { return t == "object" || t == "any" }
 type binder struct {
 	op       *OpDef
 	nodeOf   func(NodeID) (*Node, bool)
-	base     int      // index of the first node argument in node.Inputs (1 after a receiver)
-	inputs   []NodeID // one per node argument, in binding order, repetitions kept
+	items    func(entries []any, src NodeID) (NodeID, error) // interns an item array (nil: arrays refused)
+	base     int                                             // index of the first node argument in node.Inputs (1 after a receiver)
+	inputs   []NodeID                                        // one per node argument, in binding order, repetitions kept
 	warnings []Warning
 }
 
@@ -646,7 +624,7 @@ func isKindType(typ string) bool {
 		return false
 	}
 	for _, part := range strings.Split(typ, "|") {
-		if k := Kind(part); k != KindImage && k != KindRegions && part != MaskType {
+		if k := Kind(part); k != KindImage && k != KindRegions && part != MaskType && part != ItemsType {
 			return false
 		}
 	}
@@ -658,18 +636,19 @@ func isKindType(typ string) bool {
 func wrongNode(where, want string, n *Node) *Error {
 	if n.Kind == KindImage && takesMask(want) {
 		what := "a one-channel image (a mask)"
-		if accepts(Kind(want), KindRegions) {
+		if takesItems(want) || accepts(Kind(want), KindRegions) {
 			what += " or regions"
 		}
 		return Errorf(EWrongKind, "%s needs %s; this image has %d channels.", where, what, n.Channels).
-			WithHint("A mask is any one-channel image (weights in [0, 1]): toGray(), a mask op such as img.mask.luminance({ above: 0.5 }), or regions.toMask().").
+			WithHint("A mask is any one-channel image (weights in [0, 1]): toGray(), a mask op such as img.mask.luminance({ above: 0.5 }), or img.mask.regions(regions).").
 			WithFix(AwaitExpr(n) + ".toGray()")
 	}
 	e := Errorf(EWrongKind, "%s wants %s node, got %s node.", where, A(want), A(string(n.Kind)))
 	switch {
 	case n.Kind == KindRegions && takesMask(want):
-		e.Hint = "Convert regions with .toMask()."
-	case n.Kind == KindImage && n.Channels == 1 && accepts(Kind(want), KindRegions):
+		e.Hint = "A mask of regions is img.mask.regions(regions)."
+		e.Fix = "img.mask.regions(regions)"
+	case n.Kind == KindImage && n.Channels == 1 && (takesItems(want) || accepts(Kind(want), KindRegions)):
 		e.Hint = "Find the regions of a mask with .components()."
 	}
 	return e
@@ -729,8 +708,11 @@ func t2noun(t string) string {
 // check validates and canonicalizes v against type typ of spec s. A node is
 // accepted only for an argument of node type (it becomes an input).
 func (b *binder) check(s *ArgSpec, typ string, v any, where string) (any, error) {
-	if typ == "data" { // a node or plain data, kept as given (cv.json, cv.csv)
+	if typ == "data" { // a node or plain data, kept as given (cv.save's x)
 		return v, nil
+	}
+	if takesItems(typ) {
+		return b.checkItems(s, typ, v, where)
 	}
 	if na, ok := v.(NodeArg); ok {
 		if isUnionType(typ) {
@@ -752,17 +734,6 @@ func (b *binder) check(s *ArgSpec, typ string, v any, where string) (any, error)
 			}
 		}
 		return nil, e
-	}
-	if fa, ok := v.(FuncArg); ok {
-		if typ == "func" {
-			return fa, nil
-		}
-		return nil, Errorf(EArgType, "%s does not accept a function.", where).
-			WithHint("Only within(mask, i => …) (a builder) and Regions.filter(r => …) (a data lambda) take functions; pass a value or a node.")
-	}
-	if typ == "func" {
-		return nil, Errorf(EArgType, "%s must be a function, got %s.", where, describeRaw(v)).
-			WithFix("regions.filter(r => r.contrast > 3 * r.localNoise)")
 	}
 	switch {
 	case isUnionType(typ):
@@ -806,11 +777,7 @@ func (b *binder) check(s *ArgSpec, typ string, v any, where string) (any, error)
 			}
 		}
 		e := Errorf(EArgType, "%s = %q is not one of %s.", where, str, quoteList(allowed)).WithValid(allowed)
-		if r, ok := s.Redirects[str]; ok {
-			e.Hint, e.Fix = r.Hint, r.Fix
-		} else if sug, ok := s.ValueSynonyms[str]; ok {
-			e.Hint = fmt.Sprintf("Did you mean %q?", sug)
-		} else if sug := closest(str, allowed); sug != "" {
+		if sug := closest(str, allowed); sug != "" {
 			e.Hint = fmt.Sprintf("Did you mean %q?", sug)
 		}
 		if len(s.ValueDocs) > 0 {
@@ -1019,7 +986,7 @@ func fmtCoord(v any) string {
 
 func (b *binder) checkAny(v any, where string) (any, error) {
 	switch x := v.(type) {
-	case NodeArg, FuncArg:
+	case NodeArg:
 		return b.check(&ArgSpec{}, "number", x, where)
 	case []any:
 		out := make([]any, len(x))
@@ -1092,56 +1059,14 @@ func checkKeys(specs []ArgSpec, m map[string]any, what string, fix func(sug stri
 				e.Hint, e.Fix = r.Hint, r.Fix
 				return e
 			}
-			sug, semantic := optionSynonym(k, known), true
-			if sug == "" {
-				sug, semantic = closest(k, valid), false
-			}
-			if sug != "" {
+			if sug := closest(k, valid); sug != "" {
 				e.Hint = fmt.Sprintf("Did you mean %q?", sug)
-				for _, s := range specs {
-					if semantic && s.Name == sug && s.Doc != "" { // explain why a different word maps here
-						e.Hint += " (" + s.Doc + ")"
-					}
-				}
 				e.Fix = fix(sug)
 			}
 			return e
 		}
 	}
 	return nil
-}
-
-// OptionSynonyms maps option names agents reach for to the cv option names
-// they usually mean, in order of preference; the first one the op has wins
-// ({ min: 0.99 } on mask.luminance → above; { radius } on gaussian → r).
-var OptionSynonyms = map[string][]string{
-	"min": {"above", "minArea", "minContrast"}, "minimum": {"above", "minArea"}, "lower": {"above"}, "from": {"above"},
-	"max": {"below", "maxArea"}, "maximum": {"below", "maxArea"}, "upper": {"below"}, "to": {"below"},
-	"threshold": {"above", "minContrast", "threshold"}, "thresh": {"above", "minContrast", "threshold"}, "cutoff": {"above", "minContrast"},
-	"r": {"sigma", "radius", "coreRadius"}, "radius": {"sigma", "coreRadius"}, "sigma": {"radius"}, "core": {"coreRadius"}, "coreR": {"coreRadius"},
-	"annulus": {"ringRadii"}, "background": {"ringRadii"}, "ring": {"ringRadii"}, "rings": {"ringRadii"}, "ringRadius": {"ringRadii"},
-	"thickness": {"width"}, "fields": {"columns"}, "bits": {"depth"}, "bitDepth": {"depth"}, "std": {"sigma"}, "stddev": {"sigma"}, "sd": {"sigma"},
-	"size": {"sigma", "radius", "maxArea", "maxSide"}, "blur": {"sigma"}, "kernel": {"sigma", "radius"}, "width": {"sigma", "radius"},
-	"distance": {"radius"}, "dist": {"radius"},
-	"maxSize": {"maxArea"}, "minSize": {"minArea"}, "area": {"maxArea", "minArea"}, "contrast": {"minContrast"},
-	"opacity": {"alpha", "opacity"}, "alpha": {"opacity", "alpha"}, "strength": {"amount", "opacity", "alpha"}, "intensity": {"amount", "opacity"},
-	"colour": {"color"}, "label": {"labels", "label"}, "showIds": {"labels"}, "ids": {"labels"},
-	"tolerance": {"tol"}, "soft": {"softness"}, "feather": {"softness"}, "smooth": {"softness"},
-	"scale": {"analysisScale", "zoom"}, "type": {"polarity", "mode", "method"}, "kind": {"polarity", "mode"},
-	"low": {"black", "below"}, "lo": {"black", "below"}, "blackPoint": {"black"}, "shadows": {"black", "below"},
-	"high": {"white", "above"}, "hi": {"white", "above"}, "whitePoint": {"white"}, "highlights": {"white", "above"},
-	"midtones": {"gamma"}, "mid": {"gamma"}, "quantiles": {"percentiles"}, "percentile": {"percentiles"},
-	"region": {"mask", "box"}, "regions": {"mask"}, "selection": {"mask"}, "rect": {"box"}, "rectangle": {"box"}, "roi": {"box", "mask"},
-	"window": {"box"}, "crop": {"box"}, "colorSpace": {"encoding"}, "colorspace": {"encoding"}, "transfer": {"encoding"},
-	"gamma": {"encoding"}, "offset": {"origin"},
-	"amount": {"amount", "ev", "opacity"}, "stops": {"ev"}, "exposure": {"ev"},
-	"long": {"maxSide"}, "longSide": {"maxSide"}, "maxsize": {"maxSide"}, "max_side": {"maxSide"}, "width_px": {"maxSide"},
-	"caption": {"label"}, "title": {"label"}, "text": {"label"},
-	"magnify": {"zoom"}, "magnification": {"zoom"}, "upscale": {"zoom"}, "factor": {"zoom"}, "zoomFactor": {"zoom"},
-	"ticks": {"ruler"}, "axes": {"ruler"}, "axis": {"ruler"}, "coords": {"ruler"}, "coordinates": {"ruler"}, "rulers": {"ruler"}, "scaleBar": {"ruler"},
-	"lossless": {"format"}, "png": {"format"}, "jpeg": {"format"}, "quality": {"format"}, "compression": {"format"}, "mime": {"format"},
-	"gridlines": {"grid"}, "gridLines": {"grid"}, "lines": {"grid"},
-	"interpolation": {"interp"}, "resample": {"interp"}, "resampling": {"interp"}, "upsample": {"interp"},
 }
 
 // optionRedirect finds the redirect of an unknown option name among specs.
@@ -1152,15 +1077,6 @@ func optionRedirect(specs []ArgSpec, k string) (Redirect, bool) {
 		}
 	}
 	return Redirect{}, false
-}
-
-func optionSynonym(k string, known map[string]bool) string {
-	for _, c := range OptionSynonyms[k] {
-		if known[c] {
-			return c
-		}
-	}
-	return ""
 }
 
 func lenHint(n int) string {
@@ -1242,7 +1158,7 @@ func (b *binder) callName() string {
 // bind maps raw call arguments onto op: explicit node inputs first, then
 // positional args in declaration order, then an optional trailing options
 // object whose keys may name any argument.
-func bind(op *OpDef, call string, hasReceiver bool, raw []any, nodeOf func(NodeID) (*Node, bool)) (*bound, error) {
+func bind(op *OpDef, call string, hasReceiver bool, raw []any, nodeOf func(NodeID) (*Node, bool), items func([]any, NodeID) (NodeID, error)) (*bound, error) {
 	raw = normalize(trimUndefined(raw)).([]any)
 	res := &bound{}
 	i := 0
@@ -1270,7 +1186,7 @@ func bind(op *OpDef, call string, hasReceiver bool, raw []any, nodeOf func(NodeI
 			given[s.Name] = rest
 			continue
 		}
-		requiredNode := isKindType(s.Type) && s.Default == nil && !s.Optional // an object there is data passed for a node
+		requiredNode := (isKindType(s.Type) || takesItems(s.Type)) && s.Default == nil && !s.Optional // an object there is data passed for a node
 		if isOptionsObject(raw[i]) && !typeAcceptsObject(s.Type) && !isCoordinateObject(s.Type, raw[i]) && !requiredNode {
 			break
 		}
@@ -1300,7 +1216,7 @@ func bind(op *OpDef, call string, hasReceiver bool, raw []any, nodeOf func(NodeI
 		}
 	}
 
-	b := &binder{op: op, nodeOf: nodeOf}
+	b := &binder{op: op, nodeOf: nodeOf, items: items}
 	if hasReceiver {
 		b.base = 1
 	}
@@ -1318,6 +1234,9 @@ func bind(op *OpDef, call string, hasReceiver bool, raw []any, nodeOf func(NodeI
 				return nil, Errorf(EArgType, "%s is missing its %s argument.", call, s.Name).WithHint(signatureHint(op, call))
 			}
 			continue
+		}
+		if !takesItems(s.Type) {
+			v = stripRefs(v) // an item passed as a box, a point or data is its fields
 		}
 		c, err := b.check(s, s.Type, v, call+"."+s.Name)
 		if err != nil {

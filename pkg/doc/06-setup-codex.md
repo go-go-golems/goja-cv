@@ -20,7 +20,7 @@ file.
 ## One command
 
 ```bash
-codex mcp add cv -- goja-cv mcp --image /path/to/scan.tif --root /path/to/images
+codex mcp add cv -- goja-cv mcp --root /path/to/cv-work --read /path/to/images --image /path/to/images/scan.tif
 ```
 
 The syntax is `codex mcp add [OPTIONS] <NAME> -- <COMMAND>...`; `--env KEY=VALUE` sets environment variables
@@ -31,7 +31,7 @@ for the server. `codex mcp list` and `codex mcp get cv` show what is configured;
 ```toml
 [mcp_servers.cv]
 command = "goja-cv"
-args = ["mcp", "--image", "/path/to/scan.tif", "--root", "/path/to/images"]
+args = ["mcp", "--root", "/path/to/cv-work", "--read", "/path/to/images", "--image", "/path/to/images/scan.tif"]
 startup_timeout_sec = 20
 
 [mcp_servers.cv.env]
@@ -39,7 +39,8 @@ startup_timeout_sec = 20
 ```
 
 Use absolute paths: Codex may start the server from another directory. One-off overrides work with
-`-c`, for example `codex -c 'mcp_servers.cv.args=["mcp","--root","/tmp/scans"]'`.
+`-c`, for example `codex -c 'mcp_servers.cv.args=["mcp","--root","/tmp/cv-work","--read","/tmp/scans"]'`.
+`--root` is required: it is the one directory the agent writes; `--read` directories are read-only.
 
 ## Notes
 

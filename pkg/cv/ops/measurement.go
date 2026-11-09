@@ -10,11 +10,10 @@ import (
 	"github.com/go-go-golems/goja-cv/pkg/cv/kernels"
 )
 
-// Measurement ops (GCV-003 §7.2-§7.4): sample, profile and measure read a
-// small window around each point through the probe kernel. They take
-// points only (Regions are measured by regions.measure, which keeps their
-// ids), work in the receiver's space and read the image at analysis scale
-// 1, so their numbers do not depend on a look's scale.
+// Measurement ops (GCV-003 §7.2-§7.4, GCV-004 §7.6): sample, profile and
+// measure (regionmeasure.go) read a small window around each point through
+// the probe kernel. They work in the receiver's space and read the image at
+// analysis scale 1, so their numbers do not depend on a look's scale.
 
 // WOutside is the evaluation-time warning of points outside the frame.
 const WOutside = "OUTSIDE"
@@ -26,47 +25,6 @@ var grayArg = graph.ArgSpec{Name: "gray", Type: "enum:rec709,average", Default: 
 	Doc: "the gray plane: rec709 (the luminance: Rec. 709 of linear light, in the image's space) or average (the mean of the stored channels)",
 	ValueDocs: map[string]string{"rec709": "the luminance: Rec. 709 weights 0.2126, 0.7152, 0.0722 on linear light, expressed in the image's space",
 		"average": "(r + g + b) / 3 of the values in the image's space"}}
-
-// pointsArg takes points; a Regions node is accepted by the type only to be
-// refused with the fix (validatePoints).
-func pointsArg(doc string) graph.ArgSpec {
-	return graph.ArgSpec{Name: "points", Type: "Regions|point[]", Unit: graph.DocPx, Positional: true, Doc: doc}
-}
-
-// validatePoints refuses Regions given as points, with the Regions op as
-// the fix.
-func validatePoints(op, fix string) func(graph.Args) error {
-	return func(a graph.Args) error {
-		if _, ok := a.Raw("points").(graph.InputRef); !ok || a.Input("points").Kind != graph.KindRegions {
-			return nil
-		}
-		return graph.Errorf(graph.EWrongKind, "%s takes points; regions are measured by regions.measure, which keeps their ids.", op).
-			WithHint("Pass a list of points ([x, y] or objects with cx, cy, such as (await regions).items), or measure the regions.").
-			WithFix(fix)
-	}
-}
-
-// docPoints reads a resolved point list (doc px).
-func docPoints(a graph.Args) ([][2]float64, error) {
-	list, ok := a.Raw("points").([]any)
-	if !ok {
-		return nil, graph.Errorf(graph.EArgType, "points must be a list of points [x, y] (doc px).").WithFix("img.measure([[120.5, 80.5], [33.5, 41.5]])")
-	}
-	out := make([][2]float64, len(list))
-	for i, e := range list {
-		p, ok := e.([]any)
-		if !ok || len(p) != 2 {
-			return nil, graph.Errorf(graph.EArgType, "points[%d] is not a point [x, y].", i)
-		}
-		x, ok1 := p[0].(float64)
-		y, ok2 := p[1].(float64)
-		if !ok1 || !ok2 {
-			return nil, graph.Errorf(graph.EArgType, "points[%d] is not a point of numbers.", i)
-		}
-		out[i] = [2]float64{x, y}
-	}
-	return out, nil
-}
 
 // toBuffer converts doc-px points to buffer px of image value v.
 func toBuffer(pts [][2]float64, v *graph.ImageValue) [][2]float64 {
@@ -103,27 +61,13 @@ func channelNames(c int) []string {
 	return []string{"R", "G", "B"}[:c]
 }
 
-// coreDefault is measure's default core radius.
-const coreDefault = 3.0
-
-// ringRadii are the ring radii of a measure call (doc px): the option, or
-// [core + 3, core + 9].
-func ringRadii(a graph.Args, core float64) (float64, float64) {
-	if l, ok := a.Raw("ringRadii").([]any); ok && len(l) == 2 {
-		r1, _ := l[0].(float64)
-		r2, _ := l[1].(float64)
-		return r1, r2
-	}
-	return core + 3, core + 9
-}
-
 func checkRing(where string, core, r1, r2 float64) error {
 	if r1 > core && r2 > r1 {
 		return nil
 	}
 	return graph.Errorf(graph.EArgRange, "%s: ringRadii [%s, %s] must satisfy coreRadius (%s) < r1 < r2.", where, fmtG(r1), fmtG(r2), fmtG(core)).
 		WithHint("The ring is the annulus between r1 and r2 around the point; it must lie outside the core.").
-		WithFix(fmt.Sprintf("{ coreRadius: %s, ringRadii: [%s, %s] }", fmtG(core), fmtG(core+3), fmtG(core+9)))
+		WithFix(fmt.Sprintf("{ coreRadius: %s, ringRadii: [%s, %s] }", fmtG(core), fmtG(1.5*core), fmtG(2.5*core)))
 }
 
 func fmtG(f float64) string { return fmt.Sprintf("%g", f) }
@@ -151,19 +95,6 @@ func coreRingFields(channels string) []graph.FieldSpec {
 	return append(fs, numField("ringCoverage", graph.Fraction, "fraction of the ring's weight inside the frame (below about 0.7 the ring is cut by the edge)"))
 }
 
-// channelsMode is "on", "off" or "auto" (colour images only) from the
-// channels option.
-func channelsMode(a graph.Args) string {
-	b, ok := a.Raw("channels").(bool)
-	switch {
-	case !ok:
-		return "auto"
-	case b:
-		return "on"
-	}
-	return "off"
-}
-
 var pointFields = []graph.FieldSpec{numField("cx", graph.DocPx, "point x"), numField("cy", graph.DocPx, "point y")}
 
 var outsideField = graph.FieldSpec{Name: "outside", Type: "bool", Optional: true, Doc: "true for a point outside the frame (its values are null)"}
@@ -178,24 +109,21 @@ func sampleFields(graph.Args) []graph.FieldSpec {
 	return append(fs, numField("area", graph.DocPx2, "covered weight: the pixel's area for radius 0"), outsideField)
 }
 
-func measureFields(a graph.Args) []graph.FieldSpec {
-	return append(graph.WithFields(pointFields, coreRingFields(channelsMode(a))...), outsideField)
-}
-
 func profileFields(graph.Args) []graph.FieldSpec {
-	list := func(n, doc string) graph.FieldSpec { return graph.FieldSpec{Name: n, Type: "number[]", Doc: doc} }
-	fs := []graph.FieldSpec{
-		{Name: "from", Type: "point", Unit: graph.DocPx, Doc: "start point [x, y] (doc px)"}, {Name: "to", Type: "point", Unit: graph.DocPx, Doc: "end point [x, y] (doc px)"},
-		numField("step", graph.DocPx, "distance between samples"), numField("width", graph.DocPx, "samples averaged across the line"),
-		list("t", "distance of each sample from the start (doc px)"), list("cx", "sample x"), list("cy", "sample y"),
-		list("meanL", "the gray plane at each sample (null outside the frame)"),
+	row := []graph.FieldSpec{
+		numField("t", graph.DocPx, "distance of the sample from the start (doc px)"), numField("cx", graph.DocPx, "sample x"), numField("cy", graph.DocPx, "sample y"),
+		numField("meanL", graph.Level, "the gray plane (null outside the frame)"),
 	}
 	for _, c := range []string{"R", "G", "B"} {
-		f := list("mean"+c, "channel "+c+" at each sample (colour images)")
+		f := numField("mean"+c, graph.Level, "channel "+c+" (colour images)")
 		f.Optional = true
-		fs = append(fs, f)
+		row = append(row, f)
 	}
-	return fs
+	return []graph.FieldSpec{
+		{Name: "from", Type: "point", Unit: graph.DocPx, Doc: "start point [x, y] (doc px)"}, {Name: "to", Type: "point", Unit: graph.DocPx, Doc: "end point [x, y] (doc px)"},
+		numField("step", graph.DocPx, "distance between samples"), numField("width", graph.DocPx, "samples averaged across the line"),
+		{Name: "rows", Type: "rows", Doc: "one row per sample", Rows: row},
+	}
 }
 
 // nullRow is a row of a point outside the frame: its point, outside and
@@ -211,12 +139,19 @@ func nullRow(fields []graph.FieldSpec, x, y float64) map[string]any {
 	return row
 }
 
+// itemPoints are the centres of the items of a points argument (doc px).
+func itemPoints(a graph.Args, name string) [][2]float64 {
+	rv := regions(a.Value(name))
+	out := make([][2]float64, len(rv.Items))
+	for i, r := range rv.Items {
+		out[i] = r.Centroid
+	}
+	return out
+}
+
 func runSample(ctx context.Context, ec *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
 	src := image(in[0])
-	pts, err := docPoints(a)
-	if err != nil {
-		return nil, err
-	}
+	pts := itemPoints(a, "points")
 	sx, sy := graph.AxisScales(src)
 	res, err := kernels.SamplePoints(ctx, src.Buf, a.Luma().Buf.Plane(0), toBuffer(pts, src), a.Length("radius", sx))
 	if err != nil {
@@ -240,42 +175,8 @@ func runSample(ctx context.Context, ec *graph.EvalCtx, in []graph.Value, a graph
 	return data(rows), nil
 }
 
-func runMeasure(ctx context.Context, ec *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
-	src := image(in[0])
-	pts, err := docPoints(a)
-	if err != nil {
-		return nil, err
-	}
-	core := a.Length("coreRadius", 1)
-	r1, r2 := ringRadii(a, core)
-	if err := checkRing("measure", core, r1, r2); err != nil {
-		return nil, err
-	}
-	sx, _ := graph.AxisScales(src)
-	res, err := kernels.ProbeCoreRing(ctx, src.Buf, toBuffer(pts, src), kernels.CoreRingOptions{Core: core * sx, R1: r1 * sx, R2: r2 * sx, Gray: a.Luma().Buf.Plane(0)})
-	if err != nil {
-		return nil, graph.Errorf(graph.EArgRange, "measure: %v", err)
-	}
-	mode := channelsMode(a)
-	fields := measureFields(a)
-	rows := make([]any, len(res))
-	var outside []int
-	for i, r := range res {
-		if r.Outside {
-			outside = append(outside, i)
-			rows[i] = nullRow(fields, pts[i][0], pts[i][1])
-			continue
-		}
-		row := map[string]any{"cx": pts[i][0], "cy": pts[i][1]}
-		coreRingRow(row, "", r, mode)
-		rows[i] = row
-	}
-	warnOutside(ec, "measure", outside, len(pts), src.Frame)
-	return data(rows), nil
-}
-
 // coreRingRow writes the core/ring fields of r into row, each name
-// prefixed (regions.measure's prefix: dog → dogStep).
+// prefixed (measure's prefix: dog → dogStep).
 func coreRingRow(row map[string]any, prefix string, r kernels.CoreRing, channels string) {
 	name := func(s string) string { return prefixed(prefix, s) }
 	row[name("coreMean")], row[name("ringMean")] = r.CoreMean, r.RingMean
@@ -384,14 +285,17 @@ func runProfile(ctx context.Context, ec *graph.EvalCtx, in []graph.Value, a grap
 	if len(outside) > 0 {
 		ec.Warn(WOutside, fmt.Sprintf("profile: %d of %d samples lie outside the frame %s (null).", len(outside), n, src.Frame), "")
 	}
-	out := map[string]any{
-		"from": []any{from[0], from[1]}, "to": []any{to[0], to[1]}, "step": step, "width": float64(width),
-		"t": t, "cx": xs, "cy": ys, "meanL": vl,
+	rows := make([]any, n)
+	for k := range rows {
+		row := map[string]any{"t": t[k], "cx": xs[k], "cy": ys[k], "meanL": vl[k]}
+		for c, name := range channelNames(b.C) {
+			row["mean"+name] = vc[c][k]
+		}
+		rows[k] = row
 	}
-	for c, name := range channelNames(b.C) {
-		out["mean"+name] = vc[c]
-	}
-	return data(out), nil
+	return data(map[string]any{
+		"from": []any{from[0], from[1]}, "to": []any{to[0], to[1]}, "step": step, "width": float64(width), "rows": rows,
+	}), nil
 }
 
 // profileSamples is the number of samples of a profile: t = 0, step, … ≤
@@ -421,45 +325,17 @@ func measurementOps() []graph.OpDef {
 		{
 			Name: "sample", On: graph.KindImage, Returns: graph.KindValue, Luma: true,
 			Args: []graph.ArgSpec{
-				pointsArg("points in absolute doc px: [x, y] lists or objects with cx, cy (region items, measurement rows); the centre of pixel (i, j) is [i + 0.5, j + 0.5]"),
+				itemsArg("points", graph.ItemsType+"|point[]", "points in absolute doc px: [x, y] or { cx, cy }, or items (a Regions node, region items, boxes, circles: their centres); the centre of pixel (i, j) is [i + 0.5, j + 0.5]"),
 				{Name: "radius", Type: "number", Unit: graph.DocPx, Default: 0.0, Min: graph.F(0), Max: graph.F(500),
 					Doc: "0: the pixel that contains the point; > 0: the coverage-weighted mean of a disk (4 × 4 supersampled, as mask.ellipse)"},
 				grayArg, analysisScaleArg,
 			},
 			AnalysisScale: analysisScale,
-			Validate:      validatePoints("sample", `regions.measure(img, { stats: ["mean"] })`),
 			Fields:        sampleFields,
 			Run:           runSample,
 			Doc: "The value at points: one row per point { cx, cy, meanL, meanR, meanG, meanB, area } in the image's space (img.as(\"linear\") for light). " +
 				"Points outside the frame give a row with outside: true and null values (OUTSIDE warning).",
 			See: []string{"measure", "profile", "stats"},
-		},
-		{
-			Name: "measure", On: graph.KindImage, Returns: graph.KindValue, Luma: true,
-			Args: []graph.ArgSpec{
-				pointsArg("points in absolute doc px: [x, y] lists or objects with cx, cy (region items, measurement rows)"),
-				{Name: "coreRadius", Type: "number", Unit: graph.DocPx, Default: coreDefault, Min: graph.F(0.5), Max: graph.F(200),
-					Doc: "radius of the core disk (doc px)"},
-				{Name: "ringRadii", Type: "number[]", Unit: graph.DocPx, Len: 2, Optional: true, Min: graph.F(0), Max: graph.F(400),
-					Doc: "[r1, r2]: the ring between r1 and r2 (doc px); default [coreRadius + 3, coreRadius + 9]"},
-				{Name: "channels", Type: "bool", Optional: true, Doc: "add stepR, stepG, stepB and stepChroma (default: on colour images)"},
-				grayArg, analysisScaleArg,
-			},
-			AnalysisScale: analysisScale,
-			Validate: func(a graph.Args) error {
-				if err := validatePoints("measure", "regions.measure(img, { ring: true })")(a); err != nil {
-					return err
-				}
-				core := a.Raw("coreRadius").(float64)
-				r1, r2 := ringRadii(a, core)
-				return checkRing("measure", core, r1, r2)
-			},
-			Fields: measureFields,
-			Run:    runMeasure,
-			Doc: "How much each point stands out from its surroundings: one row per point { cx, cy, coreMean, ringMean, step, spread, snr, stepR, stepG, stepB, stepChroma, ringCoverage }, " +
-				"comparing the core disk (coreRadius) with the ring (ringRadii) on the gray plane, linear by default. step > 0 is brighter; snr = step / ring spread (p90 − p10); " +
-				"stepChroma ≈ 0 for a neutral (grey) spot such as dust, null when |snr| < 1 (a step within the ring's spread has no attributable colour). The helper mem.probe(x, y, r) is img.measure([[x + 0.5, y + 0.5]], { coreRadius: r + 0.5, ringRadii: [r + 3.5, r + 9.5], gray: \"average\" }).",
-			See: []string{"sample", "profile", "Regions.measure"},
 		},
 		{
 			Name: "profile", On: graph.KindImage, Returns: graph.KindValue, Luma: true, Chart: graph.ChartLines,
@@ -484,9 +360,10 @@ func measurementOps() []graph.OpDef {
 			},
 			Fields: profileFields,
 			Run:    runProfile,
-			Doc: "The values along the line from A to B: { from, to, step, width, t, cx, cy, meanL, meanR, meanG, meanB } with bilinear samples at t = 0, step, … (doc px), " +
+			Doc: "The values along the line from A to B: { from, to, step, width, rows: [{ t, cx, cy, meanL, meanR, meanG, meanB }] } with bilinear samples at t = 0, step, … (doc px), " +
 				"each averaged over width positions across the line; null outside the frame. look() of a profile is a line chart.",
 			See: []string{"sample", "measure"},
 		},
+		measureOp(),
 	}
 }

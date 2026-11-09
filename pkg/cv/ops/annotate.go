@@ -20,13 +20,6 @@ var markShapes = []string{"circle", "point", "box", "polyline", "text"}
 
 var markKeys = []string{"circle", "point", "box", "polyline", "text", "at", "color", "label"}
 
-// markKeySynonyms are words agents use for the mark keys.
-var markKeySynonyms = map[string]string{
-	"circ": "circle", "ring": "circle", "line": "polyline", "lines": "polyline", "path": "polyline", "poly": "polyline",
-	"rect": "box", "rectangle": "box", "bbox": "box", "dot": "point", "marker": "point", "cross": "point", "pt": "point",
-	"pos": "at", "position": "at", "xy": "at", "colour": "color", "caption": "label", "name": "label", "string": "text",
-}
-
 const annotateFix = `img.annotate([{ circle: [x, y, r], color: "lime", label: "7" }, { point: [x, y] }, { box: [x, y, w, h] }, { polyline: [[x1, y1], [x2, y2]] }, { text: "hair?", at: [x, y] }])`
 
 // mark is one parsed mark in doc px.
@@ -107,9 +100,7 @@ func parseMarks(v any) ([]mark, error) {
 			}
 			e := markErr(i, "unknown key %q. Marks have one shape (%s) and optionally color, label (and at for text).", k, strings.Join(markShapes, ", ")).
 				WithValid(markKeys).WithFix(annotateFix)
-			if sug, ok := markKeySynonyms[k]; ok {
-				e.Hint = fmt.Sprintf("Did you mean %q?", sug)
-			} else if sug := graph.Closest(k, markKeys); sug != "" {
+			if sug := graph.Closest(k, markKeys); sug != "" {
 				e.Hint = fmt.Sprintf("Did you mean %q?", sug)
 			}
 			return nil, e

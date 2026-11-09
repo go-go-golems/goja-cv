@@ -5,100 +5,20 @@ import (
 	"strings"
 )
 
-// Synonyms maps names agents commonly reach for to cv op names. Entries are
-// only suggested when the target exists on the receiver kind or elsewhere.
-var Synonyms = map[string]string{
-	"brightness":    "exposure",
-	"brighten":      "exposure",
-	"ev":            "exposure",
-	"exposureEV":    "exposure",
-	"blur":          "gaussian",
-	"gaussianBlur":  "gaussian",
-	"gaussBlur":     "gaussian",
-	"smooth":        "gaussian",
-	"grayscale":     "toGray",
-	"greyscale":     "toGray",
-	"gray":          "toGray",
-	"grey":          "toGray",
-	"desaturate":    "toGray",
-	"toGrey":        "toGray",
-	"mean":          "stats",
-	"average":       "stats",
-	"statistics":    "stats",
-	"stat":          "stats",
-	"probe":         "measure",
-	"ring":          "measure",
-	"contrastAt":    "measure",
-	"valueAt":       "sample",
-	"pixel":         "sample",
-	"at":            "sample",
-	"lineProfile":   "profile",
-	"line":          "profile",
-	"trace":         "profile",
-	"hist":          "histogram",
-	"histo":         "histogram",
-	"clone":         "heal",
-	"spotHeal":      "heal",
-	"autoLevels":    "levels",
-	"tone":          "levels",
-	"lab":           "toLab",
-	"toLAB":         "toLab",
-	"saturation":    "chroma",
-	"channelSpread": "chroma",
-	"falseColor":    "colormap",
-	"falseColour":   "colormap",
-	"lut":           "colormap",
-	"heatmap":       "colormap",
-	"reencode":      "encode",
-	"channels":      "split",
-	// GCV-002
-	"subtract":     "sub",
-	"difference":   "sub",
-	"diff":         "sub",
-	"multiply":     "mul",
-	"times":        "mul",
-	"hp":           "highpass",
-	"highPass":     "highpass",
-	"residual":     "highpass",
-	"DoG":          "dog",
-	"bandpass":     "dog",
-	"clahe":        "localContrast",
-	"localNorm":    "localContrast",
-	"normalize":    "levels",
-	"stretch":      "levels",
-	"window":       "crop",
-	"roi":          "crop",
-	"subimage":     "crop",
-	"marks":        "annotate",
-	"markers":      "annotate",
-	"draw":         "annotate",
-	"mark":         "annotate",
-	"contactSheet": "sheet",
-	"grid":         "sheet",
-	"mosaic":       "sheet",
-	"montage":      "sheet",
-	"preset":       "view",
-	"views":        "view",
-}
-
-// MethodRedirects are method names that are not ops but look options or
-// other calls: the error's hint and literal fix say what to write.
+// MethodRedirects are the wrong method names agents demonstrably typed (pi
+// runs, GCV-004 §7.13: scripts/02-pi-names-typed.py), each with its literal
+// fix. Every other wrong name gets edit distance over the valid names.
 var MethodRedirects = map[string]Redirect{
-	"zoom":    {Hint: "Zoom is a look option, not a node: crop the window, then look at it zoomed.", Fix: "node.crop([x, y, w, h]).look({ zoom: 8 })"},
-	"magnify": {Hint: "Zoom is a look option, not a node: crop the window, then look at it zoomed.", Fix: "node.crop([x, y, w, h]).look({ zoom: 8 })"},
-	"ruler":   {Hint: "Rulers are a look option.", Fix: "node.look({ ruler: true })"},
-	"compare": {Hint: "compare is a cv function that takes a list of images.", Fix: `cv.compare([a, b], { mode: "side" })`},
-	"export":  saveRedirect, "write": saveRedirect, "saveAs": saveRedirect, "saveTo": saveRedirect, "writeFile": saveRedirect, "store": saveRedirect,
-	"toCSV": csvRedirect, "toCsv": csvRedirect, "csv": csvRedirect, "table": csvRedirect, "rows": csvRedirect,
-	"json": jsonRedirect, "dump": jsonRedirect, "serialize": jsonRedirect,
+	"zoom": {Hint: "Zoom is a look option, not a node: crop the window, then look at it zoomed.", Fix: "node.crop([x, y, w, h]).look({ zoom: 8 })"},
+	"resample": {Hint: "Resampling is how a zoomed look is drawn: crop the window, then look at it with interp.",
+		Fix: `node.crop([x, y, w, h]).look({ zoom: 4, interp: "linear" })`},
+	"meta":   {Hint: "Await the image for its metadata: (await img) has file, format, bitDepth, sample, fileChannels, encoding, frame and notes.", Fix: "await img"},
+	"export": saveRedirect, "store": saveRedirect, "write": saveRedirect, "save": saveRedirect, "persist": saveRedirect,
+	"download": saveRedirect, "toFile": saveRedirect, "writeTiff": saveRedirect,
 }
 
-var (
-	saveRedirect = Redirect{Hint: "save writes a file under the out-root (--out-root): node.save(\"x.tif\") for an image or mask, cv.csv(x).save(\"x.csv\") for data.",
-		Fix: `node.save("x.tif")`}
-	csvRedirect  = Redirect{Hint: "cv.csv(x) is data for programs: every row, delivered as a file or text; cv.docs.read(\"data-out\").", Fix: `cv.csv(node, { name: "rows" })`}
-	jsonRedirect = Redirect{Hint: "cv.json(x) is data for programs: every item, delivered as a file or text; cv.docs.read(\"data-out\").", Fix: `cv.json(node, { name: "data" })`}
-)
+var saveRedirect = Redirect{Hint: "cv.save(path, x) writes a file in the workspace; the extension picks the format (.tif, .png, .npy, .jpg, .json, .csv).",
+	Fix: `await cv.save("x.tif", node)`}
 
 // levenshtein is the case-insensitive edit distance with adjacent
 // transpositions counted as one edit.
@@ -154,8 +74,8 @@ func Closest(name string, candidates []string) string { return closest(name, can
 
 // UnknownMethod builds the E_UNKNOWN_METHOD (or E_NAMESPACE) error for
 // receiverExpr.name on a node of kind k. Suggestions come from, in order: a
-// namespaced op with that member name, the synonym table, edit distance over
-// the kind's methods, and the cross-kind index.
+// namespaced op with that member name, the typed names (MethodRedirects),
+// edit distance over the kind's methods, and the cross-kind index.
 func (r *Registry) UnknownMethod(k Kind, name string, path []string) *Error {
 	methods := r.Methods(k)
 	topLevel := map[string]bool{}
@@ -178,18 +98,6 @@ func (r *Registry) UnknownMethod(k Kind, name string, path []string) *Error {
 	if r, ok := MethodRedirects[name]; ok {
 		e.Hint, e.Fix = r.Hint, r.Fix
 		return e
-	}
-	if target, ok := Synonyms[name]; ok {
-		if contains(methods, target) {
-			e.Hint = fmt.Sprintf("Did you mean %q?", target)
-			e.Fix = fmt.Sprintf("%s.%s(…)", receiverVar(k), target)
-			return e
-		}
-		if op, ok := r.Lookup(KindNone, target); ok && !op.Bespoke {
-			e.Hint = fmt.Sprintf("Did you mean %q? It is a cv function.", target)
-			e.Fix = fmt.Sprintf("cv.%s(…)", target)
-			return e
-		}
 	}
 	cands := make([]string, 0, len(topLevel))
 	for m := range topLevel {
@@ -230,7 +138,7 @@ func crossKind(k Kind, name string, op *OpDef) (string, string) {
 	}
 	on, self := receiverVar(op.On), receiverVar(k)
 	for _, s := range op.Args {
-		if s.Positional && isKindType(s.Type) && accepts(Kind(s.Type), k) {
+		if s.Positional && (isKindType(s.Type) || takesItems(s.Type)) && accepts(Kind(s.Type), k) {
 			return fmt.Sprintf("%q is %s method that takes %s: call it on the %s and pass this node.", name, A(string(op.On)), string(k), kindNoun(op.On)),
 				fmt.Sprintf("%s.%s(%s, …)", on, name, self)
 		}
@@ -239,13 +147,13 @@ func crossKind(k Kind, name string, op *OpDef) (string, string) {
 	var fix string
 	switch {
 	case k == KindRegions && op.OneChannel:
-		hint = fmt.Sprintf("%q is a method of a one-channel image (a mask); convert with .toMask().", name)
-		fix = fmt.Sprintf("%s.toMask().%s(…)", self, name)
+		hint = fmt.Sprintf("%q is a method of a one-channel image (a mask); make one with img.mask.regions(regions).", name)
+		fix = fmt.Sprintf("img.mask.regions(%s).%s(…)", self, name)
 	case k == KindImage && op.On == KindValue:
 		fix = fmt.Sprintf("%s.stats().%s(…)", self, name)
 	case k == KindRegions && op.On == KindImage:
 		hint = fmt.Sprintf("%q is an Image method; to apply it inside these regions use within with their mask.", name)
-		fix = fmt.Sprintf("img.within(%s.toMask(), i => i.%s(…))", self, name)
+		fix = fmt.Sprintf("img.within(img.mask.regions(%s), i => i.%s(…))", self, name)
 	default:
 		fix = fmt.Sprintf("%s.%s(…)", on, name)
 	}

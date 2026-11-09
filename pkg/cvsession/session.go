@@ -43,29 +43,24 @@ const (
 	DefaultMaxLooks = 4
 	// DefaultMaxLookBytes bounds the total bytes of the content of one eval.
 	DefaultMaxLookBytes = 8 << 20
-	// DefaultMaxData is the number of data items (cv.json, cv.csv) one eval
-	// delivers.
-	DefaultMaxData = 4
-	// MCPMaxDataBytes is the size above which the MCP server replaces a data
-	// item by a note to save it (data enters the model's context).
-	MCPMaxDataBytes = 256 << 10
 	// ENoImage is the error code of using img when no image is open.
 	ENoImage = "E_NO_IMAGE"
 )
 
 // Options configure a cv session app.
 type Options struct {
-	// Image is opened in every new session and bound to img.
+	// Image is opened in every new session and bound to img. It is operator
+	// input (resolved against the working directory) and must lie in Root or
+	// a Read directory.
 	Image string
-	// Roots, when non-empty, are the only directories cv.open may read from.
-	Roots []string
-	// OutRoot is the only directory save may write under (relative paths
-	// resolve against BaseDir; empty: saving is disabled). It is separate
-	// from the read roots.
-	OutRoot string
-	// BaseDir resolves relative paths (default: the working directory).
-	BaseDir string
-	// Engine options for each session's engine (BaseDir is filled from BaseDir).
+	// Root is the workspace (§7.8): the one directory cv.save writes and
+	// cv.open reads relative paths in (default: the working directory).
+	Root string
+	// Read are read-only directories cv.open also reads, by absolute path or
+	// by a relative path the workspace does not have (in order).
+	Read []string
+	// Engine options for each session's engine (its Workspace is opened from
+	// Root and Read, one per session).
 	Engine graph.EngineOptions
 	// EvalTimeout bounds one eval (default 60 s).
 	EvalTimeout time.Duration
@@ -75,15 +70,10 @@ type Options struct {
 	// for all content together).
 	MaxLooks     int
 	MaxLookBytes int
-	// MaxData bounds the data items of one eval (default 4); MaxDataBytes,
-	// when > 0, replaces a larger data item by a note (the mcp command sets
-	// MCPMaxDataBytes; the CLI writes every item).
-	MaxData      int
-	MaxDataBytes int
 	// Preludes are script files run, in order, in every new session before
 	// agent code (async function bodies like agent code: they may await and
 	// return; their results are not shown). Paths are operator input:
-	// resolved against BaseDir, not subject to Roots.
+	// resolved against the working directory, not the workspace.
 	Preludes []string
 	// Logger for replapi (default: disabled).
 	Logger *zerolog.Logger
@@ -102,60 +92,46 @@ func (o Options) withDefaults() (Options, error) {
 	if o.MaxLookBytes <= 0 {
 		o.MaxLookBytes = DefaultMaxLookBytes
 	}
-	if o.MaxData <= 0 {
-		o.MaxData = DefaultMaxData
+	wd, err := os.Getwd()
+	if err != nil {
+		return o, errors.Wrap(err, "getwd")
 	}
-	if o.BaseDir == "" {
-		wd, err := os.Getwd()
-		if err != nil {
-			return o, errors.Wrap(err, "getwd")
+	abs := func(p string) string {
+		if filepath.IsAbs(p) {
+			return filepath.Clean(p)
 		}
-		o.BaseDir = wd
+		return filepath.Join(wd, p)
 	}
-	if o.Engine.BaseDir == "" {
-		o.Engine.BaseDir = o.BaseDir
+	if o.Root == "" {
+		o.Root = wd
 	}
-	roots := make([]string, 0, len(o.Roots))
-	for _, r := range o.Roots {
-		abs, err := filepath.Abs(o.resolve(r))
-		if err != nil {
-			return o, errors.Wrapf(err, "root %q", r)
-		}
-		roots = append(roots, filepath.Clean(abs))
+	o.Root = abs(o.Root)
+	reads := make([]string, len(o.Read))
+	for i, r := range o.Read {
+		reads[i] = abs(r)
 	}
-	o.Roots = roots
-	if o.OutRoot != "" {
-		abs, err := filepath.Abs(o.resolve(o.OutRoot))
-		if err != nil {
-			return o, errors.Wrapf(err, "out-root %q", o.OutRoot)
-		}
-		o.OutRoot = filepath.Clean(abs)
+	o.Read = reads
+	ws, err := graph.OpenWorkspace(o.Root, o.Read) // the directories exist
+	if err != nil {
+		return o, err
 	}
-	o.Engine.OutRoot = o.OutRoot
+	ws.Close()
+	if o.Image != "" {
+		o.Image = abs(o.Image)
+	}
 	preludes := make([]string, 0, len(o.Preludes))
 	for _, p := range o.Preludes {
-		abs, err := filepath.Abs(o.resolve(p))
-		if err != nil {
-			return o, errors.Wrapf(err, "prelude %q", p)
-		}
-		preludes = append(preludes, abs)
+		preludes = append(preludes, abs(p))
 	}
 	o.Preludes = preludes
 	return o, nil
 }
 
-func (o Options) resolve(p string) string {
-	if filepath.IsAbs(p) {
-		return p
-	}
-	return filepath.Join(o.BaseDir, p)
-}
-
 // ContentLimits are the resultcontent limits of the session: MaxLooks looks
-// and MaxData data items (the session enforces each count in collect) and
-// MaxLookBytes bytes per eval.
+// (the session enforces the count in collect) and MaxLookBytes bytes per
+// eval.
 func (o Options) ContentLimits() resultcontent.Limits {
-	return resultcontent.Limits{MaxItems: o.MaxLooks + o.MaxData, MaxTotalBytes: o.MaxLookBytes}
+	return resultcontent.Limits{MaxItems: o.MaxLooks, MaxTotalBytes: o.MaxLookBytes}
 }
 
 // SessionPolicy is the replsession policy of cv sessions: raw execution (the
@@ -180,10 +156,16 @@ func NewRuntimeFactory(opts Options) (*engine.RuntimeFactory, error) {
 	if err != nil {
 		return nil, err
 	}
-	engOpts := opts.Engine
+	newEngine := func() *graph.Engine {
+		eo := opts.Engine
+		// one workspace per session: the files it opened are its own (an
+		// error here leaves the engine without one: cv.open and cv.save say so)
+		eo.Workspace, _ = graph.OpenWorkspace(opts.Root, opts.Read)
+		return graph.NewEngine(cvmod.DefaultRegistry(), eo)
+	}
 	return engine.NewRuntimeFactoryBuilder(engine.WithDataOnlyDefaultRegistryModules(false)).
 		UseModuleMiddleware(engine.MiddlewareOnly("timer")).
-		WithModules(&cvmod.Registrar{NewEngine: func() *graph.Engine { return graph.NewEngine(cvmod.DefaultRegistry(), engOpts) }}).
+		WithModules(&cvmod.Registrar{NewEngine: newEngine}).
 		WithRuntimeInitializers(&Initializer{opts: opts}).
 		Build()
 }

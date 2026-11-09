@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"image"
 	"image/png"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -23,7 +22,7 @@ import (
 func acceptanceApp(t *testing.T) (*cvsession.App, string) {
 	t.Helper()
 	img := planted(t)
-	return newApp(t, cvsession.Options{Image: img, BaseDir: filepath.Dir(img)})
+	return newApp(t, cvsession.Options{Image: img})
 }
 
 func mustOK(t *testing.T, resp *replsession.EvaluateResponse) string {
@@ -159,8 +158,8 @@ return {
 // with 36 labelled cells whose ids match the regions.
 func TestAcceptanceSheetOf36(t *testing.T) {
 	app, sid := acceptanceApp(t)
-	resp := eval(t, app, sid, `const top = img.detect.specks().sortBy("area").top(36)
-return { ids: (await top).items.map(r => r.id), sheet: cv.sheet(top, { views: img.view("speck") }).look("candidates") }`)
+	resp := eval(t, app, sid, `const top = (await img.detect.specks()).sort((a, b) => b.area - a.area).slice(0, 36)
+return { ids: top.map(r => r.id), sheet: cv.sheet(top, { views: img.view("speck") }).look("candidates") }`)
 	out := mustOK(t, resp)
 	if len(resp.Content) != 1 {
 		t.Fatalf("looks:\n%s", out)
@@ -299,18 +298,17 @@ func TestAcceptanceLossless(t *testing.T) {
 	}
 }
 
-// Names agents reach for: zoom as a method, cv.view, cv.grid, img.compare,
-// subtract.
+// Names agents typed (GCV-004 §7.13) and names of another kind: zoom and
+// export as methods, look({ box }), look({ scale }), cv.view, img.compare.
 func TestAcceptanceRedirects(t *testing.T) {
 	app, sid := acceptanceApp(t)
 	for code, want := range map[string]string{
-		`return img.zoom(8)`:                            "fix: 'node.crop([x, y, w, h]).look({ zoom: 8 })'",
-		`return cv.view("speck")`:                       "fix: img.view(…)",
-		`return cv.grid(img.detect.specks())`:           "fix: cv.sheet(…)",
-		`return img.subtract(img)`:                      "fix: img.sub(…)",
-		`return img.compare([img])`:                     `fix: 'cv.compare([a, b], { mode: "side" })'`,
-		`return img.look({ box: [0, 0, 8, 8] })`:        "fix: node.crop([x, y, w, h]).look()",
-		`return img.blend(img, { mode: "difference" })`: "fix: a.sub(b).abs()",
+		`return img.zoom(8)`:                     "fix: 'node.crop([x, y, w, h]).look({ zoom: 8 })'",
+		`return img.export("x.tif")`:             `fix: await cv.save("x.tif", node)`,
+		`return cv.view("speck")`:                "fix: img.view(…)",
+		`return img.compare([img])`:              "fix: cv.compare(…)",
+		`return img.look({ box: [0, 0, 8, 8] })`: "fix: node.crop([x, y, w, h]).look()",
+		`return img.look({ scale: 8 })`:          "fix: 'node.look({ zoom: 8 })'",
 	} {
 		mustContain(t, text(eval(t, app, sid, code)), want)
 	}

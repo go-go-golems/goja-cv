@@ -33,12 +33,12 @@ return { meanL, clipLow, clipHigh }
 Detect, look, heal, check. Specks with `score ≥ 0.5` are dust; soft round blobs (stars, highlights) score low.
 
 ```js
-const specks = img.detect.specks()
-const dust = specks.where({ score: { gte: 0.5 } })
+const specks = await img.detect.specks()
+const dust = specks.filter(r => r.score >= 0.5)
 mem.dust = dust
 return {
   verdict: await img.check.dust(),
-  biggest: (await dust.sortBy("area").top(3)).items.map(r => ({ id: r.id, x: r.x, y: r.y, w: r.w, h: r.h, score: r.score })),
+  biggest: dust.slice().sort((a, b) => b.area - a.area).slice(0, 3).map(r => ({ id: r.id, x: r.x, y: r.y, w: r.w, h: r.h, score: r.score })),
   look: img.overlay(dust, { labels: "id" }).look("dust"),
 }
 ```
@@ -49,14 +49,14 @@ cv.compare([img, healed], { mode: "split" }).look("before | healed")
 return { after: await healed.check.dust() }
 ```
 
-To keep a speck that is real detail, drop it by id before healing: `img.heal(mem.dust.without([31]))`.
+To keep a speck that is real detail, drop it before healing: `img.heal(mem.dust.filter(r => r.id !== 31))`.
 
 ## Measure a spot, a box or regions
 
-`img.measure(points)` says how much each point stands out from a ring around it (step, spread, snr, stepChroma: null when |snr| < 1); `img.sample(points)` reads values; `img.stats({ box })` or `{ mask }` measures inside an area (plus `area`, `coverage`). Region items are points and boxes. Details: `cv.docs.read("measuring")`.
+`img.measure(items)` says how much each item stands out from a ring around it, sized from the item (step, spread, snr, stepChroma: null when |snr| < 1); `img.sample(points)` reads values; `img.stats({ box })` or `{ mask }` measures inside an area. Details: `cv.docs.read("measuring")`.
 
 ```js
-const top = (await img.detect.specks().sortBy("area").top(2)).items
+const top = (await img.detect.specks()).sort((a, b) => b.area - a.area).slice(0, 2)
 return {
   measured: (await img.measure(top)).map(r => [r.cx, r.cy, r.snr.toFixed(2)].join(" ")),
   inside: (({ meanL, area }) => ({ meanL, area }))(await img.stats({ box: top[0] })),
@@ -65,7 +65,7 @@ return {
 
 ## Rank candidates
 
-Blobs of the DoG, measured on the scan and ranked by snr: `hot.measure(img, { ring: true }).sortBy("snr").top(20)`; return `cv.csv(ranked)` for every row. The full recipe is in `cv.docs.read("measuring", { section: "Measuring regions" })`.
+Blobs of the DoG, measured on the scan, sorted by snr in JavaScript: `cv.docs.read("measuring", { section: "Measuring regions" })`.
 
 ## Edit inside a mask
 
@@ -93,8 +93,8 @@ Make small bright things stand out, find them, look at all of them in one sheet,
 ```js looks=2
 const speck = img.view("speck")
 const spots = speck.mask.luminance({ above: 0.5 }).components({ minArea: 4 })
-const top = spots.sortBy("area").top(12)
-const first = (await top).items[0]
+const top = (await spots).sort((a, b) => b.area - a.area).slice(0, 12)
+const first = top[0]
 return {
   sheet: cv.sheet(top, { views: [img, speck], size: 32, zoom: 4 }).look("candidates"),
   zoom: speck.crop([Math.round(first.cx) - 16, Math.round(first.cy) - 16, 32, 32]).look({ zoom: 8, ruler: 4 }),
@@ -106,7 +106,7 @@ return {
 `a.sub(b)` is signed (positive where `a` is brighter); show it grey with zero at 0.5, or in the diverging colormap on one channel.
 
 ```js looks=2
-const healed = img.heal(img.detect.specks().where({ score: { gte: 0.5 } }))
+const healed = img.heal((await img.detect.specks()).filter(r => r.score >= 0.5))
 const d = img.sub(healed)
 return { grey: d.mul(4).add(0.5).look("img − healed, ×4"), map: d.toGray("average").colormap("diverging").look("blue darker, red brighter") }
 ```
@@ -134,7 +134,7 @@ The document layer (history, `doc.apply`, `doc.propose`, undo, export, recipes o
 Linear data (float TIFF, `.npy`, a DNG raw scan, density stored as plain codes) opens with `encoding: "linear"` (implied for float TIFF, `.npy` and DNG); then linear and encoded spaces coincide and every number is in file units. A window of a large scan keeps the scan's coordinates.
 
 ```js
-const v = cv.open("planted-linear.tif", { encoding: "linear", as: "v" })
+const v = cv.open("planted-linear.tif", { encoding: "linear", name: "v" })
 const s = await v.stats()
 return { encoding: (await v).encoding, p01: s.p01, p99: s.p99, look: v.levels({ black: s.p01, white: s.p99 }).look("stretched") }
 ```
@@ -144,7 +144,7 @@ return { encoding: (await v).encoding, p01: s.p01, p99: s.p99, look: v.levels({ 
 `img.chroma({ relative: true })` is 0 where the channels agree. Measure it inside a spot to tell neutral dust from coloured grain, and look at it in false colour.
 
 ```js
-const spots = img.detect.specks().where({ score: { gte: 0.5 } }).top(5)
+const spots = (await img.detect.specks()).filter(r => r.score >= 0.5).slice(0, 5)
 const c = img.chroma({ relative: true })
 return { spotChroma: (await c.stats({ mask: spots })).meanL, look: c.colormap("viridis").look("chroma") }
 ```

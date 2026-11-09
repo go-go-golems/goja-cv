@@ -24,7 +24,7 @@ func Register(r *graph.Registry) {
 	r.MustRegister(maskOps()...)
 	r.MustRegister(morphOps()...)
 	r.MustRegister(regionOps()...)
-	r.MustRegister(regionMeasureOp())
+	r.MustRegister(graph.ItemsOpDef())
 	r.MustRegister(compositeOps()...)
 	r.MustRegister(detectOps()...)
 	r.MustRegister(healOps()...)

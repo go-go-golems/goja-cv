@@ -152,7 +152,7 @@ func (r *renderer) primitive(v goja.Value) *yaml.Node {
 		return scalar(FormatNumber(x))
 	case string:
 		if len(x) > maxStringLen {
-			return str(x[:maxStringLen] + fmt.Sprintf("… (%d more characters; return cv.json(x) for all)", len(x)-maxStringLen))
+			return str(x[:maxStringLen] + fmt.Sprintf("… (%d more characters; save it: await cv.save(\"x.json\", x))", len(x)-maxStringLen))
 		}
 		return str(x)
 	}
@@ -177,7 +177,7 @@ func (r *renderer) array(obj *goja.Object, depth int) *yaml.Node {
 	}
 	flow(n)
 	if more := length - shown; more > 0 {
-		comment := fmt.Sprintf("… %d more (return cv.json(x) for all)", more)
+		comment := fmt.Sprintf("… %d more (save all: await cv.save(\"x.json\", x))", more)
 		if n.Style == yaml.FlowStyle {
 			n.LineComment = comment
 		} else {
@@ -287,7 +287,7 @@ func capText(text string, maxLen int) string {
 	if len(text) <= maxLen {
 		return text
 	}
-	note := fmt.Sprintf("# %s: the result is %d characters; only the first %d are shown. Return less: pick fields, slice arrays, or summarize; return cv.json(x) or cv.csv(x) for complete data.", graph.WCut, len(text), maxLen)
+	note := fmt.Sprintf("# %s: the result is %d characters; only the first %d are shown. Return less: pick fields, slice arrays, or summarize; save complete data: await cv.save(\"x.json\", x).", graph.WCut, len(text), maxLen)
 	limit := maxLen - len(note) - 1
 	if limit < 0 {
 		limit = 0

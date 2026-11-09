@@ -136,7 +136,7 @@ func (r *Registry) FuncsOn(k Kind) []*FuncDef {
 // did-you-mean and redirects. Nodes are refused (options are literals).
 func BindOptions(call string, specs []ArgSpec, raw []any) (Args, []Warning, error) {
 	op := &OpDef{Name: call, Args: specs}
-	bd, err := bind(op, call, false, raw, func(NodeID) (*Node, bool) { return nil, false })
+	bd, err := bind(op, call, false, raw, func(NodeID) (*Node, bool) { return nil, false }, nil)
 	if err != nil {
 		return Args{}, nil, err
 	}

@@ -30,7 +30,7 @@ pi install npm:pi-mcp-adapter
   "mcpServers": {
     "cv": {
       "command": "goja-cv",
-      "args": ["mcp", "--image", "scan.tif", "--root", "/path/to/images"],
+      "args": ["mcp", "--root", "/path/to/cv-work", "--read", "/path/to/images", "--image", "/path/to/images/scan.tif"],
       "lifecycle": "keep-alive",
       "directTools": ["eval"]
     }

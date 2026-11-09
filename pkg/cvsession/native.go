@@ -2,10 +2,8 @@ package cvsession
 
 import (
 	"fmt"
-	"path/filepath"
 	"regexp"
 	"strconv"
-	"strings"
 
 	"github.com/dop251/goja"
 	"github.com/go-go-golems/goja-cv/pkg/cv/graph"
@@ -26,12 +24,12 @@ func (n *native) object() *goja.Object {
 	set := func(name string, fn func(goja.FunctionCall) goja.Value) {
 		_ = o.Set(name, cvmod.Export(n.vm, name, fn))
 	}
-	set("checkPath", n.checkPath)
+	set("pendingSaves", func(goja.FunctionCall) goja.Value { return cvmod.SavesPending(n.vm) })
+	set("saveFailure", func(goja.FunctionCall) goja.Value { return cvmod.SaveFailure(n.vm) })
 	set("checkName", n.checkName)
 	set("bindName", n.bindName)
 	set("getName", n.getName)
 	set("setName", n.setName)
-	set("asKey", n.asKey)
 	set("fail", n.fail)
 	set("unknownMember", n.unknownMember)
 	return o
@@ -63,27 +61,6 @@ func (n *native) throw(e *graph.Error) {
 	panic(obj)
 }
 
-// checkPath(path) throws E_ACCESS when path is outside the session roots.
-func (n *native) checkPath(c goja.FunctionCall) goja.Value {
-	roots := n.st.opts.Roots
-	if len(roots) == 0 {
-		return goja.Undefined()
-	}
-	p := c.Argument(0)
-	if goja.IsUndefined(p) || goja.IsNull(p) {
-		return goja.Undefined() // cv.open reports the missing path itself
-	}
-	abs := filepath.Clean(n.st.opts.resolve(p.String()))
-	for _, r := range roots {
-		if graph.Within(r, abs) {
-			return goja.Undefined()
-		}
-	}
-	n.throw(graph.Errorf(graph.EAccess, "cv.open(%q): the path is outside the directories this session may read.", p.String()).
-		WithHint("Allowed roots: " + strings.Join(roots, ", ")))
-	return nil
-}
-
 // unknownMember(obj, name, members) throws the structured unknown-name error
 // for cv.name.
 func (n *native) unknownMember(c goja.FunctionCall) goja.Value {
@@ -101,7 +78,6 @@ func (n *native) unknownMember(c goja.FunctionCall) goja.Value {
 // failure is an uncaught error of the current eval, read from the thrown value.
 type failure struct {
 	Name, Code, Message, Hint, Fix string
-	Member                         string // the member an E_NOT_ARRAY call used
 	Path, Valid                    []string
 	CV                             bool
 	Line, Column                   int // in the evaluated source
@@ -147,7 +123,6 @@ func readFailure(vm *goja.Runtime, v goja.Value) *failure {
 	}
 	f.Name, f.Code, f.Message = get("name"), get("code"), get("message")
 	f.Hint, f.Fix = get("hint"), get("fix")
-	f.Member = get("member")
 	f.Path, f.Valid = list("path"), list("valid")
 	f.CV = obj.Get("cv") != nil && obj.Get("cv").ToBoolean()
 	f.Stack = get("stack")

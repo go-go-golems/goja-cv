@@ -2839,3 +2839,69 @@ order found; the phase is in brackets.
     `OneChannel`/`ThreeChannel` allow) in two passes with colour and grey image arguments; the arithmetic samples
     use an image operand (the number operand is covered by `arith_test.go`) and `channel`'s sample is `"r"`.
     `regions.measure`'s image argument is typed `Image` (a mask is one).
+29. [5] GCV-005 additions (coordinator): items may carry a `label` string, printed by `overlay` and `cv.sheet`
+    instead of the id; a non-number `id` is `E_ARG_TYPE` with a fix that moves the text to `label`; ids are data and
+    may repeat (help says so), identity is the `[node, index]` link. One binding `Items|point[]` serves `measure`,
+    `sample` and `cv.sheet`, with a fourth shape `Point` (a centre without a radius) beside `Pixels`, `Box`, `Disk`;
+    the sheet's own list path is gone, so a sheet over an array is an items node like everywhere else.
+30. [5] The binder interns an item array itself, through a callback `bind` receives (`Builder.itemsNode`); the
+    internal `items` op is defined in `pkg/cv/graph/items.go` (`graph.ItemsOpDef`, registered by `ops`). Entries are
+    canonical data, so equal arrays are one hash-consed node.
+31. [5] A linked entry carries the item's `id` and `label` besides its box: a renumbered or labelled item shows its new
+    id or label in overlays, sheets and `measure` results. Its measures are not carried (the region's own stay).
+32. [5] `mask.regions` has no `grow` option (coordinator: GCV-005 replaces `grow`/`shrink` with `dilate`/`erode`):
+    `img.mask.regions(items).grow(r)`.
+33. [5] Items from a region set must cover the image an op uses them on (the overlay's containment rule now also for
+    `heal`, `stats({ mask })`, `measure` and `mask.regions`, which used the same-frame rule); literal items have no
+    frame. A `measure` node's frame is its items' (the raster of their pixels), else the receiver's.
+34. [5] Measures in region items are exact; GCV-003 rounded them to 4 decimals, which lost digits now that point
+    measurements are items too (a linear step of 0.002). Geometry stays rounded to 0.01 doc px, the precision the
+    moved-item check compares at.
+35. [5] `cv.sheet`'s `labels` defaults to `"id"` (label, else id) for every input, and literal items without an id
+    are numbered 1, 2, …; the `sheet-2x2` golden passes `labels: "index"` and stays exact.
+36. [5] `measure`'s channel fields follow the receiver's static channel count (colour: `stepR/G/B`, `stepChroma`;
+    grey: none), so no field is optional; items outside the frame get null ring fields and an `OUTSIDE` warning.
+    `sample` stays a Value of rows and samples items at their centres.
+37. [5] Real data: the speck-ranking drop (median 75, 39.6 % in the top 50) was neither the labels nor a regression:
+    `b847520` gives the same numbers on the current data, and the tiles were re-exported in DUST-002 `d54088c` with
+    density as the code value (open with `encoding: "linear"`), which the tests read as sRGB. Opened as the tile JSON
+    says: median 24, 78.2 %. The gated tests open tiles with `encoding: "linear"` and assert relative properties
+    (speck view beats `levels({ auto: true })`; snr ranks gold points earlier than area; labelled dust snr ≥ 2 × the
+    other spots'; the sRGB-encoded export equals the code-value tile through `as("linear")`).
+38. [5] D17 does not hold for dustview gold labels with `r` as the core: median snr 0.86 against 1.17 for a fixed 3 px
+    core with ring [6, 12]. Their `r` is the fit radius, twice the half-level radius, so the ring [1.5 r, 2.5 r]
+    falls on the speck's tail; circles of `r / 2` give 1.56. The radius rule is unchanged; the gated test and the
+    measuring topic use `r / 2` for these labels.
+39. [5] Help: `Mask` and `Regions` are concepts, not kinds (`cv.help("Regions")` is the `regions` concept);
+    `Mask.x` and `Regions.x` are `found: false` with the Image method `x` (when there is one) and the concept as
+    `didYouMean`, and a fix (`img.heal(regions, …)`, `(await regions).filter(…)`).
+40. [5] `explainDataMisuse` keeps one branch: an Image op called on plain data names `img.op(…)` (with the array as
+    its argument when the op takes items), and `count()` on an awaited array names `.length`.
+41. [6] One workspace per session engine (and per xgoja runtime): the files a session opened and wrote are its own.
+    `EngineOptions.Workspace` is a value the session and the provider open from `root` and `read`; an engine without
+    one cannot open or save (`E_ACCESS`); the module's default engine uses the working directory. Tests use
+    `graphtest.Workspace` (a temporary directory with `/` as a read directory).
+42. [6] `SourceMeta` has `Loc` and `Name` (workspace-relative, or absolute in a read directory); `Name` is also
+    `open`'s first canonical argument (what explain shows).
+43. [6] Pending saves (coordinator): every `cv.save` of an eval is waited for by `__cv_run` before the eval returns;
+    an unawaited save that failed fails the eval ("was not awaited and failed", at its line); other promises
+    rejected without a handler during the eval are `UNHANDLED` warnings (goja's `SetPromiseRejectionTracker`, one
+    tracker per runtime). The runner waits on internal promises so that its waiting does not mark the agent's
+    promises handled.
+44. [6] `cv.save`'s result has `space`: the space of the values in the file (encoded, or linear for a
+    linear-encoded image); `histogram` keeps `space` beside its rows; its `counts` array is gone.
+45. [6] A relative `cv.open` name that exists in the workspace as an escaping or dangling link is `E_ACCESS`; the
+    lookup does not fall through to the read directories.
+46. [6] `cv.open`'s `as` → `name` rename (§6.6, D21) is done with the names in Phase 7.
+47. [7] `look({ scale })` became a redirect of `look` (fix `node.look({ zoom: 8 })`); before it only reached zoom
+    through the general option synonyms. `helpRedirects` keeps `mask.stats` (deviation 27), `meta` and `info`, and
+    `memberFixes` keeps `cv.info` (pi run 3) and `cv.meta`: help entries for typed names, not alias tables.
+48. [7] `cv.open`'s `as` → `name` (D21) was done here (with the session's `asSynonyms`); the bare module's hint says
+    names exist only in sessions; the MCP `open` tool's field is `name`.
+49. [8] The removed-names test also lists `regions.measure`, `sortBy(`, `node.save`, `cv.describe` and `cv.isNode`,
+    and scans comments too (whole lines of non-test sources). The golden tolerance classes and `-golden.tolerant`
+    are deleted (§14.3).
+50. [8] The pi validation compares `main` (`b42502b`, v1 with the field fixes) with the branch, not `454a836`; the
+    runs live in the implementer's scratch area. The tiles were re-exported (deviation 37), so the inputs were rebuilt
+    to match runs 07–18: the v tile is the current tile, the reference and the GCV-002/003 tile are its
+    sRGB_encode(v). GCV-002 recall is counted against the tile's current 53 gold points (it had 15).

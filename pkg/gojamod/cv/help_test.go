@@ -11,8 +11,8 @@ func TestHelpNeverFailsAndResolvesEveryForm(t *testing.T) {
 	reg := cvmod.DefaultRegistry()
 	for name, key := range map[string]string{
 		"levels": "levels", "mask.box": "mask.box", "cv.compare": "compare", "Image.coverage": "coverage",
-		"mask": "mask", "Mask": "mask",
-		"Regions.filter": "filter", "explain": "explain", "cv.explain": "explain",
+		"mask": "mask", "Mask": "mask", "regions": "regions", "Regions": "regions",
+		"explain": "explain", "cv.explain": "explain",
 		"docs": "docs", "open": "open", "look": "look",
 	} {
 		h := cvmod.Help(reg, name)
@@ -20,7 +20,7 @@ func TestHelpNeverFailsAndResolvesEveryForm(t *testing.T) {
 			t.Fatalf("help(%q) = %v, want key %q", name, h, key)
 		}
 	}
-	for _, k := range []string{"Image", "Regions", "Value", "image"} {
+	for _, k := range []string{"Image", "Value", "image"} {
 		h := cvmod.Help(reg, k)
 		if h["kind"] == nil || len(h["methods"].(map[string]any)) == 0 {
 			t.Fatalf("help(%q) = %v", k, h)
@@ -29,14 +29,21 @@ func TestHelpNeverFailsAndResolvesEveryForm(t *testing.T) {
 	if m := cvmod.Help(reg, "Image")["methods"].(map[string]any); m["coverage"] == nil || m["feather"] == nil {
 		t.Fatalf("the mask ops are Image methods: %v", m)
 	}
-	if on := cvmod.Help(reg, "Regions.where")["where"].(map[string]any)["on"]; on != "Regions" {
-		t.Fatalf("Regions.where on = %v", on)
+	// Mask and Regions are concepts: Mask.coverage and Regions.filter point at them
+	for name, want := range map[string][]any{"Regions.filter": {"regions"}, "Mask.coverage": {"coverage", "mask"}, "Regions.heal": {"heal", "regions"}} {
+		h := cvmod.Help(reg, name)
+		if h["found"] != false || strings.Join(stringsOf(h["didYouMean"]), ",") != strings.Join(stringsOf(want), ",") {
+			t.Fatalf("help(%q) = %v", name, h)
+		}
+	}
+	if fix := cvmod.Help(reg, "Regions.filter")["fix"]; fix != "(await regions).filter(r => r.score >= 0.5)" {
+		t.Fatalf("Regions.filter fix %v", fix)
 	}
 	for name, want := range map[string]string{
 		"mask.stats":   "stats",
-		"blurr":        "gaussian",
+		"gausian":      "gaussian",
 		"Regions.heal": "heal",
-		"brightness":   "exposure",
+		"exposre":      "exposure",
 	} {
 		h := cvmod.Help(reg, name)
 		dym, _ := h["didYouMean"].([]any)
@@ -83,4 +90,13 @@ func TestHelpMorphologyConcepts(t *testing.T) {
 			t.Fatalf("help(%q) = %v, want found: false", old, h)
 		}
 	}
+}
+
+func stringsOf(v any) []string {
+	l, _ := v.([]any)
+	out := make([]string, len(l))
+	for i, x := range l {
+		out[i], _ = x.(string)
+	}
+	return out
 }

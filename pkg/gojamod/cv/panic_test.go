@@ -17,6 +17,7 @@ import (
 	"github.com/go-go-golems/goja-cv/internal/testimage"
 	"github.com/go-go-golems/goja-cv/pkg/cv/buffer"
 	"github.com/go-go-golems/goja-cv/pkg/cv/graph"
+	"github.com/go-go-golems/goja-cv/pkg/cv/graph/graphtest"
 	"github.com/go-go-golems/goja-cv/pkg/cv/ops"
 	cvmod "github.com/go-go-golems/goja-cv/pkg/gojamod/cv"
 )
@@ -41,7 +42,7 @@ func panicRuntime(t *testing.T) *engine.Runtime {
 			}},
 	)
 	factory, err := engine.NewRuntimeFactoryBuilder().
-		WithModules(&cvmod.Registrar{NewEngine: func() *graph.Engine { return graph.NewEngine(reg, graph.EngineOptions{}) }}).
+		WithModules(&cvmod.Registrar{NewEngine: func() *graph.Engine { return graph.NewEngine(reg, graphtest.Options(t)) }}).
 		Build()
 	if err != nil {
 		t.Fatal(err)
@@ -124,7 +125,7 @@ func TestInterruptPassesThroughNativeFunctions(t *testing.T) {
 		timer := time.AfterFunc(100*time.Millisecond, func() { vm.Interrupt("timeout") })
 		defer timer.Stop()
 		defer vm.ClearInterrupt()
-		v, err := vm.RunString(`const cv = require("cv"); try { cv.json({ get x() { while (true) {} } }); "no interrupt" } catch (e) { "caught " + e.code }`)
+		v, err := vm.RunString(`const cv = require("cv"); try { cv.save("x.json", { get x() { while (true) {} } }); "no interrupt" } catch (e) { "caught " + e.code }`)
 		if err != nil {
 			return nil, err
 		}
@@ -144,7 +145,7 @@ func TestStackOverflowPassesThroughNativeFunctions(t *testing.T) {
 	ret, err := rt.Owner.Call(context.Background(), "cv.test.overflow", func(_ context.Context, vm *goja.Runtime) (any, error) {
 		vm.SetMaxCallStackSize(200)
 		defer vm.SetMaxCallStackSize(1 << 20)
-		v, err := vm.RunString(`const cv = require("cv"); function f() { return f() }; try { cv.json({ get x() { return f() } }); "no overflow" } catch (e) { "caught " + e.code }`)
+		v, err := vm.RunString(`const cv = require("cv"); function f() { return f() }; try { cv.save("x.json", { get x() { return f() } }); "no overflow" } catch (e) { "caught " + e.code }`)
 		if err != nil {
 			return nil, err
 		}

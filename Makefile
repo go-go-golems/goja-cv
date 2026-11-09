@@ -93,13 +93,15 @@ smoke: build-bin
 	./dist/$(BINARY) help concepts >/dev/null
 	./dist/$(BINARY) ops --json > $(SMOKE_DIR)/ops.json
 	grep -q '"name": "levels"' $(SMOKE_DIR)/ops.json
-	./dist/$(BINARY) eval --image $(SMOKE_DIR)/gradient-64x48-8bit.png --out $(SMOKE_DIR)/looks --json \
+	./dist/$(BINARY) eval --root $(SMOKE_DIR) --image $(SMOKE_DIR)/gradient-64x48-8bit.png --out $(SMOKE_DIR)/looks --json \
 		-e 'const s = await img.stats(); return { meanL: s.meanL, fixed: img.levels({ black: s.p01, white: s.p99 }).look("levels") }' \
 		> $(SMOKE_DIR)/eval.json
 	jq -e '.status == "ok" and (.files | length) == 1' $(SMOKE_DIR)/eval.json >/dev/null
 	test -s "$$(jq -r '.files[0].path' $(SMOKE_DIR)/eval.json)"
 	@status=0; ./dist/$(BINARY) eval -e 'return cv.nope()' >/dev/null || status=$$?; \
 		if [ "$$status" -ne 1 ]; then echo "expected exit 1 for a cv error, got $$status"; exit 1; fi
+	@status=0; ./dist/$(BINARY) mcp </dev/null >/dev/null 2>$(SMOKE_DIR)/mcp.err || status=$$?; \
+		if [ "$$status" -eq 0 ] || ! grep -q -- '--root' $(SMOKE_DIR)/mcp.err; then echo "expected mcp without --root to be a usage error, got $$status"; exit 1; fi
 	@echo "smoke ok"
 
 # Regenerate the synthetic images under testdata/.

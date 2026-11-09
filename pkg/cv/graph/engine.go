@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/go-go-golems/goja-cv/pkg/cv/buffer"
 	"github.com/pkg/errors"
@@ -12,13 +11,12 @@ import (
 
 // EngineOptions configures an Engine. Zero values select the defaults.
 type EngineOptions struct {
-	CacheBytes     int64  // byte cap of the value cache (default 2 GiB)
-	LookLong       int    // long side of the look scale (default 1568)
-	PyramidMinLong int    // pyramids stop at this long side (default 256)
-	BaseDir        string // relative paths given to Open resolve against it (default: cwd)
-	// OutRoot is the only directory save may write under (absolute; empty:
-	// saving is disabled).
-	OutRoot string
+	CacheBytes     int64 // byte cap of the value cache (default 2 GiB)
+	LookLong       int   // long side of the look scale (default 1568)
+	PyramidMinLong int   // pyramids stop at this long side (default 256)
+	// Workspace is where cv.open reads and cv.save writes (§7.8); without
+	// one, nothing can be opened or saved.
+	Workspace *Workspace
 }
 
 func (o EngineOptions) withDefaults() EngineOptions {
@@ -47,11 +45,12 @@ type Engine struct {
 func NewEngine(reg *Registry, opts EngineOptions) *Engine {
 	opts = opts.withDefaults()
 	b := NewBuilder(reg)
-	ev := NewEvaluator(b, NewCache(opts.CacheBytes), NewSourceStore(opts.PyramidMinLong))
+	ev := NewEvaluator(b, NewCache(opts.CacheBytes), NewSourceStore(opts.PyramidMinLong, opts.Workspace))
 	return &Engine{opts: opts, reg: reg, b: b, ev: ev}
 }
 
 func (e *Engine) Options() EngineOptions       { return e.opts }
+func (e *Engine) Workspace() *Workspace        { return e.opts.Workspace }
 func (e *Engine) Registry() *Registry          { return e.reg }
 func (e *Engine) Builder() *Builder            { return e.b }
 func (e *Engine) Evaluator() *Evaluator        { return e.ev }
@@ -82,32 +81,33 @@ func (e *Engine) Call(name string, receiver NodeID, raw []any) (CallResult, erro
 }
 
 // Open interns a source node for an image file with the options of
-// cv.open(path, { encoding, box, origin }) (raw may be nil). The header is
-// read now (for the frame and the encoding); pixels are decoded on first
-// evaluation. The node identity includes the absolute path, the file's size
-// and modification time, and the options.
+// cv.open(path, { encoding, box, origin }) (raw may be nil). The path is
+// resolved in the workspace (relative: the workspace, then the read
+// directories). The header is read now (for the frame and the encoding);
+// pixels are decoded on first evaluation. The node identity includes the
+// file's location, size and modification time, and the options.
 func (e *Engine) Open(path string, raw map[string]any) (*Node, error) {
 	op, ok := e.reg.Lookup(KindNone, "open")
 	if !ok {
 		return nil, Errorf(EInternal, "no source op registered")
 	}
-	abs := path
-	if !filepath.IsAbs(abs) {
-		base := e.opts.BaseDir
-		if base == "" {
-			wd, err := os.Getwd()
-			if err != nil {
-				return nil, errors.Wrap(err, "getwd")
-			}
-			base = wd
-		}
-		abs = filepath.Join(base, path)
+	ws := e.opts.Workspace
+	if ws == nil {
+		return nil, Errorf(EAccess, "cv.open(%q): this engine has no workspace to read from.", path)
 	}
-	st, err := os.Stat(abs)
+	f, loc, err := ws.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }() // read-only: a close error cannot lose data
+	st, err := f.Stat()
 	if err != nil {
 		return nil, Errorf(EArgType, "cannot open %q: %v", path, err)
 	}
-	info, err := buffer.ProbeFile(abs)
+	if st.IsDir() {
+		return nil, Errorf(EArgType, "cv.open(%q): this is a directory.", path)
+	}
+	info, err := buffer.ProbeFile(f)
 	if err != nil {
 		if fe, ok := buffer.IsFormatError(err); ok {
 			return nil, Errorf(EFormat, "cv.open(%q): %s.", path, fe.Feature).WithHint("Supported: " + buffer.SupportedFormats + ".")
@@ -115,14 +115,18 @@ func (e *Engine) Open(path string, raw map[string]any) (*Node, error) {
 		return nil, Errorf(EArgType, "cannot read %q as an image: %v", path, errors.Cause(err)).
 			WithHint("Supported: " + buffer.SupportedFormats + ".")
 	}
-	meta := SourceMeta{Path: abs, Stamp: fmt.Sprintf("%d-%d", st.Size(), st.ModTime().UnixNano()), Info: info, FileEncoding: info.Encoding}
-	call := []any{abs}
+	ws.NoteOpened(st)
+	meta := SourceMeta{Loc: loc, Name: ws.Name(loc), Stamp: Stamp(st), Info: info, FileEncoding: info.Encoding}
+	call := []any{meta.Name}
 	if len(raw) > 0 {
 		call = append(call, raw)
 	}
 	n, _, err := e.b.InternSource(op, call, meta)
 	return n, err
 }
+
+// Stamp identifies a version of a file: its size and modification time.
+func Stamp(fi os.FileInfo) string { return fmt.Sprintf("%d-%d", fi.Size(), fi.ModTime().UnixNano()) }
 
 // Placeholder interns the placeholder Image node that a builder lambda
 // receives in place of receiver (within(mask, i => …)). The node only exists

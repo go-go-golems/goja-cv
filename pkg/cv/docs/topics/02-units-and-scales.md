@@ -37,7 +37,7 @@ A look caption says `1 image px = S doc px`: multiply coordinates you read off a
 
 ```js
 const fast = img.detect.specks({ analysisScale: 0.5 })
-return { full: await img.detect.specks().count(), half: await fast.count() }
+return { full: (await img.detect.specks()).length, half: (await fast).length }
 ```
 
 ## Frames

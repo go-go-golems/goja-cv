@@ -20,40 +20,23 @@ import (
 // and compares their 8-bit images (before the look number is burned in and
 // before JPEG encoding) with PNGs under testdata/golden.
 //
-//	go test ./pkg/cv/look -run TestGoldenLooks -update            rewrite the goldens
-//	go test ./pkg/cv/look -run TestGoldenLooks -golden.tolerant   apply the one-time tolerance rule
+//	go test ./pkg/cv/look -run TestGoldenLooks -update   rewrite the goldens
 //
-// Without flags the comparison is exact. The tolerance rule (GCV-001 guide
-// §13.3) is for the one commit that changes the display path: levels and mask
-// looks may change; every other look may differ by at most 1 code on at most
-// 1 % of its samples; speck overlays must keep the number of specks; charts
-// may differ on at most 1 % of their samples (a flipped bin count moves a bar
-// edge by a whole pixel).
-var (
-	updateGolden   = flag.Bool("update", false, "rewrite the golden looks")
-	tolerantGolden = flag.Bool("golden.tolerant", false, "apply the GCV-001 §13.3 tolerance rule instead of exact comparison")
-)
+// The comparison is exact: a phase that moves a golden names it and
+// regenerates it (GCV-004 §14.3). The speck overlay also keeps its number of
+// specks (counts.json).
+var updateGolden = flag.Bool("update", false, "rewrite the golden looks")
 
 const goldenDir = "testdata/golden"
 
-// goldenClass says how a look may change under the tolerance rule.
-type goldenClass int
-
-const (
-	classStrict  goldenClass = iota // ≤ 1 code on ≤ 1 % of samples
-	classLevels                     // expected to change (levels remaps in linear space)
-	classMask                       // expected to change (masks display their values)
-	classSpecks                     // overlay of detect.specks: the speck count must not change
-	classChart                      // histogram chart: a bin count flip moves a bar edge by a pixel; ≤ 1 % of samples
-	classOverlay                    // overlay tints are composited in encoded space (display colours): tinted pixels change
-)
-
 type goldenCase struct {
 	name  string
-	class goldenClass
 	build func(t *testing.T, e *graph.Engine, img graph.NodeID) graph.NodeID
 	opts  Options
 }
+
+// specksCase is the overlay of detect.specks, whose speck count is checked too.
+const specksCase = "specks-overlay"
 
 func goldenCases() []goldenCase {
 	c := func(name string, raw ...any) func(*testing.T, *graph.Engine, graph.NodeID) graph.NodeID {
@@ -65,11 +48,11 @@ func goldenCases() []goldenCase {
 		return call(t, e, "mask.luminance", img, map[string]any{"above": 0.5}).ID
 	}
 	return []goldenCase{
-		{"source", classStrict, func(_ *testing.T, _ *graph.Engine, img graph.NodeID) graph.NodeID { return img }, Options{}},
-		{"exposure", classStrict, c("exposure", 0.5), Options{}},
-		{"gaussian", classStrict, c("gaussian", 2.0), Options{}},
-		{"contrast", classStrict, c("contrast", 0.3), Options{}},
-		{"levels-stats", classLevels, func(t *testing.T, e *graph.Engine, img graph.NodeID) graph.NodeID {
+		{"source", func(_ *testing.T, _ *graph.Engine, img graph.NodeID) graph.NodeID { return img }, Options{}},
+		{"exposure", c("exposure", 0.5), Options{}},
+		{"gaussian", c("gaussian", 2.0), Options{}},
+		{"contrast", c("contrast", 0.3), Options{}},
+		{"levels-stats", func(t *testing.T, e *graph.Engine, img graph.NodeID) graph.NodeID {
 			v, err := e.Evaluate(context.Background(), call(t, e, "stats", img).ID, graph.EvalOptions{Scale: 1})
 			if err != nil {
 				t.Fatal(err)
@@ -77,55 +60,46 @@ func goldenCases() []goldenCase {
 			s := v.(*graph.DataValue).Data.(map[string]any) // awaited first: options are literals
 			return call(t, e, "levels", img, map[string]any{"black": s["p01"], "white": s["p99"]}).ID
 		}, Options{}},
-		{"levels-gamma", classLevels, c("levels", map[string]any{"black": 0.02, "white": 0.6, "gamma": 1.4}), Options{}},
-		{"togray", classStrict, c("toGray"), Options{}},
-		{"mask-luminance", classMask, lum, Options{}},
-		{"mask-color", classMask, c("mask.color", map[string]any{"hue": 30.0, "tol": 40.0, "minSat": 0.05}), Options{}},
-		{"mask-box", classMask, c("mask.box", []any{40.0, 30.0, 100.5, 80.25}), Options{}},
-		{"mask-ellipse", classMask, c("mask.ellipse", []any{40.0, 30.0, 100.0, 80.0}), Options{}},
-		{"mask-gradient-edge", classMask, c("mask.gradient", map[string]any{"from": "top", "to": 0.6}), Options{}},
-		{"mask-gradient-points", classMask, c("mask.gradient", map[string]any{"from": []any{0.0, 0.0}, "to": []any{200.0, 150.0}}), Options{}},
-		{"mask-flood", classMask, c("mask.flood", []any{128.0, 96.0}, map[string]any{"tol": 0.08}), Options{}},
-		{"mask-feather", classMask, func(t *testing.T, e *graph.Engine, img graph.NodeID) graph.NodeID {
+		{"levels-gamma", c("levels", map[string]any{"black": 0.02, "white": 0.6, "gamma": 1.4}), Options{}},
+		{"togray", c("toGray"), Options{}},
+		{"mask-luminance", lum, Options{}},
+		{"mask-color", c("mask.color", map[string]any{"hue": 30.0, "tol": 40.0, "minSat": 0.05}), Options{}},
+		{"mask-box", c("mask.box", []any{40.0, 30.0, 100.5, 80.25}), Options{}},
+		{"mask-ellipse", c("mask.ellipse", []any{40.0, 30.0, 100.0, 80.0}), Options{}},
+		{"mask-gradient-edge", c("mask.gradient", map[string]any{"from": "top", "to": 0.6}), Options{}},
+		{"mask-gradient-points", c("mask.gradient", map[string]any{"from": []any{0.0, 0.0}, "to": []any{200.0, 150.0}}), Options{}},
+		{"mask-flood", c("mask.flood", []any{128.0, 96.0}, map[string]any{"tol": 0.08}), Options{}},
+		{"mask-feather", func(t *testing.T, e *graph.Engine, img graph.NodeID) graph.NodeID {
 			return call(t, e, "feather", lum(t, e, img), 6.0).ID
 		}, Options{}},
-		{"mask-refine", classMask, func(t *testing.T, e *graph.Engine, img graph.NodeID) graph.NodeID {
+		{"mask-refine", func(t *testing.T, e *graph.Engine, img graph.NodeID) graph.NodeID {
 			return call(t, e, "refine", lum(t, e, img), graph.NodeArg{ID: img}).ID
 		}, Options{}},
-		// GCV-005 B1: a mask dilated by a disk, and a white top-hat of the grey image
-		{"dilate-mask", classMask, func(t *testing.T, e *graph.Engine, img graph.NodeID) graph.NodeID {
-			return call(t, e, "dilate", lum(t, e, img), 4.0).ID
-		}, Options{}},
-		{"tophat-gray", classStrict, func(t *testing.T, e *graph.Engine, img graph.NodeID) graph.NodeID {
-			g := call(t, e, "toGray", img).ID
-			open := call(t, e, "dilate", call(t, e, "erode", g, 6.0).ID, 6.0).ID
-			return call(t, e, "sub", g, graph.NodeArg{ID: open}).ID
-		}, Options{}},
-		{"mask-overlay", classOverlay, func(t *testing.T, e *graph.Engine, img graph.NodeID) graph.NodeID {
+		{"mask-overlay", func(t *testing.T, e *graph.Engine, img graph.NodeID) graph.NodeID {
 			return call(t, e, "overlay", img, graph.NodeArg{ID: lum(t, e, img)}).ID
 		}, Options{}},
-		{"specks-overlay", classSpecks, func(t *testing.T, e *graph.Engine, img graph.NodeID) graph.NodeID {
+		{"specks-overlay", func(t *testing.T, e *graph.Engine, img graph.NodeID) graph.NodeID {
 			sp := call(t, e, "detect.specks", img)
 			return call(t, e, "overlay", img, graph.NodeArg{ID: sp.ID}, map[string]any{"labels": "id"}).ID
 		}, Options{}},
-		{"histogram", classChart, c("histogram"), Options{}},
-		{"histogram-r", classChart, c("histogram", map[string]any{"channel": "r"}), Options{}},
+		{"histogram", c("histogram"), Options{}},
+		{"histogram-r", c("histogram", map[string]any{"channel": "r"}), Options{}},
 		// GCV-003 Phase 5: a profile across the star as a line chart
-		{"profile-chart", classChart, c("profile", []any{180.5, 46.5}, []any{220.5, 46.5}, map[string]any{"width": 3.0}), Options{}},
-		{"compare-side", classStrict, compareCase("side"), Options{}},
-		{"compare-split", classStrict, compareCase("split"), Options{}},
+		{"profile-chart", c("profile", []any{180.5, 46.5}, []any{220.5, 46.5}, map[string]any{"width": 3.0}), Options{}},
+		{"compare-side", compareCase("side"), Options{}},
+		{"compare-split", compareCase("split"), Options{}},
 		// GCV-002: a 32 × 32 crop at zoom 8 with rulers every 4 doc px and a grid every 8
-		{"ruler-crop-zoom8", classStrict, c("crop", []any{100.0, 40.0, 32.0, 32.0}), Options{Zoom: 8, Ruler: 4, Grid: 8}},
-		{"grid-gray-crop-zoom4", classStrict, func(t *testing.T, e *graph.Engine, img graph.NodeID) graph.NodeID {
+		{"ruler-crop-zoom8", c("crop", []any{100.0, 40.0, 32.0, 32.0}), Options{Zoom: 8, Ruler: 4, Grid: 8}},
+		{"grid-gray-crop-zoom4", func(t *testing.T, e *graph.Engine, img graph.NodeID) graph.NodeID {
 			return call(t, e, "crop", call(t, e, "toGray", img).ID, []any{180.0, 20.0, 48.0, 40.0}).ID
 		}, Options{Zoom: 4, Grid: 4}},
 		// GCV-002 Phase 6: decorations at zoom and a sheet
-		{"overlay-crop-zoom8", classStrict, func(t *testing.T, e *graph.Engine, img graph.NodeID) graph.NodeID {
+		{"overlay-crop-zoom8", func(t *testing.T, e *graph.Engine, img graph.NodeID) graph.NodeID {
 			sp := call(t, e, "detect.specks", img)
 			c := call(t, e, "crop", img, []any{180.0, 20.0, 48.0, 40.0})
 			return call(t, e, "overlay", c.ID, graph.NodeArg{ID: sp.ID}, map[string]any{"labels": "id"}).ID
 		}, Options{Zoom: 8}},
-		{"annotate-crop-zoom4", classStrict, func(t *testing.T, e *graph.Engine, img graph.NodeID) graph.NodeID {
+		{"annotate-crop-zoom4", func(t *testing.T, e *graph.Engine, img graph.NodeID) graph.NodeID {
 			a := call(t, e, "annotate", img, []any{
 				map[string]any{"circle": []any{200.5, 46.5, 6.0}, "color": "lime", "label": "star"},
 				map[string]any{"point": []any{160.0, 30.0}},
@@ -135,10 +109,10 @@ func goldenCases() []goldenCase {
 			}, map[string]any{"width": 1.0})
 			return call(t, e, "crop", a.ID, []any{150.0, 20.0, 64.0, 64.0}).ID
 		}, Options{Zoom: 4}},
-		{"sheet-2x2", classStrict, func(t *testing.T, e *graph.Engine, img graph.NodeID) graph.NodeID {
+		{"sheet-2x2", func(t *testing.T, e *graph.Engine, img graph.NodeID) graph.NodeID {
 			v := call(t, e, "view", img, "speck")
 			return call(t, e, "sheet", 0, []any{[]any{200.5, 46.5}, []any{40.0, 150.0, 30.0, 12.0}},
-				map[string]any{"views": []any{graph.NodeArg{ID: img}, graph.NodeArg{ID: v.ID}}, "size": 24.0, "zoom": 4.0}).ID
+				map[string]any{"views": []any{graph.NodeArg{ID: img}, graph.NodeArg{ID: v.ID}}, "size": 24.0, "zoom": 4.0, "labels": "index"}).ID
 		}, Options{}},
 	}
 }
@@ -249,7 +223,7 @@ func TestGoldenLooks(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if gc.class == classSpecks {
+			if gc.name == specksCase {
 				n, ok := e.Node(id)
 				if !ok {
 					t.Fatal("no overlay node")
@@ -280,24 +254,14 @@ func TestGoldenLooks(t *testing.T) {
 				t.Fatal(err)
 			}
 			d := comparePixels(m, want)
-			if gc.class == classSpecks && counts[gc.name] != wantCounts[gc.name] {
+			if gc.name == specksCase && counts[gc.name] != wantCounts[gc.name] {
 				t.Errorf("speck count %d, golden %d", counts[gc.name], wantCounts[gc.name])
 			}
 			switch {
 			case d.shape != "":
 				t.Fatalf("shape changed: %s", d)
-			case d.differ == 0:
-				return
-			case !*tolerantGolden:
+			case d.differ != 0:
 				t.Errorf("look differs from its golden: %s", d)
-			case gc.class == classLevels || gc.class == classMask || gc.class == classSpecks || gc.class == classOverlay:
-				t.Logf("expected change: %s", d)
-			case gc.class == classChart && float64(d.differ) <= 0.01*float64(d.samples):
-				t.Logf("chart within tolerance: %s", d)
-			case d.maxCode <= 1 && float64(d.differ) <= 0.01*float64(d.samples):
-				t.Logf("within tolerance: %s", d)
-			default:
-				t.Errorf("beyond tolerance: %s", d)
 			}
 		})
 	}

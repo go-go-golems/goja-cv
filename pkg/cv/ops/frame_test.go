@@ -14,7 +14,7 @@ func testEngine(t *testing.T) *graph.Engine {
 	t.Helper()
 	reg := NewRegistry()
 	graphtest.RegisterSource(reg)
-	return graph.NewEngine(reg, graph.EngineOptions{})
+	return graph.NewEngine(reg, graphtest.Options(t))
 }
 
 func testSource(t *testing.T, e *graph.Engine, enc string, f graph.Frame, fill ...float64) *graph.Node {

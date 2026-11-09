@@ -105,7 +105,7 @@ func TestKindTypedArgsStaticLenValidate(t *testing.T) {
 		t.Fatalf("paint through mask: %v %v", b.Pix[0], b.Pix[b.W-1])
 	}
 	// any one-channel image is a mask; a colour image is refused with the
-	// toGray fix, regions with the toMask hint
+	// toGray fix, regions with the mask.regions fix
 	if _, err := e.Call("paint", src.ID, []any{map[string]any{"mask": NodeArg{src.ID}}}); err != nil {
 		t.Fatalf("a grey image as mask: %v", err)
 	}
@@ -116,7 +116,7 @@ func TestKindTypedArgsStaticLenValidate(t *testing.T) {
 	}
 	rg := mustCall(t, e, "blobs", src.ID, []any{0.0, 0.0, 4.0, 4.0})
 	_, err = e.Call("paint", src.ID, []any{map[string]any{"mask": NodeArg{rg.ID}}})
-	if ce := codeOf(t, err); ce.Code != EWrongKind || !strings.Contains(ce.Hint, "toMask") {
+	if ce := codeOf(t, err); ce.Code != EWrongKind || ce.Fix != "img.mask.regions(regions)" {
 		t.Fatalf("regions as mask: %+v", ce)
 	}
 	_, err = e.Call("paint", src.ID, []any{map[string]any{"mask": 0.5}})
@@ -218,8 +218,8 @@ func TestRasterizeKeepsAreaAtAnyScale(t *testing.T) {
 	if d["area"] != 221.0 || d["aspect"].(float64) < 1 {
 		t.Fatalf("data %v", d)
 	}
-	if s, err := rv.Summary(); err != nil || s["count"] != 1.0 || len(s["items"].([]any)) != 1 {
-		t.Fatalf("summary %v", s)
+	if s, err := rv.Records(); err != nil || len(s) != 1 {
+		t.Fatalf("records %v", s)
 	}
 }
 
@@ -229,12 +229,12 @@ func TestAwaitingTooManyRegionsIsAnError(t *testing.T) {
 	for i := range rv.Items {
 		rv.Items[i] = &Region{ID: i + 1}
 	}
-	_, err := rv.Summary()
-	if ce, ok := AsError(err); !ok || ce.Code != ETooMany || !strings.Contains(ce.Fix, "top(1000)") || !strings.Contains(ce.Message, "100001 regions") {
+	_, err := rv.Records()
+	if ce, ok := AsError(err); !ok || ce.Code != ETooMany || !strings.Contains(ce.Fix, "minArea") || !strings.Contains(ce.Message, "100001 regions") {
 		t.Fatalf("summary of %d regions: %v", len(rv.Items), err)
 	}
 	rv.Items = rv.Items[:MaxRegionItems]
-	if s, err := rv.Summary(); err != nil || len(s["items"].([]any)) != MaxRegionItems {
+	if s, err := rv.Records(); err != nil || len(s) != MaxRegionItems {
 		t.Fatalf("summary at the limit: %v", err)
 	}
 }

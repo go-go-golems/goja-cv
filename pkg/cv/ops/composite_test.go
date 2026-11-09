@@ -2,7 +2,6 @@ package ops
 
 import (
 	"math"
-	"strings"
 	"testing"
 
 	"github.com/go-go-golems/goja-cv/pkg/cv/graph"
@@ -102,12 +101,9 @@ func TestBlendModes(t *testing.T) {
 	if b := call(t, e, "blend", img.ID, graph.NodeArg{ID: dark.ID}, map[string]any{"opacity": 0}); evalValue(t, e, b, 1).(*graph.ImageValue).Buf != src {
 		t.Fatal("blend at opacity 0 is not the identity")
 	}
-	// the removed modes redirect to arithmetic
-	for mode, fix := range map[string]string{"difference": "a.sub(b).abs()", "add": "a.add(b)", "lighten": "a.max(b)", "darken": "a.min(b)"} {
-		_, err := e.Call("blend", img.ID, []any{graph.NodeArg{ID: dark.ID}, map[string]any{"mode": mode, "opacity": 0.5}})
-		ce, ok := graph.AsError(err)
-		if !ok || ce.Code != graph.EArgType || ce.Fix != fix || !strings.Contains(ce.Hint, "{ opacity, mask }") {
-			t.Fatalf("blend mode %s: %+v", mode, err)
-		}
+	// an unknown mode lists the valid ones (no redirect table: GCV-004 §7.13)
+	_, err := e.Call("blend", img.ID, []any{graph.NodeArg{ID: dark.ID}, map[string]any{"mode": "difference", "opacity": 0.5}})
+	if ce, ok := graph.AsError(err); !ok || ce.Code != graph.EArgType || len(ce.Valid) != 3 {
+		t.Fatalf("blend mode difference: %+v", err)
 	}
 }

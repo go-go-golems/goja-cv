@@ -9,9 +9,9 @@ Every node has one kind, and every op says which kind it takes and returns.
 | kind | evaluated value | made by |
 |---|---|---|
 | Image | float32 pixels in a space, encoded (file units) or linear (awaits to a summary) | `img`, `exposure`, `levels`, `within`, `heal`, `overlay`, `compare` |
-| Mask | one channel in [0, 1] | `mask.luminance`, `mask.box`, `regions.toMask()`, `a.and(b)` |
-| Regions | a list of areas with flat fields id, x, y, w, h, cx, cy, area, aspect and measures | `detect.specks`, `mask.components()`, `regions.where()` |
-| Value | plain data | `stats`, `histogram`, `coverage`, `count` |
+| Image with one channel (a mask) | weights in [0, 1] | `mask.luminance`, `mask.box`, `mask.regions(items)`, `a.and(b)` |
+| Regions | a list of areas with flat fields id, x, y, w, h, cx, cy, area, aspect and measures (awaits to an array; no methods) | `detect.specks`, `mask.components()`, `measure(items)` |
+| Value | plain data | `stats`, `histogram`, `coverage`, `profile` |
 
 ## Lazy and hash-consed
 
@@ -53,29 +53,21 @@ return d.levels({ black: 0, white: d.stats() }).look()   // fix: { white: (await
 
 Node inputs exist only where an op takes an image, a mask or regions: `a.sub(b)`, `img.within(mask, fn)`, `img.overlay(regions)`.
 
-## Awaited data remembers its node
+## Awaited regions are arrays
 
-What `await` returns is plain data (YAML, `Object.keys` and `JSON.stringify` see only the data), but it remembers the node it came from. You can keep calling node methods on it and pass it to ops, which use the node:
+What `await` returns is plain data (YAML, `Object.keys` and `JSON.stringify` see only the data). Awaited Regions are a plain JavaScript array of items, every region (up to 100000; more is `E_TOO_MANY`): filter, sort and slice it, and pass it back wherever regions go. Each item keeps a hidden link to its region's pixels (`cv.docs.read("masks-and-regions")`). A Regions node itself has no methods; its properties are lazy data:
 
 ```js
-const specks = await img.detect.specks()          // data: { count, items, … }
-const dust = specks.where({ score: { gte: 0.5 } })  // a Regions node again
-return { all: specks.count, dust: await dust.count(), look: img.overlay(dust).look("dust") }
+const specks = await img.detect.specks()          // an array of items
+const dust = specks.filter(r => r.score >= 0.5)   // still linked
+return { all: specks.length, dust: dust.length, look: img.overlay(dust).look("dust") }
 ```
 
-Data wins where names collide: `specks.count` is the number; the method form is `img.detect.specks().count()`. Ops recompute the node: they see its value, not an edited copy of the awaited data.
-
-Awaited Regions are an object `{ count, items: [...] }`, not an array: the list is `.items`, and it holds every region (up to 100000; more is `E_TOO_MANY`). The YAML result shows at most 48 items of a list; return `cv.json(x)` or `cv.csv(x)` to hand a program all of them.
-
-```js error=TypeError
-const specks = await img.detect.specks()
-return await specks.count()        // hint: specks.count is a number (41), not a method; fix: specks.count
+```js error=E_NOT_AWAITED
+return img.detect.specks().filter(r => r.score >= 0.5)   // fix: (await img.detect.specks()).filter
 ```
 
-```js error=E_NOT_ARRAY
-const rows = await img.detect.specks().top(5)
-return rows.slice(0, 2)            // fix: rows.items.slice(…)
-```
+Other awaited data is not linked to its node: `(await img.stats()).p99` is a number. The YAML result shows at most 48 items of a list; `await cv.save("x.csv", items)` hands a program all of them.
 
 ## UNUSED_NODE
 

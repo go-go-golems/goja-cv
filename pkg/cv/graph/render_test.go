@@ -10,6 +10,7 @@ import (
 	"github.com/go-go-golems/goja-cv/internal/testimage"
 	"github.com/go-go-golems/goja-cv/pkg/cv/buffer"
 	"github.com/go-go-golems/goja-cv/pkg/cv/graph"
+	"github.com/go-go-golems/goja-cv/pkg/cv/graph/graphtest"
 	"github.com/go-go-golems/goja-cv/pkg/cv/ops"
 )
 
@@ -71,7 +72,7 @@ func renderEngine(t *testing.T, s *seen) (*graph.Engine, *graph.Node) {
 			},
 		},
 	)
-	e := graph.NewEngine(reg, graph.EngineOptions{})
+	e := graph.NewEngine(reg, graphtest.Options(t))
 	p := filepath.Join(t.TempDir(), testimage.PlantedTIFF)
 	if _, err := testimage.WritePlanted(context.Background(), p); err != nil {
 		t.Fatal(err)

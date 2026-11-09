@@ -6,24 +6,17 @@ import "github.com/go-go-golems/goja-cv/pkg/cv/graph"
 // something other than a node. look and show share the look options; the
 // look package reads them by name (look.OptionsFrom).
 
-// DataKind is the receiver name of functions on Data handles (cv.json,
-// cv.csv) in the registry.
-const DataKind = "Data"
-
-// dataNameArg is the name option of cv.json and cv.csv.
-var dataNameArg = graph.ArgSpec{Name: "name", Type: "string", Optional: true,
-	Doc: "the item's name, letters, digits, - and _ (the CLI writes name.csv / name.json); default data-<N>, N its content number"}
-
 // MaxLookSide is the largest look side when fitting (the engine's default
 // LookLong).
 const MaxLookSide = 1568
 
-// lookRedirects are the look options agents reach for that are content, not
-// raster parameters: they are nodes placed in the chain.
+// lookRedirects are the look options agents typed that are something else
+// (GCV-004 §7.13): a window is content (a crop in the chain), a scale is the
+// zoom.
 var lookRedirects = map[string]graph.Redirect{
-	"box":     {Hint: "A window is content: crop the node, then look at the crop.", Fix: "node.crop([x, y, w, h]).look()"},
-	"crop":    {Hint: "A window is content: crop the node, then look at the crop.", Fix: "node.crop([x, y, w, h]).look()"},
-	"stretch": {Hint: "A stretch is content: put levels({ auto: true }) in the chain where it should apply.", Fix: "node.levels({ auto: true }).look()"},
+	"box":   {Hint: "A window is content: crop the node, then look at the crop.", Fix: "node.crop([x, y, w, h]).look()"},
+	"crop":  {Hint: "A window is content: crop the node, then look at the crop.", Fix: "node.crop([x, y, w, h]).look()"},
+	"scale": {Hint: "A look's magnification is zoom (render px per doc px).", Fix: "node.look({ zoom: 8 })"},
 }
 
 // LookArgs are the options of node.look and show.
@@ -41,8 +34,7 @@ func LookArgs() []graph.ArgSpec {
 		{Name: "grid", Type: "number", Unit: graph.DocPx, Optional: true, Min: graph.F(0),
 			Doc: "faint lines every grid doc px over the image"},
 		{Name: "format", Type: "enum:auto,png,jpeg", Default: "auto",
-			Doc:           "auto: PNG for gray, zoomed, sheet and small (≤ 512 × 512) looks, JPEG (q85) otherwise; png is lossless (no ringing around specks)",
-			ValueSynonyms: map[string]string{"lossless": "png", "jpg": "jpeg", "lossy": "jpeg", "PNG": "png", "JPEG": "jpeg"}},
+			Doc: "auto: PNG for gray, zoomed, sheet and small (≤ 512 × 512) looks, JPEG (q85) otherwise; png is lossless (no ringing around specks)"},
 	}
 }
 
@@ -65,39 +57,20 @@ func funcDefs() []graph.FuncDef {
 		},
 		{
 			Name: "help", Bespoke: true, Usage: "cv.help() · cv.help(name)",
-			Doc: "The op reference: no argument lists ops per kind; a name describes an op, a kind (\"Regions\"), Kind.method (\"Regions.filter\") or a cv function. Never throws; unknown names return { found: false, didYouMean }.",
+			Doc: "The op reference: no argument lists ops per kind; a name describes an op, a kind (\"Image\"), Kind.method (\"Image.overlay\"), a cv function or a concept (\"regions\"). Never throws; unknown names return { found: false, didYouMean }.",
 			See: []string{"docs"},
 		},
 
 		{
-			Name: "json", Bespoke: true, Usage: "cv.json(x, { name })",
+			Name: "save", Bespoke: true, Usage: "await cv.save(path, x, { depth })",
 			Args: []graph.ArgSpec{
-				{Name: "x", Type: "data", Positional: true, Doc: "a Value or Regions node (every item, evaluated at scale 1 when delivered) or plain data (as you see it, edits included)"},
-				dataNameArg,
+				{Name: "path", Type: "string", Positional: true, Doc: "a file name in the workspace (--root); the extension picks the format: .tif, .png, .npy, .jpg for an Image, .json for any data, .csv for a list of rows"},
+				{Name: "x", Type: "data", Positional: true, Doc: "an Image node (evaluated at scale 1), a Value or Regions node (its data at scale 1), or plain data as you hold it"},
+				{Name: "depth", Type: "number", Optional: true, Doc: "images: bits per sample: TIFF 16 (default), 8 or 32 (float); PNG 16 or 8; NPY 32 (float) or 16"},
 			},
-			Doc: "Data for programs as JSON: returned from an eval it is delivered as content (MCP: text; CLI: the file name.json in --out), or saved with .save(path). Region items and measurement rows keep their schema's field order.",
-			See: []string{"csv", "save"},
-		},
-		{
-			Name: "csv", Bespoke: true, Usage: "cv.csv(x, { name, columns })",
-			Args: []graph.ArgSpec{
-				{Name: "x", Type: "data", Positional: true, Doc: "a Value or Regions node or plain data: a list of objects is one row each, a profile one row per sample"},
-				dataNameArg,
-				{Name: "columns", Type: "string[]", Optional: true, Doc: "the columns to write, in order (default: the schema's fields, or the keys in first-seen order)"},
-			},
-			Doc: "Data for programs as CSV with a header row: Regions give one row per region in schema order (id, x, y, w, h, cx, cy, area, aspect, …); nested values are JSON in their cell. Delivered as content or saved with .save(path).",
-			See: []string{"json", "save"},
-		},
-		{
-			Name: "save", On: []string{string(graph.KindImage), DataKind},
-			Args: []graph.ArgSpec{
-				{Name: "path", Type: "string", Positional: true, Doc: "file path relative to the out-root (--out-root); the extension picks the format: .tif, .png, .npy, .jpg for images, .csv or .json for data"},
-				{Name: "depth", Type: "number", Optional: true, Doc: "bits per sample: TIFF 16 (default), 8 or 32 (float); PNG 16 or 8; NPY 32 (float) or 16"},
-			},
-			Usage: "node.save(path, { depth }) · cv.csv(x).save(path)",
-			Doc: "Write an image (evaluated at scale 1, its encoding and frame origin recorded in TIFF and PNG) or a Data handle to a file under the out-root; " +
-				"resolves to { path, format, depth, encoding, frame, bytes, replaced }. Without --out-root saving is disabled (E_ACCESS).",
-			See: []string{"json", "csv", "look"},
+			Doc: "Write a file in the workspace and resolve to { path, format, bytes, rows, depth, encoding, space, frame, replaced }; cv.open(saved.path) reopens it. " +
+				"One save per path per eval (E_DUPLICATE); a save never follows a symlink or replaces a file the session opened (E_ACCESS); it writes a temporary file and renames it into place. Every save of an eval completes before the eval returns, awaited or not.",
+			See: []string{"open", "look"},
 		},
 	}
 }

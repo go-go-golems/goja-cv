@@ -107,13 +107,12 @@ func decoderFor(r io.ReadSeeker) (Decoder, error) {
 	return nil, formatErr("not a supported image file (supported: %s)", SupportedFormats)
 }
 
-// ProbeFile reads only the header of an image file.
-func ProbeFile(path string) (Info, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return Info{}, errors.Wrap(err, "open image")
+// ProbeFile reads only the header of an open image file (opened by the
+// caller, through the session's workspace).
+func ProbeFile(f *os.File) (Info, error) {
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		return Info{}, errors.Wrap(err, "seek")
 	}
-	defer func() { _ = f.Close() }() // read-only: a close error cannot lose data
 	d, err := decoderFor(f)
 	if err != nil {
 		return Info{}, err
@@ -125,14 +124,12 @@ func ProbeFile(path string) (Info, error) {
 	return info, checkSize(info)
 }
 
-// DecodeFile decodes an image file (or the window o.Box of it) into encoded
-// values at scale 1.
-func DecodeFile(ctx context.Context, path string, o DecodeOptions) (*Buffer, Info, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, Info{}, errors.Wrap(err, "open image")
+// DecodeFile decodes an open image file (or the window o.Box of it) into
+// encoded values at scale 1.
+func DecodeFile(ctx context.Context, f *os.File, o DecodeOptions) (*Buffer, Info, error) {
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		return nil, Info{}, errors.Wrap(err, "seek")
 	}
-	defer func() { _ = f.Close() }() // read-only: a close error cannot lose data
 	d, err := decoderFor(f)
 	if err != nil {
 		return nil, Info{}, err

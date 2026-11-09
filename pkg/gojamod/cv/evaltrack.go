@@ -57,14 +57,6 @@ type EvalTrace struct {
 	Warnings []SiteWarning
 	Looks    []QueuedLook
 	Late     []QueuedLook
-	// Collisions are data fields of awaited values that shadow a method of
-	// their node (awaited Regions have count, Regions nodes have count()).
-	Collisions []Collision
-}
-
-// Collision is one data field that shadows a node method after await.
-type Collision struct {
-	Name, Kind, Value string
 }
 
 type tracker struct {
@@ -75,8 +67,9 @@ type tracker struct {
 	used     map[graph.NodeID]bool
 	usedList []graph.NodeID
 	warnings []SiteWarning
-	collide  []Collision
 	looks    []QueuedLook
+	saved    map[string]int // workspace-relative path → line of its save (E_DUPLICATE)
+	saves    []*pendingSave
 }
 
 func lookupBinding(vm *goja.Runtime) (*binding, bool) {
@@ -97,7 +90,8 @@ func BeginEval(vm *goja.Runtime, ctx context.Context) bool {
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.track = tracker{active: true, ctx: ctx, seen: map[graph.NodeID]bool{}, used: map[graph.NodeID]bool{}}
+	b.track = tracker{active: true, ctx: ctx, seen: map[graph.NodeID]bool{}, used: map[graph.NodeID]bool{}, saved: map[string]int{}}
+	b.unhandled = nil
 	return true
 }
 
@@ -113,7 +107,7 @@ func EndEval(vm *goja.Runtime) EvalTrace {
 	b.track = tracker{}
 	late := b.late
 	b.late = nil
-	return EvalTrace{Created: t.created, Used: t.usedList, Warnings: t.warnings, Collisions: t.collide, Looks: t.looks, Late: late}
+	return EvalTrace{Created: t.created, Used: t.usedList, Warnings: t.warnings, Looks: t.looks, Late: late}
 }
 
 // MarkUsed records ids as used by the current evaluation.
@@ -319,42 +313,4 @@ func DescribeNode(eng *graph.Engine, id graph.NodeID) string {
 		return fmt.Sprintf("[node #%d]", id)
 	}
 	return fmt.Sprintf("[%s #%d %s]", n.Kind, n.ID, graph.Describe(eng.Builder(), graph.Shown(n), 1))
-}
-
-// ENotArray is the error code of array methods called on awaited Regions.
-const ENotArray = "E_NOT_ARRAY"
-
-// __collision(name, kind, value) records a data field that shadows a node
-// method of the same name (for the TypeError translation of the session).
-func (b *binding) collision(c goja.FunctionCall) goja.Value {
-	col := Collision{Name: c.Argument(0).String(), Kind: c.Argument(1).String(), Value: c.Argument(2).String()}
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if !b.track.active {
-		return goja.Undefined()
-	}
-	for _, x := range b.track.collide {
-		if x.Name == col.Name {
-			return goja.Undefined()
-		}
-	}
-	b.track.collide = append(b.track.collide, col)
-	return goja.Undefined()
-}
-
-// __notArray(member) throws E_NOT_ARRAY: awaited Regions are an object with
-// items, not an array. RECV in the fix is replaced by the session with the
-// receiver expression from the failing line.
-func (b *binding) notArray(c goja.FunctionCall) goja.Value {
-	member := c.Argument(0).String()
-	e := graph.Errorf(ENotArray, "Awaited Regions are { count, items: [...] }, not an array.").
-		WithHint("The list of regions is .items; count is .count.")
-	if member == "iterator" {
-		e.Fix = "for (const r of regions.items) { … }"
-	} else {
-		e.Fix = "RECV.items." + member + "(…)"
-	}
-	obj := errorObject(b.vm, e)
-	_ = obj.Set("member", member)
-	panic(obj)
 }

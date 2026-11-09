@@ -46,21 +46,21 @@ return { meanL, clipLow, clipHigh }
 ## Find dust, look at it, heal it
 
 ```js
-const specks = img.detect.specks()
-const dust = specks.where({ score: { gte: 0.5 } })
+const specks = await img.detect.specks()
+const dust = specks.filter(r => r.score >= 0.5)
 const healed = img.heal(dust, { radius: 3 })
 mem.healed = healed
 return {
   verdict: (await img.check.dust()).verdict,
-  found: await dust.count(),
-  notDust: (await specks.where({ score: { lt: 0.5 } })).items.map(r => ({ id: r.id, cx: r.cx, cy: r.cy, sharpness: r.sharpness })),
+  found: dust.length,
+  notDust: specks.filter(r => r.score < 0.5).map(r => ({ id: r.id, cx: r.cx, cy: r.cy, sharpness: r.sharpness })),
   after: (await healed.check.dust()).verdict,
   look: cv.compare([img.overlay(dust, { labels: "id", color: "lime" }), healed], { mode: "side" }).look("dust | healed"),
 }
 ```
 
 Specks scoring below 0.5 are soft, round features (stars, highlights) and are left alone. To keep one real
-detail, drop it by id: `img.heal(dust.without([31]))`.
+detail, drop it: `img.heal(dust.filter(r => r.id !== 31))`.
 
 ## Inspect small defects up close
 
@@ -69,7 +69,7 @@ with coordinate rulers (labels are absolute doc px):
 
 ```js
 const speck = img.view("speck")
-const spots = speck.mask.luminance({ above: 0.5 }).components({ minArea: 4 }).sortBy("area").top(12)
+const spots = (await speck.mask.luminance({ above: 0.5 }).components({ minArea: 4 })).sort((a, b) => b.area - a.area).slice(0, 12)
 return {
   sheet: cv.sheet(spots, { views: [img, speck], size: 32, zoom: 4 }).look("candidates"),
   zoom: img.crop([176, 22, 48, 48]).levels({ auto: true }).look({ zoom: 8, ruler: 8, label: "star 8×" }),
@@ -80,16 +80,17 @@ return {
 
 ## Measure spots, boxes and regions
 
-`img.measure(points)` compares a disk around each point with a ring around it (step, spread, snr, stepChroma: null when |snr| < 1); region items are points, so the specks' own rows come back with their coordinates. `regions.measure(img, { ring: true })` adds the same fields to every region and keeps the ids, ready for `sortBy("snr")`.
+`img.measure(items)` compares a disk at each item's centre with a ring around it, both sized from the item (step, spread, snr, stepChroma: null when |snr| < 1), and returns the items with these fields and their ids; points need `{ coreRadius }`. Sort the awaited array with JavaScript.
 
 ```js
-const specks = img.detect.specks().sortBy("area").top(3)
-const rows = await img.measure((await specks).items)
-const ranked = await specks.measure(img, { ring: true, prefix: "lin" }).sortBy("linSnr")
+const specks = (await img.detect.specks()).sort((a, b) => b.area - a.area).slice(0, 3)
+const lin = img.as("linear")
+const ranked = (await lin.measure(specks)).sort((a, b) => b.snr - a.snr)
+const [star] = await lin.measure([[200.5, 46.5]], { coreRadius: 3 })
 return {
-  rows: rows.map(r => [r.cx, r.cy, r.step.toFixed(3), r.snr.toFixed(2)].join(" ")),
-  ranked: ranked.items.map(r => r.id),
-  table: cv.csv(ranked, { name: "ranked" }),
+  rows: ranked.map(r => [r.id, r.cx, r.cy, r.step.toFixed(3), r.snr.toFixed(2)].join(" ")),
+  star: star.snr.toFixed(2),
+  table: (await cv.save("ranked.csv", lin.measure(specks))).rows,
 }
 ```
 

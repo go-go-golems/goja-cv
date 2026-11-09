@@ -23,83 +23,16 @@ type binding struct {
 	mu       sync.Mutex
 	warnings []graph.Warning
 
-	// funcs holds the JavaScript functions passed as data lambdas, by id.
-	// Only the owner goroutine reads or writes it.
-	funcs    map[graph.FuncID]goja.Callable
-	nextFunc graph.FuncID
-	track    tracker        // per-eval state (evaltrack.go)
-	late     []QueuedLook   // looks created while no eval was running (evaltrack.go)
-	opened   []graph.NodeID // sources opened with cv.open
-	// itemProto is the prototype of region items (prelude: throwing
-	// accessors for removed field names); owner goroutine only.
-	itemProto *goja.Object
+	track     tracker        // per-eval state (evaltrack.go)
+	late      []QueuedLook   // looks created while no eval was running (evaltrack.go)
+	opened    []graph.NodeID // sources opened with cv.open
+	unhandled map[*goja.Promise]bool
 }
-
-var _ graph.Callbacks = &binding{}
 
 func newBinding(vm *goja.Runtime, eng *graph.Engine) *binding {
-	b := &binding{vm: vm, eng: eng, funcs: map[graph.FuncID]goja.Callable{}}
-	eng.Evaluator().SetCallbacks(b)
+	b := &binding{vm: vm, eng: eng}
+	b.trackRejections()
 	return b
-}
-
-// __func(fn) → id: registers a data lambda. The prelude caches ids per
-// function object, so passing the same function twice gives the same node.
-func (b *binding) funcJS(c goja.FunctionCall) goja.Value {
-	fn, ok := goja.AssertFunction(c.Argument(0))
-	if !ok {
-		b.throw(graph.Errorf(graph.EArgType, "expected a function"))
-	}
-	b.nextFunc++
-	b.funcs[b.nextFunc] = fn
-	return b.vm.ToValue(int64(b.nextFunc))
-}
-
-// CallEach runs data lambda id on the runtime owner goroutine, once per
-// argument (converted to fresh JS objects), and returns the exported
-// results. It is called from evaluation goroutines, never from the owner
-// (evaluation started from JavaScript always runs off the owner), so
-// Owner.Call can schedule onto the idle event loop.
-func (b *binding) CallEach(ctx context.Context, id graph.FuncID, args []any) ([]any, error) {
-	svc, ok := runtimebridge.Lookup(b.vm)
-	if !ok || svc.Owner == nil {
-		return nil, graph.Errorf(graph.EInternal, "cv: runtime services missing; data lambdas need a go-go-goja runtime")
-	}
-	res, err := svc.Owner.Call(ctx, "cv.datalambda", func(_ context.Context, vm *goja.Runtime) (any, error) {
-		fn, ok := b.funcs[id]
-		if !ok {
-			return nil, graph.Errorf(graph.EInternal, "data lambda #%d is not registered", id)
-		}
-		out := make([]any, len(args))
-		for i, a := range args {
-			arg := toJS(vm, a)
-			if o, ok := arg.(*goja.Object); ok && b.itemProto != nil {
-				if _, isRec := a.(graph.Record); isRec {
-					_ = o.SetPrototype(b.itemProto)
-				}
-			}
-			v, err := fn(goja.Undefined(), arg)
-			if err != nil {
-				if ce, ok := graph.AsError(jsError(err)); ok {
-					return nil, ce
-				}
-				return nil, graph.Errorf(graph.EEval, "the function passed to filter threw on item %d: %v", i, err).
-					WithHint(fmt.Sprintf("The function receives one region's data: { %s, … }.", strings.Join(graph.FieldNames(graph.GeometryFields), ", ")))
-			}
-			out[i] = graph.Normalize(v.Export())
-		}
-		return out, nil
-	})
-	if err != nil {
-		if ce, ok := graph.AsError(err); ok {
-			return nil, ce
-		}
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
-		}
-		return nil, graph.Errorf(graph.EEval, "data lambda: %v", err)
-	}
-	return res.([]any), nil
 }
 
 func (b *binding) object() *goja.Object {
@@ -115,18 +48,11 @@ func (b *binding) object() *goja.Object {
 	set("__notAwaited", b.notAwaited)
 	set("__immutable", b.immutable)
 	set("__help", b.help)
-	set("__func", b.funcJS)
 	set("__builders", b.builders)
 	set("__placeholder", b.placeholder)
 	set("__look", b.look)
-	set("__save", b.saveNode)
-	set("__data", b.dataJS)
+	set("__save", b.save)
 	b.addDocs(o)
-	set("__removedFields", b.removedFields)
-	set("__noField", b.noField)
-	set("__itemProto", b.itemProtoJS)
-	set("__collision", b.collision)
-	set("__notArray", b.notArray)
 	return o
 }
 
@@ -298,9 +224,9 @@ func (b *binding) open(c goja.FunctionCall) goja.Value {
 				WithFix(`cv.open("scan.tif", { encoding: "linear" })`))
 		}
 		opts = m
-		if _, ok := m["as"]; ok {
-			b.throw(graph.Errorf(graph.EUnknownOption, "cv.open has no option \"as\" here: names exist only in eval sessions.").
-				WithHint("In a goja-cv eval session (CLI eval/run, the MCP server) cv.open(path, { as: \"ref\" }) binds a global; here keep the node in a variable.").
+		if _, ok := m["name"]; ok {
+			b.throw(graph.Errorf(graph.EUnknownOption, "cv.open has no option \"name\" here: names exist only in eval sessions.").
+				WithHint("In a goja-cv eval session (CLI eval/run, the MCP server) cv.open(path, { name: \"ref\" }) binds a global; here keep the node in a variable.").
 				WithFix(fmt.Sprintf("const ref = cv.open(%q)", p.String())))
 		}
 	}
@@ -341,7 +267,7 @@ func (b *binding) evaluate(c goja.FunctionCall) goja.Value {
 		if callCtx.Err() != nil {
 			settleCtx = svc.Lifetime() // still reject, so awaiting code sees E_CANCELLED
 		}
-		_ = svc.PostWithCustomContext(settleCtx, "cv.evaluate.settle", func(_ context.Context, vm *goja.Runtime) {
+		_ = svc.PostWithCustomContext(settleCtx, "cv.await.settle", func(_ context.Context, vm *goja.Runtime) {
 			if err != nil {
 				_ = reject(errorObject(vm, err))
 				return
@@ -363,12 +289,12 @@ func (b *binding) evaluate(c goja.FunctionCall) goja.Value {
 
 func resultToJS(vm *goja.Runtime, v graph.Value, n *graph.Node) (goja.Value, error) {
 	switch x := v.(type) {
-	case *graph.RegionsValue:
-		s, err := x.Summary()
+	case *graph.RegionsValue: // an array of items (the prelude links each to [node, index])
+		items, err := x.Records()
 		if err != nil {
 			return nil, err
 		}
-		return toJS(vm, s), nil
+		return toJS(vm, items), nil
 	case *graph.DataValue:
 		return toJS(vm, graph.OrderBySchema(x.Data, n.Fields)), nil
 	}
@@ -438,7 +364,7 @@ func (b *binding) notAwaited(c goja.FunctionCall) goja.Value {
 		}
 	case n.Kind == graph.KindRegions && b.takesRegions(prop):
 		e = graph.Errorf(graph.ENotAwaited, "%s is a lazy Regions node and has no method %q: regions are arguments of image methods.", call, prop)
-		e.Hint = "Pass the regions to the image method."
+		e.Hint = "Pass the regions (the node, or the awaited array) to the image method."
 		e.Fix = fmt.Sprintf("img.%s(regions, …)", prop)
 	case len(b.eng.Registry().Find(prop)) > 0 && !hasField(n, prop):
 		// a method of another kind (stats().exposure, regions.feather): the cross-kind hint
@@ -467,9 +393,6 @@ func sampleField(n *graph.Node) string {
 	if len(n.Fields) > 0 {
 		return n.Fields[0].Name
 	}
-	if n.Kind == graph.KindRegions {
-		return "items"
-	}
 	return "<field>"
 }
 
@@ -479,15 +402,15 @@ func hasField(n *graph.Node, name string) bool {
 }
 
 // takesRegions reports whether name is an Image method with a positional
-// argument that takes regions (overlay, heal, measure): regions are passed
-// to it, not called on.
+// argument that takes items (overlay, heal, measure): regions are passed to
+// it, not called on.
 func (b *binding) takesRegions(name string) bool {
 	op, ok := b.eng.Registry().Lookup(graph.KindImage, name)
 	if !ok {
 		return false
 	}
 	for _, s := range op.Args {
-		if s.Positional && strings.Contains(s.Type, string(graph.KindRegions)) {
+		if s.Positional && strings.Contains(s.Type, graph.ItemsType) {
 			return true
 		}
 	}

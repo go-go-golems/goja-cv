@@ -27,29 +27,15 @@ var schemaCalls = map[string]func(s schemaNodes) (graph.NodeID, []any){
 		return s.img.ID, []any{[]any{[]any{10.5, 10.5}, []any{-5.0, 3.0}, map[string]any{"cx": 100.0, "cy": 50.0}}, map[string]any{"radius": 2}}
 	},
 	"Image:measure": func(s schemaNodes) (graph.NodeID, []any) {
-		return s.img.ID, []any{[]any{[]any{200.5, 46.5}, []any{1.0, 1.0}, []any{-40.0, 10.0}}}
+		return s.img.ID, []any{graph.NodeArg{ID: s.specks.ID}, map[string]any{"stats": []any{"max", "p90"}, "channels": true, "ring": true, "prefix": "img"}}
 	},
 	"Image:profile": func(s schemaNodes) (graph.NodeID, []any) {
 		return s.img.ID, []any{[]any{190.0, 46.5}, []any{212.0, 46.5}, map[string]any{"width": 3}}
 	},
-	"Regions:where": func(s schemaNodes) (graph.NodeID, []any) {
-		return s.specks.ID, []any{map[string]any{"score": map[string]any{"gte": 0.2}}}
-	},
-	"Regions:only":    func(s schemaNodes) (graph.NodeID, []any) { return s.specks.ID, []any{[]any{1, 2, 3}} },
-	"Regions:without": func(s schemaNodes) (graph.NodeID, []any) { return s.specks.ID, []any{1} },
-	"Regions:sortBy":  func(s schemaNodes) (graph.NodeID, []any) { return s.specks.ID, []any{"contrast"} },
-	"Regions:top":     func(s schemaNodes) (graph.NodeID, []any) { return s.specks.ID, []any{5} },
-	"Regions:measure": func(s schemaNodes) (graph.NodeID, []any) {
-		return s.specks.ID, []any{graph.NodeArg{ID: s.img.ID}, map[string]any{"stats": []any{"max", "p90"}, "channels": true, "ring": true, "prefix": "img"}}
-	},
 }
 
-// schemaScalar are Value ops whose result is a number or a derived value of
-// their receiver, and ops the Go-only walk cannot run (data lambdas).
-var schemaScalar = map[string]bool{
-	"count": true, "coverage": true, "explain": true,
-	"filter": true, // a data lambda: covered by the runtime tests (TestRegionItemsAreFlat)
-}
+// schemaScalar are Value ops whose result is a number.
+var schemaScalar = map[string]bool{"coverage": true}
 
 // checkKeys reports keys that are not in the schema and required schema
 // fields that are missing.
@@ -80,8 +66,7 @@ func mapKeys(m map[string]any) []string {
 
 // TestSchemaProperty: for every op returning Regions or Value rows/objects,
 // the keys of its items, rows or object are the names of its node's Fields
-// (optional ones may be absent), and every Regions field is accepted by
-// where and sortBy.
+// (optional ones may be absent), in schema order for items.
 func TestSchemaProperty(t *testing.T) {
 	e, img, _ := plantedEngine(t)
 	s := schemaNodes{img: img, mask: call(t, e, "mask.luminance", img.ID, map[string]any{"above": 0.75})}
@@ -120,22 +105,6 @@ func TestSchemaProperty(t *testing.T) {
 					t.Errorf("%s: item keys %v are not in schema order %v", op.Key(), d.Keys, graph.FieldNames(n.Fields))
 				}
 			}
-			for _, f := range n.Fields {
-				pred := map[string]any{f.Name: map[string]any{"gte": -1e9}}
-				if f.Type == "string" {
-					pred = map[string]any{f.Name: "x"}
-				} else if _, err := e.Call("sortBy", n.ID, []any{f.Name}); err != nil {
-					t.Errorf("%s: sortBy(%q): %v", op.Key(), f.Name, err)
-				}
-				w, err := e.Call("where", n.ID, []any{pred})
-				if err != nil {
-					t.Errorf("%s: where(%s): %v", op.Key(), f.Name, err)
-					continue
-				}
-				if _, err := e.Evaluate(ctx, w.Node().ID, graph.EvalOptions{Scale: 1}); err != nil {
-					t.Errorf("%s: where(%s) at evaluation: %v", op.Key(), f.Name, err)
-				}
-			}
 		case *graph.DataValue:
 			switch d := x.Data.(type) {
 			case map[string]any:
@@ -159,21 +128,25 @@ func TestSchemaProperty(t *testing.T) {
 	checkKeys(t, "stats({ box })", mapKeys(d), st.Fields)
 }
 
-// TestRegionFieldsFollowTheReceiver: filters keep their receiver's schema,
-// and a field of another producer is refused at build time with its source.
-func TestRegionFieldsFollowTheReceiver(t *testing.T) {
+// TestItemFieldsFollowTheirSet: an array of linked items has its set's
+// schema (plus label when an item has one); literal items have the
+// geometry (plus r for circles); measure appends its fields.
+func TestItemFieldsFollowTheirSet(t *testing.T) {
 	e, img, _ := plantedEngine(t)
 	comps := call(t, e, "components", call(t, e, "mask.luminance", img.ID, map[string]any{"above": 0.75}).ID)
-	top := call(t, e, "top", call(t, e, "sortBy", comps.ID, "area").ID, 3)
-	if got := strings.Join(graph.FieldNames(top.Fields), ","); got != "id,x,y,w,h,cx,cy,area,aspect" {
-		t.Fatalf("components().sortBy().top() fields %s", got)
+	items := linked(t, e, comps, 0, 1)
+	items[0].(map[string]any)["label"] = "a"
+	m := call(t, e, "measure", img.ID, items, map[string]any{"stats": []any{"mean"}})
+	if got := strings.Join(graph.FieldNames(m.Fields), ","); got != "id,x,y,w,h,cx,cy,area,aspect,label,meanL" {
+		t.Fatalf("measure(linked items) fields %s", got)
 	}
-	ce := callErr(t, e, "sortBy", top.ID, "snr")
-	if ce.Code != graph.EUnknownOption || !strings.Contains(ce.Message, "id, x, y, w, h, cx, cy, area, aspect") {
-		t.Fatalf("sortBy(snr): %+v", ce)
+	lit := call(t, e, "measure", img.ID, []any{[]any{1.0, 2.0, 3.0, 4.0}, map[string]any{"cx": 50.0, "cy": 50.0, "r": 4.0}})
+	if got := strings.Join(graph.FieldNames(lit.Fields)[:10], ","); got != "id,x,y,w,h,cx,cy,area,aspect,r" {
+		t.Fatalf("measure(literal items) fields %s", got)
 	}
-	if ce := callErr(t, e, "sortBy", call(t, e, "detect.specks", img.ID).ID, "polarity"); ce.Code != graph.EArgType {
-		t.Fatalf("sortBy of a string field: %+v", ce)
+	rv := regionsAtScale1(t, e, lit)
+	if d := rv.Items[1].Data(lit.Fields).Vals; d["id"] != 2.0 || d["r"] != 4.0 || d["w"] != 8.0 {
+		t.Fatalf("circle item %v", d)
 	}
 	h, err := e.Registry().Help("detect.specks")
 	if err != nil {

@@ -9,7 +9,8 @@ import "github.com/go-go-golems/goja-cv/pkg/cv/buffer"
 
 // SourceMeta is what Go knows about an opened file.
 type SourceMeta struct {
-	Path  string      `json:"path"`  // the absolute path (GCV-004 Phase 6 replaces it by a workspace location)
+	Loc   Location    `json:"loc"`   // which root and the name in it (§7.8)
+	Name  string      `json:"name"`  // how the agent sees the file: workspace-relative, or absolute in a read directory
 	Stamp string      `json:"stamp"` // size and modification time
 	Info  buffer.Info `json:"info"`  // the header: size, format, bits, channels, sample, origin, notes
 	// FileEncoding is the encoding the file declares (Info.Encoding, which

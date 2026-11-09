@@ -63,18 +63,18 @@ return "four delivered; LOOKS names two"
 
 ## Formats
 
-`format: "auto"` sends PNG for gray images, masks, zoomed looks, sheets and looks up to 512 × 512 px, JPEG (q85) for larger colour looks. JPEG ringing is the size of small specks: use `format: "png"` for fine detail in a large colour look.
+`format: "auto"` sends PNG for gray images, masks, zoomed looks, sheets and looks up to 512 × 512 px, JPEG (q85) for larger colour looks. JPEG ringing is the size of small specks: use `format: "png"` for fine detail.
 
 ## Contact sheets
 
-`cv.sheet(items, { views, size, zoom })` is one image of many magnified crops: a cell per region (centred on its centroid), point or box, labelled with the id and the centre in doc px; several views show each item side by side. At the defaults (64 px windows at zoom 4) 36 cells fit one look (18 items with two views). A sheet is a picture: use the labels' coordinates, not its pixels.
+`cv.sheet(items, { views, size, zoom })` is one image of many magnified crops: a cell per item (regions, boxes, circles, points), labelled with its label (else id) and centre in doc px; several views show each item side by side. At the defaults (64 px windows at zoom 4) 36 cells fit one look (18 items with two views). A sheet is a picture: use the labels' coordinates, not its pixels.
 
 ```js looks=1
 const spots = img.view("speck").mask.luminance({ above: 0.5 }).components({ minArea: 4 })
-return cv.sheet(spots.sortBy("area").top(6), { views: [img, img.view("speck")], size: 32, zoom: 4 }).look("candidates")
+return cv.sheet((await spots).sort((a, b) => b.area - a.area).slice(0, 6), { views: [img, img.view("speck")], size: 32, zoom: 4 }).look("candidates")
 ```
 
-More items than cells are cut (`SHEET_TRUNCATED`): sort and `top(n)` first. `stretch: "cell"` stretches each cell alone.
+More items than cells are cut (`SHEET_TRUNCATED`): sort and slice first. `stretch: "cell"` stretches each cell alone.
 
 ## What a look shows
 

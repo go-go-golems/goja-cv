@@ -35,7 +35,7 @@ var openLinearEnc = &graph.ResultEnc{
 // values (downsampling averages light). It must not be modified.
 func pyramidLevel(ctx context.Context, ec *graph.EvalCtx, a graph.Args) (*buffer.Buffer, error) {
 	m := graph.Meta[graph.SourceMeta](a)
-	k := graph.SourceKey{Path: m.Path, Stamp: m.Stamp, Enc: ec.Node.Enc}
+	k := graph.SourceKey{Loc: m.Loc, Name: m.Name, Stamp: m.Stamp, Enc: ec.Node.Enc}
 	if a.Has("box") {
 		b := a.Numbers("box")
 		k.Box = &[4]int{int(b[0]), int(b[1]), int(b[2]), int(b[3])}
@@ -118,7 +118,7 @@ func fileChannels(a graph.Args) int { return graph.Meta[graph.SourceMeta](a).Inf
 // openArgs are the arguments of cv.open (and of its linear view).
 var openArgs = []graph.ArgSpec{
 	{Name: "path", Type: "string", Positional: true, Doc: "image file: " + buffer.SupportedFormats},
-	{Name: "encoding", Type: "enum:srgb,linear", Optional: true, ValueSynonyms: graph.EncodingValueSynonyms,
+	{Name: "encoding", Type: "enum:srgb,linear", Optional: true,
 		Doc: "how to read the file's values: srgb (photographs) or linear (scientific data, raw scans, density maps); omit it to use what the file says"},
 	{Name: "box", Type: "box", Optional: true,
 		Doc: "read only this window [x, y, w, h] of the file (file px); the image keeps the file's coordinates"},

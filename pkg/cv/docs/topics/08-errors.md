@@ -27,11 +27,11 @@ error:
 
 | code | meaning | usual fix |
 |---|---|---|
-| E_UNKNOWN_METHOD | no such method on this kind | the `fix`; synonyms are mapped (`blur` → `gaussian`, `brightness` → `exposure`) |
+| E_UNKNOWN_METHOD | no such method on this kind | the `fix`: a close name (`gausian` → `gaussian`), the kind that has it, or for names agents often try (`export`, `save`, `zoom`) the call that does it |
 | E_NAMESPACE | the method lives in a namespace | `img.mask.luminance`, `img.detect.specks` |
-| E_UNKNOWN_OPTION | an option key is misspelt or named differently (`min` → `above`, `radius` → `sigma` on a blur, `opacity` → `alpha`) | the `fix` / `valid` list |
+| E_UNKNOWN_OPTION | an option key is misspelt or named differently (`min` → `above` on mask.luminance, `look({ box })` → a crop) | the `fix` / `valid` list |
 | E_ARG_TYPE, E_ARG_RANGE | wrong type or outside the hard limits (a disk above 64 doc px in `erode`/`dilate`) | read `cv.help(op)`; for a large disk crop first, or `x.dilate(64).dilate(36)` |
-| E_WRONG_KIND | the receiver or an input has the wrong kind or channel count (`img.erode(2)` on colour) | a mask is one channel: `.toGray()` (`img.toGray().erode(2)`); convert: `.toMask()`, `.components()` |
+| E_WRONG_KIND | the receiver or an input has the wrong kind or channel count (`img.erode(2)` on colour) | a mask is one channel: `.toGray()` (`img.toGray().erode(2)`); convert: `img.mask.regions(items)`, `.components()` |
 | E_NOT_AWAITED | a property of, or a number from, a lazy Value or Regions node (`img.stats().p99`, `img.stats() > 0.5`) | `(await img.stats()).p99` |
 | E_ARG_TYPE (a node as an option) | options are literal values: `levels({ white: d.stats() })` | `levels({ white: (await d.stats()).p99 })` |
 | E_NO_IMAGE | no image is open | `img = cv.open("scan.tif")` |
@@ -54,7 +54,9 @@ return await img.toGray().dilate(100).stats()   // fix: img.dilate(64).dilate(36
 
 - `RANGE line N: …` an argument is outside its usual range (it still runs). The same warning from a loop is listed once with `(×N)`.
 - `UNUSED_NODE line N: …` a node was built and discarded (see `cv.docs.read("nodes-and-evaluation")`).
-- `LOOKS: …` / `DATA: …` more than 4 looks (or 4 data items) in one eval: the extra ones, named by label, were not delivered. Split the work over several calls, or return fewer (one `cv.sheet` of many crops, one table with every row).
+- `LOOKS line N: …` more than 4 looks in one eval: the extra ones, named by line, were not rendered. Split the work over several calls, or return one `cv.sheet` of many crops.
+- `ITEMS line N: …` objects that look like region items lost their link (a `map` that built new objects); they are used as plain boxes.
+- `UNHANDLED: …` a promise was rejected and nothing handled it (an unawaited call that failed); await it or add `.catch`. An unawaited `cv.save` that fails fails the eval instead.
 
 ```js warns=RANGE
 const loud = img.exposure(4)
@@ -63,10 +65,10 @@ return (await loud.stats()).meanL
 
 ## Help
 
-`cv.help(name)` never throws, so you can ask for several names in one eval. It takes an op (`"levels"`, `"detect.specks"`: arguments with units, defaults, usual ranges and limits), a kind (`"Regions"`: its methods with one line each), `Kind.method` (`"Regions.filter"`) or a cv function (`"evaluate"`, `"compare"`, `"docs"`, `"show"`). An unknown name returns `{ found: false, name, didYouMean, hint }`.
+`cv.help(name)` never throws, so you can ask for several names in one eval. It takes an op (`"levels"`, `"detect.specks"`: arguments with units, defaults, usual ranges and limits), a kind (`"Image"`: its methods with one line each), `Kind.method` (`"Image.overlay"`), a concept (`"mask"`, `"regions"`, `"space"`) or a cv function (`"save"`, `"compare"`, `"docs"`, `"look"`). An unknown name returns `{ found: false, name, didYouMean, hint }`.
 
 ```js
-const names = ["detect.specks", "Regions", "Regions.filter", "evaluate", "mask.stats"]
+const names = ["detect.specks", "regions", "Regions.filter", "save", "mask.stats"]
 return names.map(n => {
   const h = cv.help(n)
   return h.found === false ? { n, didYouMean: h.didYouMean, hint: h.hint } : { n, keys: Object.keys(h) }

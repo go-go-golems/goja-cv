@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-go-golems/goja-cv/internal/testimage"
 	"github.com/go-go-golems/goja-cv/pkg/cv/graph"
+	"github.com/go-go-golems/goja-cv/pkg/cv/graph/graphtest"
 )
 
 // plantedEngine writes the planted-fault scan as a 16-bit TIFF and opens it.
@@ -18,7 +19,7 @@ func plantedEngine(t *testing.T) (*graph.Engine, *graph.Node, testimage.Planted)
 	if err != nil {
 		t.Fatal(err)
 	}
-	e := graph.NewEngine(NewRegistry(), graph.EngineOptions{})
+	e := graph.NewEngine(NewRegistry(), graphtest.Options(t))
 	img, err := e.Open(path, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -56,9 +57,13 @@ func matchSpecks(rv *graph.RegionsValue, p testimage.Planted) (int, int, bool) {
 func TestDetectSpecksOnPlantedScan(t *testing.T) {
 	e, img, p := plantedEngine(t)
 	specks := call(t, e, "detect.specks", img.ID)
-	keep := call(t, e, "where", specks.ID, map[string]any{"score": map[string]any{"gte": DustScore}})
 	all := regionsAt(t, e, specks, 1)
-	kept := regionsAt(t, e, keep, 1)
+	kept := &graph.RegionsValue{}
+	for _, r := range all.Items {
+		if isDust(r) {
+			kept.Items = append(kept.Items, r)
+		}
+	}
 	fAll, fpAll, starAll := matchSpecks(all, p)
 	found, fp, star := matchSpecks(kept, p)
 	t.Logf("planted %d specks + 1 star; candidates %d (found %d, fp %d, star %v); score ≥ %.1f: %d (found %d, fp %d, star %v)",
@@ -85,21 +90,25 @@ func TestDetectSpecksOnPlantedScan(t *testing.T) {
 		t.Fatalf("polarity dark %d bright %d", dark, bright)
 	}
 	// doc-px identity: the same regions at preview scale 0.5 and at 1.0
-	half := regionsAt(t, e, keep, 0.5)
-	if len(half.Items) != len(kept.Items) {
-		t.Fatalf("count differs: %d vs %d", len(half.Items), len(kept.Items))
+	half := regionsAt(t, e, specks, 0.5)
+	if len(half.Items) != len(all.Items) {
+		t.Fatalf("count differs: %d vs %d", len(half.Items), len(all.Items))
 	}
 	for i := range half.Items {
-		if half.Items[i].ID != kept.Items[i].ID || half.Items[i].Box != kept.Items[i].Box || half.Items[i].Centroid != kept.Items[i].Centroid {
-			t.Fatalf("region %d differs between scales: %+v vs %+v", i, half.Items[i], kept.Items[i])
+		if half.Items[i].ID != all.Items[i].ID || half.Items[i].Box != all.Items[i].Box || half.Items[i].Centroid != all.Items[i].Centroid {
+			t.Fatalf("region %d differs between scales: %+v vs %+v", i, half.Items[i], all.Items[i])
 		}
 	}
 	if e.Evaluator().Runs(specks.ID) != 1 {
 		t.Fatalf("detect.specks ran %d times for two scales", e.Evaluator().Runs(specks.ID))
 	}
 	// analysing at half resolution still finds most specks, in doc px
-	lo := regionsAt(t, e, call(t, e, "where", call(t, e, "detect.specks", img.ID, map[string]any{"analysisScale": 0.5}).ID,
-		map[string]any{"score": map[string]any{"gte": DustScore}}), 1)
+	lo := &graph.RegionsValue{}
+	for _, r := range regionsAt(t, e, call(t, e, "detect.specks", img.ID, map[string]any{"analysisScale": 0.5}), 1).Items {
+		if isDust(r) {
+			lo.Items = append(lo.Items, r)
+		}
+	}
 	fLo, fpLo, starLo := matchSpecks(lo, p)
 	t.Logf("analysisScale 0.5: %d regions, found %d, fp %d, star %v", len(lo.Items), fLo, fpLo, starLo)
 	if fLo < 30 || fpLo > 3 {

@@ -106,7 +106,7 @@ func TestDecodersMatchTheirGeneratingBuffer(t *testing.T) {
 	for _, f := range fixtures() {
 		t.Run(f.name, func(t *testing.T) {
 			p := writeFixture(t, dir, f, src)
-			info, err := buffer.ProbeFile(p)
+			info, err := probePath(p)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -117,7 +117,7 @@ func TestDecodersMatchTheirGeneratingBuffer(t *testing.T) {
 			if f.note != "" && !strings.Contains(strings.Join(info.Notes, "; "), f.note) {
 				t.Fatalf("notes %v lack %q", info.Notes, f.note)
 			}
-			got, dinfo, err := buffer.DecodeFile(ctx, p, buffer.DecodeOptions{})
+			got, dinfo, err := decodePath(ctx, p, buffer.DecodeOptions{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -125,7 +125,7 @@ func TestDecodersMatchTheirGeneratingBuffer(t *testing.T) {
 				t.Fatalf("decode info %+v differs from probe %+v", dinfo, info)
 			}
 			compare(t, "full", got, src, full, f.tol)
-			win, _, err := buffer.DecodeFile(ctx, p, buffer.DecodeOptions{Box: &box})
+			win, _, err := decodePath(ctx, p, buffer.DecodeOptions{Box: &box})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -149,7 +149,7 @@ func TestOneChannelFixtures(t *testing.T) {
 		{name: "npy", file: "g.npy", write: func(p string, b *buffer.Buffer) error { return testimage.WriteNPY(p, b, "<f4") }},
 	} {
 		p := writeFixture(t, dir, f, src)
-		got, info, err := buffer.DecodeFile(ctx, p, buffer.DecodeOptions{})
+		got, info, err := decodePath(ctx, p, buffer.DecodeOptions{})
 		if err != nil || info.Channels != 1 {
 			t.Fatalf("%s: %v %+v", f.name, err, info)
 		}
@@ -164,7 +164,7 @@ func TestRecordedMetadata(t *testing.T) {
 	if err := testimage.WriteTIFF(p, src, testimage.TIFFOptions{Bits: 16, Description: "goja-cv encoding=linear origin=1536,1536"}); err != nil {
 		t.Fatal(err)
 	}
-	info, err := buffer.ProbeFile(p)
+	info, err := probePath(p)
 	if err != nil || info.Encoding != buffer.EncLinear || info.Origin == nil || *info.Origin != [2]int{1536, 1536} {
 		t.Fatalf("ImageDescription metadata: %+v %v", info, err)
 	}
@@ -175,7 +175,7 @@ func TestRecordedMetadata(t *testing.T) {
 	if err := testimage.WriteTIFF(p, src, testimage.TIFFOptions{Bits: 16, Description: "VueScan 9"}); err != nil {
 		t.Fatal(err)
 	}
-	if info, _ := buffer.ProbeFile(p); info.Encoding != buffer.EncSRGB || info.Origin != nil {
+	if info, _ := probePath(p); info.Encoding != buffer.EncSRGB || info.Origin != nil {
 		t.Fatalf("foreign description: %+v", info)
 	}
 
@@ -202,11 +202,11 @@ func TestRecordedMetadata(t *testing.T) {
 		if err := os.WriteFile(p, withChunks(pb.Bytes(), tc.chunks), 0o644); err != nil { // #nosec G306 -- test data
 			t.Fatal(err)
 		}
-		info, err := buffer.ProbeFile(p)
+		info, err := probePath(p)
 		if err != nil || info.Encoding != tc.enc || (tc.origin == nil) != (info.Origin == nil) || (tc.origin != nil && *tc.origin != *info.Origin) {
 			t.Fatalf("%s: %+v %v", tc.name, info, err)
 		}
-		if _, _, err := buffer.DecodeFile(context.Background(), p, buffer.DecodeOptions{}); err != nil {
+		if _, _, err := decodePath(context.Background(), p, buffer.DecodeOptions{}); err != nil {
 			t.Fatalf("%s: decode: %v", tc.name, err)
 		}
 	}
@@ -235,7 +235,7 @@ func TestUnsupportedFeaturesAreFormatErrors(t *testing.T) {
 	if err := testimage.WriteDNG(p, src, testimage.DNGOptions{CFA: true}); err != nil {
 		t.Fatal(err)
 	}
-	_, err := buffer.ProbeFile(p)
+	_, err := probePath(p)
 	if fe, ok := buffer.IsFormatError(err); !ok || !strings.Contains(fe.Feature, "CFA (mosaiced) raw data is not supported") {
 		t.Fatalf("CFA: %v", err)
 	}
@@ -251,7 +251,7 @@ func TestUnsupportedFeaturesAreFormatErrors(t *testing.T) {
 		if err := os.WriteFile(p, data, 0o644); err != nil { // #nosec G306 -- test data
 			t.Fatal(err)
 		}
-		if _, err := buffer.ProbeFile(p); err == nil {
+		if _, err := probePath(p); err == nil {
 			t.Errorf("%s: no error", name)
 		} else if _, ok := buffer.IsFormatError(err); !ok {
 			t.Errorf("%s: not a format error: %v", name, err)
@@ -296,10 +296,10 @@ func FuzzTIFFProbe(f *testing.F) {
 		if err := os.WriteFile(p, data, 0o644); err != nil { // #nosec G306 -- test data
 			t.Fatal(err)
 		}
-		if _, err := buffer.ProbeFile(p); err != nil {
+		if _, err := probePath(p); err != nil {
 			return
 		}
-		_, _, _ = buffer.DecodeFile(context.Background(), p, buffer.DecodeOptions{}) // must not panic
+		_, _, _ = decodePath(context.Background(), p, buffer.DecodeOptions{}) // must not panic
 	})
 }
 
@@ -314,10 +314,10 @@ func FuzzNPYProbe(f *testing.F) {
 		if err := os.WriteFile(p, data, 0o644); err != nil { // #nosec G306 -- test data
 			t.Fatal(err)
 		}
-		if _, err := buffer.ProbeFile(p); err != nil {
+		if _, err := probePath(p); err != nil {
 			return
 		}
-		_, _, _ = buffer.DecodeFile(context.Background(), p, buffer.DecodeOptions{}) // must not panic
+		_, _, _ = decodePath(context.Background(), p, buffer.DecodeOptions{}) // must not panic
 	})
 }
 
@@ -348,7 +348,7 @@ func TestTIFFEmptyBitsPerSample(t *testing.T) {
 	if err := os.WriteFile(p, b, 0o644); err != nil { // #nosec G306 -- test data
 		t.Fatal(err)
 	}
-	if _, err := buffer.ProbeFile(p); err == nil || !strings.Contains(err.Error(), "BitsPerSample") {
+	if _, err := probePath(p); err == nil || !strings.Contains(err.Error(), "BitsPerSample") {
 		t.Fatalf("want a BitsPerSample format error, got %v", err)
 	}
 }

@@ -102,7 +102,7 @@ func selectionWeights(ctx context.Context, v graph.Value, src *graph.ImageValue)
 	var m *buffer.Buffer
 	switch x := v.(type) {
 	case *graph.RegionsValue:
-		if err := graph.SameFrame("stats", x.Frame, src.Frame); err != nil {
+		if err := itemsCover("stats", x, src.Frame); err != nil {
 			return nil, err
 		}
 		var err error
@@ -129,7 +129,7 @@ func measureOps() []graph.OpDef {
 			Args: []graph.ArgSpec{
 				{Name: "percentiles", Type: "number[]", Default: []any{}, Min: graph.F(0), Max: graph.F(1),
 					Doc: "extra luminance/channel percentiles as fractions, e.g. [0.005, 0.995]"},
-				{Name: "mask", Type: "Regions|Mask", Optional: true, Doc: "measure only inside this mask (weighted by it) or these regions"},
+				{Name: "mask", Type: graph.ItemsType + "|" + graph.MaskType, Optional: true, Doc: "measure only inside this mask (weighted by it) or these items (a Regions node or an array: region items, boxes, circles)"},
 				{Name: "box", Type: "box", Unit: graph.DocPx, Optional: true, InFrame: true, Doc: "measure only inside [x, y, w, h] (doc px, absolute in the image's frame); combines with mask"},
 			},
 			Fields: statsFields,
@@ -156,13 +156,14 @@ func measureOps() []graph.OpDef {
 				if err != nil {
 					return nil, graph.Errorf(graph.EArgRange, "histogram: %v", err)
 				}
-				counts := make([]any, len(h.Counts))
+				rows := make([]any, len(h.Counts))
+				n := float64(len(h.Counts))
 				for i, c := range h.Counts {
-					counts[i] = float64(c)
+					rows[i] = map[string]any{"lo": float64(i) / n, "hi": float64(i+1) / n, "count": float64(c)}
 				}
 				return data(map[string]any{
 					"bins": float64(len(h.Counts)), "channel": a.String("channel"), "space": ec.Node.Space.String(),
-					"counts": counts, "under": float64(h.Under), "over": float64(h.Over), "total": float64(h.Total),
+					"under": float64(h.Under), "over": float64(h.Over), "total": float64(h.Total), "rows": rows,
 				}), nil
 			},
 			Doc: "Histogram of the luminance (Rec. 709 of linear light expressed in the image's space) or one channel over equal bins of [0, 1] in the image's space (file units for an opened file: the scale looks show); under/over count values outside it.",

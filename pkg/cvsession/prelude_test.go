@@ -28,12 +28,12 @@ func TestPreludesRunInEverySession(t *testing.T) {
 	img := planted(t)
 	a := writeScript(t, "helpers.js", "mem.double = x => 2 * x\nmem.meanL = async () => (await img.stats()).meanL\nconst s = await img.stats()\nmem.p99 = s.p99\nreturn \"helpers ready\"\n")
 	b := writeScript(t, "more.js", "mem.quad = x => mem.double(mem.double(x))\n")
-	app, sid := newApp(t, cvsession.Options{Image: img, BaseDir: filepath.Dir(img), Preludes: []string{a, b}})
+	app, sid := newApp(t, cvsession.Options{Image: img, Preludes: []string{a, b}})
 	out := mustOK(t, eval(t, app, sid, `return { q: mem.quad(3), m: (await mem.meanL()) > 0, p: mem.p99 > 0 }`))
 	mustContain(t, out, "q: 12", "m: true", "p: true", "mem: double (function), meanL (function), p99 (number), quad (function)")
 	mustNotContain(t, out, "helpers ready")
 
-	cs := connect(t, cvsession.Options{Image: img, BaseDir: filepath.Dir(img), Preludes: []string{a, b}})
+	cs := connect(t, cvsession.Options{Image: img, Preludes: []string{a, b}})
 	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "create_session", Arguments: map[string]any{}})
 	if err != nil || res.IsError {
 		t.Fatalf("create_session: %v %+v", err, res)
@@ -49,7 +49,7 @@ func TestPreludesRunInEverySession(t *testing.T) {
 	}
 
 	bad := writeScript(t, "bad.js", "mem.ok = 1\nconst x = nope.y\n")
-	failing, err := cvsession.New(context.Background(), cvsession.Options{Image: img, BaseDir: filepath.Dir(img), Preludes: []string{a, bad}})
+	failing, err := cvsession.New(context.Background(), cvsession.Options{Image: img, Root: t.TempDir(), Read: []string{filepath.Dir(img)}, Preludes: []string{a, bad}})
 	if err != nil {
 		t.Fatal(err)
 	}

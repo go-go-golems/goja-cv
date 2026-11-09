@@ -180,7 +180,7 @@ func channelOps() []graph.OpDef {
 			Name: "encode", On: graph.KindImage, Returns: graph.KindImage,
 			Space:  graph.Physical,
 			Result: encodeEnc,
-			Args: []graph.ArgSpec{{Name: "to", Type: "enum:srgb,linear", Positional: true, ValueSynonyms: graph.EncodingValueSynonyms,
+			Args: []graph.ArgSpec{{Name: "to", Type: "enum:srgb,linear", Positional: true,
 				Doc: "the encoding the image gets; its linear values do not change"}},
 			Run: func(_ context.Context, _ *graph.EvalCtx, in []graph.Value, _ graph.Args) (graph.Value, error) {
 				return in[0], nil // the same linear values; the evaluator stamps the new encoding on a copy

@@ -40,10 +40,7 @@ func toneOps() []graph.OpDef {
 				{Name: "gamma", Type: "number", Default: 1.0, Min: graph.F(0.01), Max: graph.F(10), Usual: [2]float64{0.2, 5},
 					Doc: "midtone gamma applied to the remapped ramp (> 1 brightens)"},
 				{Name: "auto", Type: "bool|number[]", Optional: true,
-					Doc: "stretch by the image's own percentiles: true = [0.01, 0.99] (p01 → 0, p99 → 1), or [lo, hi] fractions; after a crop, the crop's",
-					Redirects: map[string]graph.Redirect{
-						"box": {Hint: "levels has no box: crop the window, then stretch it by its own pixels.", Fix: "img.crop([x, y, w, h]).levels({ auto: true })"},
-					}},
+					Doc: "stretch by the image's own percentiles: true = [0.01, 0.99] (p01 → 0, p99 → 1), or [lo, hi] fractions; after a crop, the crop's"},
 			},
 			Validate: func(a graph.Args) error {
 				if a.Has("auto") && (a.Has("black") || a.Has("white")) {

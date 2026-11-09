@@ -32,7 +32,7 @@ const MaskType = "Mask"
 // such as "Image" or "Regions|Image" ("Mask" is not a kind: see acceptsNode).
 func accepts(decl Kind, k Kind) bool {
 	for _, d := range strings.Split(string(decl), "|") {
-		if Kind(d) == k {
+		if Kind(d) == k || (d == ItemsType && k == KindRegions) {
 			return true
 		}
 	}
@@ -43,7 +43,7 @@ func accepts(decl Kind, k Kind) bool {
 // "Image", "Mask" (an Image with one channel) or "Regions|Mask".
 func acceptsNode(decl string, n *Node) bool {
 	for _, d := range strings.Split(decl, "|") {
-		if Kind(d) == n.Kind || (d == MaskType && n.Kind == KindImage && n.Channels == 1) {
+		if Kind(d) == n.Kind || (d == MaskType && n.Kind == KindImage && n.Channels == 1) || (d == ItemsType && n.Kind == KindRegions) {
 			return true
 		}
 	}
@@ -146,16 +146,12 @@ var (
 	}
 )
 
-// EncodingValueSynonyms are the value synonyms of encoding arguments.
-var EncodingValueSynonyms = map[string]string{"sRGB": "srgb", "SRGB": "srgb", "gamma": "srgb", "perceptual": "srgb",
-	"lin": "linear", "raw": "linear", "identity": "linear", "none": "linear"}
-
 // ArgSpec declares one argument of an op.
 //
 // Types: "number", "string", "bool", "enum:a,b,c", "number[]", "string[]",
 // "box" ([x, y, w, h] or an object with x, y, w, h), "point" ([x, y] or an
 // object with cx, cy), "data" (a node or plain data, kept as given: the
-// argument of cv.json and cv.csv), unions such as "point|number", "object"
+// x of cv.save), unions such as "point|number", "object"
 // (with Options as the allowed keys), "any", and node types such as
 // "Mask" (an Image with one channel), "Regions|Mask" or "Image[]": a node
 // argument is its own input of
@@ -175,15 +171,12 @@ type ArgSpec struct {
 	Usual      [2]float64 // soft range (zero value = none): violation is a RANGE warning
 	UsualHint  string     // appended to that RANGE warning: what to do instead
 	Options    []ArgSpec  // for "object": the allowed keys (unknown keys are E_UNKNOWN_OPTION)
-	// ValueSynonyms map words agents use for an enum value to the value they
-	// mean (scoped to this argument), for the did-you-mean hint and fix.
-	ValueSynonyms map[string]string
 	// ValueDocs describe the values of an enum (view presets): help lists
 	// them and an unknown value's error names them.
 	ValueDocs map[string]string
-	// Redirects map an unknown option name (looked up over every spec of the
-	// call) or an unknown enum value of this argument to the call that does
-	// it now: look({ box }) → crop, blend({ mode: "difference" }) → sub.
+	// Redirects map an unknown option name agents demonstrably typed (looked
+	// up over every spec of the call; GCV-004 §7.13) to the call that does it:
+	// look({ box }) → crop, mask.luminance({ min }) → above.
 	Redirects map[string]Redirect
 	Doc       string
 }
@@ -267,11 +260,7 @@ type OpDef struct {
 	Internal bool              // not callable from JavaScript, not listed in help (convert)
 	Lossless bool              // looks of its result are PNG by default (format "auto"): contact sheets
 	Chart    ChartKind         // look() of a Value result draws this chart (histogram: bars, profile: lines)
-	// MaxItems is a static upper bound on the item count of a Regions
-	// result (top(n)); ok false when unknown. A sheet sizes
-	// itself by it.
-	MaxItems func(args Args) (n int, ok bool)
-	Bespoke  bool // a module op bound by hand (cv.open, the builder placeholder): the prelude does not generate cv.<name>
+	Bespoke  bool              // a module op bound by hand (cv.open, the builder placeholder): the prelude does not generate cv.<name>
 	// Expand makes the op a macro: a graph of other ops built at intern
 	// time (exactly one of Run and Expand is set). See ExpandFunc.
 	Expand ExpandFunc
@@ -284,14 +273,9 @@ type OpDef struct {
 	// Fields is the schema of the result: the items of a Regions result, the
 	// rows or the object of a Value result (schema.go). It runs at intern
 	// time with the bound args (node arguments are InputRefs; Args carries the
-	// input nodes), and is called with Args without inputs for help. nil: a
-	// Regions op on Regions keeps its receiver's fields; other results have
-	// none.
+	// input nodes), and is called with Args without inputs for help. nil: no
+	// fields.
 	Fields func(a Args) []FieldSpec
-	// Produces maps the field names the op can add with some arguments to
-	// the call that adds them, for the hint of a filter on a field the
-	// receiver lacks ("snr comes from regions.measure(img, { ring: true })").
-	Produces map[string]string
 	// Validate checks bound args at build time (after defaults and types);
 	// the input nodes (their statics, such as Fields) are read through
 	// Args. Errors fail the call.

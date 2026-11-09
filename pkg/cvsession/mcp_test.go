@@ -17,7 +17,7 @@ import (
 func connect(t *testing.T, opts cvsession.Options) *mcp.ClientSession {
 	t.Helper()
 	ctx := context.Background()
-	app, err := cvsession.New(ctx, opts)
+	app, err := cvsession.New(ctx, testWorkspace(t, opts))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +94,7 @@ func TestMCPServerToolsResourcesPrompt(t *testing.T) {
 		t.Fatal(err)
 	}
 	ref := res.Contents[0].Text
-	for _, n := range []string{"## Image methods", "`exposure(ev)` → Image", "`levels(black, white, gamma, auto)`", "`cv.open(path, { encoding, box, origin, as })`"} {
+	for _, n := range []string{"## Image methods", "`exposure(ev)` → Image", "`levels(black, white, gamma, auto)`", "`cv.open(path, { encoding, box, origin, name })`"} {
 		if !strings.Contains(ref, n) {
 			t.Fatalf("reference lacks %q:\n%s", n, ref)
 		}
@@ -112,15 +112,15 @@ func TestMCPServerToolsResourcesPrompt(t *testing.T) {
 	mustContain(t, text, "after: '[look 1: after — open(gradient-64x48-16bit.tif) → exposure(0.5) (64×48, 1 image px = 1.0 doc px)]'",
 		"content 1 look 1: after — open(gradient-64x48-16bit.tif) → exposure(0.5) (64×48, 1 image px = 1.0 doc px): attached (image/png")
 
-	text, images, isErr = callEval(t, cs, "img.look(\"before\")\nreturn img.blur(2)")
+	text, images, isErr = callEval(t, cs, "img.look(\"before\")\nreturn img.gausian(2)")
 	if !isErr || len(images) != 1 {
 		t.Fatalf("error eval: isErr=%v images=%d\n%s", isErr, len(images), text)
 	}
-	mustContain(t, text, "code: E_UNKNOWN_METHOD", "where: 'line 2: return img.blur(2)'", "fix: img.gaussian(…)")
+	mustContain(t, text, "code: E_UNKNOWN_METHOD", "where: 'line 2: return img.gausian(2)'", "fix: img.gaussian(…)")
 }
 
 func TestMCPOpenTool(t *testing.T) {
-	cs := connect(t, cvsession.Options{})
+	cs := connect(t, cvsession.Options{Read: []string{filepath.Dir(pngPath)}})
 	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "open", Arguments: map[string]any{"path": pngPath}})
 	if err != nil {
 		t.Fatal(err)
@@ -284,28 +284,12 @@ func TestAppEvaluateKeepsSessionNotFound(t *testing.T) {
 	}
 }
 
-// TestMCPDataContent: a data item reaches MCP clients as text content; over
-// the MCP byte limit it is a note to save it; looks and data have separate
-// budgets.
-func TestMCPDataContent(t *testing.T) {
-	img := planted(t)
-	cs := connect(t, cvsession.Options{Image: img, BaseDir: filepath.Dir(img), MaxDataBytes: cvsession.MCPMaxDataBytes})
-	text, images, isErr := callEval(t, cs, `return { a: img.look("a"), rows: cv.json([{ x: 1 }, { x: 2 }], { name: "rows" }) }`)
-	if isErr || len(images) != 1 || !strings.Contains(text, `[{"x":1},{"x":2}]`) || !strings.Contains(text, "[content 2: data rows.json (2 items)]") {
-		t.Fatalf("data as text content:\n%s", text)
-	}
-	text, _, _ = callEval(t, cs, `return cv.csv(Array.from({ length: 6000 }, (_, i) => ({ i, a: "0123456789012345678901234567890123456789", b: i * 0.5 })), { name: "big" })`)
-	if !strings.Contains(text, "too large for the conversation") || !strings.Contains(text, `.save("big.csv")`) {
-		t.Fatalf("300 KiB item:\n%.600s", text)
-	}
-}
-
 // TestMCPLooksBeyondTheBudgetWarn: an eval that makes more looks than
 // MaxLooks delivers four images and a LOOKS warning naming the others
 // (returned looks come first, then the shown ones).
 func TestMCPLooksBeyondTheBudgetWarn(t *testing.T) {
 	img := planted(t)
-	cs := connect(t, cvsession.Options{Image: img, BaseDir: filepath.Dir(img)})
+	cs := connect(t, cvsession.Options{Image: img})
 	text, images, isErr := callEval(t, cs, `img.toGray().look("first"); return ["a", "b", "c", "d", "e"].map((l, i) => img.exposure(i / 10).look(l))`)
 	if isErr || len(images) != 4 {
 		t.Fatalf("error %v, %d images:\n%s", isErr, len(images), text)

@@ -22,7 +22,7 @@ func filterOps() []graph.OpDef {
 				}
 				return graph.NewImage(out), nil
 			},
-			Doc: "Separable Gaussian blur in the working space (linear by default); sigma is the standard deviation in doc px: it keeps structures larger than about σ.",
+			Doc: "Separable Gaussian blur in the image's space (img.as(\"linear\").gaussian(…) blurs light); sigma is the standard deviation in doc px: it keeps structures larger than about σ.",
 			See: []string{"exposure"},
 		},
 	}

@@ -1,6 +1,6 @@
 # Lambdas
 
-There are two kinds of function you can pass to cv: builder lambdas (within) run once while the graph is built and return nodes; data lambdas (Regions.filter) run at evaluation time on small data. There are no per-pixel JavaScript functions.
+The one function you pass to cv is a builder lambda (within): it runs once while the graph is built and returns nodes. Data is filtered with JavaScript on awaited arrays. There are no per-pixel JavaScript functions.
 
 ## Builder lambdas: within
 
@@ -20,21 +20,14 @@ return img.within(img.mask.box([0, 0, 50, 50]), i => 0.5).look()
 
 You can also pass an edited node directly: `img.within(mask, img.exposure(-0.5))`.
 
-## Data lambdas: Regions.filter
+## Data: JavaScript on awaited arrays
 
-`regions.filter(r => …)` calls your function with each region's data (`{ id, x, y, w, h, cx, cy, area, aspect, contrast, localNoise, sharpness, score, … }`) at evaluation time, on the JavaScript thread. Fine for hundreds of regions.
+Awaited regions are an array of items (`{ id, x, y, w, h, cx, cy, area, aspect, contrast, localNoise, sharpness, score, … }`): select them with JavaScript and pass the result back to an op.
 
 ```js
-const specks = img.detect.specks()
+const specks = await img.detect.specks()
 const elongated = specks.filter(r => r.aspect > 2 && r.contrast > 3 * r.localNoise)
-return { n: await elongated.count(), of: await specks.count() }
-```
-
-Prefer `where()` when the test can be written as data: it runs in Go.
-
-```js
-const specks = img.detect.specks()
-return await specks.where({ score: { gte: 0.5 }, area: { lte: 60 } }).count()
+return { n: elongated.length, of: specks.length, look: img.overlay(elongated).look("elongated") }
 ```
 
 ## Not available

@@ -15,8 +15,7 @@ import (
 // localContrast is a kernel (it needs a square and a square root).
 
 var polarityArg = graph.ArgSpec{Name: "polarity", Type: "enum:both,bright,dark", Default: "both",
-	Doc:           "both: the signed residual; bright: only what is brighter than its surroundings (d.max(0)); dark: only what is darker, as positive values (d.mul(-1).max(0))",
-	ValueSynonyms: map[string]string{"positive": "bright", "light": "bright", "white": "bright", "negative": "dark", "black": "dark", "signed": "both", "all": "both"}}
+	Doc: "both: the signed residual; bright: only what is brighter than its surroundings (d.max(0)); dark: only what is darker, as positive values (d.mul(-1).max(0))"}
 
 // polarity applies the polarity option to a signed residual d.
 func polarity(x *graph.Expander, d *graph.Node, p string) ([]*graph.Node, error) {
@@ -243,10 +242,6 @@ func viewOp() graph.OpDef {
 		Name: "view", On: graph.KindImage, Returns: graph.KindImage,
 		Args: []graph.ArgSpec{
 			{Name: "name", Type: "enum:" + strings.Join(presetNames(), ","), Positional: true, ValueDocs: presetDocs(),
-				ValueSynonyms: map[string]string{"dust": "speck", "specks": "speck", "stars": "speck", "dog": "speck", "highpass": "signed",
-					"edges": "signed", "scratches": "signed", "contrast": "detail", "clahe": "detail", "local": "detail",
-					"color": "neutral", "colour": "neutral", "chroma": "neutral", "stretch": "scene", "auto": "scene", "plain": "scene",
-					"darkSpeck": "speckDark", "speckColour": "speckColor"},
 				Doc: "the preset: " + strings.Join(presetNames(), ", ") + " (cv.docs.read(\"views\") describes each)"},
 			{Name: "size", Type: "number", Unit: graph.DocPx, Default: 3.0, Min: graph.F(0.5), Max: graph.F(200), Usual: [2]float64{1, 30},
 				Doc: "typical size of the target in doc px; the presets derive their σ from it"},

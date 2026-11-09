@@ -240,7 +240,7 @@ func Bilinear(p []float32, w, h int, x, y float64) (float64, bool) {
 }
 
 // SelectionStats are weighted statistics of the gray plane (or of one
-// channel) over a selection: what regions.measure's stats option reports.
+// channel) over a selection: what measure's stats option reports.
 type SelectionStats struct {
 	Mean, Min, Max, Std, Median, P10, P90 float64
 }

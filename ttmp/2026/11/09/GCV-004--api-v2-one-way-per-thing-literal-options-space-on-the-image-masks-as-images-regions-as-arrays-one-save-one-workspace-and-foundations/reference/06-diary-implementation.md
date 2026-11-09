@@ -906,3 +906,588 @@ deletions(-).
 
 Batch 1 total, `git diff --stat fa115dc cdc6326 -- pkg cmd internal Makefile`: 146 files changed, 4238
 insertions(+), 3768 deletions(-).
+
+## Step 8: Phase 5 — regions are arrays
+
+Batch 2 starts here, at `7ffe54b` (batch 1 verified by the coordinator). Phase 5 turns region sets into plain
+JavaScript arrays. An awaited Regions node is an array of flat items, each carrying a hidden `[node, index]` link;
+every op that takes regions takes a Regions node or an array (linked items, literal boxes and circles, and for
+`measure`, `sample` and `cv.sheet` points), so JavaScript does the querying and the query ops, data lambdas and
+their machinery are gone. One `img.measure(items)` replaces both measures, with radii from each item;
+`img.mask.regions(items)` replaces `toMask`. The three gated real-data tests are re-tuned, and the speck-ranking drop
+turned out to be a change of the tile files, not of labels or code.
+
+### Prompt Context
+
+**User prompt (verbatim):** "You are the GCV-004 implementer, batch 2: phases 5, 6, 7 and 8 of the GCV-004 guide in
+goja-cv, then the pi validation and the PR. […] Phase 5: Re-tune the three real-data tests (`TestRealHotListMeasures`,
+`TestRealTileReEncodedAsLinear`, `TestRealViewRanking`) against the current gold labels in `~/dustds/gold` […] Make them
+robust to label drift. Compare methods or check relative properties instead of asserting absolute counts […]
+Investigate why the speck view's ranking is now median rank 75 with 39.6 % of gold points in the top 50 […] Verify
+that by checking out `b847520` in a temporary worktree […] Keep the v1 stepChroma rule […] Delete `fields.go` […]
+Rewrite the regions half of `05-masks-and-regions.md` and add a `regions` help concept. […] Additions from GCV-005
+that are cheap here: Item `label` field […] `sheet` takes points […]" (the full prompt is in the batch-2 task; the
+rules on gate, commits, goldens, docs, tasks and deviations are those of batch 1.)
+
+Coordinator messages during the phase (verbatim): "1. **One binding for points.** Use one `items|point[]` binding
+for `measure`, `sample` and `cv.sheet`, with a `Point` item shape for a centre without a radius (`[x, y]` or
+`{ cx, cy }`). Delete the sheet's separate list path, so all three ops accept the same inputs. 2. **Ids may
+repeat.** Items may carry a `label` string, and labels print `label`, else `id`. A non-numeric `id` is
+`E_ARG_TYPE`, with a fix that moves the text to `label`. Ids may repeat: say so in the help text, and never use them
+for identity, which stays the `[node, index]` link." and "1. **Phase 5: don't add `mask.regions`' `grow` option.**
+GCV-005 replaces mask `grow`/`shrink` with `dilate`/`erode` on one-channel images, so a `grow` option would only be
+deleted again. If you already added it, remove it and record the removal as a deviation. 2. **Phase 6: track
+`cv.save` promises.** […]"
+
+**Assistant interpretation:** Implement guide §13 Phase 5 (§6.4, §7.6, D5–D7, D17, D19, §9 item 10) with the
+GCV-005 additions (label, Point, one points binding, repeatable ids, no `grow`), re-tune the real-data tests to
+relative checks, explain the ranking drop with a controlled comparison, and update docs 04, 05, 09, 12 (and every
+other block the change breaks).
+
+**Inferred user intent:** Agents filter regions with the JavaScript they already know, the colleague's
+detector-plus-gold workflow becomes one array, and the real-data tests stop breaking whenever the labels change.
+
+**Commit (code):** `449aaed` — "GCV-004 Phase 5: regions as arrays"
+
+### What I did
+
+- **Items** (`pkg/cv/graph/items.go`, new): the type words `Items`, `Items|Mask`, `Items|point[]`; `binder.checkItems`
+  takes a Regions node (an input), a one-channel image for `Items|Mask`, or an array, which `parseItems` turns into
+  canonical entries — linked `{ index, x, y, w, h, id?, label? }` from `__cvref: [node, index]`, literal
+  `{ shape: box|disk|point, geometry, id?, label? }` — and interns through a new `bind` callback
+  (`Builder.itemsNode`) as the internal `items` op (`graph.ItemsOpDef`, registered by `ops`; `AnalysisScale` 1;
+  frame of its source or empty). Two region sets → `E_ARG_TYPE` with the op's fix (`twoSetsFix`); unlinked objects
+  with `id` and `area` → `ITEMS` warning; a non-number `id` → `E_ARG_TYPE` with the `label` fix. `runItems` takes
+  linked regions by position and refuses a moved box (compared with the region's box rounded to 0.01 doc px); literal
+  items are `Box`, `Disk` and `Point` regions. `stripRefs` drops `__cvref` from every non-items argument (an item
+  passed as a box, a point, options or marks is its fields).
+- **Regions** (`pkg/cv/graph/regions.go`): `Region.Shape` (`Pixels`, `Box`, `Disk`, `Point`), `R`, `Label`,
+  `Text()` (label, else id); `overlap` draws a box with exact area coverage and a disk with
+  `kernels.EllipseCoverage` (so a literal box equals `mask.box`, a circle `mask.ellipse`); `Records()` replaces
+  `Summary()` (an array, `E_TOO_MANY` with a v2 fix); `Data` keeps measures exact (deviation 34) and rounds geometry
+  and `r`.
+- **Ops:** `measure` on Image (`pkg/cv/ops/regionmeasure.go`, rewritten): `items` (`Items|point[]`), `ring` (default:
+  on unless `stats`), `stats`, `coreRadius`, `ringRadii`, `channels`, `prefix`, `gray`, `analysisScale`; core radius
+  from `coreRadius`, the item's `r`, else √(area / π) ≥ 1; ring [1.5 r, 2.5 r]; a point without `coreRadius` is
+  `E_ARG_TYPE` with `img.measure(points, { coreRadius: 3 })`; items outside the frame get null ring fields and an
+  `OUTSIDE` warning; the v1 `stepChroma` gate is kept. The point `measure` (Value rows) is gone; `sample` takes
+  `Items|point[]` and samples centres; `mask.regions(items)` replaces `toMask` (no `grow`); overlay, heal and
+  `stats({ mask })` take `Items|Mask`; `cv.sheet` takes `Items|point[]` (its list path `listItems`/`sheetItem` is
+  deleted; the bound comes from `graph.ItemCount`); overlay and sheet print `Region.Text()`.
+- **Deleted** (§9 item 10): `where`, `sortBy`, `top`, `only`, `without`, `count`, `filter`, `toMask`,
+  `validatePredicate`, `compare`, `matches`, `idSet`, `idFilterOp`, `truthy`, `rasterize`, `OpDef.Produces`,
+  `producerHint`, `UnknownFieldError`, `RemovedFields`, `RemovedFieldError`, `Error.field`, `ENoField`,
+  `speckProduces`, `regionMeasureProduces`, `statSynonyms`, `OpDef.MaxItems`, `FuncID`, `FuncArg`, `Args.Func`, the
+  `func` type, `Callbacks`, `Evaluator.CallEach`/`SetCallbacks`, `binding.funcJS`/`CallEach`, `pkg/gojamod/cv/fields.go`
+  (`__removedFields`, `__noField`, `__itemProto`), the prelude's `NODE`, `link`, `ITEM_PROTO`, `ARRAY_METHODS`,
+  `funcIds`, `__cvfunc`, `__notArray`/`ENotArray`, `__collision` and `EvalTrace.Collisions`, `jsError`, the
+  `Member`/`RECV` and collision branches of `explainDataMisuse`, the Regions branch of `kindHelp`.
+- **JavaScript:** `linkItems` sets `it[ITEM] = [id, i]` (an enumerable symbol); `marshal` sends a linked item as
+  `{ __cvref, …fields }`; `resultToJS` returns the records array. Regions have no method table, so every property of
+  a lazy Regions node is `E_NOT_AWAITED` (an image method that takes items says "regions are arguments").
+- **Help:** a `regions` concept; `Mask`/`Regions` are concepts (`helpKinds` is Image, Value); `Mask.x` and
+  `Regions.x` answer `found: false` with the Image method and the concept (`conceptMethod`); the `id` field doc says
+  ids may repeat.
+- **Docs:** `05-masks-and-regions` regions half rewritten ("Regions are arrays", "Literal items", "Converting");
+  `03` ("Awaited regions are arrays", kinds table), `04` (builder lambdas only; data is JavaScript), `12` (one
+  `measure`, radii, gold `r / 2`, measuring regions, the re-measured hot-list numbers), `09`, `13`, `02`, `06`, `08`,
+  `01`; guidebook `01`, `02`, `03`, `04`, `08`, `10`; README; MCP instructions (one Regions line, still under 4000).
+- **Real data** (`measure_real_test.go`, `viewrank_test.go`, `realdata_test.go`): see Technical details.
+
+### Why
+
+- Guide §6.4, §7.6, D5–D7, D17, D19; the GCV-005 additions keep GCV-005 from changing the item model again.
+
+### What worked
+
+- The gate: `gofmt=0 build=0 vet=0 test=0 lint=0 logcopter=0 smoke=0 gate=0`.
+- Goldens: the check ran without `-update` and passed. `specks-overlay` is exact; `sheet-2x2` is exact with
+  `labels: "index"` in its call (deviation 35). No golden was regenerated.
+- goja copies enumerable symbol keys in spread and hides them from `Object.keys` and `JSON.stringify`
+  (`TestMasksAndRegionsFromJS` asserts `7:1:{"a":1}`, D6), and renumbered, labelled, reordered items keep their own
+  pixels (`measuredIds: 1:r0:16,2:r1:80`).
+- `overlay(array)` equals `overlay(node)` byte for byte; literal boxes and circles equal `mask.box`/`mask.ellipse`
+  at scales 1 and 0.5.
+
+### What didn't work
+
+- The ranking investigation's first assumption (labels) was wrong; see Technical details.
+- D17's prediction failed on the gold labels: `circles sized from r: median snr 0.86, not above the fixed 3 px core's
+  1.17` (deviation 38).
+- `TestMeasureMatchesTheHelper` failed after the switch to Regions: `ok: false d: [4.6269e-05, 4.976e-05, 3.1856e-05,
+  4.8805e-05, 0.0076872]` — region measures were rounded to 4 decimals; they are exact now (deviation 34).
+- `TestGoldenLooks/sheet-2x2: largest difference 238 codes, 99 of 113472 samples differ`: literal points are labelled
+  by id (1, 2) instead of index (0, 1); the golden call passes `labels: "index"`.
+- `TestSessionB`: `heal nodes: 1` — two filtered arrays with the same items are one hash-consed items node, so the
+  "second threshold" heal was the same node; the test now heals with another radius.
+- Topic size: `masks-and-regions is 6377 characters`, then `looks is 6103`, `recipes is 6054`; tightened prose.
+- `make lint`: `func sortedNames is unused`, `rasterize`, `jsError`, `median`; deleted.
+
+### What I learned
+
+- The tile JSON now says `"view": "density, dust bright, code value = v: open with encoding 'linear'"`: the
+  colleague's export changed under the tests in DUST-002 `d54088c` ("tiles re-exported as linear density").
+- Gold `r` from dustview is the fit radius (2 × the half-level radius, per DUST-002 `cc70685`), not the speck radius.
+
+### What was tricky to build
+
+- The binder had to intern a node in the middle of binding. Passing `Builder.itemsNode` into `bind` keeps the
+  binder free of the builder; `funcs.go`'s bespoke functions pass nil (arrays refused there).
+- Frames: the evaluator stamps a Regions value with its node's frame, which is also the raster of the regions'
+  pixels. `measure` therefore takes its items' frame (falling back to the receiver's for literal items), not the
+  image's, or a linked region's pixels would be read in the wrong raster.
+- Identity versus data: linked entries carry `id` and `label` (so a renumbering shows up in labels and results), but
+  never pixels or box; `index` is the identity.
+
+### What warrants a second pair of eyes
+
+- `pkg/cv/graph/items.go` (`parseItems`, `runItems`'s moved check at 1e-6 after rounding to 0.01).
+- `stripRefs` in `bind`: every non-Items argument is copied without `__cvref`.
+- `itemsCover` (containment instead of same frame for heal, stats and measure, deviation 33).
+
+### What should be done in the future
+
+- D17 and the gold `r`: decide whether `{ cx, cy, r }` means the speck radius (as now) or whether the DUST-002
+  helpers should pass `r / 2`; the measuring topic documents `r / 2` for dustview labels.
+- Phase 6 replaces the `cv.json`/`cv.csv` tests touched here.
+
+### Code review instructions
+
+- Start with `pkg/cv/graph/items.go`, then `args.go` (`check` → `checkItems`, `bind`'s `stripRefs`),
+  `regions.go` (`Shape`, `overlap`, `Records`), `pkg/cv/ops/regionmeasure.go`, `regions.go`, `sheet.go`,
+  `pkg/gojamod/cv/prelude.js` (`linkItems`, `marshal`), `help.go` (`conceptMethod`).
+- Validate: `scripts/04-gate.sh`; `go test ./pkg/cv/ops -run 'TestItems|TestMeasure' -v`;
+  `go test ./pkg/gojamod/cv -run TestMasksAndRegionsFromJS`; `scripts/05-real-data.sh`.
+
+### Technical details
+
+**The speck-ranking drop.** On the same current tiles and labels, `b847520` (a temporary worktree in the scratch
+area) prints exactly the batch-1 numbers: `speck view: 197 points on 15 tiles, median rank 75, top50 39.6 %` and the
+same hot-list and tile-stats lines. So no code regression. The tiles changed: since DUST-002 `d54088c` they store
+density v as the code value (open with `encoding: "linear"`), where they used to store sRGB_encode(v); the tests
+opened them as sRGB, so `as("linear")` decoded density a second time. A split by encoding and by label change:
+
+| open as | all 197 points | 111 points, 13 tiles with unchanged labels | 86 points, 2 relabelled tiles (2026-11-09) |
+|---|---|---|---|
+| srgb (as the old tests) | median 75, top50 39.6 % | 57, 43.2 % | 209, 34.9 % |
+| linear (as the tile JSON says) | median 24, top50 78.2 % | 22, 74.8 % | 26, 82.6 % |
+
+With the right encoding the numbers are back near the GCV-002 18 / 79.6 % (on 142 points), and the re-encoded tile's
+stats are exactly the old "guide" constants (meanL 0.33567, p01 0.00854, p99 0.91794). The labels moved the
+numbers only a little.
+
+**Re-tuned tests** (relative assertions; numbers logged):
+
+```
+speck view: 197 points on 15 tiles, median rank 24, top50 78.2 %      (must beat levels({ auto: true }))
+levels view: 197 points on 15 tiles, median rank 1467, top50 1.0 %
+hot list: 15 tiles, 555 regions (37.0 per tile), 197 gold points: 60.4 % within 4 px of a top-30 spot by snr, 43.1 % by area, 73.6 % of any spot
+labelled dust (142 matched): snr median 2.23 (middle half 1.75–2.81), stepChroma median 0.00 (0.00–0.57)
+unlabelled spots (386): snr median 0.76 (middle half 0.51–1.06), stepChroma median 0.00 (0.00–0.36)
+gold dust (190 points): snr median 1.56 (middle half 0.92–2.35) with r / 2, 0.86 (0.58–1.45) with the label's r, 1.17 (0.79–1.84) with a 3 px core
+tile stats: meanL 0.33567 p01 0.00854 p99 0.91794   (TestRealTileReEncodedAsLinear: code-value tile = sRGB-encoded export through as("linear"))
+78 specks, first at raw (1765.6, 2404.9)
+```
+
+Assertions: speck view median rank below and top-50 share above `levels({ auto: true })`'s; labelled dust median snr
+≥ 2 × the unlabelled median and its lower quartile above it; ranking by snr puts more gold points in the top 30 than
+ranking by area; gold circles at `r / 2` beat the 3 px core; the sRGB-encoded export through `as("linear")` matches
+the code-value tile within 3/65535, masks within 2e-3, stats within 1e-4. Hot-list thresholds with the new radii:
+37 spots per tile (was 58.9 with the clamped radius and the sRGB misread), 60.4 % by snr.
+
+Ring-radius variants on the 190 gold dust points (an experiment, not committed): core r, ring [r+3, r+9]: 0.85; core
+r/2, ring [1.5 r, 2.5 r]: 1.98; core r/2, ring [r, 2r]: 1.78; core r, ring [2r, 3r]: 0.88.
+
+`git diff --stat 7ffe54b 449aaed -- pkg cmd internal README.md`: 74 files changed, 1847 insertions(+), 1983
+deletions(-); non-test Go and JavaScript only: 33 files changed, 967 insertions(+), 1283 deletions(-).
+
+## Step 9: Phase 6 — one save, one workspace
+
+Phase 6 gives a session one place to write and reread: the workspace (`--root`), opened as a Go `os.Root`, plus
+read-only directories (`--read`). `cv.save(path, x)` is the one output function, the format chosen by the extension;
+`cv.json`, `cv.csv`, `node.save`, Data handles, the data budgets and the `DATA` warning are gone, and with them the
+home-made containment code (`paths.go`) and the second root (`--out-root`). Saves an eval forgot to await still
+complete, and their failures surface.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 8) "Phase 6: the workspace (`--root` read-write, repeatable read-only
+`--read`, relative `cv.open` resolved in the workspace and then the read dirs, `os.Root`) and `cv.save`. The v1
+`DATA` warning goes away here."
+
+Coordinator message (verbatim): "2. **Phase 6: track `cv.save` promises.** Add each `cv.save` promise an eval
+creates to that eval's pending list, and have the eval runner (`__cv_run` or its equivalent) wait for all of them
+before it returns. A save the agent forgot to `await` must still complete, and its failure must surface in that
+eval. If goja's rejection tracker is easy to hook, report an unhandled rejection as an `UNHANDLED` warning. If it
+isn't, record that and leave it to GCV-005."
+
+**Assistant interpretation:** Guide §4.6, §6.7, §7.8, §7.9, §10.4–10.5, D10, D11, §9 items 11–12, the Phase 6 test
+list, docs 13 and `pkg/doc` 03–07, 09, README; plus pending saves and `UNHANDLED`.
+
+**Inferred user intent:** Saved files always reopen (the 23 `E_ACCESS` errors of the pi runs), data stays where it
+lives, and an agent's forgotten `await` cannot lose a file silently.
+
+**Commit (code):** `1c1acf3` — "GCV-004 Phase 6: one save, one workspace"
+
+### What I did
+
+- `pkg/cv/graph/workspace.go` (new): `Workspace{root, reads}` of `dirRoot{os.Root, dir, resolved}`;
+  `OpenWorkspace`, `Open`/`OpenAt` (reads), `SaveName` (writes: workspace only), `Write` (Lstat: symlink →
+  `E_ACCESS` "saves do not follow links"; `os.SameFile` against the files the session opened and did not write →
+  `E_ACCESS`; `MkdirAll`, `WriteFile` to `rel.tmp-<pid>-<n>`, `Rename`), `NoteOpened`, `Location{Root, Rel}`,
+  `Name`. `locate` follows §10.5: relative names in the workspace then the read directories (flag order), absolute
+  names against each root's own and resolved name; `..` and errors from `os.Root` (escaping or dangling links) are
+  `E_ACCESS`; a missing file is `E_ARG_TYPE` "no such file" listing the roots. `EDuplicate`.
+- Engine: `EngineOptions.Workspace` replaces `BaseDir` and `OutRoot`; `Engine.Open` opens through it, probes the open
+  file, records it (`NoteOpened`) and stores `SourceMeta{Loc, Name, Stamp, Info}`; `SourceStore` opens by location
+  and refuses a changed stamp before the first decode (`E_EVAL` "changed since it was opened; open it again").
+  `buffer.ProbeFile`/`DecodeFile` take `*os.File`. `paths.go` and its test are deleted.
+- `pkg/cv/dataout/save.go` (rewritten; `data.go` deleted): `FormatOf`, `CheckKind` (image vs data mismatches with
+  the fix), `CheckImage` (depth, JPEG only for sRGB), `EncodeImage`, `NodeData`, `EncodeData`; CSV accepts only a
+  list of objects (columns in first-seen order; nested values as JSON) and refuses anything else with the fix,
+  `cv.save("x.csv", (await x).rows)` for a value with rows. `table`, `columnArrays`, `hasArrays`, `NamePattern`, the
+  Data handle and its captions are gone.
+- `pkg/gojamod/cv/save.go` (new; `dataout.go` deleted): `__save(path, x, opts)` checks the path, the format, the
+  depth and `E_DUPLICATE` on the owner goroutine, exports plain data with `exportOrdered` (string keys only: item
+  links never reach a file), encodes and writes on a goroutine; every save is a `pendingSave` of the eval with an
+  internal never-rejecting `done` promise. `trackRejections` installs goja's `SetPromiseRejectionTracker`;
+  `SavesPending`/`SaveFailure` are what the session's `__cv_run` awaits: an unawaited save that failed fails the
+  eval ("cv.save("bad.tif") was not awaited and failed: …", at its line via a synthetic stack), other unhandled
+  rejections become `UNHANDLED` warnings. The prelude's `cv.save`, `cv.json`, `cv.csv` and node `save` changed
+  accordingly; the registered `save`/`json`/`csv` functions became one `save` function for help.
+- Rows plus metadata: `profile` returns `{ from, to, step, width, rows: [{ t, cx, cy, meanL, … }] }`, `histogram`
+  `{ bins, channel, space, under, over, total, rows: [{ lo, hi, count }] }`; `FieldSpec.Rows`, nested ordering in
+  `OrderBySchema` (on a copy: the map is a cached value); the chart renderers read `rows` (goldens exact).
+- Session: `Options.Root`/`Read` replace `Roots`/`OutRoot`/`BaseDir`; one workspace per session engine (its opened
+  files are its own); `MaxData`, `MaxDataBytes`, `MCPMaxDataBytes`, `numbered`, the data half of `collect`,
+  `checkPath`, `graph.WData` deleted; YAML truncation notes say `cv.save`.
+- CLI: `--root` (eval/run default the working directory; required for `mcp`, usage error "mcp needs --root DIR …"),
+  repeatable `--read`, `checkRoots` (directories exist; `--image` must lie in a root); `--out` writes looks only
+  (`uniqueName`, `countRows`, the data caption path deleted). xgoja config `root`/`read` (one workspace per runtime).
+  Makefile smoke: `eval --root`, and `mcp` without `--root` must fail naming `--root`.
+- Save redirects (`export`, `write`, `store`, `json`, `csv`, …) now point at `cv.save`.
+- Tests: `TestWorkspacePaths`, `TestWorkspaceAliases`, `TestWorkspaceSymlinks`, `TestWorkspaceProtectsOpenedFiles`
+  (graph); `TestSaveImagesReopenWithEncodingAndFrame`, `TestSaveData`, `TestSaveRefusals`, `TestUnawaitedSaves`,
+  `TestSavedFilesReopenAndChangedFiles` (session); `TestSaveFromEval` and usage errors (`mcp` without `--root`,
+  `--image` outside the roots, a bad `--read`) in cmd; `TestCSVRowsOnly`. Test engines get `graphtest.Workspace`
+  (a temporary workspace with `/` as a read directory); session tests get a temporary workspace with the image's
+  directory as a read directory.
+- Docs: `13-data-out` rewritten; `12` and `03` notes; guidebook `01`, `03` (a "workspace" section), `04`, `05`,
+  `06`, `07`, `08`, `09`, `10`; README (CLI and MCP setup with `--root`/`--read`); MCP instructions (3981
+  characters).
+
+### Why
+
+- Guide §4.6, §6.7, §7.8, D10, D11; the coordinator's pending-save rule.
+
+### What worked
+
+- Gate: `gofmt=0 build=0 vet=0 test=0 lint=0 logcopter=0 smoke=0 gate=0`. Goldens exact (`histogram`,
+  `histogram-r`, `profile-chart` render the same bytes from `rows`). Real data identical to Step 8.
+- The four workspace tests passed on their first run: `os.Root` refuses the outside link, the dangling link and the
+  linked directory by itself; only the alias rule and the overwrite checks are ours.
+- goja's rejection tracker is a plain hook (`SetPromiseRejectionTracker`), unused by go-go-goja, so `UNHANDLED` is
+  in this phase rather than left to GCV-005.
+
+### What didn't work
+
+- The first wiring of the line of an unawaited failed save gave `line 2` (the wrapper's line); the error object now
+  carries a synthetic `stack` (`at <eval>:LINE:COL`) so the session maps it to the agent's line like any error.
+- `TestSavedFilesReopenAndChangedFiles` first saved the same path twice in one eval and got `E_DUPLICATE` (as it
+  should); the test now saves in two evals.
+- A Python edit wrote a real newline into a Go string literal (`newline in string`); fixed.
+- Every engine built with `EngineOptions{}` in tests lost `cv.open` (`this engine has no workspace`), and relative
+  fixture paths (`../../../testdata/…`) became `E_ACCESS`; both fixed in the tests (`graphtest.Options(t)`,
+  `filepath.Abs`).
+- Topic and instruction sizes again (instructions 4041 → 3981 characters).
+
+### What I learned
+
+- `os.Root` refuses absolute symlink targets even inside the root; links inside a workspace must be relative to be
+  followed for reading.
+- `Promise.allSettled` on the agent's own save promises would mark them handled; the runner waits on separate
+  `done` promises so the rejection tracker still tells handled from unhandled failures.
+
+### What was tricky to build
+
+- Ordering at the end of an eval: the body settles, then `__cv_run` waits for the pending saves, then asks Go which
+  failed saves are still unhandled (and turns the other unhandled rejections into warnings), all on the owner loop.
+- Per-session protection: the opened and written lists live in the workspace, so each session engine opens its
+  own workspace (an engine factory per runtime in the session and in xgoja).
+
+### What warrants a second pair of eyes
+
+- `pkg/cv/graph/workspace.go` (`locate`, `Write`), `pkg/gojamod/cv/save.go` (`SaveFailure`, the tracker),
+  `pkg/cvsession/init.js` (`__cv_run`).
+- `graphtest.Workspace` reads `/`: fine for tests, never for a session.
+
+### What should be done in the future
+
+- Phase 7 renames `cv.open`'s binding option `as` → `name` (guide §6.6, D21) with the synonym tables.
+
+### Code review instructions
+
+- Start with `pkg/cv/graph/workspace.go` and `workspace_test.go`, then `engine.go` (`Open`), `sources.go`,
+  `pkg/cv/dataout/save.go`, `pkg/gojamod/cv/save.go`, `pkg/cvsession/init.js`, `session.go`, `cmd/goja-cv/eval.go`
+  (`checkRoots`), `mcp.go`.
+- Validate: `scripts/04-gate.sh`; `go test ./pkg/cvsession -run 'TestSave|TestUnawaited' -v`;
+  `go test ./pkg/cv/graph -run Workspace -v`.
+
+### Technical details
+
+`git diff --stat 449aaed 1c1acf3 -- pkg cmd internal README.md Makefile`: 80 files changed, 2048 insertions(+), 1716
+deletions(-); non-test Go and JavaScript: 35 files changed, 1347 insertions(+), 1252 deletions(-).
+
+Goldens: none moved. Real data: identical to Step 8.
+
+## Step 10: Phase 7 — names agents typed
+
+Phase 7 shrinks did-you-mean to the names agents demonstrably typed in the pi runs, each with its literal fix, and
+edit distance for everything else. It also renames `cv.open`'s binding option from `as` to `name` (D21), which
+batch 1 and Phase 6 had left for here because it lived among the session's synonym tables.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 8) — Phase 7 of the guide.
+
+**Assistant interpretation:** Guide §7.13 and §9 item 13: keep the typed table keys and typed method names, delete
+every other synonym and redirect table; the table-driven test; run `scripts/02-pi-names-typed.py` on the tree.
+
+**Inferred user intent:** No untested guesses to maintain; agents get a literal fix where the evidence says they
+need one.
+
+**Commit (code):** `3b3e685` — "GCV-004 Phase 7: names agents typed"
+
+### What I did
+
+- `pkg/cv/graph/suggest.go`: `Synonyms` deleted; `MethodRedirects` is export, store, write, save, persist, download,
+  toFile, writeTiff (`await cv.save("x.tif", node)`), zoom, resample, meta; `UnknownMethod` lost its synonym step.
+  `args.go`: `OptionSynonyms` and `optionSynonym` deleted (unknown options: a `Redirect` of the call, else edit
+  distance); enum errors: edit distance only. `ArgSpec.ValueSynonyms` and `EncodingValueSynonyms` deleted.
+- Ops: `Redirects` kept for `mask.luminance` `min` (new on `above`: fix `img.mask.luminance({ above: 0.99 })`), look
+  `box`/`crop`/`scale` (`scale` new: fix `node.look({ zoom: 8 })`), `components` `maxArea`; deleted: look `stretch`,
+  `levels` `box`, the `compare` `diff` redirect, `blendRedirects`, the view and polarity value synonyms, the look
+  format synonyms, `markKeySynonyms`.
+- Help: the synonym step of `suggest` and `UnknownMember`; `helpRedirects` keeps `mask.stats` (deviation 27), `meta`
+  and `info`; `memberFixes` keeps `cv.info` and `cv.meta`.
+- `cv.open(path, { name })`: `init.js` reads `name`; `asSynonyms`, `asKey`, `containsString` deleted; the bare
+  module's hint and `E_NAME` errors say `name`; the MCP `open` tool's field is `name`; docs (`01`, `09`, `10`
+  topics, guidebook `02`), help entries and the instructions.
+- Tests: `TestTypedNames` (every kept name's fix; `brightness`/`blur` give nothing, `gausian`/`exposre` give the
+  edit-distance suggestion; `radius` on gaussian nothing, `sigm` sigma; no typed name is an op) replaces
+  `TestOptionSynonyms` and `TestOpSynonymsDoNotShadowOps`; tests that used untyped synonyms now use misspellings.
+- Docs: `08-errors`, guidebook `03-cli`, `10-troubleshooting`.
+
+### Why
+
+- Guide §7.13, D12; D21 for `name`.
+
+### What worked
+
+- Gate: `gofmt=0 build=0 vet=0 test=0 lint=0 logcopter=0 smoke=0 gate=0`; goldens unchanged.
+- `02-pi-names-typed.py <pi-runs> .` on the tree: `typed: MethodRedirects:download, export, meta, persist, resample,
+  save, store, toFile, write, writeTiff, zoom, Redirects:maxArea, min, lookRedirects:box, crop, scale` and
+  `never typed (0)`.
+
+### What didn't work
+
+- Twenty-odd tests asserted untyped synonyms (`img.blur`, `img.brightness`, `look({ size })`, `view("dust")`,
+  `blend({ mode: "difference" })`, `compare({ mode: "diff" })`, `annotate([{ line }])`, `levels({ box })`); each now
+  asserts edit distance on a misspelling, or the plain error.
+- `make lint`: `func containsString is unused` after `asKey` went.
+
+### What I learned
+
+- The guide's typed list includes `scale` for look, which had no redirect before (only the general `scale` option
+  synonym); it is now a look redirect.
+
+### What was tricky to build
+
+- Nothing structural; keeping help's concept entries (documentation, D12's "not aliases") apart from deleted alias
+  tables.
+
+### What warrants a second pair of eyes
+
+- `helpRedirects`/`memberFixes`: the script does not scan them; `info` and `meta` are kept on the evidence of pi run
+  3 call 1 (`cv.info`) and §7.13 (`meta`).
+
+### What should be done in the future
+
+- Re-run `02-pi-names-typed.py` on the after-runs (Phase 8) to see which wrong names v2 agents type.
+
+### Code review instructions
+
+- `pkg/cv/graph/suggest.go` (`MethodRedirects`), `args.go` (`checkKeys`), `pkg/cv/ops/funcs.go`
+  (`lookRedirects`), `mask.go`, `pkg/cvsession/init.js` (`cv.open`), `names.go`; `TestTypedNames`.
+- Validate: `scripts/04-gate.sh`; `go test ./pkg/cv/ops -run TestTypedNames -v`.
+
+### Technical details
+
+`git diff --stat 1c1acf3 3b3e685 -- pkg cmd internal README.md`: 41 files changed, 178 insertions(+), 433
+deletions(-); non-test Go and JavaScript: 20 files changed, 68 insertions(+), 318 deletions(-).
+
+## Step 11: Phase 8 — documentation sweep, removed-names test, exact goldens
+
+Each phase already updated the docs it broke (the docs tests run every block), so the sweep is small: the last
+stale strings, the agents page's eval contract, the errors topic's warnings and help forms, a CI test that keeps
+removed names out of the sources, and an exact golden harness.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 8) — Phase 8; "Golden tolerances: batch 1 kept the optional GCV-001 golden
+tolerance classes and the `-golden.tolerant` flag; guide §14.3 allows deleting them. Delete them if nothing still
+needs them."
+
+**Assistant interpretation:** Guide §12 (documents, the strings test) and §13 Phase 8 step 1; the pi validation
+(step 2) is Step 12.
+
+**Inferred user intent:** Nothing an agent reads still teaches v1, and CI keeps it that way.
+
+**Commit (code):** `0319ac9` — "GCV-004 Phase 8: documentation sweep, removed-names test, exact goldens"
+
+### What I did
+
+- `pkg/doc/strings_test.go`: `TestNoRemovedNamesInSources` fails when a non-test `.go` or `.js` file under `pkg`,
+  `cmd` or `internal` contains `{ space`, `toMask`, `cv.csv`, `cv.json`, `out-root`, `P.slider`, `show(`,
+  `cv.evaluate`, `regions.measure`, `sortBy(`, `node.save`, `cv.describe` or `cv.isNode`. It found two comments and
+  one goroutine task name (`cv.evaluate.settle` → `cv.await.settle`); a planted `cv.json` comment made it fail.
+- Golden harness: the GCV-001 tolerance classes, the `class` field and `-golden.tolerant` are deleted; the comparison
+  is exact (the speck overlay still checks its speck count from `counts.json`).
+- Docs: `08-errors` (warnings `LOOKS`, `ITEMS`, `UNHANDLED`; help forms with concepts and `save`), guidebook
+  `04-agents` (the eval contract: arrays, literal options, the workspace and saves), op docs that still said
+  "working space (linear by default)" (`gaussian`, `detect.specks` and its `contrast` field, the histogram's
+  `space` field).
+
+### Why
+
+- Guide §12, §14.3.
+
+### What worked
+
+- Gate `gate=0`; goldens exact without classes.
+
+### What didn't work
+
+- N/A
+
+### What I learned
+
+- The docs tests made the per-phase doc work cheap to verify: every stale block failed in the phase that broke it.
+
+### What was tricky to build
+
+- Nothing.
+
+### What warrants a second pair of eyes
+
+- The removed-names list is literal substrings; a future legitimate use (say a comment about `show(` in another
+  sense) would need a reword.
+
+### What should be done in the future
+
+- N/A
+
+### Code review instructions
+
+- `pkg/doc/strings_test.go`, `pkg/cv/look/golden_test.go`.
+
+### Technical details
+
+`git diff --stat 3b3e685 0319ac9 -- pkg cmd internal`: 11 files changed.
+
+## Step 12: pi validation, before and after (guide §15)
+
+Twelve pi runs with `lunaroute/deepseek-4.1-flash`: two per question file (GCV-001, -002, -003) on `main`
+(`b42502b`, the v1 field fixes) and on this branch (`0319ac9`, phases 0–8). v2 removes the `E_ACCESS` errors and
+every use of the removed API, keeps the answers right, and needs fewer calls for the inspection and measurement tasks.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 8) "After Phase 8: pi validation (guide §15). Run the pi harness before and
+after, with the model `lunaroute/deepseek-4.1-flash` and two runs each. […] "before" is `main` (`b42502b`), via a
+temporary worktree that you remove afterwards. "After" is your branch. […] the v2 server uses `--root`/`--read`
+instead of `--out-root`, and the harness's `OUT_ROOT=1` adds `--out-root`. Adapt the harness invocation […] and do not
+edit the committed harness. Where the runs go: in your scratch dir. […] Metrics: calls, errors, E_ACCESS,
+E_UNKNOWN_METHOD, and whether the answers are correct. Usage counts: use the GCV-004 `scripts/01-pi-api-usage.py`
+on the run directories, after converting them to `calls.txt` with the dust-scanning
+`scripts/07-pi-events-summary.py`."
+
+**Assistant interpretation:** Run the harness unchanged from a scratch copy (without `OUT_ROOT` it starts the server
+with `--root OUT/img`, which is exactly the v2 workspace; only the GCV-003 before-runs set `OUT_ROOT=1`), score the
+answers, count usage and errors.
+
+**Inferred user intent:** Evidence that v2 helps the cheap model, before the PR.
+
+### What I did
+
+- Inputs (the tiles changed since runs 07–18, deviation 37): `tile_v.tif` = the current tile
+  `1d955ef4b27d3d88_1536_1536` (stores v), `tile_ref.tif` = its sRGB_encode(v), and
+  `7edbfe9c3e7ab7d6_512_1024.tif` written as sRGB_encode(v), the export runs 11–18 used
+  (`scratchpad/pi/scripts/make-inputs.py`). The expected GCV-001 answers come out exactly as before: p01 0.00854,
+  p99 0.91794, largest stored difference 0.28713.
+- `scratchpad/pi/scripts/drive.sh` ran the twelve runs in parallel through a copy of `run.sh` (identical to the
+  committed one); a temporary worktree at `b42502b` for "before", removed afterwards.
+- `07-pi-events-summary.py --max 4000` → `calls.txt` per run; `metrics.py` (error codes in results), `gold002.py`
+  (GCV-002 spots within 5 px of a gold point of the tile's current 53 labels), `01-pi-api-usage.py` and
+  `02-pi-names-typed.py` on the before and after sets.
+
+### Why
+
+- Guide §15: the validation plan.
+
+### What worked
+
+| question file | build | calls | isError | E_ACCESS | E_UNKNOWN_METHOD | answers |
+|---|---|---|---|---|---|---|
+| GCV-001 | before (main) | 26 / 37 | 2 / 5 | 0 / 0 | 1 / 1 | both right: p01 0.00854, p99 0.91794 (`encoding: "linear"`), 0.28713, neutral |
+| GCV-001 | after (v2) | 34 / 24 | 2 / 3 | 0 / 0 | 0 / 0 | both right, the same numbers |
+| GCV-002 | before | 52 / 50 | 6 / 7 | 0 / 0 | 0 / 0 | 21 / 53 and 19 / 53 gold points located |
+| GCV-002 | after | 38 / 40 | 3 / 5 | 0 / 0 | 1 / 1 | 17 / 53 and 20 / 53 |
+| GCV-003 | before (`OUT_ROOT=1`) | 46 / 44 | 7 / 5 | 0 / 1 | 1 / 3 | CSV = JSON rows (328, 233); TIFF saved and reopened, frame [0, 0, 1024, 1024] |
+| GCV-003 | after | 36 / 48 | 7 / 7 | 0 / 0 | 0 / 1 | CSV = JSON rows (513, 383) via `cv.save`; TIFF reopened with `cv.open(saved.path)`, frame [0, 0, 1024, 1024] |
+
+Medians of calls: GCV-001 31.5 → 29, GCV-002 51 → 39, GCV-003 45 → 42. `E_ACCESS`: 1 → 0 (the before one is the
+GCV-003 reopen of a saved file, the class v2 removes). `E_UNKNOWN_METHOD` ≤ 1 per after-run (all four are
+`cv.info()`, answered with the fix `await img`). `E_NOT_AWAITED`: one (`img.stats().catch(…)`). No `E_WRONG_KIND`.
+
+Usage (`01-pi-api-usage.py`, 255 before calls / 220 after): `{ space }` 70 → 0, `cv.evaluate` 33 → 0, `show(` 99 → 0,
+`cv.json/cv.csv` 20 → 0, `P.*` 3 → 0, `.where/.sortBy/.top` 7 → 0, `encoding:` 11 → 35, `.look(` 68 → 90, JS
+`.filter(` 34 → 23; `as:` 8 → 3 (one typed as a `cv.open` option in v2, answered with `E_UNKNOWN_OPTION`). Error codes
+before: `E_ARG_TYPE` 9, `E_UNKNOWN_METHOD` 7, `E_ACCESS` (in results) 6, `E_NO_DOCUMENT` 3, `E_NOT_ARRAY` 1, …; after:
+`E_ARG_RANGE` 6, `E_ARG_TYPE` 6, `E_UNKNOWN_OPTION` 4, `E_UNKNOWN_METHOD` 3, `E_FIELD_EXISTS` 2, `E_NOT_AWAITED` 1
+(the after `E_ACCESS`/`E_DUPLICATE` mentions are help text, not errors).
+
+### What didn't work
+
+- GCV-002 recall did not improve (17–21 of 53 in both builds): the agent's ranking, not the API, limits it, as in
+  runs 11–14.
+- The agents' own mistakes in v2: `cv.info()` (3 runs), `img.annotate([{ cx, cy, r }])` (marks are `{ circle: […] }`),
+  `cv.save("recipes.md", …)`, a text id `"1:41"` (the `label` fix), `measure(points, { stats })` (points have no
+  area), `img.stats().catch(…)`, and sheets of 20 items that do not fit at the chosen size.
+
+### What I learned
+
+- The cheap model types `as:` and `cv.info` from habit, not from docs (no v2 document shows them).
+
+### What was tricky to build
+
+- Keeping the questions' inputs equal to runs 07–18 after the tile re-export.
+
+### What warrants a second pair of eyes
+
+- `gold002.py` parses the agents' markdown tables; it counts gold points within 5 px of any listed spot, so a run
+  that lists more spots can locate more.
+
+### What should be done in the future
+
+- For GCV-005: `.catch` on a node (thenable), `annotate` marks from items (`{ cx, cy, r }`), `cv.info` → `await img`
+  is already the fix; sheets that shrink cells to fit.
+
+### Code review instructions
+
+- Runs: `scratchpad/pi/runs/{before,after}-gcv00{1,2,3}-{a,b}/` (events.jsonl, calls.txt, session/, transcript.html);
+  `scratchpad/pi/metrics.txt`, `usage.txt`, `names-after.txt`.
+
+### Technical details
+
+Scratch root: `/private/tmp/claude-501/-Users-manuel-code-wesen-2026-11-07--dust-scanning/f3ce17c3-3866-46d2-8189-04b381055e1f/scratchpad/pi`.

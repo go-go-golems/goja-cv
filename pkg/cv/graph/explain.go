@@ -19,7 +19,7 @@ func SourceInfo(n *Node) (map[string]any, bool) {
 		return nil, false
 	}
 	m := Meta[SourceMeta](n.Args)
-	info := map[string]any{"file": filepath.Base(m.Path), "encoding": n.Enc.String(), "frame": n.Frame.Data(),
+	info := map[string]any{"file": filepath.Base(m.Name), "encoding": n.Enc.String(), "frame": n.Frame.Data(),
 		"format": m.Info.Format, "bitDepth": float64(m.Info.Bits), "fileChannels": float64(m.Info.Channels)}
 	if m.Info.Sample != "" {
 		info["sample"] = m.Info.Sample
@@ -44,8 +44,8 @@ func Shown(n *Node) *Node {
 	return n
 }
 
-// Label is the short name of a node used in paths: "open(scan.tif)",
-// "P.slider(ev)", or the op name.
+// Label is the short name of a node used in paths: "open(scan.tif)" or
+// the op name.
 func Label(n *Node) string {
 	n = Shown(n)
 	if n.Op.On == KindNone {
