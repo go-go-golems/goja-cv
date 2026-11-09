@@ -238,15 +238,11 @@ func crossKind(k Kind, name string, op *OpDef) (string, string) {
 	hint := fmt.Sprintf("%q is %s method%s.", name, A(string(op.On)), conversionHint(k, op.On))
 	var fix string
 	switch {
-	case k == KindRegions && op.On == KindMask:
+	case k == KindRegions && op.OneChannel:
+		hint = fmt.Sprintf("%q is a method of a one-channel image (a mask); convert with .toMask().", name)
 		fix = fmt.Sprintf("%s.toMask().%s(…)", self, name)
-	case k == KindMask && op.On == KindRegions:
-		fix = fmt.Sprintf("%s.components().%s(…)", self, name)
 	case k == KindImage && op.On == KindValue:
 		fix = fmt.Sprintf("%s.stats().%s(…)", self, name)
-	case k == KindMask && op.On == KindImage:
-		hint = fmt.Sprintf("%q is an Image method; to apply it inside this mask use within.", name)
-		fix = fmt.Sprintf("img.within(%s, i => i.%s(…))", self, name)
 	case k == KindRegions && op.On == KindImage:
 		hint = fmt.Sprintf("%q is an Image method; to apply it inside these regions use within with their mask.", name)
 		fix = fmt.Sprintf("img.within(%s.toMask(), i => i.%s(…))", self, name)
@@ -267,10 +263,6 @@ func conversionHint(from, to Kind) string {
 	switch {
 	case from == KindImage && to == KindValue:
 		return "; measure the image first, e.g. img.stats()"
-	case from == KindRegions && to == KindMask:
-		return "; convert with .toMask()"
-	case from == KindMask && to == KindRegions:
-		return "; convert with .components()"
 	case from == KindValue && to == KindImage:
 		return "; call it on the image, not on a measurement"
 	}
@@ -281,8 +273,6 @@ func receiverVar(k Kind) string {
 	switch k {
 	case KindImage:
 		return "img"
-	case KindMask:
-		return "mask"
 	case KindRegions:
 		return "regions"
 	case KindNone:

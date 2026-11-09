@@ -130,7 +130,7 @@ func TestSessionC(t *testing.T) {
 		const sky = sc.mask.luminance({ above: 0.55 })
 		  .and(sc.mask.gradient({ from: "top", to: 0.45 }))   // fades from the top edge to 45%% height
 		  .feather(20)
-		const look = await sky.overlay(sc)
+		const look = await sc.overlay(sky)
 		const out = globalThis.out = sc.within(sky, i => i.exposure(-0.4).contrast(0.1))
 		const coverage = await sky.coverage()
 		const coverageHalf = await sky.coverage()

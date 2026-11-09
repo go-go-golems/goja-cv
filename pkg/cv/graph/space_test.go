@@ -415,7 +415,8 @@ func TestExplainShowsStatics(t *testing.T) {
 			t.Fatalf("explain line %d %q lacks %q", i, lines[i], w)
 		}
 	}
-	if !strings.HasSuffix(lines[2], "enc srgb · space encoded") || !strings.HasSuffix(lines[3], "enc srgb · space linear") || strings.Contains(lines[0], "enc ") {
+	// a mask is a derived (linear-encoded) one-channel image
+	if !strings.HasSuffix(lines[2], "enc srgb · space encoded") || !strings.HasSuffix(lines[3], "enc srgb · space linear") || !strings.HasSuffix(lines[0], "enc linear · space linear") {
 		t.Fatalf("statics column: %q", lines)
 	}
 }

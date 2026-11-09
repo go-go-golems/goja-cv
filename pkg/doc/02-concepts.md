@@ -17,14 +17,13 @@ This page is the language in one sitting, for the person who sets goja-cv up or 
 The agent reads the same ideas in shorter form from inside eval (`cv.docs.read("getting-started")` and friends).
 All examples run against an open image `img`.
 
-## Five kinds of value
+## Kinds of value
 
 Every node has one kind, and every op says which kinds it takes and returns.
 
 | kind | what it evaluates to | made by |
 |---|---|---|
-| Image | float32 pixels with an encoding (srgb or linear) and a frame (await gives a summary, never pixels) | `img`, `exposure`, `levels`, `within`, `heal`, `overlay` |
-| Mask | one channel of weights in [0, 1] | `img.mask.luminance`, `img.mask.box`, `regions.toMask()` |
+| Image | float32 pixels with an encoding (srgb or linear), a space, a channel count (1 or 3) and a frame (await gives a summary, never pixels); a mask is a one-channel image of weights in [0, 1] | `img`, `exposure`, `levels`, `within`, `heal`, `overlay`; masks: `img.mask.luminance`, `img.mask.box`, `regions.toMask()` |
 | Regions | discrete areas with flat fields id, x, y, w, h (box), cx, cy (centroid), area, aspect and measures | `img.detect.specks()`, `mask.components()` |
 | Value | plain data: numbers, objects, arrays | `stats`, `histogram`, `coverage`, `count` |
 
@@ -73,7 +72,8 @@ computed from linear light, and a look shows encoded values; masks and derived i
 
 ## Masks and regions
 
-A **mask** is a soft field (a feathered sky); **regions** are identified things you count, rank and exclude
+A **mask** is a soft field (a feathered sky): a one-channel image of weights, read as stored (never converted
+between spaces), on which every image op works; **regions** are identified things you count, rank and exclude
 (143 specks, drop id 31). Each converts into the other: `regions.toMask()`, `mask.components()`.
 
 ```js

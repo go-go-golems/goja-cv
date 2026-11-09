@@ -105,7 +105,7 @@ func toneOps() []graph.OpDef {
 			See: []string{"levels", "exposure"},
 		},
 		{
-			Name: "toGray", On: graph.KindImage, Returns: graph.KindImage,
+			Name: "toGray", On: graph.KindImage, Returns: graph.KindImage, Channels: graph.One,
 			SpaceOf: func(a graph.Args) graph.SpaceRule { // the luminance is defined on linear light; the average follows
 				if a.String("weights") == "rec709" {
 					return graph.Physical

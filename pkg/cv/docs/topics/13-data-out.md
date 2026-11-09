@@ -25,7 +25,7 @@ return {
 
 ## Saving files
 
-`node.save(path, { depth })` writes an Image or Mask, `cv.csv(x).save(path)` a data item, under the out-root: the directory the session was started with (`--out-root DIR`). Without it saving is `E_ACCESS`. Paths are relative to the out-root; `..` and symlinks may not leave it. The promise resolves to `{ path, format, depth, encoding, frame, bytes, replaced }`.
+`node.save(path, { depth })` writes an Image (a mask too), `cv.csv(x).save(path)` a data item, under the out-root: the directory the session was started with (`--out-root DIR`). Without it saving is `E_ACCESS`. Paths are relative to the out-root; `..` and symlinks may not leave it. The promise resolves to `{ path, format, depth, encoding, frame, bytes, replaced }`.
 
 | extension | depths (default first) | records |
 |---|---|---|

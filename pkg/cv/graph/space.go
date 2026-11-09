@@ -143,19 +143,27 @@ func (b *Builder) resolveSpace(op *OpDef, args Args) ([]*Node, []Warning, error)
 		if s := op.spec("gray"); s != nil && args.Has("gray") {
 			gray = args.String("gray")
 		}
-		g, w, err := b.internOp(ToGrayOp, src, gray)
-		if err != nil {
-			return nil, nil, err
+		g := src // a grey image is its own luminance: no toGray node (§7.5)
+		if src.Channels != 1 {
+			var w []Warning
+			var err error
+			if g, w, err = b.internOp(ToGrayOp, src, gray); err != nil {
+				return nil, nil, err
+			}
+			ws = append(ws, w...)
 		}
-		ws = append(ws, w...)
 		args.vals[lumaArg] = InputRef{Index: len(out)}
 		out = append(out, g)
 	}
 	work := workSpace(op, Args{op: op, vals: args.vals, ins: out})
+	masks := maskInputs(op, args)
+	if len(out) > len(args.ins) {
+		masks[len(args.ins)] = true // the luminance is in its source's space (refine: the guide's, not the mask's)
+	}
 	if work != buffer.SpaceNone {
 		for i, in := range out {
-			if in.Kind != KindImage {
-				continue // masks are read as stored
+			if in.Kind != KindImage || masks[i] {
+				continue // regions; masks are weights, read as stored
 			}
 			c, err := b.as(in, work)
 			if err != nil {
@@ -165,11 +173,31 @@ func (b *Builder) resolveSpace(op *OpDef, args Args) ([]*Node, []Warning, error)
 		}
 	}
 	if work == buffer.SpaceEncoded && op.rule(args) != Display { // a layout of display values (compare) mixes encodings on purpose
-		if w, ok := b.encodingWarning(op, args.ins); ok {
+		if w, ok := b.encodingWarning(op, args.ins, masks); ok {
 			ws = append(ws, w)
 		}
 	}
 	return out, ws, nil
+}
+
+// maskInputs are the input positions read as masks: arguments declared
+// Mask (or Regions|Mask) and the receiver of a OneChannel op (§7.5). They
+// are never converted between spaces.
+func maskInputs(op *OpDef, args Args) map[int]bool {
+	m := map[int]bool{}
+	if op.OneChannel && op.On == KindImage {
+		m[0] = true
+	}
+	for i := range op.Args {
+		s := &op.Args[i]
+		if !takesMask(s.Type) || !args.Has(s.Name) {
+			continue
+		}
+		for _, r := range args.refs(s.Name) {
+			m[r.Index] = true
+		}
+	}
+	return m
 }
 
 // closeBracket converts the result of a Physical op back to its receiver's
@@ -183,11 +211,11 @@ func (b *Builder) closeBracket(op *OpDef, args Args, n *Node, recv *Node) (*Node
 
 // encodingWarning is ENCODING when an op in encoded space reads images of
 // different encodings: their encoded scales differ.
-func (b *Builder) encodingWarning(op *OpDef, inputs []*Node) (Warning, bool) {
+func (b *Builder) encodingWarning(op *OpDef, inputs []*Node, masks map[int]bool) (Warning, bool) {
 	byEnc := map[buffer.Encoding]string{}
 	var encs []buffer.Encoding
-	for _, in := range inputs {
-		if in.Kind != KindImage || in.Enc == buffer.EncNone {
+	for i, in := range inputs {
+		if in.Kind != KindImage || in.Enc == buffer.EncNone || masks[i] {
 			continue
 		}
 		if _, ok := byEnc[in.Enc]; !ok {
@@ -239,7 +267,7 @@ func nodeStatics(op *OpDef, args Args) (buffer.Encoding, buffer.Space) {
 			return in.Enc, s
 		}
 		return buffer.EncNone, s
-	case KindMask, KindRegions, KindNone:
+	case KindRegions, KindNone:
 	}
 	return buffer.EncNone, buffer.SpaceNone
 }

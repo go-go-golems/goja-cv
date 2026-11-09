@@ -18,7 +18,7 @@ func testRegistry(t *testing.T) (*Registry, *atomic.Int64) {
 	var slow atomic.Int64
 	r := NewRegistry()
 	r.MustRegister(
-		OpDef{Name: "fill", On: KindNone, Returns: KindImage,
+		OpDef{Name: "fill", On: KindNone, Returns: KindImage, Channels: One,
 			Args: []ArgSpec{
 				{Name: "v", Type: "number", Positional: true},
 				{Name: "w", Type: "number", Default: 40.0},

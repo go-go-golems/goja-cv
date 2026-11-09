@@ -39,13 +39,19 @@ func TestSplitIsThreeChannels(t *testing.T) {
 			t.Fatalf("channel statics %s %s", graph.Statics(n), n.Frame)
 		}
 	}
+	// on a grey image: channel("g") at build time; colour ops refused
 	grey := testSource(t, e, "srgb", window, 0.5)
 	call(t, e, "channel", grey.ID, "r")
-	g := call(t, e, "channel", grey.ID, "g")
-	if _, err := e.Evaluate(t.Context(), g.ID, graph.EvalOptions{Scale: 1}); err == nil {
-		t.Fatal("channel g of a grey image")
-	} else if ce, _ := graph.AsError(err); ce.Code != graph.EArgRange || ce.Fix != "img.toGray()" {
+	if ce := callErr(t, e, "channel", grey.ID, "g"); ce.Code != graph.EArgRange || ce.Fix != "img.toGray()" {
 		t.Fatalf("channel g of grey: %+v", ce)
+	}
+	for _, op := range []string{"split", "toLab", "chroma"} {
+		if ce := callErr(t, e, op, grey.ID); ce.Code != graph.EWrongKind || !strings.Contains(ce.Message, "needs a colour image; this image has one channel") {
+			t.Fatalf("%s of grey: %+v", op, ce)
+		}
+	}
+	if ce := callErr(t, e, "mask.color", grey.ID, map[string]any{"hue": 30.0}); ce.Code != graph.EWrongKind {
+		t.Fatalf("mask.color of grey: %+v", ce)
 	}
 	if ce := callErr(t, e, "channel", img.ID, 1.5); ce.Code != graph.EArgType {
 		t.Fatalf("channel 1.5: %+v", ce)
@@ -161,10 +167,8 @@ func TestToLabChromaColormapEncode(t *testing.T) {
 			t.Fatalf("colormap statics %s", graph.Statics(cm))
 		}
 	}
-	cm := call(t, e, "colormap", col.ID, "viridis")
-	if _, err := e.Evaluate(t.Context(), cm.ID, graph.EvalOptions{Scale: 1}); err == nil {
-		t.Fatal("colormap of three channels")
-	} else if ce, _ := graph.AsError(err); ce.Code != graph.EWrongKind || !strings.Contains(ce.Fix, `toGray("average")`) {
+	// colormap of colour: refused when it is built
+	if ce := callErr(t, e, "colormap", col.ID, "viridis"); ce.Code != graph.EWrongKind || ce.Fix != "img.toGray().colormap(…)" {
 		t.Fatalf("colormap of three channels: %+v", ce)
 	}
 	// without range: the image's p01..p99 (a constant image maps to the low end)

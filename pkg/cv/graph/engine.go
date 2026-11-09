@@ -141,7 +141,7 @@ func (e *Engine) Placeholder(receiver NodeID) (*Node, error) {
 	if r.Kind != op.Returns {
 		return nil, Errorf(EWrongKind, "builder lambdas take %s; the receiver is %s.", A(string(op.Returns)), A(string(r.Kind)))
 	}
-	n, _, err := e.b.InternSource(op, nil, PlaceholderMeta{For: receiver, Frame: r.Frame, Enc: r.Enc, Space: r.Space})
+	n, _, err := e.b.InternSource(op, nil, PlaceholderMeta{For: receiver, Frame: r.Frame, Enc: r.Enc, Space: r.Space, Channels: r.Channels})
 	return n, err
 }
 

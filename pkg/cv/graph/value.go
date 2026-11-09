@@ -12,14 +12,13 @@ type Value interface {
 	Bytes() int64
 }
 
-// ImageValue is an evaluated Image or Mask node. A Mask is a 1-channel
-// buffer with values in [0, 1] (NewMask). Frame is the node's static frame;
-// the evaluator stamps it after Run, which only creates the value.
+// ImageValue is an evaluated Image node (a mask is a one-channel image).
+// Frame is the node's static frame; the evaluator stamps it after Run,
+// which only creates the value.
 type ImageValue struct {
 	Buf   *buffer.Buffer
 	Frame Frame
-	Enc   buffer.Encoding // the node's encoding (EncNone for masks)
-	kind  Kind
+	Enc   buffer.Encoding // the node's encoding
 	// origin is the doc-px position of the buffer's top-left corner when it
 	// is not the frame's origin (a crop evaluated below scale 1 is cut on
 	// buffer pixels).
@@ -46,19 +45,8 @@ var _ Value = &ImageValue{}
 
 // NewImage wraps a buffer as an Image value.
 func NewImage(b *buffer.Buffer) *ImageValue {
-	return &ImageValue{Buf: b, kind: KindImage}
+	return &ImageValue{Buf: b}
 }
-
-// NewMask wraps a 1-channel buffer with values in [0, 1] as a Mask value.
-func NewMask(b *buffer.Buffer) *ImageValue {
-	if b.C != 1 {
-		panic(fmt.Sprintf("cv: NewMask with %d channels", b.C))
-	}
-	return &ImageValue{Buf: b, kind: KindMask}
-}
-
-// IsMask reports whether v is a Mask value.
-func (v *ImageValue) IsMask() bool { return v.kind == KindMask }
 
 // Coverage is the mean of a mask: the fraction of the image it selects.
 func (v *ImageValue) Coverage() float64 {
@@ -69,23 +57,18 @@ func (v *ImageValue) Coverage() float64 {
 	return s / float64(max(1, v.Buf.N()))
 }
 
-func (v *ImageValue) Kind() Kind {
-	if v.kind == "" {
-		return KindImage
-	}
-	return v.kind
-}
+func (v *ImageValue) Kind() Kind { return KindImage }
 
 func (v *ImageValue) Bytes() int64 { return v.Buf.Bytes() + 64 }
 
-// ImageSummary is what JavaScript receives for an awaited Image or Mask
-// node: its statics only (the frame's size at scale 1, encoding, space,
+// ImageSummary is what JavaScript receives for an awaited Image node: its
+// statics only (the frame's size at scale 1, encoding, space, channels,
 // frame, picture) plus the file metadata of an opened file. Nothing is
 // evaluated, so awaiting a 53-megapixel scan is free (GCV-004 D18).
 func ImageSummary(n *Node) map[string]any {
 	m := map[string]any{"kind": string(n.Kind), "w": float64(n.Frame.W), "h": float64(n.Frame.H), "frame": n.Frame.Data()}
 	if n.Kind == KindImage {
-		m["encoding"], m["space"] = n.Enc.String(), n.Space.String()
+		m["encoding"], m["space"], m["channels"] = n.Enc.String(), n.Space.String(), float64(n.Channels)
 	}
 	if n.Frame.Picture {
 		m["picture"] = true

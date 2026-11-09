@@ -22,7 +22,7 @@ func arithImageOp(name, doc string, unit graph.Unit, result *graph.ResultEnc, ne
 		operandDoc = "an image of the same frame, or a number (a factor)"
 	}
 	return graph.OpDef{
-		Name: name, On: graph.KindImage, Returns: graph.KindImage, Result: result,
+		Name: name, On: graph.KindImage, Returns: graph.KindImage, Result: result, Channels: graph.MaxChannels,
 		Args: []graph.ArgSpec{{Name: "b", Type: "Image|number", Unit: unit, Positional: true, Doc: operandDoc}},
 		Identity: func(a graph.Args) bool {
 			v, ok := a.Raw("b").(float64)

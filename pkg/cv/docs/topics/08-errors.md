@@ -31,7 +31,7 @@ error:
 | E_NAMESPACE | the method lives in a namespace | `img.mask.luminance`, `img.detect.specks` |
 | E_UNKNOWN_OPTION | an option key is misspelt or named differently (`min` → `above`, `radius` → `sigma` on a blur, `opacity` → `alpha`) | the `fix` / `valid` list |
 | E_ARG_TYPE, E_ARG_RANGE | wrong type or outside the hard limits | read `cv.help(op)` |
-| E_WRONG_KIND | the receiver or an input has the wrong kind | convert: `.toMask()`, `.components()` |
+| E_WRONG_KIND | the receiver or an input has the wrong kind or channel count | a mask is one channel: `.toGray()`; convert: `.toMask()`, `.components()` |
 | E_NOT_AWAITED | a property of, or a number from, a lazy Value or Regions node (`img.stats().p99`, `img.stats() > 0.5`) | `(await img.stats()).p99` |
 | E_ARG_TYPE (a node as an option) | options are literal values: `levels({ white: d.stats() })` | `levels({ white: (await d.stats()).p99 })` |
 | E_NO_IMAGE | no image is open | `img = cv.open("scan.tif")` |
@@ -59,10 +59,10 @@ return (await loud.stats()).meanL
 
 ## Help
 
-`cv.help(name)` never throws, so you can ask for several names in one eval. It takes an op (`"levels"`, `"detect.specks"`: arguments with units, defaults, usual ranges and limits), a kind (`"Mask"`: its methods with one line each), `Kind.method` (`"Regions.filter"`) or a cv function (`"evaluate"`, `"compare"`, `"docs"`, `"show"`). An unknown name returns `{ found: false, name, didYouMean, hint }`.
+`cv.help(name)` never throws, so you can ask for several names in one eval. It takes an op (`"levels"`, `"detect.specks"`: arguments with units, defaults, usual ranges and limits), a kind (`"Regions"`: its methods with one line each), `Kind.method` (`"Regions.filter"`) or a cv function (`"evaluate"`, `"compare"`, `"docs"`, `"show"`). An unknown name returns `{ found: false, name, didYouMean, hint }`.
 
 ```js
-const names = ["detect.specks", "Mask", "Regions.filter", "evaluate", "mask.stats"]
+const names = ["detect.specks", "Regions", "Regions.filter", "evaluate", "mask.stats"]
 return names.map(n => {
   const h = cv.help(n)
   return h.found === false ? { n, didYouMean: h.didYouMean, hint: h.hint } : { n, keys: Object.keys(h) }

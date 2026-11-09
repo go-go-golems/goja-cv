@@ -58,7 +58,7 @@ return {
 }
 ```
 
-`cv.docs.read(id, { section })` returns Markdown; `cv.help(name)` takes ops, kinds (`"Mask"`), `Kind.method`
+`cv.docs.read(id, { section })` returns Markdown; `cv.help(name)` takes ops, kinds (`"Regions"`), `Kind.method`
 and cv functions, and never throws. In test runs with a small model (deepseek-4.1-flash via pi), making the
 docs reachable from eval and making every error carry a fix cut the calls per task from 30 to about 20, with
 every remaining error corrected on the next call.

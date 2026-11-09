@@ -115,7 +115,7 @@ func selectionWeights(ctx context.Context, v graph.Value, src *graph.ImageValue)
 		}
 		m = x.Buf
 	default:
-		return nil, graph.Errorf(graph.EWrongKind, "stats.mask needs a Mask or Regions.")
+		return nil, graph.Errorf(graph.EWrongKind, "stats.mask needs a mask (a one-channel image) or regions.")
 	}
 	out := make([]float32, m.N())
 	copy(out, m.Plane(0))

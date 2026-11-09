@@ -516,7 +516,7 @@ func (s *state) explainDataMisuse(f *failure, trace cvmod.EvalTrace) {
 				if op.On == graph.KindNone {
 					continue
 				}
-				on := map[graph.Kind]string{graph.KindImage: "img", graph.KindMask: "mask", graph.KindRegions: "regions", graph.KindValue: "value"}[op.On]
+				on := map[graph.Kind]string{graph.KindImage: "img", graph.KindRegions: "regions", graph.KindValue: "value"}[op.On]
 				f.Hint = fmt.Sprintf("%s is plain data here, not a node, so it has no %s(). %q is %s method: call it on the node.", recv, m[1], m[1], graph.A(string(op.On)))
 				f.Fix = fmt.Sprintf("%s.%s(…)", on, m[1])
 				return

@@ -173,7 +173,7 @@ func TestHelp(t *testing.T) {
 		const h = cv.help()
 		const e = cv.help("exposure")
 		return { kinds: h.kinds.join(","), image: h.ops.Image.join(","), ev: e.exposure.args.ev, usage: e.exposure.usage, version: cv.version }`).(map[string]any)
-	if got["kinds"] != "Image,Mask,Regions" || !strings.Contains(got["image"].(string), "gaussian") {
+	if got["kinds"] != "Image,Regions" || !strings.Contains(got["image"].(string), "gaussian") {
 		t.Fatalf("help: %v", got)
 	}
 	if got["ev"] != "number in [-10, 10], usual [-3, 3], required, positional. stops of light: linear values are multiplied by 2^ev" || got["usage"] != "exposure(ev)" {

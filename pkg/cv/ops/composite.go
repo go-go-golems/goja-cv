@@ -13,14 +13,14 @@ import (
 func compositeOps() []graph.OpDef {
 	return []graph.OpDef{
 		{
-			Name: "within", On: graph.KindImage, Returns: graph.KindImage,
+			Name: "within", On: graph.KindImage, Returns: graph.KindImage, Channels: graph.MaxChannels,
 			Args: []graph.ArgSpec{
 				{Name: "mask", Type: "Mask", Positional: true, Doc: "where the edit applies (weights in [0, 1])"},
 				{Name: "edit", Type: "Image", Positional: true, Doc: "the edit: a function i => i.exposure(-0.4) of this image, run once while the graph is built"},
 			},
 			Builders: []int{1},
 			Run: func(ctx context.Context, _ *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
-				base, m, edited := image(in[0]), mask(a.Value("mask")), image(a.Value("edit"))
+				base, m, edited := image(in[0]), image(a.Value("mask")), image(a.Value("edit"))
 				if err := sameFrame("within", base, m); err != nil {
 					return nil, err
 				}
@@ -37,7 +37,7 @@ func compositeOps() []graph.OpDef {
 			See: []string{"blend", "mask.luminance", "feather"},
 		},
 		{
-			Name: "blend", On: graph.KindImage, Returns: graph.KindImage,
+			Name: "blend", On: graph.KindImage, Returns: graph.KindImage, Channels: graph.MaxChannels,
 			Args: []graph.ArgSpec{
 				{Name: "b", Type: "Image", Positional: true, Doc: "the image to blend over this one (same frame)"},
 				{Name: "mode", Type: "enum:" + joinModes(), Default: "normal", Redirects: blendRedirects,
@@ -53,7 +53,7 @@ func compositeOps() []graph.OpDef {
 				}
 				var m *buffer.Buffer
 				if v := a.Value("mask"); v != nil {
-					mb := mask(v)
+					mb := image(v)
 					if err := sameFrame("blend", base, mb); err != nil {
 						return nil, err
 					}
@@ -92,7 +92,7 @@ func targetMask(ctx context.Context, op string, v graph.Value, base *graph.Image
 		}
 		m = x.Buf
 	default:
-		return nil, graph.Errorf(graph.EWrongKind, "%s needs Regions or a Mask.", op)
+		return nil, graph.Errorf(graph.EWrongKind, "%s needs regions or a mask (a one-channel image).", op)
 	}
 	pl := m.Plane(0)
 	out := make([]bool, len(pl))

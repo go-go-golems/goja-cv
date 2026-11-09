@@ -15,7 +15,7 @@ import (
 // FuncDef describes one registered function.
 type FuncDef struct {
 	Name string
-	// On lists the receiver types: node kinds ("Image", "Mask", "Value") or
+	// On lists the receiver types: node kinds ("Image", "Value") or
 	// Go handle types; empty = a module function (cv.<name>).
 	On []string
 	// Args are the function's options, bound with BindOptions (positional

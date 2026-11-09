@@ -1,10 +1,10 @@
 # Masks and regions
 
-A Mask is a soft field of weights in [0, 1] (selections, feathered edges); Regions are discrete, identified areas you can count, rank and exclude by id (specks). Each converts into the other.
+A mask is a one-channel image of weights in [0, 1] (selections, feathered edges): every image op works on it, and it is read as stored. Regions are discrete, identified areas you can count, rank and exclude by id (specks). Each converts into the other.
 
 ## Making masks
 
-All on an Image: `mask.luminance({ above, below, softness })` (luminance levels in the image's space: for an opened file, the scale a look shows and `stats()` reports), `mask.color({ hue, tol, minSat })`, `mask.box([x, y, w, h])`, `mask.ellipse([x, y, w, h])`, `mask.gradient({ from: "top", to: 0.45 })` (or two points), `mask.flood([x, y], { tol })` (magic wand). Coordinates in doc px.
+A mask is an Image with one channel: `await m` reports `channels: 1`, and `m.stats()`, `m.crop(box)` and `m.look()` work as on any image. The mask makers, all on an Image: `mask.luminance({ above, below, softness })` (luminance levels in the image's space: for an opened file, the scale a look shows and `stats()` reports), `mask.color({ hue, tol, minSat })`, `mask.box([x, y, w, h])`, `mask.ellipse([x, y, w, h])`, `mask.gradient({ from: "top", to: 0.45 })` (or two points), `mask.flood([x, y], { tol })` (magic wand). Coordinates in doc px. `img.toGray()`, `chroma()` and `regions.toMask()` are one-channel images too, so they are masks wherever one is expected.
 
 ```js
 const bright = img.mask.luminance({ above: 0.6 })
@@ -14,14 +14,14 @@ return { bright: await bright.coverage(), centre: await centre.coverage() }
 
 ## Combining and refining
 
-Set algebra: `a.and(b)`, `a.or(b)`, `a.minus(b)`, `a.not()`. Morphology in doc px: `grow(radius)`, `shrink(radius)`, `feather(radius)`; `refine(img)` snaps soft edges to image edges. `coverage()` is the selected fraction; `img.stats({ mask })` measures the image inside the mask.
+Set algebra: `a.and(b)`, `a.or(b)`, `a.minus(b)`, `a.not()`. Morphology in doc px: `grow(radius)`, `shrink(radius)`, `feather(radius)`; `refine(img)` snaps soft edges to image edges. `coverage()` is the selected fraction (the mask's mean); `img.stats({ mask })` measures the image inside the mask. These ops need a one-channel receiver, and an argument that takes a mask (`within`, `blend`, `stats`, `heal`, `inpaint`, `overlay`) takes any one-channel image: a colour image there is `E_WRONG_KIND` with the fix `img.toGray()`. A mask is a weight, never converted between spaces: `img.as("linear").within(m, …)` uses the same weights as `img.within(m, …)`.
 
 ```js
 const sel = img.mask.luminance({ above: 0.45 })
   .and(img.mask.gradient({ from: "top", to: 0.6 }))
   .minus(img.mask.box([0, 0, 40, 40]))
   .feather(6)
-return { coverage: await sel.coverage(), look: sel.overlay(img, { color: "lime" }).look("selection") }
+return { coverage: await sel.coverage(), look: img.overlay(sel, { color: "lime" }).look("selection") }
 ```
 
 ## Regions
@@ -47,14 +47,14 @@ Region ids are stable for the same image and options (detection runs at `analysi
 
 ```js
 const specks = img.detect.specks().where({ score: { gte: 0.5 } })
-const m = specks.toMask({ grow: 2 })                                   // Regions → Mask
-const blobs = img.mask.luminance({ above: 0.7 }).components({ minArea: 4 })   // Mask → Regions
+const m = specks.toMask({ grow: 2 })                                   // Regions → mask
+const blobs = img.mask.luminance({ above: 0.7 }).components({ minArea: 4 })   // mask → Regions
 return { masked: await m.coverage(), blobs: await blobs.count() }
 ```
 
 ## Looking at selections
 
-`img.overlay(regions | mask, { color, alpha, labels: "id" })` draws them over the image (colours: any CSS name such as `"lime"`, `"#ff8800"`, `"#f80"` or display `[r, g, b]` in [0, 1]) (`regions.overlay(img)` and `mask.overlay(img)` work too). A Regions node itself has no look: return `img.overlay(regions).look()`.
+`img.overlay(regions | mask, { color, alpha, labels: "id" })` draws them over the image (colours: any CSS name such as `"lime"`, `"#ff8800"`, `"#f80"` or display `[r, g, b]` in [0, 1]). A mask's own look shows its weights as grey; a Regions node has no look: return `img.overlay(regions).look()`.
 
 An overlay is drawn at the look's scale: in a zoomed crop its outlines stay 1 image px wide and the ids readable, and regions found on the whole image can be drawn on a crop, before or after the crop.
 

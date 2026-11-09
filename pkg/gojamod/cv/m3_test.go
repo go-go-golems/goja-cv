@@ -24,7 +24,7 @@ func TestMasksAndRegionsFromJS(t *testing.T) {
 		const coverage = await boxes.coverage()
 		return { m, coverage, count: r.count, first: r.items[0], fcount: f.count, fid: f.items[0].id, same, n1, n2 }`).(map[string]any)
 	m := got["m"].(map[string]any)
-	if m["kind"] != "Mask" || fmt.Sprint(m["frame"]) != "[0 0 64 48]" {
+	if m["kind"] != "Image" || m["channels"] != int64(1) || fmt.Sprint(m["frame"]) != "[0 0 64 48]" {
 		t.Fatalf("mask summary %v", m)
 	}
 	near(t, "coverage", got["coverage"], 96.0/(64*48), 1e-6)

@@ -103,7 +103,7 @@ goja-cv ops
 goja-cv ops --kind Regions
 goja-cv ops --json
 goja-cv help levels
-goja-cv help Mask
+goja-cv help Regions
 goja-cv help Regions.filter
 goja-cv help levels --json
 goja-cv help concepts
@@ -111,7 +111,7 @@ goja-cv help eval
 ```
 
 `goja-cv help NAME` resolves NAME as a guide page (this page is `cli`), then as a command, then as a cv op, kind
-(`Mask`), `Kind.method` or cv function, exactly like `cv.help(NAME)` inside eval. An unknown name prints
+(`Regions`), `Kind.method`, cv function or concept (`mask`, `space`), exactly like `cv.help(NAME)` inside eval. An unknown name prints
 `{ found: false, didYouMean }` and exits 1. `goja-cv help --list` lists the guide pages.
 
 ## mcp

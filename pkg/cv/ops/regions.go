@@ -224,7 +224,7 @@ func idFilterOp(name string, keep bool, doc string) graph.OpDef {
 func regionOps() []graph.OpDef {
 	return []graph.OpDef{
 		{
-			Name: "components", On: graph.KindMask, Returns: graph.KindRegions, Global: true,
+			Name: "components", On: graph.KindImage, Returns: graph.KindRegions, Global: true, OneChannel: true,
 			Args: []graph.ArgSpec{
 				{Name: "minArea", Type: "number", Unit: graph.DocPx2, Default: 1.0, Min: graph.F(0), Doc: "smallest region kept, in doc px²",
 					Redirects: map[string]graph.Redirect{"maxArea": {Hint: "components keeps every region from minArea up; drop large ones with where.",
@@ -234,7 +234,7 @@ func regionOps() []graph.OpDef {
 			},
 			AnalysisScale: analysisScale,
 			Run: func(ctx context.Context, ec *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
-				m := mask(in[0])
+				m := image(in[0])
 				pl := m.Buf.Plane(0)
 				thr := float32(a.Number("threshold"))
 				fg := make([]bool, len(pl))
@@ -364,7 +364,7 @@ func regionOps() []graph.OpDef {
 			Doc: "The number of regions.",
 		},
 		{
-			Name: "toMask", On: graph.KindRegions, Returns: graph.KindMask,
+			Name: "toMask", On: graph.KindRegions, Returns: graph.KindImage, Result: graph.DerivedEnc, Channels: graph.One,
 			Args: []graph.ArgSpec{{Name: "grow", Type: "number", Unit: graph.DocPx, Default: 0.0, Min: graph.F(0), Max: graph.F(500),
 				Doc: "dilate each region by this many doc px"}},
 			Run: func(ctx context.Context, ec *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
@@ -378,9 +378,9 @@ func regionOps() []graph.OpDef {
 						return nil, err
 					}
 				}
-				return graph.NewMask(m), nil
+				return graph.NewImage(m), nil
 			},
-			Doc: "The regions as a Mask at the evaluation scale (exact area coverage), optionally grown.",
+			Doc: "The regions as a mask (a one-channel image) at the evaluation scale (exact area coverage), optionally grown.",
 			See: []string{"components", "grow"},
 		},
 		{

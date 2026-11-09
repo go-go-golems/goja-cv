@@ -82,7 +82,7 @@ A look shows **encoded** values: an sRGB photo looks as usual, a linear-encoded 
 
 ## What can be looked at
 
-- Image and Mask nodes; one-channel maps in false colour with `colormap("viridis")`;
+- Image nodes, masks included (a mask shows its weights as grey); one-channel maps in false colour with `colormap("viridis")`;
 - `histogram()` Value nodes render as a bar chart (no zoom or rulers);
 - Regions: `img.overlay(regions, { labels: "id" })`; marks: `img.annotate([...])`;
 - images side by side: `cv.compare([a, b], { mode: "side" | "split" })`; a difference: `a.sub(b)`.

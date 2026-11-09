@@ -46,7 +46,7 @@ Each look is numbered (the number is burned into its top-left corner) and its ca
 ## Finding things
 
 - `cv.docs.list()` lists the topics; `cv.docs.search("dust heal")` finds sections; `cv.docs.read("recipes", { section: "Remove dust" })` reads one.
-- `cv.help()` lists the ops per kind; `cv.help("levels")` describes one op (arguments, units, defaults, ranges); `cv.help("Mask")` lists a kind's methods; `cv.help("Regions.filter")` one method of a kind. It never throws: unknown names return `{ found: false, didYouMean }`.
+- `cv.help()` lists the ops per kind; `cv.help("levels")` describes one op (arguments, units, defaults, ranges); `cv.help("Regions")` lists a kind's methods, `cv.help("mask")` explains a concept; `cv.help("Regions.filter")` one method of a kind. It never throws: unknown names return `{ found: false, didYouMean }`.
 - Errors carry a literal `fix:`; apply it (see `cv.docs.read("errors")`).
 - These topics are written for you, the agent. The longer guidebook for the people who set goja-cv up (CLI, MCP clients, embedding) is `goja-cv help` on the command line and the MCP resources `cv://guide/<slug>`.
 

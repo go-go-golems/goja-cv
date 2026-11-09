@@ -274,7 +274,7 @@ func (e *Evaluator) Explain(id NodeID, scale float64) []string {
 		parentScale := run.scale
 		run = run.at(run.scaleFor(n))
 		right := string(n.Kind)
-		if n.Kind == KindImage || n.Kind == KindMask {
+		if n.Kind == KindImage {
 			w, h := buffer.ScaledSize(n.Frame.W, n.Frame.H, run.scale)
 			right += fmt.Sprintf(" %d×%d", w, h)
 		}

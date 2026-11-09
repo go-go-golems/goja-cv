@@ -288,7 +288,7 @@ func drawMarks(ctx context.Context, img *graph.ImageValue, marks []mark, width i
 
 func annotateOp() graph.OpDef {
 	return graph.OpDef{
-		Name: "annotate", On: graph.KindImage, Returns: graph.KindImage, Class: graph.Decoration,
+		Name: "annotate", On: graph.KindImage, Returns: graph.KindImage, Class: graph.Decoration, Channels: graph.Three,
 		Space: graph.Display,
 		Args: []graph.ArgSpec{
 			{Name: "marks", Type: "any", Positional: true,

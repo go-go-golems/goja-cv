@@ -315,14 +315,14 @@ func (b *binding) open(c goja.FunctionCall) goja.Value {
 // __evaluate(id) → Promise: await. A Value or Regions node is evaluated at
 // scale 1 (data is exact); the promise is created here, on the owner
 // goroutine, the engine runs on a goroutine and the result is converted and
-// the promise settled in a callback posted back to the owner. An Image (or
-// Mask) node resolves at once to its static summary: nothing is evaluated.
+// the promise settled in a callback posted back to the owner. An Image node
+// (a mask too) resolves at once to its static summary: nothing is evaluated.
 func (b *binding) evaluate(c goja.FunctionCall) goja.Value {
 	vm := b.vm
 	n := b.nodeArg(c.Argument(0))
 	b.noteUsed(n.ID)
 	promise, resolve, reject := vm.NewPromise()
-	if n.Kind == graph.KindImage || n.Kind == graph.KindMask {
+	if n.Kind == graph.KindImage {
 		_ = resolve(toJS(vm, graph.ImageSummary(n)))
 		return vm.ToValue(promise)
 	}
@@ -389,7 +389,7 @@ func (b *binding) explain(c goja.FunctionCall) goja.Value {
 		"graph": toAny(b.eng.Explain(n.ID)),
 	}
 	if n.Kind == graph.KindImage {
-		d["encoding"], d["space"] = n.Enc.String(), n.Space.String()
+		d["encoding"], d["space"], d["channels"] = n.Enc.String(), n.Space.String(), float64(n.Channels)
 	}
 	if info, ok := graph.SourceInfo(n); ok {
 		for k, v := range info {
@@ -423,7 +423,7 @@ func (b *binding) notAwaited(c goja.FunctionCall) goja.Value {
 	}
 	call := n.Op.Name + "()"
 	expr := graph.AwaitExpr(n)
-	if n.Kind == graph.KindImage || n.Kind == graph.KindMask {
+	if n.Kind == graph.KindImage {
 		call = graph.Label(n)
 	}
 	var e *graph.Error
@@ -431,7 +431,7 @@ func (b *binding) notAwaited(c goja.FunctionCall) goja.Value {
 	case prop == "":
 		e = graph.Errorf(graph.ENotAwaited, "%s is a lazy node used as %s: nothing has been computed yet.", call, graph.A(c.Argument(2).String()))
 		e.Hint = "Await the node first; awaited, a Value is its data and an Image its summary { kind, w, h, … }."
-		if n.Kind == graph.KindImage || n.Kind == graph.KindMask {
+		if n.Kind == graph.KindImage {
 			e.Fix = "(await img).w"
 		} else {
 			e.Fix = fmt.Sprintf("(await %s).%s", expr, sampleField(n))

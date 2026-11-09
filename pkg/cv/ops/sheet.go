@@ -282,7 +282,7 @@ const WSheetTruncated = "SHEET_TRUNCATED"
 
 func sheetOp() graph.OpDef {
 	return graph.OpDef{
-		Name: "sheet", On: graph.KindNone, Returns: graph.KindImage, Result: graph.DisplayEnc, Lossless: true,
+		Name: "sheet", On: graph.KindNone, Returns: graph.KindImage, Result: graph.DisplayEnc, Lossless: true, Channels: graph.Three,
 		Space: graph.Display, // cells show what looks show
 		Args: []graph.ArgSpec{
 			{Name: "items", Type: "Regions|any[]", Positional: true,

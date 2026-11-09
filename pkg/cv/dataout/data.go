@@ -86,7 +86,7 @@ func New(eng *graph.Engine, format string, node graph.NodeID, data any, o Option
 		if !ok {
 			return nil, graph.Errorf(graph.EInternal, "unknown node #%d", node)
 		}
-		if n.Kind == graph.KindImage || n.Kind == graph.KindMask {
+		if n.Kind == graph.KindImage {
 			return nil, graph.Errorf(graph.EWrongKind, "%s writes data (Value and Regions nodes, plain data); %s is %s node.", call, graph.Label(n), graph.A(string(n.Kind))).
 				WithHint("Images are saved as image files.").
 				WithFix(`node.save("x.tif")`)

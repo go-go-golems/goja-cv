@@ -17,7 +17,6 @@ type Kind string
 
 const (
 	KindImage   Kind = "Image"
-	KindMask    Kind = "Mask"
 	KindRegions Kind = "Regions"
 	KindValue   Kind = "Value"
 	// KindNone is the receiver "kind" of source and module ops (cv.open,
@@ -25,11 +24,36 @@ const (
 	KindNone Kind = ""
 )
 
+// MaskType is the type word of an argument that takes a mask: an Image
+// node with one channel (GCV-004 §7.5). It is not a kind.
+const MaskType = "Mask"
+
 // accepts reports whether a node of kind k satisfies a declared input kind
-// such as "Image" or "Regions|Mask".
+// such as "Image" or "Regions|Image" ("Mask" is not a kind: see acceptsNode).
 func accepts(decl Kind, k Kind) bool {
 	for _, d := range strings.Split(string(decl), "|") {
 		if Kind(d) == k {
+			return true
+		}
+	}
+	return false
+}
+
+// acceptsNode reports whether node n satisfies a declared node type such as
+// "Image", "Mask" (an Image with one channel) or "Regions|Mask".
+func acceptsNode(decl string, n *Node) bool {
+	for _, d := range strings.Split(decl, "|") {
+		if Kind(d) == n.Kind || (d == MaskType && n.Kind == KindImage && n.Channels == 1) {
+			return true
+		}
+	}
+	return false
+}
+
+// takesMask reports whether a declared node type accepts a mask.
+func takesMask(decl string) bool {
+	for _, d := range strings.Split(decl, "|") {
+		if d == MaskType {
 			return true
 		}
 	}
@@ -133,7 +157,8 @@ var EncodingValueSynonyms = map[string]string{"sRGB": "srgb", "SRGB": "srgb", "g
 // object with cx, cy), "data" (a node or plain data, kept as given: the
 // argument of cv.json and cv.csv), unions such as "point|number", "object"
 // (with Options as the allowed keys), "any", and node types such as
-// "Mask", "Regions|Mask" or "Image[]": a node argument is its own input of
+// "Mask" (an Image with one channel), "Regions|Mask" or "Image[]": a node
+// argument is its own input of
 // the node (one per list element, repetitions kept); build-time code reads
 // it with Args.Input / Args.Inputs, Run with Args.Value / Args.Values.
 type ArgSpec struct {
@@ -224,6 +249,15 @@ type OpDef struct {
 	Space   SpaceRule              // follows its receiver (default), physical or display (§7.4)
 	SpaceOf func(a Args) SpaceRule // overrides Space per call (toGray: rec709 is physical, average follows)
 	Result  *ResultEnc             // encoding and space of an Image result; nil = KeepEnc
+	// Channels is the channel count of an Image result; nil: the receiver's
+	// (§7.5). MaxChannels is the rule of two-image ops.
+	Channels func(a Args) int
+	// OneChannel: the receiver must have one channel (the mask ops,
+	// colormap); ThreeChannel: it must have colour (toLab, split, chroma,
+	// mask.color). Both are E_WRONG_KIND at build time. A OneChannel
+	// receiver is read as stored (never converted between spaces).
+	OneChannel   bool
+	ThreeChannel bool
 	// Luma: the builder adds the luminance of the receiver (or of the argument
 	// LumaOf names) as an extra input, toGray with the op's gray weights in
 	// that image's space; Run reads it with Args.Luma (the one luminance).
@@ -393,7 +427,7 @@ func (r *Registry) Ops() []*OpDef {
 }
 
 // receiverKinds are the receiver kinds in display order.
-var receiverKinds = []Kind{KindImage, KindMask, KindRegions, KindValue}
+var receiverKinds = []Kind{KindImage, KindRegions, KindValue}
 
 func kindOrder(k Kind) int {
 	for i, kk := range receiverKinds {

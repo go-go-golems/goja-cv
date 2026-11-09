@@ -49,13 +49,13 @@ func LookArgs() []graph.ArgSpec {
 func funcDefs() []graph.FuncDef {
 	return []graph.FuncDef{
 		{
-			Name: "look", On: []string{string(graph.KindImage), string(graph.KindMask), string(graph.KindValue)}, Args: LookArgs(),
-			Doc: "A look of the node: an image delivered after the eval (Image, Mask; a histogram as bars, a profile as lines), whether or not it is returned, up to four per eval (a LOOKS warning names the others). Numbered, with what it shows and its scale in the caption.",
+			Name: "look", On: []string{string(graph.KindImage), string(graph.KindValue)}, Args: LookArgs(),
+			Doc: "A look of the node: an image delivered after the eval (an Image or mask; a histogram as bars, a profile as lines), whether or not it is returned, up to four per eval (a LOOKS warning names the others). Numbered, with what it shows and its scale in the caption.",
 			See: []string{"compare", "overlay", "sheet"},
 		},
 		{
 			Name: "explain", Bespoke: true, Usage: "cv.explain(node)",
-			Doc: "A node's id, kind, op, call, frame, encoding, space, path and graph (one line per node: call, kind, size, cached), without evaluating anything.",
+			Doc: "A node's id, kind, op, call, frame, encoding, space, channels, path and graph (one line per node: call, kind, size, cached), without evaluating anything.",
 			See: []string{"look", "help"},
 		},
 		{
@@ -65,7 +65,7 @@ func funcDefs() []graph.FuncDef {
 		},
 		{
 			Name: "help", Bespoke: true, Usage: "cv.help() · cv.help(name)",
-			Doc: "The op reference: no argument lists ops per kind; a name describes an op, a kind (\"Mask\"), Kind.method (\"Mask.coverage\") or a cv function. Never throws; unknown names return { found: false, didYouMean }.",
+			Doc: "The op reference: no argument lists ops per kind; a name describes an op, a kind (\"Regions\"), Kind.method (\"Regions.filter\") or a cv function. Never throws; unknown names return { found: false, didYouMean }.",
 			See: []string{"docs"},
 		},
 
@@ -89,7 +89,7 @@ func funcDefs() []graph.FuncDef {
 			See: []string{"json", "save"},
 		},
 		{
-			Name: "save", On: []string{string(graph.KindImage), string(graph.KindMask), DataKind},
+			Name: "save", On: []string{string(graph.KindImage), DataKind},
 			Args: []graph.ArgSpec{
 				{Name: "path", Type: "string", Positional: true, Doc: "file path relative to the out-root (--out-root); the extension picks the format: .tif, .png, .npy, .jpg for images, .csv or .json for data"},
 				{Name: "depth", Type: "number", Optional: true, Doc: "bits per sample: TIFF 16 (default), 8 or 32 (float); PNG 16 or 8; NPY 32 (float) or 16"},

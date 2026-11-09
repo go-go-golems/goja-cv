@@ -111,6 +111,10 @@ var placeholderEnc = &graph.ResultEnc{
 	},
 }
 
+// fileChannels is the channel count of an opened file: 1 or 3 after
+// decoding (an alpha or extra sample dropped).
+func fileChannels(a graph.Args) int { return graph.Meta[graph.SourceMeta](a).Info.Channels }
+
 // openArgs are the arguments of cv.open (and of its linear view).
 var openArgs = []graph.ArgSpec{
 	{Name: "path", Type: "string", Positional: true, Doc: "image file: " + buffer.SupportedFormats},
@@ -128,6 +132,7 @@ func sourceOps() []graph.OpDef {
 			// as(open(…), "linear") is interned as this op: the linear view of
 			// a file is its pyramid level (no copy, no conversion).
 			Name: graph.OpenLinearOp, On: graph.KindNone, Returns: graph.KindImage, Result: openLinearEnc, Bespoke: true, Internal: true,
+			Channels: fileChannels,
 			Args:     openArgs,
 			DocFrame: openFrame,
 			Run: func(ctx context.Context, ec *graph.EvalCtx, _ []graph.Value, a graph.Args) (graph.Value, error) {
@@ -141,6 +146,7 @@ func sourceOps() []graph.OpDef {
 		},
 		{
 			Name: "open", On: graph.KindNone, Returns: graph.KindImage, Result: sourceEnc, Bespoke: true,
+			Channels: fileChannels,
 			Args:     openArgs,
 			DocFrame: openFrame,
 			Validate: validateOpen,
@@ -160,6 +166,7 @@ func sourceOps() []graph.OpDef {
 		},
 		{
 			Name: graph.PlaceholderOp, On: graph.KindNone, Returns: graph.KindImage, Result: placeholderEnc, Bespoke: true,
+			Channels: func(a graph.Args) int { return graph.Meta[graph.PlaceholderMeta](a).Channels },
 			DocFrame: func(a graph.Args) graph.Frame { return graph.Meta[graph.PlaceholderMeta](a).Frame },
 			Run: func(context.Context, *graph.EvalCtx, []graph.Value, graph.Args) (graph.Value, error) {
 				return nil, graph.Errorf(graph.EPlaceholder, "This is the placeholder image a within() function receives; it only stands for the masked image while the function builds its edit.").

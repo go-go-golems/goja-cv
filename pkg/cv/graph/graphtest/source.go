@@ -29,6 +29,7 @@ func RegisterSource(reg *graph.Registry) {
 	reg.MustRegister(graph.OpDef{
 		Name: SourceOp, On: graph.KindNone, Returns: graph.KindImage, Bespoke: true,
 		DocFrame: func(a graph.Args) graph.Frame { return graph.Meta[Meta](a).Frame },
+		Channels: func(a graph.Args) int { return len(graph.Meta[Meta](a).Fill) },
 		Result: &graph.ResultEnc{
 			Enc: func(a graph.Args) buffer.Encoding {
 				e, _ := buffer.ParseEncoding(graph.Meta[Meta](a).Enc)

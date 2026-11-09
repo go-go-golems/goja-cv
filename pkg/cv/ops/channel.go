@@ -2,7 +2,6 @@ package ops
 
 import (
 	"context"
-	"fmt"
 	"math"
 	"strings"
 
@@ -60,32 +59,31 @@ func SourceNotes(b *graph.Builder, n *graph.Node) []string {
 func channelOps() []graph.OpDef {
 	return []graph.OpDef{
 		{
-			Name: "channel", On: graph.KindImage, Returns: graph.KindImage,
+			Name: "channel", On: graph.KindImage, Returns: graph.KindImage, Channels: graph.One,
 			Args: []graph.ArgSpec{{Name: "c", Type: "enum:r,g,b|number", Positional: true, Min: graph.F(0), Max: graph.F(2),
 				Doc: `the channel: "r", "g", "b" or 0, 1, 2`}},
 			Validate: func(a graph.Args) error {
 				if f, ok := a.Raw("c").(float64); ok && f != math.Trunc(f) {
 					return graph.Errorf(graph.EArgType, "channel(%g): the channel is 0, 1 or 2.", f).WithValid([]string{"r", "g", "b", "0", "1", "2"})
 				}
+				if n := a.Receiver().Channels; channelOf(a) >= n && n > 0 {
+					return graph.Errorf(graph.EArgRange, "channel(%v): the image has %d channel(s).", a.Raw("c"), n).
+						WithHint("A one-channel image is already grey; its only channel is \"r\" (0).").
+						WithValid([]string{"r", "0"}).WithFix("img.toGray()")
+				}
 				return nil
 			},
 			Run: func(_ context.Context, _ *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
 				src := image(in[0])
-				c := channelOf(a)
-				if c >= src.Buf.C {
-					return nil, graph.Errorf(graph.EArgRange, "channel(%v): the image has %d channel(s).", a.Raw("c"), src.Buf.C).
-						WithHint("A one-channel image is already grey; its only channel is \"r\" (0).").
-						WithValid([]string{"r", "0"}).WithFix("img.toGray()")
-				}
 				out := buffer.NewLikeC(src.Buf, 1)
-				copy(out.Pix, src.Buf.Plane(c))
+				copy(out.Pix, src.Buf.Plane(channelOf(a)))
 				return graph.NewImage(out), nil
 			},
 			Doc: `One channel as a one-channel image: channel("g"). Keeps the encoding and space (plane selection).`,
 			See: []string{"split", "toGray", "chroma"},
 		},
 		{
-			Name: "split", On: graph.KindImage, Returns: graph.KindImage,
+			Name: "split", On: graph.KindImage, Returns: graph.KindImage, ThreeChannel: true,
 			Expand: func(x *graph.Expander, recv *graph.Node, _ graph.Args) ([]*graph.Node, error) {
 				out := make([]*graph.Node, 3)
 				for i, c := range []string{"r", "g", "b"} {
@@ -101,7 +99,7 @@ func channelOps() []graph.OpDef {
 			See: []string{"channel"},
 		},
 		{
-			Name: "toLab", On: graph.KindImage, Returns: graph.KindImage,
+			Name: "toLab", On: graph.KindImage, Returns: graph.KindImage, ThreeChannel: true,
 			Space:  graph.Physical,
 			Result: graph.DerivedEnc,
 			Warn: func(b *graph.Builder, a graph.Args) []graph.Warning {
@@ -123,7 +121,7 @@ func channelOps() []graph.OpDef {
 			See: []string{"chroma", "split"},
 		},
 		{
-			Name: "chroma", On: graph.KindImage, Returns: graph.KindImage,
+			Name: "chroma", On: graph.KindImage, Returns: graph.KindImage, ThreeChannel: true, Channels: graph.One,
 			Result: graph.DerivedEnc,
 			Args: []graph.ArgSpec{{Name: "relative", Type: "bool", Default: false,
 				Doc: "divide by the channel mean + 0.001, so equal colour casts score alike in shadows and highlights"}},
@@ -138,7 +136,7 @@ func channelOps() []graph.OpDef {
 			See: []string{"colormap", "toLab", "channel"},
 		},
 		{
-			Name: "colormap", On: graph.KindImage, Returns: graph.KindImage,
+			Name: "colormap", On: graph.KindImage, Returns: graph.KindImage, OneChannel: true, Channels: graph.Three,
 			Result: graph.DisplayEnc,
 			Args: []graph.ArgSpec{
 				{Name: "name", Type: "enum:" + strings.Join(kernels.ColormapNames, ","), Positional: true, Default: "viridis",
@@ -149,12 +147,6 @@ func channelOps() []graph.OpDef {
 			},
 			Run: func(ctx context.Context, _ *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
 				src := image(in[0])
-				if src.Buf.C != 1 {
-					return nil, graph.Errorf(graph.EWrongKind, "colormap needs a one-channel image; this one has %d channels.", src.Buf.C).
-						WithHint("Pick a channel, or reduce the image to grey first.").
-						WithValid([]string{`.channel("g")`, `.toGray("average")`}).
-						WithFix(fmt.Sprintf(`img.toGray("average").colormap(%q)`, a.String("name")))
-				}
 				name := a.String("name")
 				var lo, hi float64
 				if a.Has("range") {

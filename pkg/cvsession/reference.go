@@ -32,8 +32,8 @@ Most used calls
 - Views that make small things stand out: img.view("speck" | "speckDark" | "signed" | "detail" | "neutral" | "scene"), img.highpass(sigma), img.dog(1, 4); cv.docs.read("views").
 - Many candidates in one image: cv.sheet(regions.sortBy("area").top(36), { views: [img, img.view("speck")] }).look(); mark points with img.annotate([{ circle: [x, y, r] }]).
 - cv.compare([a, b], { mode: "side" | "split" }) to see before/after; a.sub(b) is their signed difference (.mul(4).add(0.5) shows zero as grey).
-- Masks: img.mask.luminance({ above, below }), mask.box([x, y, w, h]), mask.gradient({ from: "top", to: 0.5 }), mask.color, mask.flood; a.and(b), a.or(b), a.minus(b), a.not(), m.feather(radius), m.grow(radius), m.coverage().
-- img.within(mask, i => i.exposure(-0.4)) edits inside a mask (the function runs at build time).
+- Masks are one-channel images: img.mask.luminance({ above, below }), mask.box([x, y, w, h]), mask.gradient({ from: "top", to: 0.5 }), mask.flood, img.toGray(); a.and(b), a.or(b), a.minus(b), a.not(), m.feather(r), m.grow(r), m.coverage().
+- img.within(mask, i => i.exposure(-0.4)) edits inside a mask (the function runs when built).
 - Dust: img.detect.specks() → Regions with flat items { id, x, y, w, h, cx, cy, area, … } (pass an item as box, point or id); .where({ score: { gte: 0.5 } }), .sortBy("area").top(n), .without([id]); img.overlay(regions, { labels: "id" }).look(); img.heal(regions, { radius }).
 - Measure: img.measure(points) (step, spread, snr, stepChroma), img.sample, img.profile(a, b).look(), regions.measure(img, { ring: true }); cv.docs.read("measuring").
 - Data: return cv.csv(x, { name }) or cv.json(x) for all rows; node.save(path) under --out-root; cv.docs.read("data-out").

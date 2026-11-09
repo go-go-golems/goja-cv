@@ -2,6 +2,7 @@ package ops
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"path/filepath"
 	"strings"
@@ -113,7 +114,9 @@ func TestPreviewScaleEvaluatesSmallerBuffers(t *testing.T) {
 	}
 }
 
-// walkNodes are the receivers and node inputs the registry walk uses.
+// walkNodes are the node inputs the registry walk passes: img and edited
+// are the image arguments (colour or grey, per pass), mask and mask2
+// masks, regions regions of mask.
 type walkNodes struct {
 	img, stats, mask, mask2, regions, edited *graph.Node
 }
@@ -123,12 +126,12 @@ func nodeArg(n *graph.Node) graph.NodeArg { return graph.NodeArg{ID: n.ID} }
 // walkSamples gives sample arguments for ops that need some; ops not listed
 // are called without arguments.
 var walkSamples = map[string]func(w walkNodes) []any{
-	"channel": func(walkNodes) []any { return []any{"g"} }, "encode": func(walkNodes) []any { return []any{"srgb"} },
+	"channel": func(walkNodes) []any { return []any{"r"} }, "encode": func(walkNodes) []any { return []any{"srgb"} },
 	"exposure": func(walkNodes) []any { return []any{0.5} }, "contrast": func(walkNodes) []any { return []any{0.2} },
 	"gaussian": func(walkNodes) []any { return []any{1.5} }, "as": func(walkNodes) []any { return []any{"linear"} },
-	"add": func(walkNodes) []any { return []any{1} }, "sub": func(walkNodes) []any { return []any{1} },
-	"mul": func(walkNodes) []any { return []any{2} }, "div": func(walkNodes) []any { return []any{2} },
-	"min": func(walkNodes) []any { return []any{0} }, "max": func(walkNodes) []any { return []any{0} },
+	"add": func(w walkNodes) []any { return []any{nodeArg(w.edited)} }, "sub": func(w walkNodes) []any { return []any{nodeArg(w.edited)} },
+	"mul": func(w walkNodes) []any { return []any{nodeArg(w.edited)} }, "div": func(walkNodes) []any { return []any{2} },
+	"min": func(w walkNodes) []any { return []any{nodeArg(w.edited)} }, "max": func(w walkNodes) []any { return []any{nodeArg(w.edited)} },
 	"distance": func(walkNodes) []any { return []any{0.18} },
 	"sample": func(walkNodes) []any {
 		return []any{[]any{[]any{10.5, 10.5}, []any{30.0, 20.0}}, map[string]any{"radius": 2}}
@@ -151,8 +154,7 @@ var walkSamples = map[string]func(w walkNodes) []any{
 	"grow":           func(walkNodes) []any { return []any{2} },
 	"shrink":         func(walkNodes) []any { return []any{2} },
 	"refine":         func(w walkNodes) []any { return []any{nodeArg(w.img), map[string]any{"radius": 4}} },
-	"overlay":        func(w walkNodes) []any { return []any{nodeArg(w.img)} },
-	"Image:overlay": func(w walkNodes) []any {
+	"overlay": func(w walkNodes) []any {
 		return []any{nodeArg(w.regions), map[string]any{"labels": "id", "color": []any{0.2, 0.9, 0.3}}}
 	},
 	"compare":       func(w walkNodes) []any { return []any{[]any{nodeArg(w.edited)}} },
@@ -180,52 +182,88 @@ var walkSamples = map[string]func(w walkNodes) []any{
 
 // walkSkip are ops the Go-only walk cannot evaluate (data lambdas need a
 // JavaScript runtime; they are covered by the runtime tests).
-var walkSkip = map[string]bool{"filter": true, "split": true, "colormap": true} // split builds 3 nodes, colormap needs one channel: channel_test.go
+var walkSkip = map[string]bool{"filter": true, "split": true} // split builds 3 nodes: channel_test.go
 
-// TestRegistryWalk builds every op with sample arguments on the test image,
-// evaluates it at preview scale and at 1.0, checks the result kind and that
-// help renders (Part 3 §18 "The registry").
+// TestRegistryWalk is the registry and channel property test (GCV-004
+// §7.5, §14.1): every op is built with sample arguments on colour, grey and
+// mask receivers (as its channel requirement allows) and, in two passes,
+// with colour and grey image arguments (every grey/colour combination of a
+// two-image op: m.mul(img) is colour), evaluated at preview scale and at
+// 1.0; the result has the declared kind, Buf.C == Node.Channels, and a
+// mask's values lie in [0, 1]. Help renders for every op.
 func TestRegistryWalk(t *testing.T) {
-	e, img := newEngine(t)
-	stats := call(t, e, "stats", img.ID)
-	w := walkNodes{img: img, stats: stats,
-		mask:  call(t, e, "mask.luminance", img.ID, map[string]any{"above": 0.3}),
-		mask2: call(t, e, "mask.box", img.ID, []any{8, 8, 30, 20})}
-	w.regions = call(t, e, "components", w.mask.ID)
-	w.edited = call(t, e, "exposure", img.ID, -0.5)
-	recv := map[graph.Kind]graph.NodeID{graph.KindImage: img.ID, graph.KindValue: stats.ID, graph.KindMask: w.mask.ID, graph.KindRegions: w.regions.ID}
+	e, colour := newEngine(t)
+	grey := call(t, e, "toGray", colour.ID)
+	mask := call(t, e, "mask.luminance", colour.ID, map[string]any{"above": 0.3})
+	stats := call(t, e, "stats", colour.ID)
+	regs := call(t, e, "components", mask.ID)
 	for _, op := range e.Registry().Ops() {
 		if _, err := e.Registry().Help(op.Name); err != nil {
 			t.Fatalf("help(%s): %v", op.Name, err)
 		}
-		r, ok := recv[op.On]
-		if !ok || walkSkip[op.Name] {
-			continue // sources are covered by Open
+	}
+	for _, arg := range []*graph.Node{colour, grey} {
+		w := walkNodes{img: arg, stats: stats, mask: mask, regions: regs,
+			mask2:  call(t, e, "mask.box", colour.ID, []any{8, 8, 30, 20}),
+			edited: call(t, e, "exposure", arg.ID, -0.5)}
+		for _, op := range e.Registry().Ops() {
+			if walkSkip[op.Name] {
+				continue
+			}
+			var recvs []*graph.Node
+			switch {
+			case op.On == graph.KindValue:
+				recvs = []*graph.Node{stats}
+			case op.On == graph.KindRegions:
+				recvs = []*graph.Node{regs}
+			case op.On != graph.KindImage: // sources are covered by Open
+			case op.OneChannel:
+				recvs = []*graph.Node{grey, mask}
+			case op.ThreeChannel:
+				recvs = []*graph.Node{colour}
+			default:
+				recvs = []*graph.Node{colour, grey, mask}
+			}
+			var raw []any
+			if f, ok := walkSamples[string(op.On)+":"+op.Name]; ok {
+				raw = f(w)
+			} else if f, ok := walkSamples[op.Name]; ok {
+				raw = f(w)
+			}
+			for _, r := range recvs {
+				walkOne(t, e, op, r, raw)
+			}
 		}
-		var raw []any
-		if f, ok := walkSamples[string(op.On)+":"+op.Name]; ok {
-			raw = f(w)
-		} else if f, ok := walkSamples[op.Name]; ok {
-			raw = f(w)
-		}
-		cr, err := e.Call(op.Name, r, raw)
-		n := cr.Node()
+	}
+}
+
+func walkOne(t *testing.T, e *graph.Engine, op *graph.OpDef, r *graph.Node, raw []any) {
+	t.Helper()
+	what := fmt.Sprintf("%s:%s on %d-channel #%d", op.On, op.Name, r.Channels, r.ID)
+	cr, err := e.Call(op.Name, r.ID, raw)
+	if err != nil {
+		t.Fatalf("%s: %v", what, err)
+	}
+	n := cr.Node()
+	for _, scale := range []float64{0.25, 1, 0.5} {
+		v, err := e.Evaluate(context.Background(), n.ID, graph.EvalOptions{Scale: scale})
 		if err != nil {
-			t.Fatalf("%s:%s: %v", op.On, op.Name, err)
+			t.Fatalf("%s at %g: %v", what, scale, err)
 		}
-		for _, scale := range []float64{0.25, 1, 0.5} {
-			v, err := e.Evaluate(context.Background(), n.ID, graph.EvalOptions{Scale: scale})
-			if err != nil {
-				t.Fatalf("%s:%s at %g: %v", op.On, op.Name, scale, err)
-			}
-			if want := op.Returns; v.Kind() != want {
-				t.Fatalf("%s returned %s, declared %s", op.Name, v.Kind(), op.Returns)
-			}
-			if iv, ok := v.(*graph.ImageValue); ok && iv.IsMask() {
-				for _, p := range iv.Buf.Pix {
-					if p < 0 || p > 1 || p != p {
-						t.Fatalf("%s: mask value %v outside [0, 1]", op.Name, p)
-					}
+		if want := op.Returns; v.Kind() != want {
+			t.Fatalf("%s returned %s, declared %s", what, v.Kind(), op.Returns)
+		}
+		iv, ok := v.(*graph.ImageValue)
+		if !ok {
+			continue
+		}
+		if iv.Buf.C != n.Channels {
+			t.Fatalf("%s: %d channels, Node.Channels %d", what, iv.Buf.C, n.Channels)
+		}
+		if strings.HasPrefix(op.Name, "mask.") || (op.OneChannel && n.Channels == 1) {
+			for _, p := range iv.Buf.Pix {
+				if p < 0 || p > 1 || p != p {
+					t.Fatalf("%s: mask value %v outside [0, 1]", what, p)
 				}
 			}
 		}

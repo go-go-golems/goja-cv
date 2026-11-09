@@ -9,13 +9,23 @@ import (
 	"github.com/go-go-golems/goja-cv/pkg/cv/buffer"
 )
 
-// m3Engine extends the test registry with a Mask maker, a Regions maker
+// m3Engine extends the test registry with a mask maker, a colour maker, a
+// Regions maker
 // with an analysis scale, a kind-typed option, a box arg and a validator.
 func m3Engine(t *testing.T) *Engine {
 	t.Helper()
 	r, _ := testRegistry(t)
 	r.MustRegister(
-		OpDef{Name: "mask.half", On: KindImage, Returns: KindMask,
+		OpDef{Name: "rgb", On: KindImage, Returns: KindImage, Channels: Three,
+			Run: func(_ context.Context, _ *EvalCtx, in []Value, _ Args) (Value, error) {
+				src := in[0].(*ImageValue)
+				out := buffer.NewLikeC(src.Buf, 3)
+				for c := 0; c < 3; c++ {
+					copy(out.Plane(c), src.Buf.Plane(0))
+				}
+				return NewImage(out), nil
+			}},
+		OpDef{Name: "mask.half", On: KindImage, Returns: KindImage, Channels: One,
 			Run: func(_ context.Context, ec *EvalCtx, in []Value, _ Args) (Value, error) {
 				src := in[0].(*ImageValue)
 				m := buffer.New(src.Buf.W, src.Buf.H, 1, ec.Scale)
@@ -24,7 +34,7 @@ func m3Engine(t *testing.T) *Engine {
 						m.Pix[y*m.W+x] = 1
 					}
 				}
-				return NewMask(m), nil
+				return NewImage(m), nil
 			}},
 		OpDef{Name: "blobs", On: KindImage, Returns: KindRegions,
 			Args: []ArgSpec{
@@ -79,8 +89,8 @@ func TestKindTypedArgsStaticLenValidate(t *testing.T) {
 	e := m3Engine(t)
 	src := mustCall(t, e, "fill", 0, 0.0)
 	m := mustCall(t, e, "mask.half", src.ID)
-	if m.Kind != KindMask {
-		t.Fatal(m.Kind)
+	if m.Kind != KindImage || m.Channels != 1 {
+		t.Fatal(m.Kind, m.Channels)
 	}
 	p := mustCall(t, e, "paint", src.ID, map[string]any{"mask": NodeArg{m.ID}})
 	if len(p.Inputs) != 2 || !p.HasReceiver() {
@@ -94,10 +104,20 @@ func TestKindTypedArgsStaticLenValidate(t *testing.T) {
 	if b.Pix[0] != 1 || b.Pix[b.W-1] != 0 {
 		t.Fatalf("paint through mask: %v %v", b.Pix[0], b.Pix[b.W-1])
 	}
-	// wrong kind for a kind-typed arg
-	_, err = e.Call("paint", src.ID, []any{map[string]any{"mask": NodeArg{src.ID}}})
-	if ce := codeOf(t, err); ce.Code != EWrongKind || !strings.Contains(ce.Hint, "mask.luminance") {
-		t.Fatalf("image as mask: %+v", ce)
+	// any one-channel image is a mask; a colour image is refused with the
+	// toGray fix, regions with the toMask hint
+	if _, err := e.Call("paint", src.ID, []any{map[string]any{"mask": NodeArg{src.ID}}}); err != nil {
+		t.Fatalf("a grey image as mask: %v", err)
+	}
+	col := mustCall(t, e, "rgb", src.ID)
+	_, err = e.Call("paint", src.ID, []any{map[string]any{"mask": NodeArg{col.ID}}})
+	if ce := codeOf(t, err); ce.Code != EWrongKind || !strings.Contains(ce.Message, "one-channel image (a mask); this image has 3 channels") || !strings.HasSuffix(ce.Fix, ".toGray()") {
+		t.Fatalf("colour image as mask: %+v", ce)
+	}
+	rg := mustCall(t, e, "blobs", src.ID, []any{0.0, 0.0, 4.0, 4.0})
+	_, err = e.Call("paint", src.ID, []any{map[string]any{"mask": NodeArg{rg.ID}}})
+	if ce := codeOf(t, err); ce.Code != EWrongKind || !strings.Contains(ce.Hint, "toMask") {
+		t.Fatalf("regions as mask: %+v", ce)
 	}
 	_, err = e.Call("paint", src.ID, []any{map[string]any{"mask": 0.5}})
 	if ce := codeOf(t, err); ce.Code != EWrongKind {

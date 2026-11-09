@@ -33,7 +33,7 @@ A look caption says `1 image px = S doc px`: multiply coordinates you read off a
 
 ## analysisScale
 
-`detect.specks`, `check.dust` and `Mask.components` analyse their input at a fixed `analysisScale` (default 1), whatever the evaluation scale. So region ids, boxes and areas are the same in a look and a full-size result. Lower it (e.g. 0.5) to detect faster on big scans; coordinates stay in doc px.
+`detect.specks`, `check.dust` and `components` analyse their input at a fixed `analysisScale` (default 1), whatever the evaluation scale. So region ids, boxes and areas are the same in a look and a full-size result. Lower it (e.g. 0.5) to detect faster on big scans; coordinates stay in doc px.
 
 ```js
 const fast = img.detect.specks({ analysisScale: 0.5 })

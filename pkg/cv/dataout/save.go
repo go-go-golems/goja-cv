@@ -78,16 +78,16 @@ func imageFormat(path string, depth int) (buffer.Format, int, error) {
 		WithValid(valid).WithFix(fmt.Sprintf("node.save(%q, { depth: %d })", path, ds[0]))
 }
 
-// SaveImage evaluates Image or Mask node id at scale 1 and writes it under
-// root as encoded values with its encoding (masks: linear) and frame origin
+// SaveImage evaluates Image node id at scale 1 and writes it under root as
+// encoded values with its encoding (masks: linear) and frame origin
 // recorded where the format holds them. warn receives CLAMP.
 func SaveImage(ctx context.Context, eng *graph.Engine, id graph.NodeID, root, path string, depth int, warn func(graph.Warning)) (Saved, error) {
 	n, ok := eng.Node(id)
 	if !ok {
 		return Saved{}, graph.Errorf(graph.EInternal, "unknown node #%d", id)
 	}
-	if n.Kind != graph.KindImage && n.Kind != graph.KindMask {
-		return Saved{}, graph.Errorf(graph.EWrongKind, "save writes images and masks; %s is %s node.", graph.Label(n), graph.A(string(n.Kind))).
+	if n.Kind != graph.KindImage {
+		return Saved{}, graph.Errorf(graph.EWrongKind, "save writes images (masks are images); %s is %s node.", graph.Label(n), graph.A(string(n.Kind))).
 			WithHint("Data (Value and Regions nodes) is saved through a Data handle.").
 			WithFix(fmt.Sprintf("cv.json(x).save(%q)", strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))+".json"))
 	}
@@ -96,8 +96,8 @@ func SaveImage(ctx context.Context, eng *graph.Engine, id graph.NodeID, root, pa
 		return Saved{}, err
 	}
 	enc := n.Enc
-	if n.Kind == graph.KindMask || enc == buffer.EncNone {
-		enc = buffer.EncLinear // a mask's value is its displayed value
+	if enc == buffer.EncNone {
+		enc = buffer.EncLinear
 	}
 	if f == buffer.FormatJPEG && enc != buffer.EncSRGB {
 		return Saved{}, graph.Errorf(graph.EArgType, "save(%q): JPEG holds sRGB pictures; this image's values are %s.", path, enc).

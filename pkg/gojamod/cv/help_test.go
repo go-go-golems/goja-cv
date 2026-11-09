@@ -10,7 +10,8 @@ import (
 func TestHelpNeverFailsAndResolvesEveryForm(t *testing.T) {
 	reg := cvmod.DefaultRegistry()
 	for name, key := range map[string]string{
-		"levels": "levels", "mask.box": "mask.box", "cv.compare": "compare", "Mask.coverage": "coverage",
+		"levels": "levels", "mask.box": "mask.box", "cv.compare": "compare", "Image.coverage": "coverage",
+		"mask": "mask", "Mask": "mask",
 		"Regions.filter": "filter", "explain": "explain", "cv.explain": "explain",
 		"docs": "docs", "open": "open", "look": "look",
 	} {
@@ -19,14 +20,14 @@ func TestHelpNeverFailsAndResolvesEveryForm(t *testing.T) {
 			t.Fatalf("help(%q) = %v, want key %q", name, h, key)
 		}
 	}
-	for _, k := range []string{"Image", "Mask", "Regions", "Value", "mask"} {
+	for _, k := range []string{"Image", "Regions", "Value", "image"} {
 		h := cvmod.Help(reg, k)
 		if h["kind"] == nil || len(h["methods"].(map[string]any)) == 0 {
 			t.Fatalf("help(%q) = %v", k, h)
 		}
 	}
-	if m := cvmod.Help(reg, "Mask")["methods"].(map[string]any); m["coverage"] == nil {
-		t.Fatalf("Mask methods %v", m)
+	if m := cvmod.Help(reg, "Image")["methods"].(map[string]any); m["coverage"] == nil || m["feather"] == nil {
+		t.Fatalf("the mask ops are Image methods: %v", m)
 	}
 	if on := cvmod.Help(reg, "Regions.where")["where"].(map[string]any)["on"]; on != "Regions" {
 		t.Fatalf("Regions.where on = %v", on)

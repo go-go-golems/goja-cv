@@ -261,7 +261,7 @@ return { cov: await sky.coverage(), sky: sky.look("sky"), darker: darker.look("d
 	}
 	resp = eval(t, app, sid, `const m = img.mask.luminance({ above: 0.5 })
 const big = m.components().filter(x => x.area > 10)
-return { n: await big.count(), sel: m.overlay(img).look("sel") }`)
+return { n: await big.count(), sel: img.overlay(m).look("sel") }`)
 	mustContain(t, text(resp), "n: ", "look 3: sel")
 	mustNotContain(t, text(resp), "UNUSED_NODE", "error")
 	out = text(eval(t, app, sid, `return img.mask.luminance({ above: 0.5 }).components().look()`))
@@ -282,8 +282,9 @@ func TestCrossKindErrorsHaveALiteralFixAndGrammar(t *testing.T) {
 	app, sid := newApp(t, cvsession.Options{Image: tiffPath})
 	for code, want := range map[string][]string{
 		"const specks = img.detect.specks()\nreturn specks.heal()": {"code: E_NOT_AWAITED", "regions are arguments of image methods", "fix: img.heal(regions, …)"},
-		`return img.mask.box([0, 0, 10, 10]).exposure(1)`:          {"fix: img.within(mask, i => i.exposure(…))", "an Image method"},
-		`return img.detect.specks().feather(2)`:                    {`"feather" is a Mask method`, "fix: regions.toMask().feather(…)"},
+		`return img.within(img, i => i.exposure(-0.4))`:            {"code: E_WRONG_KIND", "needs a one-channel image (a mask); this image has 3 channels", "where: 'line 1: return img.within(img, i => i.exposure(-0.4))'", "fix: img.toGray()"},
+		`return img.coverage()`:                                    {"code: E_WRONG_KIND", "coverage needs a one-channel image (a mask or a grey image); this image has 3 channels", "fix: img.toGray().coverage(…)"},
+		`return img.detect.specks().feather(2)`:                    {`"feather" is a method of a one-channel image (a mask)`, "fix: regions.toMask().feather(…)"},
 		`return img.stats().exposure(1)`:                           {"Value has no method \"exposure\"", "fix: img.exposure(…)"},
 		`if (img > 1) return 1`:                                    {"code: E_NOT_AWAITED", "fix: (await img).w"},
 		`img.foo = 1`:                                              {`cannot set "foo" on an Image node`},
@@ -331,7 +332,7 @@ func TestConcurrentEvalsKeepTheirOwnSource(t *testing.T) {
 // kill the whole eval.
 func TestBatchedHelpNeverThrows(t *testing.T) {
 	app, sid := newApp(t, cvsession.Options{Image: tiffPath})
-	resp := eval(t, app, sid, `return [await cv.help("overlay"), await cv.help("mask.luminance"), await cv.help("Mask.coverage"), cv.help("explain"), cv.help("nope")]`)
+	resp := eval(t, app, sid, `return [await cv.help("overlay"), await cv.help("mask.luminance"), await cv.help("Image.coverage"), cv.help("explain"), cv.help("nope")]`)
 	out := text(resp)
 	if resp.Cell.Execution.Status != "ok" {
 		t.Fatalf("status %s:\n%s", resp.Cell.Execution.Status, out)

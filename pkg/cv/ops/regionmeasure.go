@@ -162,7 +162,7 @@ func validateRegionMeasure(a graph.Args) error {
 	for _, f := range newRegionFields(a) {
 		if _, ok := graph.FindField(have, f.Name); ok {
 			prefix := "img"
-			if a.Input("image").Kind == graph.KindMask {
+			if a.Input("image").Channels == 1 {
 				prefix = "mask"
 			}
 			return graph.Errorf(EFieldExists, "regions.measure would add %s, which these regions already have.", f.Name).
@@ -305,7 +305,7 @@ func regionMeasureOp() graph.OpDef {
 	return graph.OpDef{
 		Name: "measure", On: graph.KindRegions, Returns: graph.KindRegions, Luma: true, LumaOf: "image",
 		Args: []graph.ArgSpec{
-			{Name: "image", Type: "Image|Mask", Positional: true, Doc: "the image (or mask) to measure, in the regions' frame"},
+			{Name: "image", Type: "Image", Positional: true, Doc: "the image (or a mask, a grey image) to measure, in the regions' frame"},
 			{Name: "stats", Type: "string[]", Optional: true,
 				Doc: "statistics over each region's own pixels, on the gray plane (fields meanL, maxL, …): " + strings.Join(regionStats, ", ")},
 			{Name: "channels", Type: "bool", Optional: true,

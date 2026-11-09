@@ -66,13 +66,13 @@ goja-cv run fix-exposure.js --image scan.tif --out looks
 goja-cv run fix-exposure.js --image scan.tif --json
 goja-cv ops --kind Regions
 goja-cv help levels
-goja-cv help Mask
+goja-cv help Regions
 goja-cv help concepts
 ```
 
 - Output is YAML (`--json` for a JSON envelope). Exit codes: **0** ok, **1** cv error (the structured error is
   still printed, with a literal `fix:`), **2** usage error.
-- `goja-cv help NAME` shows a guide page, a command's help, or a cv op / kind / function (`levels`, `Mask`,
+- `goja-cv help NAME` shows a guide page, a command's help, or a cv op / kind / function (`levels`, `Regions`,
   `Regions.filter`), in that order.
 - `--timeout-ms` raises the 60 s limit per eval; `--log-level debug` logs to stderr.
 - **Data for programs:** return `cv.csv(x, { name: "spots" })` or `cv.json(x)` and the CLI writes `spots.csv` /
