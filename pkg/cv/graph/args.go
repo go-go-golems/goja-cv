@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/go-go-golems/goja-cv/pkg/cv/buffer"
 )
 
 // NodeArg is a node passed as an argument value in a raw call (from JS).
@@ -1018,8 +1020,8 @@ func signatureHint(op *OpDef) string {
 		pos = append(pos, strings.ToLower(string(in)))
 	}
 	for _, a := range op.Args {
-		if a.Hidden {
-			continue
+		if a.Hidden || isSpaceOption(op, &a) {
+			continue // the working-space option is on every pixel op; help and errors explain it
 		}
 		if a.Positional {
 			n := a.Name
@@ -1035,6 +1037,11 @@ func signatureHint(op *OpDef) string {
 		pos = append(pos, "{ "+strings.Join(opt, ", ")+" }")
 	}
 	return "Usage: " + op.Name + "(" + strings.Join(pos, ", ") + ")"
+}
+
+// isSpaceOption reports whether a is the space option Register added.
+func isSpaceOption(op *OpDef, a *ArgSpec) bool {
+	return a.Name == SpaceArg && op.Space.Default != buffer.SpaceNone && !op.Space.Fixed
 }
 
 // resolveArgs substitutes lifted inputs with their evaluated data and

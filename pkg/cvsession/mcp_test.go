@@ -160,7 +160,7 @@ return await fixed.stats().pick("meanL", "clipLow", "clipHigh")`)
 	if isErr || len(images) != 2 {
 		t.Fatalf("correction: isErr=%v images=%d\n%s", isErr, len(images), text)
 	}
-	mustContain(t, text, "meanL: 0.5059", "clipLow:", "clipHigh:",
+	mustContain(t, text, "meanL: 0.50822", "clipLow:", "clipHigh:",
 		"shown:", "look 1: before / after (132×48, 1 image px = 1.0 doc px)", "look 2: histogram (512×204 chart)")
 	if images[0].MIMEType != "image/jpeg" || images[1].MIMEType != "image/png" {
 		t.Fatalf("mimes %s %s", images[0].MIMEType, images[1].MIMEType)

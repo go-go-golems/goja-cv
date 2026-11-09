@@ -47,6 +47,7 @@ type Options struct {
 type Look struct {
 	eng   *graph.Engine
 	node  graph.NodeID
+	root  graph.NodeID // what is rendered: node, or convert(node → encoded)
 	kind  graph.Kind
 	label string
 	scale float64 // buffer px per doc px; 1 for charts
@@ -80,8 +81,14 @@ func New(eng *graph.Engine, id graph.NodeID, opt Options) (*Look, error) {
 	if l.label == "" {
 		l.label = graph.Label(n)
 	}
+	l.root = id
 	switch n.Kind {
 	case graph.KindImage, graph.KindMask:
+		root, err := eng.Display(id)
+		if err != nil {
+			return nil, err
+		}
+		l.root = root
 		l.scale = eng.ScaleForLong(id, maxLong)
 		l.w, l.h = buffer.ScaledSize(n.Frame.W, n.Frame.H, l.scale)
 	case graph.KindValue:
@@ -188,15 +195,17 @@ func (l *Look) Render(ctx context.Context) ([]byte, string, error) {
 }
 
 // image evaluates the look's node and returns its 8-bit image, before the
-// look number is burned in and before encoding.
+// look number is burned in and before encoding. A look shows encoded values:
+// images are rendered through convert(node → encoded) (no node when the
+// values already are encoded), masks and derived images as they are.
 func (l *Look) image(ctx context.Context) (draw.Image, error) {
-	v, err := l.eng.Evaluate(ctx, l.node, graph.EvalOptions{Scale: l.scale})
+	v, err := l.eng.Evaluate(ctx, l.root, graph.EvalOptions{Scale: l.scale})
 	if err != nil {
 		return nil, err
 	}
 	switch x := v.(type) {
 	case *graph.ImageValue:
-		img, err := buffer.ToImage(ctx, x.Buf, 8)
+		img, err := buffer.Quantize(ctx, x.Buf, 8)
 		if err != nil {
 			return nil, errors.Wrap(err, "look: convert")
 		}

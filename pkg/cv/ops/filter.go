@@ -3,6 +3,7 @@ package ops
 import (
 	"context"
 
+	"github.com/go-go-golems/goja-cv/pkg/cv/buffer"
 	"github.com/go-go-golems/goja-cv/pkg/cv/graph"
 	"github.com/go-go-golems/goja-cv/pkg/cv/kernels"
 )
@@ -10,7 +11,7 @@ import (
 func filterOps() []graph.OpDef {
 	return []graph.OpDef{
 		{
-			Name: "gaussian", On: graph.KindImage, Returns: graph.KindImage, Space: "linear",
+			Name: "gaussian", On: graph.KindImage, Returns: graph.KindImage, Space: graph.SpaceRule{Default: buffer.SpaceLinear},
 			Args: []graph.ArgSpec{{Name: "r", Type: "number", Unit: graph.DocPx, Positional: true, Min: graph.F(0), Max: graph.F(2000),
 				Usual: [2]float64{0, 200}, Doc: "standard deviation of the Gaussian"}},
 			Identity: func(a graph.Args) bool { return a.DocLength("r") == 0 },
@@ -23,7 +24,7 @@ func filterOps() []graph.OpDef {
 				}
 				return graph.NewImage(out), nil
 			},
-			Doc: "Separable Gaussian blur in linear light; r is the standard deviation in doc px.",
+			Doc: "Separable Gaussian blur in the working space (linear by default); r is the standard deviation in doc px.",
 			See: []string{"exposure"},
 		},
 	}

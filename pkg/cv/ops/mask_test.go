@@ -6,7 +6,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/go-go-golems/goja-cv/pkg/cv/buffer"
 	"github.com/go-go-golems/goja-cv/pkg/cv/graph"
 )
 
@@ -85,7 +84,6 @@ func TestMaskArgumentErrors(t *testing.T) {
 }
 
 func TestParseColorAcceptsCSSNamesAndHex(t *testing.T) {
-	lin := func(v float64) float32 { return buffer.ToLinear(float32(v)) }
 	for in, want := range map[any][3]float64{
 		"lime":          {0, 1, 0},
 		"Lime":          {0, 1, 0},
@@ -101,8 +99,8 @@ func TestParseColorAcceptsCSSNamesAndHex(t *testing.T) {
 			t.Fatalf("%v: %v", in, err)
 		}
 		for i := range got {
-			if math.Abs(float64(got[i]-lin(want[i]))) > 1e-6 {
-				t.Fatalf("%v: %v, want perceptual %v", in, got, want)
+			if math.Abs(float64(got[i])-want[i]) > 1e-6 { // display (encoded) values: overlays run in encoded space
+				t.Fatalf("%v: %v, want %v", in, got, want)
 			}
 		}
 	}

@@ -86,46 +86,47 @@ func TestGaussianPreservesMean(t *testing.T) {
 }
 
 func TestLevelsMapping(t *testing.T) {
+	// kernels are space-agnostic: levels remaps the values it receives
 	black, white := 0.02, 0.6
 	in := buffer.New(5, 1, 1, 1)
-	copy(in.Pix, []float32{0, float32(black), float32(white), 0.8, buffer.ToLinear(0.5)})
+	copy(in.Pix, []float32{0, float32(black), float32(white), 0.8, 0.31})
 	out, err := Levels(ctx, in, black, white, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []float64{0, 0, 1}
+	want := []float64{0, 0, 1, (0.8 - black) / (white - black), (0.31 - black) / (white - black)}
 	for i, w := range want {
-		if math.Abs(float64(out.Pix[i])-w) > 1e-4 {
+		if math.Abs(float64(out.Pix[i])-w) > 1e-6 {
 			t.Fatalf("levels[%d] = %g, want %g", i, out.Pix[i], w)
 		}
 	}
 	if out.Pix[3] <= 1 {
 		t.Fatalf("values above white must stay above 1, got %g", out.Pix[3])
 	}
-	// identity args leave values (almost) unchanged
+	// identity args leave values unchanged
 	id, _ := Levels(ctx, in, 0, 1, 1)
 	for i := range in.Pix {
-		if math.Abs(float64(id.Pix[i]-in.Pix[i])) > 5e-5 {
+		if id.Pix[i] != in.Pix[i] {
 			t.Fatalf("identity levels changed %d: %g -> %g", i, in.Pix[i], id.Pix[i])
 		}
 	}
-	// gamma 2 lifts perceptual mid-grey to sqrt(0.5)
+	// gamma 2 lifts mid-grey to sqrt(0.5)
+	copy(in.Pix[4:], []float32{0.5})
 	g, _ := Levels(ctx, in, 0, 1, 2)
-	if d := math.Abs(float64(buffer.ToPerceptual(g.Pix[4])) - math.Sqrt(0.5)); d > 1e-4 {
-		t.Fatalf("gamma 2: perceptual %g", buffer.ToPerceptual(g.Pix[4]))
+	if d := math.Abs(float64(g.Pix[4]) - math.Sqrt(0.5)); d > 1e-6 {
+		t.Fatalf("gamma 2: %g", g.Pix[4])
 	}
 }
 
 func TestContrastAndGray(t *testing.T) {
 	in := buffer.New(3, 1, 3, 1)
 	for c := 0; c < 3; c++ {
-		copy(in.Plane(c), []float32{buffer.ToLinear(0.25), buffer.ToLinear(0.5), buffer.ToLinear(0.75)})
+		copy(in.Plane(c), []float32{0.25, 0.5, 0.75})
 	}
 	out, _ := Contrast(ctx, in, 0.5)
-	got := []float32{buffer.ToPerceptual(out.Pix[0]), buffer.ToPerceptual(out.Pix[1]), buffer.ToPerceptual(out.Pix[2])}
 	for i, w := range []float32{0.125, 0.5, 0.875} {
-		if math.Abs(float64(got[i]-w)) > 1e-4 {
-			t.Fatalf("contrast %d: %g want %g", i, got[i], w)
+		if math.Abs(float64(out.Pix[i]-w)) > 1e-7 {
+			t.Fatalf("contrast %d: %g want %g", i, out.Pix[i], w)
 		}
 	}
 	g, _ := ToGray(ctx, in, GrayWeights["rec709"])
@@ -185,12 +186,12 @@ func TestStatsOnKnownData(t *testing.T) {
 
 func TestHistogram(t *testing.T) {
 	b := buffer.New(4, 1, 1, 1)
-	copy(b.Pix, []float32{0, buffer.ToLinear(0.3), 1, 2})
+	copy(b.Pix, []float32{0, 0.3, 1, 2})
 	h, err := Histogram(ctx, b, 10, "L")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if h.Counts[0] != 1 || h.Counts[2]+h.Counts[3] != 1 || h.Counts[9] != 1 || h.Over != 1 || h.Total != 4 {
+	if h.Counts[0] != 1 || h.Counts[3] != 1 || h.Counts[9] != 1 || h.Over != 1 || h.Total != 4 {
 		t.Fatalf("histogram %+v", h)
 	}
 	if _, err := Histogram(ctx, b, 10, "g"); err == nil {

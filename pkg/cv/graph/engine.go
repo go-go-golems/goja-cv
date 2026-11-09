@@ -48,7 +48,7 @@ type Engine struct {
 // NewEngine creates an engine over reg.
 func NewEngine(reg *Registry, opts EngineOptions) *Engine {
 	opts = opts.withDefaults()
-	b := NewBuilder()
+	b := NewBuilder(reg)
 	par := NewParamStore()
 	ev := NewEvaluator(b, par, NewCache(opts.CacheBytes), NewSourceStore(opts.PyramidMinLong))
 	return &Engine{opts: opts, reg: reg, b: b, par: par, ev: ev}
@@ -74,7 +74,7 @@ func (e *Engine) Call(name string, receiver NodeID, raw []any) (*Node, []Warning
 		kind = n.Kind
 	}
 	op, ok := e.reg.Lookup(kind, name)
-	if !ok {
+	if !ok || op.Internal {
 		var path []string
 		if receiver != 0 {
 			path = e.ev.Path(receiver)
@@ -136,8 +136,27 @@ func (e *Engine) Placeholder(receiver NodeID) (*Node, error) {
 	if r.Kind != op.Returns {
 		return nil, Errorf(EWrongKind, "builder lambdas take %s; the receiver is %s.", A(string(op.Returns)), A(string(r.Kind)))
 	}
-	n, _, err := e.b.Intern(op, 0, nil, map[string]any{"for": float64(receiver), "frame": r.Frame.Data()})
+	n, _, err := e.b.Intern(op, 0, nil, map[string]any{"for": float64(receiver), "frame": r.Frame.Data(),
+		"enc": r.Enc.String(), "space": r.Space.String()})
 	return n, err
+}
+
+// Display returns the node a look of node id renders: id itself, or
+// convert(id → encoded) when its values are not already the encoded values
+// a look shows (masks and linear-encoded images are shown as they are).
+func (e *Engine) Display(id NodeID) (NodeID, error) {
+	n, ok := e.b.Node(id)
+	if !ok {
+		return 0, Errorf(EInternal, "unknown node #%d", id)
+	}
+	if n.Kind != KindImage || buffer.Identity(n.Enc, n.Space, buffer.SpaceEncoded) {
+		return id, nil
+	}
+	c, _, err := e.b.internOp(ConvertOp, n, buffer.SpaceEncoded.String())
+	if err != nil {
+		return 0, err
+	}
+	return c.ID, nil
 }
 
 // DeclareParam declares (or re-declares) a param and returns its node.

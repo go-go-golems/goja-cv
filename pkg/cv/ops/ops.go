@@ -6,6 +6,7 @@ import "github.com/go-go-golems/goja-cv/pkg/cv/graph"
 // Register adds every op to r.
 func Register(r *graph.Registry) {
 	r.MustRegister(sourceOps()...)
+	r.MustRegister(spaceOps()...)
 	r.MustRegister(toneOps()...)
 	r.MustRegister(filterOps()...)
 	r.MustRegister(measureOps()...)

@@ -3,6 +3,8 @@ package graph
 import (
 	"fmt"
 	"strings"
+
+	"github.com/go-go-golems/goja-cv/pkg/cv/buffer"
 )
 
 // Help renders the registry as plain data. With an empty name it returns an
@@ -74,8 +76,12 @@ func (r *Registry) Help(name string) (map[string]any, error) {
 		"usage":   strings.TrimPrefix(signatureHint(op), "Usage: "),
 		"doc":     op.Doc,
 	}
-	if op.Space != "" {
-		entry["space"] = op.Space
+	if d := op.Space.Default; d != buffer.SpaceNone {
+		if op.Space.Fixed {
+			entry["space"] = d.String() + " (fixed)"
+		} else {
+			entry["space"] = d.String() + " (default; { space: \"linear\" | \"encoded\" } changes it)"
+		}
 	}
 	if args := describeArgs(op.Args); len(args) > 0 {
 		entry["args"] = args

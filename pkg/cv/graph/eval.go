@@ -29,6 +29,9 @@ type EvalCtx struct {
 	Params map[string]any // param values snapshotted at the start of the evaluation
 }
 
+// InputNode is the node of input i (its statics: frame, encoding, space).
+func (ec *EvalCtx) InputNode(i int) *Node { return ec.Eval.node(ec.Node.Inputs[i]) }
+
 // Callbacks runs JavaScript data lambdas for ops such as Regions.filter.
 // The binding implements it by scheduling onto the runtime owner goroutine;
 // evaluation never runs on that goroutine, so the call can be served.
@@ -307,7 +310,7 @@ func (r *evalRun) compute(ctx context.Context, n *Node, sig Signature) (Value, e
 	return out, nil
 }
 
-// stamp sets node n's statics (frame) on v, the value its Run returned. Run
+// stamp sets node n's statics (frame, encoding) on v, the value its Run returned. Run
 // only creates values; the evaluator is the one place that gives them their
 // node's statics. A value that belongs to one of the inputs (the identity
 // short-circuit, an op that returns its input unchanged) is copied first, so
@@ -327,7 +330,7 @@ func stamp(n *Node, v Value, ins []Value) Value {
 			c := *x
 			x = &c
 		}
-		x.Frame = n.Frame
+		x.Frame, x.Enc = n.Frame, n.Enc
 		return x
 	case *RegionsValue:
 		if isInput(v) {

@@ -25,57 +25,54 @@ func pointwise(ctx context.Context, in *buffer.Buffer, f func(v float32) float32
 	return out, err
 }
 
-// Exposure multiplies linear values by 2^ev. Linear-light op.
+// Exposure multiplies values by 2^ev.
 func Exposure(ctx context.Context, in *buffer.Buffer, ev float64) (*buffer.Buffer, error) {
 	k := float32(math.Exp2(ev))
 	return pointwise(ctx, in, func(v float32) float32 { return v * k })
 }
 
-// Levels remaps tones. black and white are linear-light input levels (the
-// same space as stats percentiles), so levels({black: s.p01, white: s.p99})
-// maps those percentiles to exactly 0 and 1. The remap and the gamma happen
-// in perceptual space: t = (P(v) − P(black)) / (P(white) − P(black)), then
-// t^(1/gamma); values below black clip to 0, values above white stay above 1.
+// Levels remaps tones: t = (v − black) / (white − black), then t^(1/gamma);
+// values below black clip to 0, values above white stay above 1. black and
+// white are levels of the space the values are in (the graph converts), so
+// levels({black: s.p01, white: s.p99}) maps those percentiles to 0 and 1.
 func Levels(ctx context.Context, in *buffer.Buffer, black, white, gamma float64) (*buffer.Buffer, error) {
-	pb := float64(buffer.ToPerceptual(float32(black)))
-	pw := float64(buffer.ToPerceptual(float32(white)))
-	scale := 1 / (pw - pb)
+	scale := 1 / (white - black)
 	invG := 1 / gamma
 	return pointwise(ctx, in, func(v float32) float32 {
-		t := (float64(buffer.ToPerceptual(v)) - pb) * scale
+		t := (float64(v) - black) * scale
 		if t <= 0 {
 			return 0
 		}
 		if invG != 1 {
 			t = math.Pow(t, invG)
 		}
-		return buffer.ToLinear(float32(t))
+		return float32(t)
 	})
 }
 
-// Contrast scales perceptual values around mid-grey (0.5): p' = 0.5 +
-// (p − 0.5)·(1 + amount). amount = −1 gives flat grey; negative results clip
-// to 0. Perceptual op.
+// Contrast scales values around mid-grey (0.5): v' = 0.5 + (v − 0.5)·(1 +
+// amount). amount = −1 gives flat grey; negative results clip to 0.
 func Contrast(ctx context.Context, in *buffer.Buffer, amount float64) (*buffer.Buffer, error) {
 	k := float32(1 + amount)
 	return pointwise(ctx, in, func(v float32) float32 {
-		p := 0.5 + (buffer.ToPerceptual(v)-0.5)*k
+		p := 0.5 + (v-0.5)*k
 		if p <= 0 {
 			return 0
 		}
-		return buffer.ToLinear(p)
+		return p
 	})
 }
 
-// GrayWeights are linear-light channel weights for ToGray.
+// GrayWeights are the channel weights of ToGray: Rec. 709 luminance (defined
+// on linear light) and the plain average.
 var GrayWeights = map[string][3]float32{
 	"rec709":  {buffer.LumR, buffer.LumG, buffer.LumB},
 	"rec601":  {0.299, 0.587, 0.114},
 	"average": {1.0 / 3, 1.0 / 3, 1.0 / 3},
 }
 
-// ToGray returns a 1-channel buffer of weighted linear channels. A 1-channel
-// input is returned as a copy.
+// ToGray returns a 1-channel buffer of weighted channels. A 1-channel input is
+// returned as a copy.
 func ToGray(ctx context.Context, in *buffer.Buffer, w [3]float32) (*buffer.Buffer, error) {
 	if in.C == 1 {
 		return in.Clone(), nil

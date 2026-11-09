@@ -12,7 +12,7 @@ import (
 func compositeOps() []graph.OpDef {
 	return []graph.OpDef{
 		{
-			Name: "within", On: graph.KindImage, Inputs: []graph.Kind{graph.KindMask, graph.KindImage}, Returns: graph.KindImage, Space: "linear",
+			Name: "within", On: graph.KindImage, Inputs: []graph.Kind{graph.KindMask, graph.KindImage}, Returns: graph.KindImage, Space: graph.SpaceRule{Default: buffer.SpaceLinear},
 			Builders: []int{1},
 			Run: func(ctx context.Context, _ *graph.EvalCtx, in []graph.Value, _ graph.Args) (graph.Value, error) {
 				base, m, edited := image(in[0]), mask(in[1]), image(in[2])
@@ -28,11 +28,11 @@ func compositeOps() []graph.OpDef {
 				}
 				return graph.NewImage(out), nil
 			},
-			Doc: "Apply an edit inside a mask: within(mask, i => i.exposure(-0.4)). The function runs once while the graph is built, with a placeholder for this image; its result is blended in linear light through the mask, so params inside it are tracked like any other.",
+			Doc: "Apply an edit inside a mask: within(mask, i => i.exposure(-0.4)). The function runs once while the graph is built, with a placeholder for this image; its result is blended through the mask in the working space (linear by default), so params inside it are tracked like any other.",
 			See: []string{"blend", "mask.luminance", "feather"},
 		},
 		{
-			Name: "blend", On: graph.KindImage, Inputs: []graph.Kind{graph.KindImage}, Returns: graph.KindImage, Space: "linear",
+			Name: "blend", On: graph.KindImage, Inputs: []graph.Kind{graph.KindImage}, Returns: graph.KindImage, Space: graph.SpaceRule{Default: buffer.SpaceLinear},
 			Args: []graph.ArgSpec{
 				{Name: "mode", Type: "enum:" + joinModes(), Default: "normal"},
 				{Name: "opacity", Type: "number", Default: 1.0, Min: graph.F(0), Max: graph.F(1)},
@@ -58,7 +58,7 @@ func compositeOps() []graph.OpDef {
 				}
 				return graph.NewImage(out), nil
 			},
-			Doc: "Blend another image over this one in linear light: out = a + (mode(a, b) − a) · opacity · mask.",
+			Doc: "Blend another image over this one in the working space (linear by default): out = a + (mode(a, b) − a) · opacity · mask.",
 			See: []string{"within"},
 		},
 	}
@@ -98,7 +98,7 @@ func targetMask(ctx context.Context, op string, v graph.Value, base *graph.Image
 func healOps() []graph.OpDef {
 	return []graph.OpDef{
 		{
-			Name: "heal", On: graph.KindImage, Inputs: []graph.Kind{"Regions|Mask"}, Returns: graph.KindImage, Space: "linear",
+			Name: "heal", On: graph.KindImage, Inputs: []graph.Kind{"Regions|Mask"}, Returns: graph.KindImage, Space: graph.SpaceRule{Default: buffer.SpaceLinear},
 			Args: []graph.ArgSpec{
 				{Name: "radius", Type: "number", Unit: graph.DocPx, Default: 3.0, Min: graph.F(0), Max: graph.F(200), Usual: [2]float64{0.5, 20},
 					Doc: "margin in doc px: each target is grown by this much before it is replaced"},
@@ -122,7 +122,7 @@ func healOps() []graph.OpDef {
 			See: []string{"inpaint", "detect.specks", "check.dust"},
 		},
 		{
-			Name: "inpaint", On: graph.KindImage, Inputs: []graph.Kind{graph.KindMask}, Returns: graph.KindImage, Space: "linear",
+			Name: "inpaint", On: graph.KindImage, Inputs: []graph.Kind{graph.KindMask}, Returns: graph.KindImage, Space: graph.SpaceRule{Default: buffer.SpaceLinear},
 			Args: []graph.ArgSpec{{Name: "method", Type: "enum:diffuse,patch", Default: "diffuse"}},
 			Halo: func(graph.Args) float64 { return 64 },
 			Run: func(ctx context.Context, _ *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {

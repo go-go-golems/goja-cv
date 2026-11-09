@@ -148,7 +148,7 @@ func TestErrorYAMLHasCodeFixAndLine(t *testing.T) {
 		"hint: Did you mean \"exposure\"?", "fix: img.exposure(…)")
 
 	out = text(eval(t, app, sid, "const a = 1\nreturn img.levels({ blak: 0.02 })"))
-	mustContain(t, out, "code: E_UNKNOWN_OPTION", "where: 'line 2: ", "fix: 'levels({ black: 0.02 })'", "valid: [black, white, gamma]")
+	mustContain(t, out, "code: E_UNKNOWN_OPTION", "where: 'line 2: ", "fix: 'levels({ black: 0.02 })'", "valid: [black, white, gamma, space]")
 
 	out = text(eval(t, app, sid, "if (img.stats().meanL > 0.5) return 1"))
 	mustContain(t, out, "code: E_LAZY_COMPARE", "where: 'line 1: ")
@@ -384,7 +384,7 @@ func TestImageMetadata(t *testing.T) {
 func TestArgumentErrorsHaveFixesAndWarningsFold(t *testing.T) {
 	app, sid := newApp(t, cvsession.Options{Image: tiffPath})
 	for code, want := range map[string][]string{
-		`return await img.mask.luminance({}).coverage()`:                                    {"code: E_ARG_TYPE", "perceptual luminance in [0, 1]", "fix: 'img.mask.luminance({ above: 0.7 })"},
+		`return await img.mask.luminance({}).coverage()`:                                    {"code: E_ARG_TYPE", "luminance levels in [0, 1]", "fix: 'img.mask.luminance({ above: 0.7 })"},
 		`return await img.mask.flood([500, 10]).coverage()`:                                 {"code: E_ARG_RANGE", "fix: img.mask.flood([63, 10])"},
 		`return await img.mask.gradient({ from: "up" }).coverage()`:                         {"fix: 'mask.gradient({ from: \"top\" })'"},
 		`return await img.overlay(img.mask.box([0, 0, 9, 9]), { color: "chartreuse-ish" })`: {"fix: 'color: \"red\""},

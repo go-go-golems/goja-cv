@@ -1,6 +1,6 @@
 package ops
 
-// cssColors are the CSS named colours (sRGB, i.e. perceptual, 0xRRGGBB).
+// cssColors are the CSS named colours (sRGB-encoded display values, 0xRRGGBB).
 var cssColors = map[string]uint32{
 	"aliceblue":            0xf0f8ff,
 	"antiquewhite":         0xfaebd7,

@@ -12,7 +12,7 @@ import (
 
 func overlayArgs() []graph.ArgSpec {
 	return []graph.ArgSpec{
-		{Name: "color", Type: "any", Default: "red", Doc: "colour name or perceptual [r, g, b]"},
+		{Name: "color", Type: "any", Default: "red", Doc: "colour name or display [r, g, b] in [0, 1] (encoded values)"},
 		{Name: "alpha", Type: "number", Default: 0.5, Min: graph.F(0), Max: graph.F(1), Doc: "opacity of the fill (outlines are drawn opaque)"},
 		{Name: "labels", Type: "enum:none,id", Default: "none", Doc: `"id" draws each region's id next to its box (digits only)`},
 	}
@@ -76,6 +76,10 @@ func drawRegions(ctx context.Context, img *graph.ImageValue, rv *graph.RegionsVa
 // compareGap is the gap between images in compare({ mode: "side" }), doc px.
 const compareGap = 4
 
+// compareBackground is the encoded grey between images in a side-by-side
+// compare: sRGB_encode(0.02), a dark grey.
+const compareBackground = 0.1517
+
 func imageInputs(inputs []*graph.Node) []*graph.Node {
 	var out []*graph.Node
 	for _, n := range inputs {
@@ -89,7 +93,7 @@ func imageInputs(inputs []*graph.Node) []*graph.Node {
 func presentOps() []graph.OpDef {
 	return []graph.OpDef{
 		{
-			Name: "overlay", On: graph.KindImage, Inputs: []graph.Kind{"Regions|Mask"}, Returns: graph.KindImage, Space: "present",
+			Name: "overlay", On: graph.KindImage, Inputs: []graph.Kind{"Regions|Mask"}, Returns: graph.KindImage, Space: graph.SpaceRule{Default: buffer.SpaceEncoded},
 			Args:     overlayArgs(),
 			Validate: validateColor("color"),
 			Run: func(ctx context.Context, _ *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
@@ -103,7 +107,7 @@ func presentOps() []graph.OpDef {
 			See: []string{"compare", "detect.specks"},
 		},
 		{
-			Name: "overlay", On: graph.KindRegions, Inputs: []graph.Kind{graph.KindImage}, Returns: graph.KindImage, Space: "present",
+			Name: "overlay", On: graph.KindRegions, Inputs: []graph.Kind{graph.KindImage}, Returns: graph.KindImage, Space: graph.SpaceRule{Default: buffer.SpaceEncoded},
 			Args:     overlayArgs(),
 			Validate: validateColor("color"),
 			Run: func(ctx context.Context, _ *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
@@ -112,11 +116,11 @@ func presentOps() []graph.OpDef {
 			Doc: "regions.overlay(img, opts) is img.overlay(regions, opts).",
 		},
 		{
-			Name: "compare", On: graph.KindImage, Returns: graph.KindImage, Space: "present",
+			Name: "compare", On: graph.KindImage, Returns: graph.KindImage, Space: graph.SpaceRule{Default: buffer.SpaceEncoded},
 			Args: []graph.ArgSpec{
 				{Name: "others", Type: "Image[]", Positional: true, Default: []any{}, Doc: "the images to compare with this one"},
 				{Name: "mode", Type: "enum:side,split,diff", Default: "side", Doc: "side by side, vertical strips of each, or the amplified difference of two"},
-				{Name: "gain", Type: "number", Default: 4.0, Min: graph.F(1), Max: graph.F(100), Doc: "diff: amplification of the perceptual difference"},
+				{Name: "gain", Type: "number", Default: 4.0, Min: graph.F(1), Max: graph.F(100), Doc: "diff: amplification of the difference in the working space (encoded by default)"},
 			},
 			Validate: func(a graph.Args) error {
 				n := len(a.Raw("others").([]any)) + 1
@@ -182,7 +186,7 @@ func presentOps() []graph.OpDef {
 				w, h := buffer.ScaledSize(f.W, f.H, ec.Scale)
 				out := buffer.New(w, h, 3, ec.Scale)
 				for i := range out.Pix {
-					out.Pix[i] = 0.02
+					out.Pix[i] = compareBackground
 				}
 				x := 0
 				for _, im := range ims {
@@ -191,7 +195,7 @@ func presentOps() []graph.OpDef {
 				}
 				return graph.NewImage(out), nil
 			},
-			Doc: `Compare images for looking: cv.compare([a, b, …], { mode }) — "side" by side (top-aligned, 4 doc px apart), "split" into vertical strips (same size), or "diff" (|a − b| perceptual × gain, two images).`,
+			Doc: `Compare images for looking: cv.compare([a, b, …], { mode }) — "side" by side (top-aligned, 4 doc px apart), "split" into vertical strips (same size), or "diff" (|a − b| × gain in the working space, encoded by default, two images).`,
 			See: []string{"overlay"},
 		},
 	}

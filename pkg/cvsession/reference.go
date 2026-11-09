@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/go-go-golems/goja-cv/pkg/cv/buffer"
 	"github.com/go-go-golems/goja-cv/pkg/cv/graph"
 )
 
@@ -82,6 +83,10 @@ func opLine(op *graph.OpDef) string {
 	for i := range op.Args {
 		s := &op.Args[i]
 		if s.Hidden {
+			continue
+		}
+		if s.Name == graph.SpaceArg && op.Space.Default != buffer.SpaceNone {
+			details = append(details, fmt.Sprintf("space: \"linear\" | \"encoded\", default %q. working space (the option is not part of the usage line)", op.Space.Default.String()))
 			continue
 		}
 		args = append(args, s.Name)

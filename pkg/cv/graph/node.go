@@ -5,6 +5,8 @@ import (
 	"encoding/binary"
 	"fmt"
 	"sync"
+
+	"github.com/go-go-golems/goja-cv/pkg/cv/buffer"
 )
 
 // NodeID is a node handle; 0 is never a valid node.
@@ -18,21 +20,25 @@ type Node struct {
 	NExplicit int      // number of leading inputs passed to Run as in[]
 	Args      Args     // canonical, defaults filled, lifted args as InputRef
 	Kind      Kind
-	Hash      [32]byte // sha256(op key, canonical args, input hashes)
-	Frame     Frame    // the rectangle the result covers in doc px (empty for pure data)
+	Hash      [32]byte        // sha256(op key, canonical args, input hashes)
+	Frame     Frame           // the rectangle the result covers in doc px (empty for pure data)
+	Enc       buffer.Encoding // Image: its encoding; Value: the encoding of the image it measured; else EncNone
+	Space     buffer.Space    // Image: the space of its values; Value: of its level-valued numbers; else SpaceNone
 }
 
 // Builder interns nodes: structurally identical calls return the same node.
+// It looks up the ops it inserts itself (toGray, convert) in reg.
 type Builder struct {
+	reg   *Registry
 	mu    sync.Mutex
 	byKey map[[32]byte]*Node
 	nodes map[NodeID]*Node
 	next  NodeID
 }
 
-// NewBuilder returns an empty builder.
-func NewBuilder() *Builder {
-	return &Builder{byKey: map[[32]byte]*Node{}, nodes: map[NodeID]*Node{}}
+// NewBuilder returns an empty builder over reg.
+func NewBuilder(reg *Registry) *Builder {
+	return &Builder{reg: reg, byKey: map[[32]byte]*Node{}, nodes: map[NodeID]*Node{}}
 }
 
 // Node returns the node with id.
@@ -59,10 +65,12 @@ func (b *Builder) kindOf(id NodeID) (Kind, bool) {
 }
 
 // Intern checks raw call arguments against op (types, units, hard limits,
-// unknown option keys), lifts node-valued arguments into inputs, and returns
-// the existing node with the same structure or a new one. receiver is 0 for
-// source ops. trusted holds Go-side values for hidden arguments. Warnings
-// (RANGE) are returned alongside the node.
+// unknown option keys), lifts node-valued arguments into inputs, resolves
+// the op's working space and inserts the toGray and convert nodes its inputs
+// need, and returns the existing node with the same structure or a new one.
+// receiver is 0 for source ops. trusted holds Go-side values for hidden
+// arguments. Warnings (RANGE, SPACE, ENCODING) are returned alongside the
+// node.
 func (b *Builder) Intern(op *OpDef, receiver NodeID, raw []any, trusted map[string]any) (*Node, []Warning, error) {
 	var recv *Node
 	if receiver != 0 {
@@ -111,7 +119,11 @@ func (b *Builder) Intern(op *OpDef, receiver NodeID, raw []any, trusted map[stri
 			return nil, nil, err
 		}
 	}
-	return b.internNode(op, args, inputs, nExplicit), bd.warnings, nil
+	inputs, ws, err := b.resolveSpace(op, args, inputs)
+	if err != nil {
+		return nil, nil, err
+	}
+	return b.internNode(op, args, inputs, nExplicit), append(bd.warnings, ws...), nil
 }
 
 // internNode returns the node for (op, canonical args, inputs), creating it
@@ -130,6 +142,7 @@ func (b *Builder) internNode(op *OpDef, args Args, inputs []*Node, nExplicit int
 	b.next++
 	n := &Node{ID: b.next, Op: op, Inputs: ids, NExplicit: nExplicit, Args: args, Kind: op.Returns, Hash: h}
 	n.Frame = nodeFrame(op, args, inputs)
+	n.Enc, n.Space = nodeStatics(op, args, inputs)
 	b.byKey[h], b.nodes[n.ID] = n, n
 	return n
 }

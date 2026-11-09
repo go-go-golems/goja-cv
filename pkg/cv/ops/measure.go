@@ -126,7 +126,7 @@ func selectionWeights(ctx context.Context, v graph.Value, src *graph.ImageValue)
 func measureOps() []graph.OpDef {
 	return []graph.OpDef{
 		{
-			Name: "stats", On: graph.KindImage, Returns: graph.KindValue, Space: "analysis", Global: true,
+			Name: "stats", On: graph.KindImage, Returns: graph.KindValue, Space: graph.SpaceRule{Default: buffer.SpaceLinear}, Global: true,
 			Args: []graph.ArgSpec{
 				{Name: "percentiles", Type: "number[]", Default: []any{}, Min: graph.F(0), Max: graph.F(1),
 					Doc: "extra luminance/channel percentiles as fractions, e.g. [0.005, 0.995]"},
@@ -135,17 +135,23 @@ func measureOps() []graph.OpDef {
 			},
 			Fields: statsFields,
 			Run:    runStats,
-			Doc:    "Luminance and per-channel statistics in linear light: meanL, medianL, p01, p99, clipLow, clipHigh (fractions of pixels with any channel clipped), percentiles, perChannel. With { mask } or { box: [x, y, w, h] } only those pixels count (adds area in doc px² and coverage).",
+			Doc:    "Luminance and per-channel statistics in the working space (linear by default): meanL, medianL, p01, p99, clipLow, clipHigh (fractions of pixels with any channel clipped), percentiles, perChannel. With { mask } or { box: [x, y, w, h] } only those pixels count (adds area in doc px² and coverage). In encoded space meanL is the Rec. 709 weighted sum of encoded channels.",
 			See:    []string{"histogram", "levels", "percentile"},
 		},
 		{
-			Name: "histogram", On: graph.KindImage, Returns: graph.KindValue, Space: "analysis", Global: true,
+			Name: "histogram", On: graph.KindImage, Returns: graph.KindValue, Space: graph.SpaceRule{Default: buffer.SpaceEncoded}, Global: true,
 			Args: []graph.ArgSpec{
 				{Name: "bins", Type: "number", Default: 256.0, Min: graph.F(2), Max: graph.F(4096)},
 				{Name: "channel", Type: "enum:L,r,g,b", Default: "L"},
 			},
 			Fields: []string{"bins", "channel", "space", "counts", "under", "over", "total"},
-			Run: func(ctx context.Context, _ *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
+			Gray: func(a graph.Args) []int {
+				if a.String("channel") == "L" {
+					return []int{0}
+				}
+				return nil
+			},
+			Run: func(ctx context.Context, ec *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
 				h, err := kernels.Histogram(ctx, image(in[0]).Buf, a.Int("bins"), a.String("channel"))
 				if err != nil {
 					return nil, graph.Errorf(graph.EArgRange, "histogram: %v", err)
@@ -155,11 +161,11 @@ func measureOps() []graph.OpDef {
 					counts[i] = float64(c)
 				}
 				return data(map[string]any{
-					"bins": float64(len(h.Counts)), "channel": a.String("channel"), "space": "perceptual",
+					"bins": float64(len(h.Counts)), "channel": a.String("channel"), "space": ec.Node.Space.String(),
 					"counts": counts, "under": float64(h.Under), "over": float64(h.Over), "total": float64(h.Total),
 				}), nil
 			},
-			Doc: "Histogram of luminance or one channel over equal bins of the perceptual (sRGB) scale [0, 1]; under/over count values outside it.",
+			Doc: "Histogram of luminance (Rec. 709 of linear light) or one channel over equal bins of [0, 1] in the working space (encoded by default: the scale looks show); under/over count values outside it.",
 			See: []string{"stats"},
 		},
 	}

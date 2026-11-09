@@ -11,7 +11,7 @@ import (
 // SpeckOptions configures DetectSpecks. Lengths and areas are in buffer px.
 type SpeckOptions struct {
 	MaxArea     float64 // largest speck in px²
-	MinContrast float64 // smallest peak contrast (perceptual units)
+	MinContrast float64 // smallest peak contrast (levels of the input's space)
 	Polarity    string  // "dark" | "bright" | "both"
 	NoiseK      float64 // detection threshold in noise σ (default 4)
 }
@@ -20,11 +20,11 @@ type SpeckOptions struct {
 type Speck struct {
 	Pix        []int32
 	Dark       bool
-	Contrast   float64 // peak |residual| (perceptual)
+	Contrast   float64 // peak |residual| (levels of the input's space)
 	LocalNoise float64 // robust σ of the residual in a ring around the speck
 	Sharpness  float64 // fill factor Σ|residual| / (peak · area): ~0.5–0.9 for hard-edged dust, ~0.3 for a soft Gaussian blob (a star)
 	Score      float64 // [0, 1]: signal-to-noise × sharpness
-	MeanL      float64 // mean linear luminance of the speck's pixels
+	MeanL      float64 // mean luminance of the speck's pixels, in the input's space
 }
 
 // SpeckResult is the output of DetectSpecks.
@@ -154,7 +154,7 @@ func flatBackground(ctx context.Context, g, trend []float32, w, h, r int) ([]flo
 }
 
 // DetectSpecks finds small dark and/or bright specks in b: the residual of
-// perceptual luminance against a morphological background (SpeckBackground)
+// luminance (in the space of b's values) against a morphological background (SpeckBackground)
 // is thresholded with hysteresis at a noise-aware level (high: max(minContrast,
 // k·σ), low: half of it but at least 2.5σ, σ from the MAD of the residual),
 // labelled with union-find, and kept when no larger than MaxArea. Each speck
@@ -168,11 +168,7 @@ func DetectSpecks(ctx context.Context, b *buffer.Buffer, o SpeckOptions) (*Speck
 		o.NoiseK = 4
 	}
 	w, h := b.W, b.H
-	L, err := PerceptualLuminance(ctx, b)
-	if err != nil {
-		return nil, err
-	}
-	lin := b.Luminance()
+	L := b.Luminance() // one channel: the graph feeds luminance in the working space
 	diam := 2 * math.Sqrt(math.Max(o.MaxArea, 1)/math.Pi)
 	r := max(2, int(math.Ceil(diam/2))+2)
 	bg, err := SpeckBackground(ctx, L, w, h, r)
@@ -249,7 +245,7 @@ func DetectSpecks(ctx context.Context, b *buffer.Buffer, o SpeckOptions) (*Speck
 		minX, minY, maxX, maxY := w, h, 0, 0
 		for _, p := range c.pix {
 			peak = max(peak, sign*res[p])
-			sl += float64(lin[p])
+			sl += float64(L[p])
 			x, y := int(p)%w, int(p)/w
 			minX, maxX, minY, maxY = min(minX, x), max(maxX, x), min(minY, y), max(maxY, y)
 		}

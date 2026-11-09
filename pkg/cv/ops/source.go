@@ -3,13 +3,34 @@ package ops
 import (
 	"context"
 
+	"github.com/go-go-golems/goja-cv/pkg/cv/buffer"
 	"github.com/go-go-golems/goja-cv/pkg/cv/graph"
 )
+
+// sourceEnc: an opened file is sRGB-encoded (decoders and the encoding
+// option arrive with GCV-001 Phase 4); the node holds linear values.
+var sourceEnc = &graph.ResultEnc{
+	Enc:   func(graph.Args, []*graph.Node) buffer.Encoding { return buffer.EncSRGB },
+	Space: func(graph.Args, buffer.Space, []*graph.Node) buffer.Space { return buffer.SpaceLinear },
+}
+
+// placeholderEnc gives a builder lambda's placeholder the statics of the
+// receiver it stands for, so the lambda's graph resolves as on the receiver.
+var placeholderEnc = &graph.ResultEnc{
+	Enc: func(a graph.Args, _ []*graph.Node) buffer.Encoding {
+		e, _ := buffer.ParseEncoding(a.String("enc"))
+		return e
+	},
+	Space: func(a graph.Args, _ buffer.Space, _ []*graph.Node) buffer.Space {
+		s, _ := buffer.ParseSpace(a.String("space"))
+		return s
+	},
+}
 
 func sourceOps() []graph.OpDef {
 	return []graph.OpDef{
 		{
-			Name: "open", On: graph.KindNone, Returns: graph.KindImage, Space: "source",
+			Name: "open", On: graph.KindNone, Returns: graph.KindImage, Result: sourceEnc,
 			Args: []graph.ArgSpec{
 				{Name: "path", Type: "string", Positional: true, Doc: "image file (PNG, JPEG, TIFF 8/16-bit)"},
 				{Name: "stamp", Type: "string", Hidden: true},
@@ -31,11 +52,11 @@ func sourceOps() []graph.OpDef {
 				}
 				return graph.NewImage(buf), nil
 			},
-			Doc: "Open an image file as a source node (decoded on first evaluation, sRGB → linear float32).",
+			Doc: "Open an image file as a source node (decoded on first evaluation; the node holds linear values: the file's encoding undone).",
 			See: []string{"stats", "explain"},
 		},
 		{
-			Name: "param", On: graph.KindNone, Returns: graph.KindParam, Space: "source",
+			Name: "param", On: graph.KindNone, Returns: graph.KindParam,
 			Args: []graph.ArgSpec{{Name: "name", Type: "string", Positional: true}},
 			Run: func(_ context.Context, ec *graph.EvalCtx, _ []graph.Value, a graph.Args) (graph.Value, error) {
 				v, ok := ec.Params[a.String("name")]
@@ -47,10 +68,12 @@ func sourceOps() []graph.OpDef {
 			Doc: "A named value a person can move (declare with P.slider / P.toggle / P.choice).",
 		},
 		{
-			Name: graph.PlaceholderOp, On: graph.KindNone, Returns: graph.KindImage, Space: "source",
+			Name: graph.PlaceholderOp, On: graph.KindNone, Returns: graph.KindImage, Result: placeholderEnc,
 			Args: []graph.ArgSpec{
 				{Name: "for", Type: "number", Hidden: true},
 				{Name: "frame", Type: "number[]", Hidden: true, Doc: "the receiver's frame [x, y, w, h]"},
+				{Name: "enc", Type: "string", Hidden: true, Optional: true, Doc: "the receiver's encoding"},
+				{Name: "space", Type: "string", Hidden: true, Optional: true, Doc: "the receiver's space"},
 			},
 			DocFrame: func(a graph.Args, _ []*graph.Node) graph.Frame { return frameArg(a, "frame") },
 			Run: func(context.Context, *graph.EvalCtx, []graph.Value, graph.Args) (graph.Value, error) {

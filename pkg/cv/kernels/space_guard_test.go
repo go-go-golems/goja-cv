@@ -20,7 +20,6 @@ var forbiddenConversions = map[string]bool{
 }
 
 func TestKernelsAreSpaceAgnostic(t *testing.T) {
-	t.Skip("enabled when GCV-001 Phase 3 has ported the kernels")
 	for _, dir := range []string{".", filepath.Join("..", "ops")} {
 		entries, err := os.ReadDir(dir)
 		if err != nil {

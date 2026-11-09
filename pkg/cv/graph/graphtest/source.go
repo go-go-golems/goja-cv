@@ -26,6 +26,13 @@ func RegisterSource(reg *graph.Registry) {
 			{Name: "fill", Type: "number[]", Hidden: true},
 		},
 		DocFrame: func(a graph.Args, _ []*graph.Node) graph.Frame { return frameOf(a) },
+		Result: &graph.ResultEnc{
+			Enc: func(a graph.Args, _ []*graph.Node) buffer.Encoding {
+				e, _ := buffer.ParseEncoding(a.String("enc"))
+				return e
+			},
+			Space: func(graph.Args, buffer.Space, []*graph.Node) buffer.Space { return buffer.SpaceLinear },
+		},
 		Run: func(_ context.Context, ec *graph.EvalCtx, _ []graph.Value, a graph.Args) (graph.Value, error) {
 			f := frameOf(a)
 			fill := a.Numbers("fill")

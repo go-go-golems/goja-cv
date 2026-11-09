@@ -81,7 +81,8 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 			t.Fatalf("%s: info %+v buf %v", tc.name, info, got)
 		}
 		for i := range src.Pix {
-			if d := math.Abs(float64(got.Pix[i] - src.Pix[i])); d > tc.tol {
+			// files hold the encoded values written; decoding applies the sRGB curve
+			if d := math.Abs(float64(got.Pix[i]) - SRGBToLinear(float64(src.Pix[i]))); d > tc.tol {
 				t.Fatalf("%s: pixel %d off by %g", tc.name, i, d)
 			}
 		}

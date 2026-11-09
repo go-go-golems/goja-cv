@@ -97,8 +97,8 @@ func Paste(dst, src *buffer.Buffer, x, y int) {
 	}
 }
 
-// AbsDiff is |P(a) − P(b)|·gain per channel in perceptual space, returned in
-// linear light, for looking at what changed.
+// AbsDiff is |a − b|·gain per channel, clamped to [0, 1], for looking at
+// what changed.
 func AbsDiff(ctx context.Context, a, b *buffer.Buffer, gain float32) (*buffer.Buffer, error) {
 	a, b = matchChannels(a, b)
 	out := buffer.NewLike(a)
@@ -110,11 +110,11 @@ func AbsDiff(ctx context.Context, a, b *buffer.Buffer, gain float32) (*buffer.Bu
 					return nil, err
 				}
 			}
-			d := buffer.ToPerceptual(pa[i]) - buffer.ToPerceptual(pb[i])
+			d := pa[i] - pb[i]
 			if d < 0 {
 				d = -d
 			}
-			po[i] = buffer.ToLinear(clamp01f(d * gain))
+			po[i] = clamp01f(d * gain)
 		}
 	}
 	return out, nil

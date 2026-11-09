@@ -50,7 +50,7 @@ func receiverNumber(op string, v graph.Value) (float64, error) {
 
 func arith(name, doc string, f func(a, b float64) (float64, error)) graph.OpDef {
 	return graph.OpDef{
-		Name: name, On: graph.KindValue, Returns: graph.KindValue, Space: "data",
+		Name: name, On: graph.KindValue, Returns: graph.KindValue,
 		Args: []graph.ArgSpec{{Name: "x", Type: "number", Positional: true}},
 		Run: func(_ context.Context, _ *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
 			v, err := receiverNumber(name, in[0])
@@ -70,7 +70,7 @@ func arith(name, doc string, f func(a, b float64) (float64, error)) graph.OpDef 
 func valueOps() []graph.OpDef {
 	return []graph.OpDef{
 		{
-			Name: "field", On: graph.KindValue, Returns: graph.KindValue, Space: "data",
+			Name: "field", On: graph.KindValue, Returns: graph.KindValue,
 			Args: []graph.ArgSpec{{Name: "name", Type: "string", Positional: true}},
 			Run: func(_ context.Context, _ *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
 				v, err := fieldOf(in[0].(*graph.DataValue).Data, a.String("name"))
@@ -83,7 +83,7 @@ func valueOps() []graph.OpDef {
 			See: []string{"pick"},
 		},
 		{
-			Name: "pick", On: graph.KindValue, Returns: graph.KindValue, Space: "data",
+			Name: "pick", On: graph.KindValue, Returns: graph.KindValue,
 			Args: []graph.ArgSpec{{Name: "keys", Type: "string[]", Positional: true, Variadic: true}},
 			Run: func(_ context.Context, _ *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
 				out := map[string]any{}
@@ -100,7 +100,7 @@ func valueOps() []graph.OpDef {
 			See: []string{"field"},
 		},
 		{
-			Name: "percentile", On: graph.KindValue, Returns: graph.KindValue, Space: "data",
+			Name: "percentile", On: graph.KindValue, Returns: graph.KindValue,
 			Args: []graph.ArgSpec{{Name: "p", Type: "number", Positional: true, Min: graph.F(0), Max: graph.F(1)}},
 			Run: func(_ context.Context, _ *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
 				p := a.Number("p")
@@ -135,7 +135,7 @@ func valueOps() []graph.OpDef {
 		arith("max", "the larger of receiver and x", func(a, b float64) (float64, error) { return math.Max(a, b), nil }),
 		arith("distance", "|receiver − x|", func(a, b float64) (float64, error) { return math.Abs(a - b), nil }),
 		{
-			Name: "abs", On: graph.KindValue, Returns: graph.KindValue, Space: "data",
+			Name: "abs", On: graph.KindValue, Returns: graph.KindValue,
 			Run: func(_ context.Context, _ *graph.EvalCtx, in []graph.Value, _ graph.Args) (graph.Value, error) {
 				v, err := receiverNumber("abs", in[0])
 				if err != nil {

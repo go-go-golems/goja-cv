@@ -18,6 +18,7 @@ type Value interface {
 type ImageValue struct {
 	Buf   *buffer.Buffer
 	Frame Frame
+	Enc   buffer.Encoding // the node's encoding (EncNone for masks)
 	kind  Kind
 }
 
@@ -68,6 +69,7 @@ func (v *ImageValue) Summary() map[string]any {
 		m["coverage"] = v.Coverage()
 	} else {
 		m["channels"] = v.Buf.C
+		m["encoding"] = v.Enc.String()
 	}
 	return m
 }
