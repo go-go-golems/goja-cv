@@ -1610,3 +1610,15 @@ Recorded while implementing on branch `task/gcv-001-image-model` (details and re
     override are separate sources (§9.1 sketches `Load(abs, stamp, box)`).
 12. **Enum fix for `cv.open`**: `cv.open(path, { encoding: "srgb" })` (the first valid value or the did-you-mean
     suggestion), following deviation 8.
+13. **Macro node inputs** (§7.8): a macro node's inputs are all of the call's inputs (receiver, explicit inputs,
+    lifted arguments) followed by the expansion's output, not only the receiver and the output, so that lifted
+    arguments keep their `InputRef` positions in the canonical args (hash and `Describe`). `Expander.Arg(args, name)`
+    turns a lifted argument back into a node argument for the inner calls. `Builder.Call` (and `Engine.Call`) return
+    the `CallResult`; `Builder.Intern` stays for single-node calls; `CallResult.Node()` is the single node or nil.
+14. **`OpDef.Warn`** is a build-time warning hook (used by `toLab` for `PRIMARIES`, found by walking the inputs to the
+    opened files' notes).
+15. **`channel` canonical form**: `channel(2)` and `channel("b")` are different nodes (the argument is hashed as given);
+    `split()` uses the names. The channel count is not static, so "g"/"b" on a one-channel image is an `E_ARG_RANGE`
+    at evaluation, and `colormap` on three channels an `E_WRONG_KIND` at evaluation, both with the guide's fixes.
+16. **Colormap tables** are generated: viridis and magma from Matt Zucker's CC0 degree-6 polynomial fits (within
+    about 0.01 of matplotlib), diverging from five ColorBrewer RdBu anchors (blue–white–red), gray linear.

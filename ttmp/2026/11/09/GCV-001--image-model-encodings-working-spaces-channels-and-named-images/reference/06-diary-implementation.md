@@ -312,3 +312,59 @@ or in SubIFDs) and windowed reads share one code path.
 
 ### Technical details
 - Supported (also `buffer.SupportedFormats`): PNG 8/16-bit, JPEG, TIFF 8/16-bit integer or 32-bit float (none, LZW, Deflate, PackBits; predictor 2 on integers), LinearRaw DNG, NumPy `.npy` (`|u1 <u2 >u2 <f4 >f4 <f8 >f8`, (H, W), (H, W, 1), (H, W, 3)).
+
+## Step 6: Phase 5 - macros and channel ops
+
+Phase 5 adds the macro mechanism GCV-002 builds its views on, and the channel ops of issue 13. A macro is an `OpDef`
+with `Expand`: it builds other ops at intern time; one output gets a pass-through macro node with its own label, several
+outputs (split) are returned as an array all the way to JavaScript.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 1)
+
+**Assistant interpretation:** Implement Phase 5: Expand/Expander/CallResult, macro nodes, the binding's array return, channel/split/toLab/chroma/colormap/encode, remove rec601, with tests first.
+
+**Inferred user intent:** Neutrality and false-colour cues for the dust annotators, and the macro foundation for GCV-002.
+
+**Commit (code):** 7bb3a33 - "GCV-001 Phase 5: macros (OpDef.Expand) and channel ops"
+
+### What I did
+- `pkg/cv/graph/macro.go`: `ExpandFunc`, `Expander` (`Call`, `Arg`), `Builder.expand`, `CallResult` (+ `Node()`), `IsMacro`. `node.go`: `Builder.Call` holds the former `Intern` body (with the macro branch and `OpDef.Warn`); `Intern` returns the single node. Macro nodes take frame and statics from their last input (`nodeFrame`, `nodeStatics`); `evalRun.eval` evaluates the last input; `Explain` indents the expansion. `Register` requires exactly one of `Run`/`Expand`. `Engine.Call` returns `CallResult`.
+- Binding `__call` returns an array of handles for several nodes; prelude `callOp` maps them to proxies.
+- `pkg/cv/kernels/colormap.go`: colormap tables, `ApplyColormap`, `Chroma`, `ToLab` (sRGB/D65 matrix and CIE f).
+- `pkg/cv/ops/channel.go`: `channel` (union `enum:r,g,b|number`), `split` (macro), `toLab` (fixed linear, derived, `PRIMARIES`), `chroma` (encoded, derived), `colormap` (encoded, display, `range`/`center` as `Level`), `encode` (fixed linear, result encoding = argument); `toGray` loses `rec601`.
+- Tests: `pkg/cv/ops/channel_test.go` (split = three channel calls; a registered one-node test macro: own node, last input = the hand-written chain, derived statics, no run of its own, explain, lifted param reaches the expansion; channel on 1/3 channels; toLab white and red; chroma grey/colour/relative; colormap ends and auto range and the 3-channel error; encode; rec601 refused; PRIMARIES on a DNG), `TestSplitReturnsNodes` in the module tests; registry walk samples for channel/encode.
+- All `e.Call` call sites in tests ported to `CallResult`.
+
+### Why
+- Guide §7.8, §7.9 and Phase 5.
+
+### What worked
+- After two fixes (below) everything passed; gate green.
+
+### What didn't work
+- `E_ARG_TYPE: channel.c = "b" is not one of "r", "g", "b|number".` The binder's `enum:` case matched `enum:r,g,b|number` before the union case; the union case now comes first in `check`.
+- `the param did not reach the expansion: [7]` - my test walked chroma → gaussian, but chroma (encoded) reads `convert(gaussian → encoded)`; the param was there one node further.
+- `split()[2] is #4, channel(2) is #5`: `channel(2)` and `channel("b")` hash differently (deviation 15); the test uses the names.
+- `TestRegistryWalk`: `channel is missing its c argument` - new ops need walk samples; `split` and `colormap` are skipped there (covered in channel_test).
+
+### What I learned
+- Macro node inputs must include the lifted arguments, or `InputRef`s in the canonical args point at the wrong inputs (deviation 13).
+
+### What was tricky to build
+- Keeping a single binding path: `Builder.Call` does binding, frame checks and either expansion or space resolution, so macros get option checking, synonyms and did-you-mean like every op.
+
+### What warrants a second pair of eyes
+- `evalRun.eval` short-circuits macro nodes before signatures and the cache; a macro that is itself `AnalysisScale`-bound would bypass that (none exists).
+- Colormap polynomial constants (from memory of the CC0 fits; endpoints are tested within 0.03).
+
+### What should be done in the future
+- GCV-002: highpass/dog/view presets as one-node macros; captions use the macro node's label.
+
+### Code review instructions
+- `pkg/cv/graph/macro.go`, `node.go` (`Call`), `eval.go` (macro short-circuit), `pkg/cv/ops/channel.go`, `pkg/cv/kernels/colormap.go`.
+- `go test ./pkg/cv/ops -run 'Split|OneNodeMacro|ToLab' -v`; `go test ./pkg/gojamod/cv -run Split`.
+
+### Technical details
+- Lab: X = 0.4124564 R + 0.3575761 G + 0.1804375 B, Y = 0.2126729 R + 0.7151522 G + 0.0721750 B, Z = 0.0193339 R + 0.1191920 G + 0.9503041 B; white (0.95047, 1, 1.08883); red → (53.24, 80.09, 67.20).
