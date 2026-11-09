@@ -78,3 +78,51 @@ Behaviour is unchanged after this step; the goldens record it byte for byte.
 
 ### Technical details
 - Regenerate: `go test ./pkg/cv/look -run TestGoldenLooks -update`. Tolerance check: `go test ./pkg/cv/look -run TestGoldenLooks -golden.tolerant -v`.
+
+## Step 2: Phase 1 - encodings, spaces and exact conversion
+
+Phase 1 adds the vocabulary of the new image model to `pkg/cv/buffer` without using it anywhere: `Encoding` (`srgb`,
+`linear`, plus `EncNone` for masks), `Space` (`linear`, `encoded`, plus `SpaceNone`), `Identity` and `Convert`, which
+uses the exact transfer functions instead of the interpolated tables.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 1)
+
+**Assistant interpretation:** Implement guide Phase 1 with its tests first.
+
+**Inferred user intent:** A tested conversion primitive the graph can rely on in Phase 3.
+
+**Commit (code):** 41a5773 - "GCV-001 Phase 1: buffer.Encoding, Space, Identity and exact Convert"
+
+### What I did
+- `pkg/cv/buffer/encoding_test.go` (written first): the identity table over all encodings and spaces, parse/print round trips (and "perceptual" refused), the §3.2 numbers (0.05 → 0.0039, 0.5 → 0.214, 0.8 → 0.604) and the §3.4 decode steps (0.0096 / 0.0615), round trips within 1e-6 relative on random values in [-0.5, 2], monotonicity, the 8/16-bit tables against the exact functions at every code, and the LUT fast path within 2e-5.
+- `pkg/cv/buffer/encoding.go`: the types, `ParseEncoding`, `ParseSpace`, `Identity`, `Convert` (parallel by rows, returns its input when `Identity` holds).
+- `color.go`: `ToPerceptual`/`ToLinear` documented as the fast path only.
+
+### Why
+- Guide §7.2: conversions must be accurate to float32 precision because they become cached graph nodes shared by many consumers.
+
+### What worked
+- All tests passed on the first run; gate green.
+
+### What didn't work
+- N/A
+
+### What I learned
+- `Identity` also has to hold when either side is `SpaceNone` (masks, counts): the graph never converts those, and treating them as identity keeps the builder loop simple.
+
+### What was tricky to build
+- Nothing; the one decision was `Identity(e, from, to)` returning true for every non-sRGB encoding, which makes `EncNone` (masks) and `EncLinear` (data, derived values) behave the same.
+
+### What warrants a second pair of eyes
+- `Identity` for `SpaceNone` endpoints (a deliberate widening of the guide's two-row table).
+
+### What should be done in the future
+- N/A
+
+### Code review instructions
+- `pkg/cv/buffer/encoding.go`, then `encoding_test.go`. `go test ./pkg/cv/buffer -run 'Identity|Convert|Integer' -v`.
+
+### Technical details
+- `Convert` maps `linear→encoded` to `LinearToSRGB` and `encoded→linear` to `SRGBToLinear`, computed in float64 per sample and stored as float32.
