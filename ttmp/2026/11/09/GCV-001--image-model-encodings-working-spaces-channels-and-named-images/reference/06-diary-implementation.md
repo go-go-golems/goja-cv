@@ -480,3 +480,47 @@ raw0027.dng) and the pi-harness overrides and question file in the dust-scanning
 
 ### Technical details
 - Expected answers for `questions-gcv-001.md` (from `01-make-v-tile.py` and goja-cv): Q1 encoding srgb as read by default (must be opened `linear`), p01 0.00854, p99 0.91794; Q2 same frame [0, 0, 1024, 1024], largest |stored(ref) − stored(v)| 0.28713; Q3 the blob at (30.0, 394.4) has per-channel density steps 0.0741, 0.0792, 0.0800 (spread/mean 0.075): neutral.
+
+## Step 9: Pull request and CI
+
+All phases are on `task/gcv-001-image-model`; PR https://github.com/go-go-golems/goja-cv/pull/2 targets main (not merged).
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 1)
+
+**Assistant interpretation:** Open the PR with summary, phases/commits, breaking changes, verification and deviations; watch CI and fix failures.
+
+**Inferred user intent:** A reviewable PR with green CI.
+
+**Commit (code):** N/A (diary only)
+
+### What I did
+- `gh pr create` with the body in the PR; `gh pr checks 2 --watch`.
+
+### Why
+- The task's last step.
+
+### What worked
+- test (race), smoke, lint, GoSec, Go Vulnerability Check, CodeQL Analyze, TruffleHog: pass.
+
+### What didn't work
+- Dependency Review: `Dependency review is not supported on this repository. Please ensure that Dependency graph is enabled` - a repository setting; it fails the same way on PR #1 and is not caused by this change (go.mod is unchanged).
+
+### What I learned
+- N/A
+
+### What was tricky to build
+- N/A
+
+### What warrants a second pair of eyes
+- The breaking changes listed in the PR body (levels, mask display, overlay tints, meanL, summaries, Go API).
+
+### What should be done in the future
+- Enable the Dependency graph in the repository settings (or drop the Dependency Review job).
+
+### Code review instructions
+- Read the PR body, then the diary steps 1-8 in order.
+
+### Technical details
+- N/A
