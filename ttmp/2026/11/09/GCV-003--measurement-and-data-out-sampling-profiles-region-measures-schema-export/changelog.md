@@ -34,3 +34,8 @@ Step 5: Phase 5 charts by op, profile line chart (commit 7c8d1ef)
 
 Step 6: Phase 6 writers and save (commit c0e2180)
 
+
+## 2026-11-09
+
+Step 7: Phase 7 data out (commit 58c0480)
+

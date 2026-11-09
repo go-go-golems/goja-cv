@@ -391,3 +391,61 @@ linear view reopens as linear at the same absolute coordinates (open item 6). Wi
 ### Technical details
 - `await img.view("speck").save("views/speck.tif")` → `{ path: "/abs/out/views/speck.tif", format: "tiff", depth: 16, encoding: "linear", frame: [200, 80, 256, 192], bytes: …, replaced: false }`.
 - CLAMP example: `save("d16.tif"): 48.4 % of the samples lie outside [0, 1] and were clamped by the 16-bit format. fix: node.save("d16.tif", { depth: 32 })   // or .npy`.
+
+## Step 7: Phase 7 - data out (cv.json, cv.csv)
+
+Data now has its own way out of an eval. `cv.csv(regions, { name: "spots" })` returned from an eval is delivered as
+content - text for MCP clients, the file `spots.csv` for the CLI - with every region in schema order; `cv.json(x)` does
+the same as JSON; either can be saved under the out-root with `.save(path)`. Looks and data have separate budgets, and
+data too large for a conversation becomes a note telling the agent to save it.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 1)
+
+**Assistant interpretation:** Guide Phase 7 (§6 item 8, §7.9, the rev-3 rules on names and the MCP limit) and open item 5 (json, csv, save as FuncDefs through RegisterFunc/BindOptions).
+
+**Inferred user intent:** The colleague's calibration script gets every candidate as a CSV file from one `goja-cv eval --json` call instead of paging YAML.
+
+**Commit (code):** 58c0480 - "GCV-003 Phase 7: cv.json and cv.csv Data handles; data budgets; CLI writes named data files"
+
+### What I did
+- `pkg/cv/dataout/data.go`: `Data` (lazy node or eager data; `SetNumber(n, maxBytes)` from the session; `Name` → name or `data-<N>`; `ResultPlaceholder`; `Render` once at scale 1; `ResultContent` with the byte-limit note; `Save`), own JSON writer (records keep order, maps sorted, NaN → null), CSV `table` (Regions items and row lists one row each; an object whose longest arrays share a length - a profile - one row per element; awaited `{ kind: "Regions", items }` its items; lists of lists `c1, c2, …`), `columns` checked at the call when the schema is known.
+- `graph.OrderBySchema` (moved from the binding) orders rows/objects for JavaScript and for JSON.
+- Binder type `data` (kept as given; BindOptions does not refuse a node there). FuncDefs `json`, `csv` (Bespoke, `Usage` lines) and `save` on `Data` too.
+- Binding: `__data(format, x, opts)` exports plain data with `exportOrdered` (records in key order, nodes and looks as their description, cycles cut) - awaited data is *not* lifted back to its node; returns a `goja.DynamicObject` (`dataObject`, with `name`, `format`, `save`) whose exported value embeds the handle, so `resultcontent.ProviderOf` finds it. `data.save` runs through `binding.async`.
+- Session: `Options.MaxData` (4), `Options.MaxDataBytes` (0; `MCPMaxDataBytes` = 256 KiB set by `goja-cv mcp`), `ContentLimits().MaxItems = MaxLooks + MaxData`, the MCP item limit likewise. `collect` keeps at most MaxLooks looks and MaxData data items, numbers looks, gives data items their content number and byte limit, and returns the dropped ones; the YAML renders them as `[not delivered: … — more than 4 looks in one eval; …]`.
+- CLI: `writeLooks` → `writeContent` (`look-<n>-<slug>`, `<name>.<ext>` from the caption `data <name>.<ext>`, `-2` for a repeated name, dropped items listed), rows counted from the CSV/JSON; `--json` prints `files` (with `rows`) instead of `looks`.
+- Tests: `cvsession/dataout_test.go` (placeholders, lazy CSV header in schema order, eager JSON with an edit to awaited data, columns, measurement rows in schema order, profile CSV, refusals: image, path as name, unknown column, misspelled option; data.save with extension added/refused; fifth look and fifth data item not delivered; byte-limit note), `TestMCPDataContent` (text content; a ~300 KiB CSV becomes the note), `cmd/goja-cv` `TestDataFilesFromEval` (file names, `-2`, rows, key order, `--out-root` save).
+
+### Why
+- Guide §6 item 8, §7.9, Phase 7; open item 5.
+
+### What worked
+- A `goja.DynamicObject` whose exported value is the Go handle gives JavaScript `data.save(…)` while `resultcontent.ProviderOf` still sees a provider, without any change to go-go-goja.
+
+### What didn't work
+- `TestDataContentLazyEagerAndColumns` first returned five data items in one eval; the fifth (the profile) was correctly left out by the new MaxData budget, so the test split it into its own eval.
+- A dropped look rendered `[not delivered: [look: l5 …] — …]` (the caption already has brackets); trimmed.
+- The CLI test expected `look-1-scene.jpg`; a 64 × 48 look is PNG by GCV-002's format rule.
+
+### What I learned
+- go-go-goja's `Render` counts every item against one limit; the session can enforce per-class counts by leaving providers out in `collect` and telling the agent in the placeholder, with the transport limit set to the sum.
+
+### What was tricky to build
+- Keeping the agent's key order for eager data: `Export()` gives Go maps (unordered). `exportOrdered` walks the goja object on the owner goroutine with `obj.Keys()` and builds `graph.Record`s, which both the JSON and CSV writers honour.
+- Placeholders before rendering: the column count is known only for row schemas; a profile's schema (arrays) gives no count, so its placeholder names the node only.
+
+### What warrants a second pair of eyes
+- `cv.json(x)` of a plain value containing nodes writes their one-line description, not their data.
+- `cvFuncs` (cv properties, session globals, concepts) stayed in `pkg/gojamod/cv/help.go`: moving it to cvsession would need a hook into `cv.help`, which lives in the module; recorded as not done (it was optional).
+
+### What should be done in the future
+- Open question 2 of the guide (save an oversize MCP data item automatically when there is an out-root) remains open.
+
+### Code review instructions
+- `pkg/cv/dataout/data.go`, `pkg/gojamod/cv/dataout.go` (`dataJS`, `dataObject`, `exportOrdered`), `pkg/cvsession/processor.go` (`collect`), `pkg/cvsession/yaml.go` (dropped), `cmd/goja-cv/eval.go` (`writeContent`, `countRows`).
+- `go test ./pkg/cvsession -run 'Data|MCPData' -v`; `go test ./cmd/goja-cv -run DataFiles -v`.
+
+### Technical details
+- The calibration command: `goja-cv eval --json --out /tmp/specks --image TILE.tif -e 'return cv.csv(img.detect.specks({ polarity: "bright", maxArea: 2000 }), { name: "specks" })'` → `files: [{ caption: "data specks.csv", mimeType: "text/csv", rows: N, path: "/tmp/specks/specks.csv" }]`.
