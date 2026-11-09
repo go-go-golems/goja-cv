@@ -115,3 +115,46 @@ committing (the writer and reviewers share the repo).
 
 ### Code review instructions
 - The three design docs; reviewers' findings once written.
+
+## Step 3: Review read results; revision round
+
+All three reviewers finished (GCV-001: 4 P1/22 P2/21 P3; GCV-002: 6/16/15; GCV-003: 5/13/17). I committed their
+findings and diaries (`07e569e`) and sent everything to the writer for one revision round, with the cross-cutting
+fixes named explicitly so they are solved once.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 1)
+
+**Assistant interpretation:** Apply the review read before handing the guides to implementers.
+
+**Inferred user intent:** Guides that introduce concepts properly and are executable.
+
+### What I did
+- Read the three reports. The reviewers converged on: missing foundations (CVJS-001 vocabulary from another repo; pixel/scale terms undefined and inconsistent), phase orders that would break the build between phases, special mechanisms beside existing ones (`RegionFields` vs `OpDef.Fields`, `FuncDef` vs `KindNone` ops, two ring-measure paths), field-name collisions (`x,y`, `r`, gray mean, `chroma`), space semantics (luminance in encoded space changes pure red 0.498 → 0.213; resolution must happen inside `internNode`/`Substitute`), decorations/sheets that cannot work as specified (scale order, build-time size, 1568 px limit), mutable caption fields on hash-consed nodes, and data-out claims that do not match go-go-goja `resultcontent` (file names) or existing writers.
+- Sent the writer: fix all P1/P2, fix-or-decline P3, revision history per guide, a disposition table per findings doc.
+- `docmgr doctor` on the three tickets: no errors.
+
+### Why
+- Several findings span tickets; naming the shared fixes avoids three inconsistent local patches.
+
+### What worked
+- The reviewers verified nearly every `file:line` citation; problems were conceptual and architectural, not factual.
+
+### What didn't work
+- N/A
+
+### What I learned
+- A guide that builds on vocabulary from another repo reads as unfinished to a cold reader, even when every claim is right.
+
+### What was tricky to build
+- N/A
+
+### What warrants a second pair of eyes
+- Whether one revision round is enough; a short P1 re-check by the reviewers after revision is cheap.
+
+### What should be done in the future
+- Re-check P1 dispositions; then implement GCV-001.
+
+### Code review instructions
+- `reference/*review-read-findings*` in each ticket.
