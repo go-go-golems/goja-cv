@@ -2822,3 +2822,20 @@ order found; the phase is in brackets.
     test and benchmark build on `img.as("linear")` and the `GOJACV_HOT_SPACE` / `GOJACV_VIEW_SPACE` experiment
     switches are gone with the option. Session numbers in tests and `03-cli.md` moved to file units (gradient meanL
     0.29507 → 0.52726, p99 0.83255 → 0.92244).
+24. [4] The luminance input of a `Luma` op is never converted either (with masks and `OneChannel` receivers): it is
+    `toGray` in its source's space by definition. Without this, `refine`'s guide luminance (encoded, from the
+    photograph) was converted to the mask receiver's linear space, which moved the `mask-refine` golden.
+25. [4] Mask ops (`and`, `or`, `minus`, `not`, `grow`, `shrink`, `feather`, `refine`) and `toMask` return
+    linear-encoded (`DerivedEnc`) results like the mask makers, also on a grey photograph (`img.toGray().grow(2)` is
+    a mask). A look of a one-channel linear-encoded image is PNG by default (masks were PNG by kind); derived grey
+    images (`chroma`, a grey DoG) are now PNG too. All goldens are below `smallLook` and stayed exact.
+26. [4] A channel count of 0 means unknown and skips the checks; every source declares `Channels` (`open` and
+    `openLinear` from the probe, the placeholder from `PlaceholderMeta.Channels`, the test sources).
+27. [4] The fix for a colour receiver of a `OneChannel` op is `img.toGray().<op>(…)` (`colormap`'s run-time error
+    and its `toGray("average")` fix are gone); `channel("g")` on a grey image is `E_ARG_RANGE` at build time.
+    `cv.help("Mask")` resolves to the new `mask` concept (concepts are looked up case-insensitively); the
+    `Mask.stats` redirect is gone and `mask.stats` explains `m.stats()` against `img.stats({ mask: m })`.
+28. [4] The channel property test is `TestRegistryWalk`: every op on colour, grey and mask receivers (as
+    `OneChannel`/`ThreeChannel` allow) in two passes with colour and grey image arguments; the arithmetic samples
+    use an image operand (the number operand is covered by `arith_test.go`) and `channel`'s sample is `"r"`.
+    `regions.measure`'s image argument is typed `Image` (a mask is one).

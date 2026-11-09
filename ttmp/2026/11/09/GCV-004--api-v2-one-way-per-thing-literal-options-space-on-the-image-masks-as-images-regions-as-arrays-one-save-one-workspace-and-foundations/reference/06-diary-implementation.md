@@ -787,3 +787,122 @@ speck view: 197 points on 15 tiles, median rank 75, top50 39.6 %
 
 `git diff --stat 37f451f ae53037 -- pkg cmd internal Makefile`: 75 files changed, 1005 insertions(+), 836
 deletions(-).
+
+## Step 7: Phase 4 — masks are one-channel images
+
+Phase 4 removes the Mask kind. A mask is an Image with one channel: `await m` says `channels: 1`, every image op
+works on it, the mask ops are Image methods that need a one-channel receiver, and an argument typed `Mask` accepts any
+one-channel image. Every Image node now carries its channel count, so channel errors (a colour image as a mask, a grey
+image for `toLab`) are `E_WRONG_KIND` when the call is built, on the agent's line, with a literal fix.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 1)
+
+**Assistant interpretation:** Guide §13 Phase 4 with §6.3, §7.5 and §9 item 9: `Node.Channels`, `OpDef.Channels`,
+`OneChannel`, `ThreeChannel`, the `Mask` type word, the mask exemption in `resolveSpace`,
+`PlaceholderMeta.Channels`; delete the Mask kind and its duplicates (one `crop`, one `overlay`); the Phase 4 tests;
+mask goldens exact; docs.
+
+**Inferred user intent:** One kind for pixels, so agents can measure and transform masks like images and get channel
+mistakes at build time instead of at evaluation.
+
+**Commit (code):** `cdc6326` — "GCV-004 Phase 4: masks are one-channel images"
+
+### What I did
+
+- `pkg/cv/graph`: `Node.Channels` (`nodeChannels`: a macro's output, `op.Channels`, else the receiver's or the image
+  argument's); `graph.One`, `graph.Three`, `graph.MaxChannels` (the larger count of the image inputs, as
+  `kernels.binary` broadcasts); `MaskType`, `acceptsNode`, `takesMask`; `wrongNode` (the argument error, fix
+  `img.toGray()`) and `checkChannels` (the receiver error) replace `kindHint`; `maskInputs` marks inputs read as
+  stored (Mask-typed arguments, `OneChannel` receivers, the luminance input) for `resolveSpace` and the `ENCODING`
+  warning; a one-channel source is its own luminance (no `toGray` node); `PlaceholderMeta.Channels`;
+  `ImageSummary` and `cv.explain` report `channels`.
+- Deleted: `KindMask`, `ImageValue.kind`, `NewMask`, `IsMask`, `kindHint`, the Mask branches of `conversionHint`,
+  `crossKind`, `receiverVar`, `argFix`, render, explain, order warnings, looks, save, data, help, the session's
+  reference and `goja-cv ops`; the second `crop`; the Mask `overlay` (`mask.go`) and the Regions `overlay`
+  (`present.go`); the `mask()` helper (`image()` does it).
+- `pkg/cv/ops`: mask makers and `toMask` return `DerivedEnc` one-channel images; mask ops, `coverage` and
+  `components` are Image methods with `OneChannel`; `colormap` is `OneChannel` (its run-time check is gone);
+  `toLab`, `split`, `chroma`, `mask.color` are `ThreeChannel`; `channel`'s `Validate` refuses `"g"`/`"b"` on a grey
+  receiver; `Channels` declared on `toGray`, `channel`, `chroma` (1), `colormap`, `toLab`, `overlay`, `annotate`,
+  `compare`, `sheet` (3), `add`/`sub`/`mul`/`min`/`max`, `blend`, `within` (`MaxChannels`), the sources.
+- Looks: a one-channel linear-encoded image is PNG (`isMaskLike`).
+- Help: the `mask` concept; `cv.help("Mask")` resolves to it; `mask.stats` redirect rewritten.
+- Tests: `TestRegistryWalk` became the channel property test (colour, grey and mask receivers; colour and grey
+  argument passes; `Buf.C == Node.Channels`; mask values in [0, 1]); `TestMasksAreOneChannelImages`
+  (`img.toGray().grow(2)`, `m.stats()`, `img.within(img, …)` and `img.within(m.mul(img), …)` refused with
+  `img.toGray()`, same mask node under `img` and `img.as("linear")`, no `toGray` for a grey input); colour ops on grey
+  and `colormap` on colour at build time (`channel_test.go`); the agent's line in the `within` error
+  (`TestCrossKindErrorsHaveALiteralFixAndGrammar`); `m3_test.go` in graph with a colour test op.
+- Docs: `05-masks-and-regions` (the mask sections; regions stay for Phase 5), `02-concepts` (kinds), `06-looks`,
+  `08-errors`, `01-getting-started`, `02-units-and-scales`, `13-data-out`, `pkg/doc` 03, 04, 10, README, the MCP
+  instructions (4000-character cap kept by shortening the masks line).
+- Guide deviations 24–28.
+
+### Why
+
+- Guide §6.3, §7.5, D16, §9 item 9, review findings F1, F2, F28.
+
+### What worked
+
+- The gate: `gofmt=0 build=0 vet=0 test=0 lint=0 logcopter=0 smoke=0 gate=0`.
+- Goldens: none moved (`mask-overlay` is now built as `img.overlay(mask)` and renders the same bytes).
+- The property test passed on its first full run once the receivers were chosen by `OneChannel`/`ThreeChannel`:
+  every op's evaluated channel count matched its static.
+- Real data identical to Step 6.
+
+### What didn't work
+
+- `TestGoldenLooks/mask-refine`: `look differs from its golden: largest difference 49 codes, 6233 of 49152 samples
+  differ (12.681 %)`. The mask receiver is linear (derived) and `refine` follows it, so the guide's encoded
+  luminance input was converted to linear. The luminance input is now read as stored (deviation 24).
+- `TestGoldenLooks/mask-overlay`: `overlay: E_WRONG_KIND: overlay.target needs a one-channel image (a mask) or
+  regions; this image has 3 channels.` — the golden called the deleted `mask.overlay(img)`; rebuilt as
+  `img.overlay(mask)`.
+- The first walk failed on `Image:channel on 1-channel #4: E_ARG_RANGE: channel(g)`: the new build-time check on a
+  grey receiver; the sample became `"r"`.
+- The MCP instructions grew to 4061, then 4009 characters; the masks line was shortened until under 4000.
+
+### What I learned
+
+- `MaxChannels` over all image inputs is safe for masks and the luminance input: both have one channel and the
+  receiver has at least one, so they never raise the maximum.
+- With `Channels` static, `colormap`'s and `channel`'s run-time channel errors became dead code and could go.
+
+### What was tricky to build
+
+- Mask exemptions by position: `resolveSpace` works on the input list, so `maskInputs` maps the Mask-typed argument
+  specs to their input indices through `Args.refs`; the luminance input is the one appended after `args.ins`.
+- Keeping `imageSource` (the encoding a result keeps) blind to Mask-typed arguments: `accepts` stays a kind check
+  (`"Mask"` is not a kind), and only `acceptsNode` knows that a mask is a one-channel Image.
+
+### What warrants a second pair of eyes
+
+- `pkg/cv/graph/space.go` (`maskInputs`, the luminance exemption, the grey-input rule) and `args.go`
+  (`wrongNode`, `checkChannels`).
+- The `isMaskLike` PNG rule in `look.go`: derived one-channel looks are now lossless too (deviation 25).
+
+### What should be done in the future
+
+- Phase 5 rewrites the regions half of `05-masks-and-regions` and adds the `regions` help concept.
+- The GCV-001 golden tolerance classes and `-golden.tolerant` flag could go (§14.3 says they are no longer needed);
+  not done in batch 1.
+
+### Code review instructions
+
+- Start with `pkg/cv/graph/node.go` (`nodeChannels`, `MaxChannels`, `checkChannels` call), `registry.go`
+  (`MaskType`, `acceptsNode`, `OpDef.Channels`/`OneChannel`/`ThreeChannel`), `args.go`, `space.go`; then
+  `pkg/cv/ops/mask.go`, `channel.go`, `present.go`, `regions.go`; then `ops_test.go` (`TestRegistryWalk`) and
+  `mask_test.go`.
+- Validate: `scripts/04-gate.sh`; `go test ./pkg/cv/ops -run 'TestRegistryWalk|TestMasksAreOneChannelImages' -v`.
+
+### Technical details
+
+Goldens: none moved. Real data (`05-real-data.sh`): identical to Step 6.
+
+`git diff --stat 7554bd1 cdc6326 -- pkg cmd internal Makefile README.md`: 60 files changed, 514 insertions(+), 333
+deletions(-).
+
+Batch 1 total, `git diff --stat fa115dc cdc6326 -- pkg cmd internal Makefile`: 146 files changed, 4238
+insertions(+), 3768 deletions(-).
