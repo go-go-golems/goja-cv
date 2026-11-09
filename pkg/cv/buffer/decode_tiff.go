@@ -382,6 +382,9 @@ func (t *tiffFile) describe(ifd tiffIFD) (*tiffImage, error) {
 		}
 		bits = b
 	}
+	if len(bits) == 0 {
+		return nil, formatErr("TIFF with an empty BitsPerSample field")
+	}
 	img.bits = int(bits[0])
 	for _, b := range bits {
 		if int(b) != img.bits {

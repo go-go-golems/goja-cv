@@ -320,3 +320,35 @@ func FuzzNPYProbe(f *testing.F) {
 		_, _, _ = buffer.DecodeFile(context.Background(), p, buffer.DecodeOptions{}) // must not panic
 	})
 }
+
+// TestTIFFEmptyBitsPerSample: a BitsPerSample entry with count 0 is a format
+// error, not a panic (review of PR #2).
+func TestTIFFEmptyBitsPerSample(t *testing.T) {
+	b, err := testimage.TIFFBytes(buffer.New(4, 3, 1, 1), testimage.TIFFOptions{Bits: 16})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(b[:2]) != "II" {
+		t.Fatalf("fixture byte order %q", b[:2])
+	}
+	ifd := int(binary.LittleEndian.Uint32(b[4:8]))
+	n := int(binary.LittleEndian.Uint16(b[ifd : ifd+2]))
+	patched := false
+	for i := 0; i < n; i++ {
+		e := ifd + 2 + 12*i
+		if binary.LittleEndian.Uint16(b[e:e+2]) == 258 { // BitsPerSample
+			binary.LittleEndian.PutUint32(b[e+4:e+8], 0)
+			patched = true
+		}
+	}
+	if !patched {
+		t.Fatal("fixture has no BitsPerSample entry")
+	}
+	p := filepath.Join(t.TempDir(), "empty-bits.tif")
+	if err := os.WriteFile(p, b, 0o644); err != nil { // #nosec G306 -- test data
+		t.Fatal(err)
+	}
+	if _, err := buffer.ProbeFile(p); err == nil || !strings.Contains(err.Error(), "BitsPerSample") {
+		t.Fatalf("want a BitsPerSample format error, got %v", err)
+	}
+}

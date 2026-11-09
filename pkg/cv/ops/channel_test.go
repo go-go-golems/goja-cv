@@ -228,3 +228,21 @@ func TestToLabWarnsOnCameraRGB(t *testing.T) {
 		t.Fatalf("toLab on a DNG: %v %v", err, r.Warnings)
 	}
 }
+
+// TestEncodingArgsAreStatic: the encoding of a source or an encode node is
+// decided at build time, so a param or measurement there is refused instead of
+// silently falling back to srgb (review of PR #2).
+func TestEncodingArgsAreStatic(t *testing.T) {
+	e, img := newEngine(t)
+	p, _, err := e.DeclareParam(graph.ParamDef{Name: "enc", Type: "choice", Options: []string{"linear", "srgb"}, Value: "linear"}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ce := callErr(t, e, "encode", img.ID, graph.NodeArg{ID: p.ID}); ce.Code != graph.EArgType {
+		t.Fatalf("encode(param): want E_ARG_TYPE, got %v", ce)
+	}
+	_, err = e.Open(testTIFF, map[string]any{"encoding": graph.NodeArg{ID: p.ID}})
+	if ce, ok := graph.AsError(err); !ok || ce.Code != graph.EArgType {
+		t.Fatalf("cv.open({ encoding: param }): want E_ARG_TYPE, got %v", err)
+	}
+}
