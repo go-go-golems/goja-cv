@@ -2396,3 +2396,36 @@ what the reviewer proposed or what the coordinator decided in its place; "partly
 
 Totals: 31 fixed, 2 partly fixed (F22, F24), 0 declined. Revision 3 changed the fixes of F10 and F22 (deletion of
 `UNUSED_NODE`) and of F1 (`OpDef.Halo` deleted with the lint), without changing their disposition.
+
+## Implementation notes (deviations)
+
+Recorded by the implementer, phase by phase; the implementation diary (`reference/06-diary-implementation.md`) has the
+details and numbers.
+
+### Phase B1 (commits `bcefb0a`, `5c26122`)
+
+1. **`toMask({ grow })` is deleted in B1.** GCV-004 Phase 5 (which replaces `toMask` with `mask.regions`) has not landed,
+   and `toMask`'s `grow` was the other caller of `kernels.Grow`. It goes with no redirect: `regions.toMask().dilate(r)`.
+   At the merge with GCV-004 batch 2, take batch 2's `mask.regions` (it has no `grow`).
+2. **`DiskMinMax`'s loop order differs from §10.9.** The chord half-width depends only on |dy| and does not increase with
+   it, so `chordDisk` filters every row once per distinct half-width and combines rows y ± dy of that width, instead of
+   one `minMax1D` per chord and output row. Same result (brute-force tests), less work, any band height.
+3. **The binary fast path compares integer squared distances** (`squaredDistanceToSet`, which `DistanceToSet` now wraps)
+   with r², instead of float32 square roots with a 1e-6 tolerance (§10.11). Exact at every distance. The threshold
+   r ≥ 8 is kept; on 4096² planes the distance transform (about 150 ms) is slower than chords below r ≈ 24 (86 ms at
+   r = 16), a loss of at most ~60 ms.
+4. **`minMax1D` is rewritten without closures** (padded input, in-place backward pass): about 3× faster (disk 4096²,
+   r = 64: 1.22 s → 0.28–0.33 s); the speck background uses it too, and every golden stayed exact.
+5. **A disk of r < 1 returns a copy** (§10.9 says r < 0.5): a disk of radius below 1 is the origin alone, so the result
+   is the same.
+6. **No `Usual` range on `radius`** (§7.9's sketch had [1, 32]): it would raise `RANGE` for radius 0 (the identity) and for
+   the long lines the tests accept (500); the disk's hard cap is `Validate`'s.
+7. **`crop`'s Doc names erode and dilate instead of peaks** in the edge-effect sentence; B2 adds "peaks report cut rings
+   (`ringCoverage`)".
+8. **An option given to an op without options** now reads `toMask has no option "grow": it takes none.` (it read
+   `Valid options: .`), so the deleted option's error is readable.
+9. **The `05-masks-and-regions` section is one paragraph and one block** (the topic cap is 6,000 characters); the
+   line-removal example of §6.9 waits for B3's recipes. The MCP instructions only swap `m.grow(r)` for `m.dilate(r)`
+   (the 4,000-character cap); "(crop last; …)" in them is left for A4 / GCV-004 Phase 8.
+10. **CROP_FIRST and `OpDef.Halo` are a separate commit** (`5c26122`) inside B1, as §9 and §13 place them; the
+    coordinator's brief had said they go in their own phases, so the commit can be reverted alone.
