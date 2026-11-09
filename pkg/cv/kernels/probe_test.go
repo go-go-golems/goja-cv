@@ -58,7 +58,7 @@ func TestProbeEqualsStatsWeighted(t *testing.T) {
 	b := randomBuffer(64, 48, 3, 1)
 	pts := [][2]float64{{20.5, 20.5}, {31.25, 17.8}, {2.5, 3.5}, {63.2, 47.9}, {40, 24}}
 	core, r1, r2 := 3.5, 6.5, 12.5
-	res, err := ProbeCoreRing(ctx, b, pts, CoreRingOptions{Core: core, R1: r1, R2: r2})
+	res, err := ProbeCoreRing(ctx, b, pts, CoreRingOptions{Core: core, R1: r1, R2: r2, Gray: b.Luminance()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,11 +69,11 @@ func TestProbeEqualsStatsWeighted(t *testing.T) {
 		for i := range rw {
 			rw[i] = min(outer[i], 1-inner[i]) // mask.minus
 		}
-		c, err := StatsWeighted(ctx, b, cw, nil)
+		c, err := StatsWeighted(ctx, b, b.Luminance(), cw, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
-		g, err := StatsWeighted(ctx, b, rw, []float64{0.1, 0.9})
+		g, err := StatsWeighted(ctx, b, b.Luminance(), rw, []float64{0.1, 0.9})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -96,14 +96,14 @@ func TestProbeEqualsStatsWeighted(t *testing.T) {
 			t.Errorf("point %v: ringCoverage %g, want 1", p, r.RingCoverage)
 		}
 	}
-	if out, _ := ProbeCoreRing(ctx, b, [][2]float64{{-30, 10}}, CoreRingOptions{Core: core, R1: r1, R2: r2}); !out[0].Outside {
+	if out, _ := ProbeCoreRing(ctx, b, [][2]float64{{-30, 10}}, CoreRingOptions{Core: core, R1: r1, R2: r2, Gray: b.Luminance()}); !out[0].Outside {
 		t.Fatalf("a point 30 px outside is %+v", out[0])
 	}
 }
 
 func TestSampleRadiusZeroIsThePixel(t *testing.T) {
 	b := randomBuffer(16, 12, 3, 2)
-	s, err := SamplePoints(context.Background(), b, [][2]float64{{5.5, 7.5}, {5.99, 7.01}, {16, 3}}, 0, GrayRec709)
+	s, err := SamplePoints(context.Background(), b, b.Luminance(), [][2]float64{{5.5, 7.5}, {5.99, 7.01}, {16, 3}}, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,7 +121,7 @@ func TestSampleRadiusZeroIsThePixel(t *testing.T) {
 	if !s[2].Outside {
 		t.Fatal("x = 16 is outside a 16 px wide buffer")
 	}
-	d, _ := SamplePoints(context.Background(), b, [][2]float64{{8, 6}}, 2, GrayRec709)
+	d, _ := SamplePoints(context.Background(), b, b.Luminance(), [][2]float64{{8, 6}}, 2)
 	if math.Abs(d[0].Weight-math.Pi*4) > 0.6 {
 		t.Fatalf("disk of radius 2 weighs %g, want about %g", d[0].Weight, math.Pi*4)
 	}
@@ -190,7 +190,6 @@ func spotBuffer(bg, spot [3]float32, checker float32) *buffer.Buffer {
 // a clear step: ≈ 0 for a neutral one, large for a coloured one.
 func TestStepChromaNeedsSNR(t *testing.T) {
 	grey := [3]float32{0.4, 0.4, 0.4}
-	o := CoreRingOptions{Core: 3, R1: 6, R2: 12, Gray: GrayRec709}
 	for _, tc := range []struct {
 		name       string
 		b          *buffer.Buffer
@@ -204,7 +203,7 @@ func TestStepChromaNeedsSNR(t *testing.T) {
 		{name: "neutral", b: spotBuffer(grey, [3]float32{0.6, 0.6, 0.6}, 0.01), lo: 0, hi: 1e-3, snrAtLeast: 1},
 		{name: "red", b: spotBuffer(grey, [3]float32{0.8, 0.4, 0.4}, 0.01), lo: 4, hi: 5.5, snrAtLeast: 1},
 	} {
-		r, err := ProbeCoreRing(context.Background(), tc.b, [][2]float64{{24, 24}}, o)
+		r, err := ProbeCoreRing(context.Background(), tc.b, [][2]float64{{24, 24}}, CoreRingOptions{Core: 3, R1: 6, R2: 12, Gray: tc.b.Luminance()})
 		if err != nil {
 			t.Fatal(err)
 		}

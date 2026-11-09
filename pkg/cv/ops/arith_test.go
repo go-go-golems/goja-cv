@@ -16,7 +16,7 @@ func imgBuf(t *testing.T, e *graph.Engine, n *graph.Node) *buffer.Buffer {
 
 func TestSubIsSignedAndDerived(t *testing.T) {
 	e, img, _ := plantedEngine(t)
-	g := call(t, e, "gaussian", img.ID, 3.0, map[string]any{"space": "encoded"})
+	g := call(t, e, "gaussian", img.ID, 3.0)
 	d := call(t, e, "sub", img.ID, graph.NodeArg{ID: g.ID})
 	if d.Enc != buffer.EncLinear || d.Space != buffer.SpaceLinear {
 		t.Fatalf("sub statics %s/%s, want derived (linear/linear)", d.Enc, d.Space)
@@ -30,8 +30,10 @@ func TestSubIsSignedAndDerived(t *testing.T) {
 	if zb := encodedOf(t, e, z); zb.Pix[0] != 0.5 || zb.Pix[len(zb.Pix)-1] != 0.5 {
 		t.Fatalf("img − img + 0.5 = %g", zb.Pix[0])
 	}
-	// a.sub(b).add(b) == a within float error, in encoded space
-	back := imgBuf(t, e, call(t, e, "add", d.ID, graph.NodeArg{ID: g.ID}))
+	// b.add(a.sub(b)) == a within float error, in encoded space: the
+	// receiver decides, so the photograph comes first (a derived receiver
+	// would add b's linear values)
+	back := imgBuf(t, e, call(t, e, "add", g.ID, graph.NodeArg{ID: d.ID}))
 	a := encodedOf(t, e, img)
 	for i := range a.Pix {
 		if math.Abs(float64(back.Pix[i]-a.Pix[i])) > 1e-6 {
@@ -70,7 +72,7 @@ func TestArithmeticProperties(t *testing.T) {
 
 func TestArithmeticBroadcastFramesAndKinds(t *testing.T) {
 	e, img, _ := plantedEngine(t)
-	gray := call(t, e, "toGray", img.ID, "average", map[string]any{"space": "encoded"})
+	gray := call(t, e, "toGray", img.ID, "average")
 	d := imgBuf(t, e, call(t, e, "sub", img.ID, graph.NodeArg{ID: gray.ID}))
 	a, g := encodedOf(t, e, img), imgBuf(t, e, gray)
 	if d.C != 3 || math.Abs(float64(d.Plane(2)[300]-(a.Plane(2)[300]-g.Plane(0)[300]))) > 1e-6 {

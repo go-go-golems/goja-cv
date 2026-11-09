@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-
-	"github.com/go-go-golems/goja-cv/pkg/cv/buffer"
 )
 
 // Help renders the registry as plain data. With an empty name it returns an
@@ -77,11 +75,14 @@ func (r *Registry) Help(name string) (map[string]any, error) {
 		"usage":   strings.TrimPrefix(signatureHint(op, op.Name), "Usage: "),
 		"doc":     op.Doc,
 	}
-	if d := op.Space.Default; d != buffer.SpaceNone {
-		if op.Space.Fixed {
-			entry["space"] = d.String() + " (fixed)"
-		} else {
-			entry["space"] = d.String() + " (default; { space: \"linear\" | \"encoded\" } changes it)"
+	switch op.Space {
+	case Physical:
+		entry["space"] = "physical: computed in linear light, returned in the image's space"
+	case Display:
+		entry["space"] = "display: a picture of encoded values"
+	case Follows:
+		if op.On == KindImage && op.SpaceOf == nil {
+			entry["space"] = "the image's: numbers and results are in the space of the image it is called on (img.as(\"linear\") for linear light)"
 		}
 	}
 	if args := describeArgs(op.Args); len(args) > 0 {

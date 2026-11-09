@@ -1,7 +1,5 @@
 package graph
 
-import "github.com/go-go-golems/goja-cv/pkg/cv/buffer"
-
 // Macros (GCV-001 §7.8): an op defined as a small graph of other ops, built
 // at intern time. The binder binds a macro's arguments and resolves its
 // space first, then calls Expand. A macro that builds one node gets a macro
@@ -12,8 +10,7 @@ import "github.com/go-go-golems/goja-cv/pkg/cv/buffer"
 // returns them.
 
 // ExpandFunc builds the op's graph from other ops at intern time. args are
-// bound and the space is resolved (args.String("space") is set for macros
-// with a space option).
+// bound; the steps follow recv's space unless they convert it with as.
 type ExpandFunc func(x *Expander, recv *Node, args Args) ([]*Node, error)
 
 // Expander lets an ExpandFunc call other ops; it collects their warnings.
@@ -36,9 +33,6 @@ func (x *Expander) Call(name string, recv *Node, args ...any) (*Node, error) {
 // expand runs a macro's Expand and interns its macro node (one output) or
 // returns its outputs.
 func (b *Builder) expand(op *OpDef, args Args, recv *Node, warnings []Warning) (CallResult, error) {
-	if op.Space.Default != buffer.SpaceNone && !op.Space.Fixed {
-		args.vals[SpaceArg] = OpSpace(op, args).String()
-	}
 	x := &Expander{b: b}
 	out, err := op.Expand(x, recv, args)
 	if err != nil {

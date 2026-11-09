@@ -176,7 +176,7 @@ func TestHelp(t *testing.T) {
 	if got["kinds"] != "Image,Mask,Regions" || !strings.Contains(got["image"].(string), "gaussian") {
 		t.Fatalf("help: %v", got)
 	}
-	if got["ev"] != "number in [-10, 10], usual [-3, 3], required, positional. stops: values are multiplied by 2^ev" || got["usage"] != "exposure(ev)" {
+	if got["ev"] != "number in [-10, 10], usual [-3, 3], required, positional. stops of light: linear values are multiplied by 2^ev" || got["usage"] != "exposure(ev)" {
 		t.Fatalf("help exposure: %#v", got)
 	}
 	// cv.help never throws (agents batch help calls): unknown names return
@@ -195,7 +195,7 @@ func TestPart2Section3NodesAndEvaluation(t *testing.T) {
 		const b = a.gaussian(2)          // Image node: gaussian(exposure(img, 0.3), 2)
 		const s = b.stats()              // Value node: stats(gaussian(...))
 		return { same: img.exposure(0.3) === a, kinds: [a.__kind, b.__kind, s.__kind], str: String(b) }`).(map[string]any)
-	if got["same"] != true || fmt.Sprint(got["kinds"]) != "[Image Image Value]" || got["str"] != "[Image #3 gaussian(sigma: 2 px)]" {
+	if got["same"] != true || fmt.Sprint(got["kinds"]) != "[Image Image Value]" || got["str"] != "[Image #5 gaussian(sigma: 2 px)]" {
 		t.Fatalf("§3 graph: %v", got)
 	}
 	eng := engineOf(t, rt)
@@ -218,22 +218,25 @@ func TestPart2Section3NodesAndEvaluation(t *testing.T) {
 	}
 
 	summary := mustRun(t, rt, `return await img.exposure(0.3)`).(map[string]any)
-	if summary["kind"] != "Image" || summary["w"] != int64(64) || summary["h"] != int64(48) || summary["space"] != "linear" || summary["encoding"] != "srgb" {
+	if summary["kind"] != "Image" || summary["w"] != int64(64) || summary["h"] != int64(48) || summary["space"] != "encoded" || summary["encoding"] != "srgb" {
 		t.Fatalf("image summary: %#v", summary)
 	}
 
 	mustRun(t, rt, `return await img.exposure(0.3).stats()`)
 	ex := mustRun(t, rt, `return cv.explain(img.exposure(0.3).gaussian(2))`).(map[string]any)
 	lines := ex["graph"].([]any)
-	if len(lines) != 3 ||
+	// exposure is physical: it reads the file in linear light and the closing
+	// as hands its result back in the file's encoding; explain shows both
+	if len(lines) != 4 ||
 		!strings.Contains(lines[0].(string), " gaussian(sigma: 2 px)") ||
-		!strings.HasSuffix(lines[0].(string), "Image 64×48           enc srgb · space linear") || // never evaluated
-		!strings.HasPrefix(lines[1].(string), "  #2 exposure(ev: 0.3)") ||
-		!strings.HasSuffix(lines[1].(string), "Image 64×48  cached   enc srgb · space linear") || // measured above
-		!strings.HasPrefix(lines[2].(string), "    #1 source gradient-64x48-16bit.tif") {
+		!strings.HasSuffix(lines[0].(string), "Image 64×48           enc srgb · space encoded") || // never evaluated
+		!strings.HasPrefix(lines[1].(string), "  #4 as(to: \"encoded\")") ||
+		!strings.HasPrefix(lines[2].(string), "    #3 exposure(ev: 0.3)") ||
+		!strings.HasSuffix(lines[2].(string), "Image 64×48  cached   enc srgb · space linear") || // measured above
+		!strings.HasPrefix(lines[3].(string), "      #2 source gradient-64x48-16bit.tif (linear)") {
 		t.Fatalf("explain: %q", lines)
 	}
-	if ex["kind"] != "Image" || ex["op"] != "gaussian" || ex["call"] != "gaussian(sigma: 2 px)" || ex["space"] != "linear" || ex["encoding"] != "srgb" ||
+	if ex["kind"] != "Image" || ex["op"] != "gaussian" || ex["call"] != "gaussian(sigma: 2 px)" || ex["space"] != "encoded" || ex["encoding"] != "srgb" ||
 		fmt.Sprint(ex["frame"]) != "[0 0 64 48]" || fmt.Sprint(ex["path"]) != "[open(gradient-64x48-16bit.tif) exposure gaussian]" {
 		t.Fatalf("explain fields: %v", ex)
 	}
@@ -252,7 +255,7 @@ func TestPart2Section4Ops(t *testing.T) {
 	near(t, "levels p99", after[1], 1, 2e-3)
 
 	e := mustFail(t, rt, "E_UNKNOWN_OPTION", `return img.levels({ blak: 0.02 })`)
-	if strings.Join(e.Valid, ", ") != "black, white, gamma, auto, space" || e.Hint != `Did you mean "black"?` || e.Fix != "levels({ black: 0.02 })" {
+	if strings.Join(e.Valid, ", ") != "black, white, gamma, auto" || e.Hint != `Did you mean "black"?` || e.Fix != "levels({ black: 0.02 })" {
 		t.Fatalf("unknown option: %+v", e)
 	}
 	mustFail(t, rt, "E_ARG_TYPE", `return img.exposure("bright")`)
@@ -309,7 +312,7 @@ func TestDiagnostics(t *testing.T) {
 	}
 	// generic machinery does not trigger evaluation or throw
 	got = mustRun(t, rt, `const s = img.stats(); return [JSON.stringify({ s }), "then" in s, Object.keys(s).length]`).([]any)
-	if got[0] != `{"s":{"node":"[Value #2 stats()]"}}` || got[1] != true || got[2] != int64(0) {
+	if got[0] != `{"s":{"node":"[Value #5 stats()]"}}` || got[1] != true || got[2] != int64(0) {
 		t.Fatalf("probes: %v", got)
 	}
 	if engineOf(t, rt).Evaluator().TotalRuns() == 0 {
@@ -342,7 +345,7 @@ func TestAwaitIsScaleOneAndImagesAreStatic(t *testing.T) {
 	if eng.Evaluator().TotalRuns() != 0 {
 		t.Fatalf("awaiting an Image ran %d ops", eng.Evaluator().TotalRuns())
 	}
-	if summary["kind"] != "Image" || summary["w"] != int64(2000) || summary["h"] != int64(30) || summary["space"] != "linear" ||
+	if summary["kind"] != "Image" || summary["w"] != int64(2000) || summary["h"] != int64(30) || summary["space"] != "encoded" ||
 		summary["encoding"] != "srgb" || fmt.Sprint(summary["frame"]) != "[0 0 2000 30]" {
 		t.Fatalf("summary from statics: %v", summary)
 	}

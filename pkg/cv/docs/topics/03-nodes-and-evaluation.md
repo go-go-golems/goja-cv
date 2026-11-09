@@ -1,6 +1,6 @@
 # Nodes and evaluation
 
-Calls build lazy, immutable, hash-consed nodes; nothing runs until you await a node, return a look, or use the node in something that is evaluated. Options are literal values. explain() shows the graph; UNUSED_NODE and E_NOT_AWAITED catch the usual mistakes.
+Calls build lazy, immutable, hash-consed nodes; nothing runs until you await a node, return a look, or use the node in something that is evaluated. Options are literal values. cv.explain(node) shows the graph; UNUSED_NODE and E_NOT_AWAITED catch the usual mistakes.
 
 ## Kinds
 
@@ -8,7 +8,7 @@ Every node has one kind, and every op says which kind it takes and returns.
 
 | kind | evaluated value | made by |
 |---|---|---|
-| Image | linear float32 pixels (awaits to a summary) | `img`, `exposure`, `levels`, `within`, `heal`, `overlay`, `compare` |
+| Image | float32 pixels in a space, encoded (file units) or linear (awaits to a summary) | `img`, `exposure`, `levels`, `within`, `heal`, `overlay`, `compare` |
 | Mask | one channel in [0, 1] | `mask.luminance`, `mask.box`, `regions.toMask()`, `a.and(b)` |
 | Regions | a list of areas with flat fields id, x, y, w, h, cx, cy, area, aspect and measures | `detect.specks`, `mask.components()`, `regions.where()` |
 | Value | plain data | `stats`, `histogram`, `coverage`, `count` |

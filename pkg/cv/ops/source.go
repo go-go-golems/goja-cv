@@ -10,7 +10,7 @@ import (
 )
 
 // sourceEnc: an opened file has the encoding the call gives, else the one
-// its decoder reports; the node holds linear values (the encoding undone).
+// its decoder reports; the node holds the file's values (encoded space).
 var sourceEnc = &graph.ResultEnc{
 	Enc: func(a graph.Args) buffer.Encoding {
 		if a.Has("encoding") {
@@ -22,7 +22,29 @@ var sourceEnc = &graph.ResultEnc{
 		}
 		return buffer.EncSRGB
 	},
+	Space: func(graph.Args, buffer.Space) buffer.Space { return buffer.SpaceEncoded },
+}
+
+// openLinearEnc: the linear view of an opened file (its pyramid level).
+var openLinearEnc = &graph.ResultEnc{
+	Enc:   sourceEnc.Enc,
 	Space: func(graph.Args, buffer.Space) buffer.Space { return buffer.SpaceLinear },
+}
+
+// pyramidLevel is the opened file's pyramid at the evaluation scale: linear
+// values (downsampling averages light). It must not be modified.
+func pyramidLevel(ctx context.Context, ec *graph.EvalCtx, a graph.Args) (*buffer.Buffer, error) {
+	m := graph.Meta[graph.SourceMeta](a)
+	k := graph.SourceKey{Path: m.Path, Stamp: m.Stamp, Enc: ec.Node.Enc}
+	if a.Has("box") {
+		b := a.Numbers("box")
+		k.Box = &[4]int{int(b[0]), int(b[1]), int(b[2]), int(b[3])}
+	}
+	src, err := ec.Eval.Sources().Load(ctx, k)
+	if err != nil {
+		return nil, err
+	}
+	return src.Pyr.AtScale(ctx, ec.Scale)
 }
 
 // openFrame is the frame of an opened file: a window keeps its file
@@ -89,39 +111,51 @@ var placeholderEnc = &graph.ResultEnc{
 	},
 }
 
+// openArgs are the arguments of cv.open (and of its linear view).
+var openArgs = []graph.ArgSpec{
+	{Name: "path", Type: "string", Positional: true, Doc: "image file: " + buffer.SupportedFormats},
+	{Name: "encoding", Type: "enum:srgb,linear", Optional: true, ValueSynonyms: graph.EncodingValueSynonyms,
+		Doc: "how to read the file's values: srgb (photographs) or linear (scientific data, raw scans, density maps); omit it to use what the file says"},
+	{Name: "box", Type: "box", Optional: true,
+		Doc: "read only this window [x, y, w, h] of the file (file px); the image keeps the file's coordinates"},
+	{Name: "origin", Type: "point", Optional: true,
+		Doc: "declare where a file that is itself a window starts [x, y] (doc px); omit it for whole files"},
+}
+
 func sourceOps() []graph.OpDef {
 	return []graph.OpDef{
 		{
-			Name: "open", On: graph.KindNone, Returns: graph.KindImage, Result: sourceEnc, Bespoke: true,
-			Args: []graph.ArgSpec{
-				{Name: "path", Type: "string", Positional: true, Doc: "image file: " + buffer.SupportedFormats},
-				{Name: "encoding", Type: "enum:srgb,linear", Optional: true, ValueSynonyms: graph.EncodingValueSynonyms,
-					Doc: "how to read the file's values: srgb (photographs) or linear (scientific data, raw scans, density maps); omit it to use what the file says"},
-				{Name: "box", Type: "box", Optional: true,
-					Doc: "read only this window [x, y, w, h] of the file (file px); the image keeps the file's coordinates"},
-				{Name: "origin", Type: "point", Optional: true,
-					Doc: "declare where a file that is itself a window starts [x, y] (doc px); omit it for whole files"},
-			},
+			// as(open(…), "linear") is interned as this op: the linear view of
+			// a file is its pyramid level (no copy, no conversion).
+			Name: graph.OpenLinearOp, On: graph.KindNone, Returns: graph.KindImage, Result: openLinearEnc, Bespoke: true, Internal: true,
+			Args:     openArgs,
 			DocFrame: openFrame,
-			Validate: validateOpen,
 			Run: func(ctx context.Context, ec *graph.EvalCtx, _ []graph.Value, a graph.Args) (graph.Value, error) {
-				m := graph.Meta[graph.SourceMeta](a)
-				k := graph.SourceKey{Path: m.Path, Stamp: m.Stamp, Enc: ec.Node.Enc}
-				if a.Has("box") {
-					b := a.Numbers("box")
-					k.Box = &[4]int{int(b[0]), int(b[1]), int(b[2]), int(b[3])}
-				}
-				src, err := ec.Eval.Sources().Load(ctx, k)
+				lin, err := pyramidLevel(ctx, ec, a)
 				if err != nil {
 					return nil, err
 				}
-				buf, err := src.Pyr.AtScale(ctx, ec.Scale)
+				return graph.NewImage(lin), nil
+			},
+			Doc: "The linear view of an opened file: its pyramid level (inserted by as(\"linear\") on cv.open; not callable).",
+		},
+		{
+			Name: "open", On: graph.KindNone, Returns: graph.KindImage, Result: sourceEnc, Bespoke: true,
+			Args:     openArgs,
+			DocFrame: openFrame,
+			Validate: validateOpen,
+			Run: func(ctx context.Context, ec *graph.EvalCtx, _ []graph.Value, a graph.Args) (graph.Value, error) {
+				lin, err := pyramidLevel(ctx, ec, a)
+				if err != nil {
+					return nil, err
+				}
+				buf, err := buffer.Convert(ctx, lin, ec.Node.Enc, buffer.SpaceLinear, buffer.SpaceEncoded) // the level itself for a linear file
 				if err != nil {
 					return nil, err
 				}
 				return graph.NewImage(buf), nil
 			},
-			Doc: "Open an image file as a source node: cv.open(path, { encoding, box, origin }). Decoded on first evaluation; the node holds linear values (the file's encoding undone) in the file's coordinates.",
+			Doc: "Open an image file as a source node: cv.open(path, { encoding, box, origin }). Decoded on first evaluation; the image is in file units (encoded space: the file's values divided by the code maximum) in the file's coordinates; img.as(\"linear\") undoes the encoding.",
 			See: []string{"stats", "explain"},
 		},
 		{

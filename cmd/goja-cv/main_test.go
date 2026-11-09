@@ -38,7 +38,7 @@ func TestEvalWritesLookFiles(t *testing.T) {
 			t.Fatalf("output does not name %s:\n%s", p, out)
 		}
 	}
-	for _, s := range []string{"meanL: 0.29507", "after: '[look 1: after — open(gradient-64x48-16bit.tif) → exposure(0.5) (64×48, 1 image px = 1.0 doc px)]'", "files:"} {
+	for _, s := range []string{"meanL: 0.52726", "after: '[look 1: after — open(gradient-64x48-16bit.tif) → exposure(0.5) (64×48, 1 image px = 1.0 doc px)]'", "files:"} {
 		if !strings.Contains(out, s) {
 			t.Fatalf("output lacks %q:\n%s", s, out)
 		}
@@ -174,7 +174,7 @@ func TestMCPCommandServer(t *testing.T) {
 		return text, images
 	}
 	text, n := call("const s = await img.stats()\nreturn { meanL: s.meanL, black: s.clipLow, white: s.clipHigh, p01: s.p01, p99: s.p99 }")
-	if n != 0 || !strings.Contains(text, "meanL: 0.29507") {
+	if n != 0 || !strings.Contains(text, "meanL: 0.52726") {
 		t.Fatalf("stats: %d images\n%s", n, text)
 	}
 	text, n = call("const fixed = img.levels({ black: 0.0, white: 0.74 }).exposure(0.35)\ncv.compare([img, fixed], { mode: \"side\" }).look(\"before / after\")\nfixed.histogram().look()\nconst { meanL, clipLow, clipHigh } = await fixed.stats()\nreturn { meanL, clipLow, clipHigh }")

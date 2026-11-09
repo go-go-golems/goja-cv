@@ -146,17 +146,14 @@ func (e *Engine) Placeholder(receiver NodeID) (*Node, error) {
 }
 
 // Display returns the node a look of node id renders: id itself, or
-// convert(id → encoded) when its values are not already the encoded values
-// a look shows (masks and linear-encoded images are shown as they are).
+// as(id, encoded) when its values are not already the encoded values a look
+// shows (masks and linear-encoded images are shown as they are).
 func (e *Engine) Display(id NodeID) (NodeID, error) {
 	n, ok := e.b.Node(id)
 	if !ok {
 		return 0, Errorf(EInternal, "unknown node #%d", id)
 	}
-	if n.Kind != KindImage || buffer.Identity(n.Enc, n.Space, buffer.SpaceEncoded) {
-		return id, nil
-	}
-	c, _, err := e.b.internOp(ConvertOp, n, buffer.SpaceEncoded.String())
+	c, err := e.b.as(n, buffer.SpaceEncoded)
 	if err != nil {
 		return 0, err
 	}

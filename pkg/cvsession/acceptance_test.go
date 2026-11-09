@@ -197,7 +197,7 @@ return { ids: (await top).items.map(r => r.id), sheet: cv.sheet(top, { views: im
 // grey 128.
 func TestAcceptanceSignedDifference(t *testing.T) {
 	app, sid := acceptanceApp(t)
-	resp := eval(t, app, sid, `const d = img.sub(img.gaussian(3, { space: "encoded" }))
+	resp := eval(t, app, sid, `const d = img.sub(img.gaussian(3))
 const zero = img.sub(img).add(0.5)
 return { p01: (await d.stats()).p01, zero: zero.crop([0, 0, 64, 64]).look() }`)
 	out := mustOK(t, resp)

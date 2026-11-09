@@ -16,33 +16,12 @@ import (
 // probe returns what img.stats({ mask: img.mask.ellipse(…) }) returns for the
 // same disk or ring. Coordinates and radii here are buffer px.
 
-// Gray selects the weights of the gray plane.
-type Gray uint8
-
-const (
-	// GrayRec709 is Rec. 709 luminance (buffer.Luminance's weights).
-	GrayRec709 Gray = iota
-	// GrayAverage weighs the channels equally.
-	GrayAverage
-)
-
-// grayPlane is the gray plane of the pixels idx of b (one channel: its plane).
-func grayPlane(b *buffer.Buffer, idx []int, g Gray) []float32 {
+// grayPlane gathers the pixels idx of the gray plane (the luminance input
+// of the op, full buffer size).
+func grayPlane(gray []float32, idx []int) []float32 {
 	out := make([]float32, len(idx))
-	if b.C == 1 {
-		p := b.Plane(0)
-		for j, i := range idx {
-			out[j] = p[i]
-		}
-		return out
-	}
-	r, gr, bl := b.Plane(0), b.Plane(1), b.Plane(2)
 	for j, i := range idx {
-		if g == GrayAverage {
-			out[j] = (r[i] + gr[i] + bl[i]) / 3
-		} else {
-			out[j] = buffer.LumR*r[i] + buffer.LumG*gr[i] + buffer.LumB*bl[i]
-		}
+		out[j] = gray[i]
 	}
 	return out
 }
@@ -94,14 +73,14 @@ type measured struct {
 	chans []float64 // per-channel means (nil for one channel)
 }
 
-func measureSel(ctx context.Context, b *buffer.Buffer, s selection, g Gray, percentiles []float64) (measured, error) {
+func measureSel(ctx context.Context, b *buffer.Buffer, gray []float32, s selection, percentiles []float64) (measured, error) {
 	n := len(s.idx)
 	if n == 0 {
 		return measured{}, ErrEmptySelection
 	}
 	plane := buffer.New(n, 1, 1, b.Scale)
-	copy(plane.Pix, grayPlane(b, s.idx, g))
-	ws, err := StatsWeighted(ctx, plane, s.w, percentiles)
+	copy(plane.Pix, grayPlane(gray, s.idx))
+	ws, err := StatsWeighted(ctx, plane, nil, s.w, percentiles)
 	if err != nil {
 		return measured{}, err
 	}
@@ -127,10 +106,14 @@ type Sample struct {
 	Weight  float64   // covered weight in buffer px² (1 for radius 0)
 }
 
-// SamplePoints samples b at points (buffer px): radius 0 reads the pixel
-// that contains the point, radius r > 0 the coverage-weighted mean of the
-// disk of radius r (pixels outside the buffer do not count).
-func SamplePoints(ctx context.Context, b *buffer.Buffer, pts [][2]float64, radius float64, g Gray) ([]Sample, error) {
+// SamplePoints samples b and its gray plane (b's luminance, len b.N()) at
+// points (buffer px): radius 0 reads the pixel that contains the point,
+// radius r > 0 the coverage-weighted mean of the disk of radius r (pixels
+// outside the buffer do not count).
+func SamplePoints(ctx context.Context, b *buffer.Buffer, gray []float32, pts [][2]float64, radius float64) ([]Sample, error) {
+	if len(gray) != b.N() {
+		return nil, errors.Errorf("gray plane has %d values for %d pixels", len(gray), b.N())
+	}
 	out := make([]Sample, len(pts))
 	err := parallel.Rows(ctx, len(pts), func(k0, k1 int) {
 		for k := k0; k < k1; k++ {
@@ -146,7 +129,7 @@ func SamplePoints(ctx context.Context, b *buffer.Buffer, pts [][2]float64, radiu
 			} else {
 				s = annulus(b, x, y, 0, radius)
 			}
-			m, err := measureSel(ctx, b, s, g, nil)
+			m, err := measureSel(ctx, b, gray, s, nil)
 			if err != nil {
 				out[k] = Sample{Outside: true}
 				continue
@@ -175,10 +158,11 @@ type CoreRing struct {
 // ratios (3.25 at snr 0.12).
 const StepChromaMinSNR = 1.0
 
-// CoreRingOptions are the radii (buffer px) and the gray plane of a probe.
+// CoreRingOptions are the radii (buffer px) and the gray plane of a probe
+// (the luminance of the probed buffer, len b.N()).
 type CoreRingOptions struct {
 	Core, R1, R2 float64
-	Gray         Gray
+	Gray         []float32
 }
 
 // ProbeCoreRing measures each point (buffer px): the coverage-weighted
@@ -189,6 +173,9 @@ type CoreRingOptions struct {
 // StepChromaMinSNR). Pixels outside the buffer
 // are left out; RingCoverage says how much of the ring was inside.
 func ProbeCoreRing(ctx context.Context, b *buffer.Buffer, pts [][2]float64, o CoreRingOptions) ([]CoreRing, error) {
+	if len(o.Gray) != b.N() {
+		return nil, errors.Errorf("gray plane has %d values for %d pixels", len(o.Gray), b.N())
+	}
 	if !(o.Core > 0 && o.R1 >= o.Core && o.R2 > o.R1) {
 		return nil, errors.Errorf("probe radii core %g, ring [%g, %g]: need 0 < core ≤ r1 < r2", o.Core, o.R1, o.R2)
 	}
@@ -203,12 +190,12 @@ func ProbeCoreRing(ctx context.Context, b *buffer.Buffer, pts [][2]float64, o Co
 
 // ProbePoint is ProbeCoreRing for one point (radii not checked).
 func ProbePoint(ctx context.Context, b *buffer.Buffer, x, y float64, o CoreRingOptions) CoreRing {
-	core, err := measureSel(ctx, b, annulus(b, x, y, 0, o.Core), o.Gray, nil)
+	core, err := measureSel(ctx, b, o.Gray, annulus(b, x, y, 0, o.Core), nil)
 	if err != nil {
 		return CoreRing{Outside: true}
 	}
 	rs := annulus(b, x, y, o.R1, o.R2)
-	ring, err := measureSel(ctx, b, rs, o.Gray, []float64{0.1, 0.9})
+	ring, err := measureSel(ctx, b, o.Gray, rs, []float64{0.1, 0.9})
 	if err != nil {
 		return CoreRing{Outside: true}
 	}
@@ -267,7 +254,7 @@ func StatsOf(ctx context.Context, plane []float32, idx []int, w []float32, scale
 	for j, i := range idx {
 		b.Pix[j] = plane[i]
 	}
-	ws, err := StatsWeighted(ctx, b, w, []float64{0, 0.1, 0.9, 1})
+	ws, err := StatsWeighted(ctx, b, nil, w, []float64{0, 0.1, 0.9, 1})
 	if err != nil {
 		return SelectionStats{}, err
 	}
@@ -280,16 +267,4 @@ func StatsOf(ctx context.Context, plane []float32, idx []int, w []float32, scale
 	}
 	s.Std = math.Sqrt(ss / ws.Weight)
 	return s, nil
-}
-
-// GrayPlane is the gray plane of a whole buffer (its plane for one channel).
-func GrayPlane(b *buffer.Buffer, g Gray) []float32 {
-	if b.C == 1 {
-		return b.Plane(0)
-	}
-	idx := make([]int, b.N())
-	for i := range idx {
-		idx[i] = i
-	}
-	return grayPlane(b, idx, g)
 }

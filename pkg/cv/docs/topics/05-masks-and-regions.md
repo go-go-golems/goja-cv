@@ -4,7 +4,7 @@ A Mask is a soft field of weights in [0, 1] (selections, feathered edges); Regio
 
 ## Making masks
 
-All on an Image: `mask.luminance({ above, below, softness })` (luminance levels in the working space: encoded by default, the scale a look shows), `mask.color({ hue, tol, minSat })`, `mask.box([x, y, w, h])`, `mask.ellipse([x, y, w, h])`, `mask.gradient({ from: "top", to: 0.45 })` (or two points), `mask.flood([x, y], { tol })` (magic wand). Coordinates in doc px.
+All on an Image: `mask.luminance({ above, below, softness })` (luminance levels in the image's space: for an opened file, the scale a look shows and `stats()` reports), `mask.color({ hue, tol, minSat })`, `mask.box([x, y, w, h])`, `mask.ellipse([x, y, w, h])`, `mask.gradient({ from: "top", to: 0.45 })` (or two points), `mask.flood([x, y], { tol })` (magic wand). Coordinates in doc px.
 
 ```js
 const bright = img.mask.luminance({ above: 0.6 })

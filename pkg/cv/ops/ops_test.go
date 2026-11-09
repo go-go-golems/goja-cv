@@ -67,9 +67,10 @@ func TestStatsLevelsOnTestImage(t *testing.T) {
 	}
 	fixed := call(t, e, "levels", img.ID, map[string]any{"black": statOf(t, e, s, "p01"), "white": statOf(t, e, s, "p99")})
 	fs := evalData(t, e, call(t, e, "stats", fixed.ID), 1).(map[string]any)
-	// levels maps each channel; luminance is a weighted sum, so its
-	// percentiles land near (not exactly on) 0 and 1 for a colour image...
-	if math.Abs(fs["p01"].(float64)) > 0.01 || math.Abs(fs["p99"].(float64)-1) > 0.02 {
+	// levels maps each channel; luminance is encode(Y), Y a weighted sum of
+	// linear light, so its percentiles land near (not exactly on) 0 and 1
+	// for a colour image...
+	if math.Abs(fs["p01"].(float64)) > 0.04 || math.Abs(fs["p99"].(float64)-1) > 0.02 {
 		t.Fatalf("levels from stats: p01 %v p99 %v", fs["p01"], fs["p99"])
 	}
 	// ...and exactly for a gray one (the map is monotone).
@@ -80,12 +81,14 @@ func TestStatsLevelsOnTestImage(t *testing.T) {
 	if math.Abs(gfs["p01"].(float64)) > 2e-3 || math.Abs(gfs["p99"].(float64)-1) > 2e-3 {
 		t.Fatalf("gray levels from stats: p01 %v p99 %v", gfs["p01"], gfs["p99"])
 	}
-	// +1 EV doubles mean luminance (no clipping in the kernel)
-	m0 := statOf(t, e, s, "meanL")
-	m1 := statOf(t, e, call(t, e, "stats", call(t, e, "exposure", img.ID, 1).ID), "meanL")
-	if math.Abs(m1-2*m0) > 1e-6 {
-		t.Fatalf("meanL %g -> %g", m0, m1)
+	// +1 EV doubles mean luminance in linear light (no clipping in the kernel)
+	lin := call(t, e, graph.AsOp, img.ID, "linear")
+	l0 := statOf(t, e, call(t, e, "stats", lin.ID), "meanL")
+	l1 := statOf(t, e, call(t, e, "stats", call(t, e, "exposure", lin.ID, 1).ID), "meanL")
+	if math.Abs(l1-2*l0) > 1e-6 {
+		t.Fatalf("linear meanL %g -> %g", l0, l1)
 	}
+	m0 := statOf(t, e, s, "meanL")
 	q := evalData(t, e, call(t, e, "stats", img.ID, map[string]any{"percentiles": []any{0.25}}), 1).(map[string]any)["percentiles"]
 	if v := q.(map[string]any)["0.25"].(float64); v <= 0 || v >= m0*2 {
 		t.Fatalf("percentile 0.25 = %v", v)
@@ -122,8 +125,8 @@ func nodeArg(n *graph.Node) graph.NodeArg { return graph.NodeArg{ID: n.ID} }
 var walkSamples = map[string]func(w walkNodes) []any{
 	"channel": func(walkNodes) []any { return []any{"g"} }, "encode": func(walkNodes) []any { return []any{"srgb"} },
 	"exposure": func(walkNodes) []any { return []any{0.5} }, "contrast": func(walkNodes) []any { return []any{0.2} },
-	"gaussian": func(walkNodes) []any { return []any{1.5} },
-	"add":      func(walkNodes) []any { return []any{1} }, "sub": func(walkNodes) []any { return []any{1} },
+	"gaussian": func(walkNodes) []any { return []any{1.5} }, "as": func(walkNodes) []any { return []any{"linear"} },
+	"add": func(walkNodes) []any { return []any{1} }, "sub": func(walkNodes) []any { return []any{1} },
 	"mul": func(walkNodes) []any { return []any{2} }, "div": func(walkNodes) []any { return []any{2} },
 	"min": func(walkNodes) []any { return []any{0} }, "max": func(walkNodes) []any { return []any{0} },
 	"distance": func(walkNodes) []any { return []any{0.18} },
@@ -237,14 +240,21 @@ func TestStatsInsideBoxAndMask(t *testing.T) {
 		t.Fatal(err)
 	}
 	full := v.(*graph.ImageValue).Buf
+	// the one luminance: toGray() of the receiver
+	lum := evalValue(t, e, call(t, e, "toGray", img.ID), 1).(*graph.ImageValue).Buf.Plane(0)
 	// reference: the left half [0, 0, 32, 48] cropped by hand
 	crop := buffer.New(32, 48, 3, 1)
-	for c := 0; c < 3; c++ {
-		for y := 0; y < 48; y++ {
+	lumCrop := make([]float32, 0, 32*48)
+	for y := 0; y < 48; y++ {
+		for c := 0; c < 3; c++ {
 			copy(crop.Plane(c)[y*32:(y+1)*32], full.Plane(c)[y*64:y*64+32])
 		}
+		lumCrop = append(lumCrop, lum[y*64:y*64+32]...)
 	}
-	ref, _ := kernels.Stats(ctx, crop, nil)
+	ref, err := kernels.Stats(ctx, crop, lumCrop, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	box := call(t, e, "stats", img.ID, map[string]any{"box": []any{0.0, 0.0, 32.0, 48.0}})
 	got := evalData(t, e, box, 1).(map[string]any)

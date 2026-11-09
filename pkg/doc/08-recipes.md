@@ -31,7 +31,7 @@ return {
 }
 ```
 
-`meanL` is linear luminance (mid-grey is about 0.18); `clipLow`/`clipHigh` are the fractions of clipped pixels.
+`meanL` is luminance in file units, the scale a look shows (mid-grey is about 0.46; `img.as("linear").stats()` for linear light, where it is 0.18); `clipLow`/`clipHigh` are the fractions of clipped pixels.
 
 ## Fix exposure and compare
 

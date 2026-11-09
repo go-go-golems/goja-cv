@@ -73,9 +73,7 @@ func newOpsCommand(opts *rootOptions) *cobra.Command {
 			for _, op := range list {
 				names := make([]string, 0, len(op.Args))
 				for n := range op.Args {
-					if n != graph.SpaceArg { // the working-space option is on every pixel op
-						names = append(names, n)
-					}
+					names = append(names, n)
 				}
 				sort.Strings(names)
 				doc := op.Doc

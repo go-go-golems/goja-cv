@@ -457,7 +457,9 @@ func (e *Evaluator) wrapWithPath(err error, n *Node) error {
 func (e *Evaluator) Path(id NodeID) []string {
 	var rev []string
 	for n := e.node(id); n != nil; {
-		rev = append(rev, Label(n))
+		if n.Op.Name != AsOp { // conversions are not steps the agent wrote
+			rev = append(rev, Label(n))
+		}
 		if !n.HasReceiver() {
 			break
 		}

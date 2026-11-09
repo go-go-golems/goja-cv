@@ -102,7 +102,7 @@ func channelOps() []graph.OpDef {
 		},
 		{
 			Name: "toLab", On: graph.KindImage, Returns: graph.KindImage,
-			Space:  graph.SpaceRule{Default: buffer.SpaceLinear, Fixed: true},
+			Space:  graph.Physical,
 			Result: graph.DerivedEnc,
 			Warn: func(b *graph.Builder, a graph.Args) []graph.Warning {
 				for _, note := range SourceNotes(b, a.Receiver()) {
@@ -124,7 +124,6 @@ func channelOps() []graph.OpDef {
 		},
 		{
 			Name: "chroma", On: graph.KindImage, Returns: graph.KindImage,
-			Space:  graph.SpaceRule{Default: buffer.SpaceEncoded},
 			Result: graph.DerivedEnc,
 			Args: []graph.ArgSpec{{Name: "relative", Type: "bool", Default: false,
 				Doc: "divide by the channel mean + 0.001, so equal colour casts score alike in shadows and highlights"}},
@@ -135,12 +134,11 @@ func channelOps() []graph.OpDef {
 				}
 				return graph.NewImage(out), nil
 			},
-			Doc: "Per-pixel channel spread max(R, G, B) − min(R, G, B) in the working space (encoded by default): 0 for neutral (grey) pixels. A derived one-channel image (not CIE chroma).",
+			Doc: "Per-pixel channel spread max(R, G, B) − min(R, G, B) in the image's space: 0 for neutral (grey) pixels. A derived one-channel image (not CIE chroma).",
 			See: []string{"colormap", "toLab", "channel"},
 		},
 		{
 			Name: "colormap", On: graph.KindImage, Returns: graph.KindImage,
-			Space:  graph.SpaceRule{Default: buffer.SpaceEncoded},
 			Result: graph.DisplayEnc,
 			Args: []graph.ArgSpec{
 				{Name: "name", Type: "enum:" + strings.Join(kernels.ColormapNames, ","), Positional: true, Default: "viridis",
@@ -163,7 +161,7 @@ func channelOps() []graph.OpDef {
 					r := a.Numbers("range")
 					lo, hi = r[0], r[1]
 				} else {
-					s, err := kernels.Stats(ctx, src.Buf, nil)
+					s, err := kernels.Stats(ctx, src.Buf, nil, nil)
 					if err != nil {
 						return nil, err
 					}
@@ -188,7 +186,7 @@ func channelOps() []graph.OpDef {
 		},
 		{
 			Name: "encode", On: graph.KindImage, Returns: graph.KindImage,
-			Space:  graph.SpaceRule{Default: buffer.SpaceLinear, Fixed: true},
+			Space:  graph.Physical,
 			Result: encodeEnc,
 			Args: []graph.ArgSpec{{Name: "to", Type: "enum:srgb,linear", Positional: true, ValueSynonyms: graph.EncodingValueSynonyms,
 				Doc: "the encoding the image gets; its linear values do not change"}},

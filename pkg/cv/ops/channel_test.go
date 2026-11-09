@@ -34,8 +34,8 @@ func TestSplitIsThreeChannels(t *testing.T) {
 			t.Fatalf("split()[%d] is #%d, channel(%v) is #%d", i, r.Nodes[i].ID, c, n.ID)
 		}
 		v := evalValue(t, e, n, 1).(*graph.ImageValue)
-		near(t, "channel value", v.Buf.Pix[0], []float64{0.1, 0.2, 0.3}[i], 1e-7)
-		if v.Buf.C != 1 || n.Enc != buffer.EncSRGB || n.Space != buffer.SpaceLinear || n.Frame != window {
+		near(t, "channel value", v.Buf.Pix[0], buffer.LinearToSRGB([]float64{0.1, 0.2, 0.3}[i]), 1e-7) // in file units
+		if v.Buf.C != 1 || n.Enc != buffer.EncSRGB || n.Space != buffer.SpaceEncoded || n.Frame != window {
 			t.Fatalf("channel statics %s %s", graph.Statics(n), n.Frame)
 		}
 	}
@@ -59,14 +59,13 @@ func TestOneNodeMacro(t *testing.T) {
 	e := testEngine(t)
 	if err := e.Registry().Register(graph.OpDef{
 		Name: "testview", On: graph.KindImage, Returns: graph.KindImage,
-		Space: graph.SpaceRule{Default: buffer.SpaceEncoded},
-		Args:  []graph.ArgSpec{{Name: "r", Type: "number", Unit: graph.DocPx, Positional: true, Default: 2.0}},
+		Args: []graph.ArgSpec{{Name: "r", Type: "number", Unit: graph.DocPx, Positional: true, Default: 2.0}},
 		Expand: func(x *graph.Expander, recv *graph.Node, a graph.Args) ([]*graph.Node, error) {
 			blur, err := x.Call("gaussian", recv, a.DocLength("r"))
 			if err != nil {
 				return nil, err
 			}
-			c, err := x.Call("chroma", blur, map[string]any{"space": a.String("space")})
+			c, err := x.Call("chroma", blur)
 			if err != nil {
 				return nil, err
 			}
@@ -96,7 +95,7 @@ func TestOneNodeMacro(t *testing.T) {
 		t.Fatal("the expansion's cached value changed")
 	}
 	lines := e.Explain(m.ID)
-	if len(lines) != 5 || !strings.HasPrefix(lines[0], "#") || !strings.Contains(lines[0], "testview") ||
+	if len(lines) != 4 || !strings.HasPrefix(lines[0], "#") || !strings.Contains(lines[0], "testview") ||
 		!strings.HasPrefix(lines[1], "  #") || !strings.Contains(lines[1], "chroma") {
 		t.Fatalf("explain: %q", lines)
 	}
@@ -173,12 +172,17 @@ func TestToLabChromaColormapEncode(t *testing.T) {
 		t.Fatalf("auto range: %g", v.Buf.Pix[0])
 	}
 
-	// encode keeps linear values and changes the encoding
+	// encode keeps linear values and changes the encoding; it is physical,
+	// so its result comes back in the receiver's (encoded) space
 	lin := testSource(t, e, "linear", window, 0.2)
 	en := call(t, e, "encode", lin.ID, "srgb")
 	ev := evalValue(t, e, en, 1).(*graph.ImageValue)
-	if ev.Buf.Pix[0] != 0.2 || ev.Enc != buffer.EncSRGB || en.Space != buffer.SpaceLinear {
+	if ev.Enc != buffer.EncSRGB || en.Space != buffer.SpaceEncoded {
 		t.Fatalf("encode: %g %v", ev.Buf.Pix[0], ev.Enc)
+	}
+	near(t, "encode", ev.Buf.Pix[0], buffer.LinearToSRGB(0.2), 1e-6)
+	if lv := evalValue(t, e, call(t, e, graph.AsOp, en.ID, "linear"), 1).(*graph.ImageValue); math.Abs(float64(lv.Buf.Pix[0])-0.2) > 1e-6 {
+		t.Fatalf("encode's linear values: %g", lv.Buf.Pix[0])
 	}
 	if lv := evalValue(t, e, lin, 1).(*graph.ImageValue); lv.Enc != buffer.EncLinear {
 		t.Fatal("encode rewrote its input's value")

@@ -5,7 +5,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/go-go-golems/goja-cv/pkg/cv/buffer"
 	"github.com/go-go-golems/goja-cv/pkg/cv/graph"
 )
 
@@ -25,7 +24,7 @@ Eval contract
 Globals: img (the open image; img = cv.open(path) rebinds it; await img gives its file, format, bitDepth, encoding, frame), cv, mem. cv.open(path, { encoding, box, origin, as }): encoding "linear" for linear data in integer files; box reads a window and keeps file coordinates; as: "ref" binds another global name.
 
 Most used calls
-- Numbers are in the op's space: linear (exposure, blur, blend, stats, levels) or encoded (what looks show: thresholds, contrast, histogram, specks); pass { space } to change it; cv.docs.read("encodings-and-spaces").
+- Images open in file units (what looks show); an op works in its receiver's space, so a level measured on an image fits ops on it. img.as("linear") for light (density); exposure and heal compute in linear light; cv.docs.read("encodings-and-spaces").
 - await img.stats() → { meanL, p01, p99, clipLow, clipHigh, … }; img.stats({ box: [x, y, w, h] }) or img.stats({ mask }) measures only there (+ area, coverage); img.histogram().look()
 - img.exposure(ev), img.levels({ black, white, gamma }), img.contrast(a), img.gaussian(sigma), img.toGray(), node.colormap("viridis")
 - node.look("label") or node.look({ label, maxSide }) queues an image: every look of an eval is delivered (returned or not, also after a throw), at most four; a LOOKS warning names the others. Captions give the op chain and the scale: 1 image px = S doc px. cv.explain(node) describes a node without evaluating it.
@@ -106,10 +105,6 @@ func opLine(op *graph.OpDef) string {
 	var details []string
 	for i := range op.Args {
 		s := &op.Args[i]
-		if s.Name == graph.SpaceArg && op.Space.Default != buffer.SpaceNone {
-			details = append(details, fmt.Sprintf("space: \"linear\" | \"encoded\", default %q. working space (the option is not part of the usage line)", op.Space.Default.String()))
-			continue
-		}
 		args = append(args, s.Name)
 		details = append(details, s.Name+": "+graph.DescribeArgSpec(s))
 	}

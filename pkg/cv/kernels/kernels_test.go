@@ -142,7 +142,7 @@ func TestStatsOnKnownData(t *testing.T) {
 		b.Pix[i] = float32(i) / 100
 	}
 	rand.New(rand.NewSource(3)).Shuffle(len(b.Pix), func(i, j int) { b.Pix[i], b.Pix[j] = b.Pix[j], b.Pix[i] })
-	s, err := Stats(ctx, b, []float64{0.25, 0.005})
+	s, err := Stats(ctx, b, nil, []float64{0.25, 0.005})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,7 +178,7 @@ func TestStatsOnKnownData(t *testing.T) {
 		}
 	}
 	rgb := randBuf(20, 10, 3, 5)
-	s, _ = Stats(ctx, rgb, nil)
+	s, _ = Stats(ctx, rgb, rgb.Luminance(), nil)
 	if len(s.Channels) != 3 || math.Abs(s.Channels[1].Mean-mean(rgb.Plane(1))) > 1e-9 {
 		t.Fatalf("per-channel stats: %+v", s.Channels)
 	}
@@ -213,7 +213,7 @@ func TestStatsWeighted(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		w[i] = 1
 	}
-	got, err := StatsWeighted(ctx, b, w, []float64{0.25})
+	got, err := StatsWeighted(ctx, b, b.Luminance(), w, []float64{0.25})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -221,7 +221,7 @@ func TestStatsWeighted(t *testing.T) {
 	for c := 0; c < 3; c++ {
 		copy(sub.Plane(c), b.Plane(c)[:10])
 	}
-	want, _ := Stats(ctx, sub, []float64{0.25})
+	want, _ := Stats(ctx, sub, sub.Luminance(), []float64{0.25})
 	if got.Weight != 10 || got.W != 10 || got.H != 10 || got.L.Mean != want.L.Mean || got.L.Median != want.L.Median || got.L.Percentiles[0] != want.L.Percentiles[0] {
 		t.Fatalf("binary: %+v vs %+v", got.L, want.L)
 	}
@@ -229,7 +229,7 @@ func TestStatsWeighted(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		w[i] = 0.5
 	}
-	soft, err := StatsWeighted(ctx, b, w, []float64{0.25})
+	soft, err := StatsWeighted(ctx, b, b.Luminance(), w, []float64{0.25})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -244,11 +244,11 @@ func TestStatsWeighted(t *testing.T) {
 	// a weight pulls the mean towards its pixel
 	w2 := make([]float32, 100)
 	w2[0], w2[99] = 1, 0.25 // values 0 and 1
-	m, _ := StatsWeighted(ctx, b, w2, nil)
+	m, _ := StatsWeighted(ctx, b, b.Luminance(), w2, nil)
 	if math.Abs(m.L.Mean-0.2) > 1e-6 {
 		t.Fatalf("weighted mean %v, want 0.2", m.L.Mean)
 	}
-	if _, err := StatsWeighted(ctx, b, make([]float32, 100), nil); err != ErrEmptySelection {
+	if _, err := StatsWeighted(ctx, b, b.Luminance(), make([]float32, 100), nil); err != ErrEmptySelection {
 		t.Fatalf("empty: %v", err)
 	}
 }

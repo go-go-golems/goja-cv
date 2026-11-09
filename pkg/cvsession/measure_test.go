@@ -131,19 +131,19 @@ return { n: pts.length, ok: [dStep, dCh, dChroma, dSpread, dSnr].every(d => d < 
 
 // TestMeasurementOps: sample at radius 0 is the pixel, rows follow the
 // schema order, points outside the frame warn OUTSIDE, Regions are refused
-// with the fix, and the space option is respected.
+// with the fix, and the receiver's space is respected.
 func TestMeasurementOps(t *testing.T) {
 	app, sid := acceptanceApp(t)
 	out := mustOK(t, eval(t, app, sid, `
 const [s] = await img.sample([[200.5, 46.5]])
-const [e] = await img.sample([[200.5, 46.5]], { space: "encoded" })
+const [l] = await img.as("linear").sample([[200.5, 46.5]])
 const inside = await img.stats({ box: [200, 46, 1, 1] })
 const rows = await img.measure([[200.5, 46.5], [-20, 4]], { coreRadius: 2.5 })
 const p = await img.profile([190.5, 46.5], [210.5, 46.5], { width: 3 })
 return {
   keys: Object.keys(rows[0]).join(","),
   pixel: Math.abs(s.meanR - inside.perChannel.r.mean) < 1e-9 && s.area === 1,
-  encoded: e.meanB > s.meanB,
+  encoded: s.meanB > l.meanB,
   star: rows[0].step > 0 && rows[0].snr > 1,
   outside: rows[1].outside + " " + rows[1].step,
   profile: p.t.length + " " + p.meanL.length + " peak " + (p.meanL.indexOf(Math.max(...p.meanL)) === 10),

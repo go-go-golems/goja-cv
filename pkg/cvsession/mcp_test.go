@@ -149,7 +149,7 @@ return {
 	if isErr || len(images) != 0 {
 		t.Fatalf("stats: %v %d\n%s", isErr, len(images), text)
 	}
-	mustContain(t, text, "meanL: 0.29507", "black: 0.036133", "p99: 0.83255")
+	mustContain(t, text, "meanL: 0.52726", "black: 0.036133", "p99: 0.92244")
 	mustNotContain(t, text, "warnings:")
 
 	// Part 1 verbatim: cv.compare landed with M3.
@@ -162,7 +162,7 @@ return { meanL, clipLow, clipHigh }`)
 	if isErr || len(images) != 2 {
 		t.Fatalf("correction: isErr=%v images=%d\n%s", isErr, len(images), text)
 	}
-	mustContain(t, text, "meanL: 0.50822", "clipLow:", "clipHigh:",
+	mustContain(t, text, "meanL: 0.79605", "clipLow:", "clipHigh:",
 		"content 1 look 1: before / after — compare([2 images]) (132×48, 1 image px = 1.0 doc px)", "content 2 look 2: open(gradient-64x48-16bit.tif) → levels → exposure(0.35) → histogram (512×204 chart)")
 	if images[0].MIMEType != "image/png" || images[1].MIMEType != "image/png" {
 		t.Fatalf("mimes %s %s", images[0].MIMEType, images[1].MIMEType)

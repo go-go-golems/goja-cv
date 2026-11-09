@@ -7,7 +7,6 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/go-go-golems/goja-cv/pkg/cv/buffer"
 	"github.com/go-go-golems/goja-cv/pkg/cv/graph"
 	"github.com/go-go-golems/goja-cv/pkg/cv/kernels"
 	"github.com/go-go-golems/goja-cv/pkg/cv/parallel"
@@ -187,15 +186,18 @@ func runRegionMeasure(ctx context.Context, _ *graph.EvalCtx, in []graph.Value, a
 		return nil, err
 	}
 	prefix, _ := a.Raw("prefix").(string)
-	gray := grayOf(a)
 	b := src.Buf
+	gray := b.Plane(0) // a mask: its weights
+	if a.Input("image").Kind == graph.KindImage {
+		gray = a.Luma().Buf.Plane(0) // the image's luminance, in its space
+	}
 	sx, sy := graph.AxisScales(src)
 	ox, oy := src.BufferOrigin()
 	stats := statNames(a)
 	chans := statChannels(a)
 	var planes [][]float32 // per stats channel: gray, then r, g, b
 	if len(stats) > 0 {
-		planes = append(planes, kernels.GrayPlane(b, gray))
+		planes = append(planes, gray)
 		if len(chans) > 1 && b.C > 1 {
 			for c := 0; c < b.C; c++ {
 				planes = append(planes, b.Plane(c))
@@ -301,8 +303,7 @@ func regionWeights(rv *graph.RegionsValue, r *graph.Region, t graph.Raster, same
 
 func regionMeasureOp() graph.OpDef {
 	return graph.OpDef{
-		Name: "measure", On: graph.KindRegions, Returns: graph.KindRegions,
-		Space: graph.SpaceRule{Default: buffer.SpaceLinear},
+		Name: "measure", On: graph.KindRegions, Returns: graph.KindRegions, Luma: true, LumaOf: "image",
 		Args: []graph.ArgSpec{
 			{Name: "image", Type: "Image|Mask", Positional: true, Doc: "the image (or mask) to measure, in the regions' frame"},
 			{Name: "stats", Type: "string[]", Optional: true,

@@ -23,7 +23,8 @@ type Meta struct {
 }
 
 // RegisterSource adds the test source op to reg. Like open, the node holds
-// linear values: Meta.Enc says what they mean.
+// encoded values (file units): Fill gives the linear value of each channel
+// and Meta.Enc how it is encoded.
 func RegisterSource(reg *graph.Registry) {
 	reg.MustRegister(graph.OpDef{
 		Name: SourceOp, On: graph.KindNone, Returns: graph.KindImage, Bespoke: true,
@@ -33,13 +34,17 @@ func RegisterSource(reg *graph.Registry) {
 				e, _ := buffer.ParseEncoding(graph.Meta[Meta](a).Enc)
 				return e
 			},
-			Space: func(graph.Args, buffer.Space) buffer.Space { return buffer.SpaceLinear },
+			Space: func(graph.Args, buffer.Space) buffer.Space { return buffer.SpaceEncoded },
 		},
 		Run: func(_ context.Context, ec *graph.EvalCtx, _ []graph.Value, a graph.Args) (graph.Value, error) {
 			m := graph.Meta[Meta](a)
 			w, h := buffer.ScaledSize(m.Frame.W, m.Frame.H, ec.Scale)
 			b := buffer.New(w, h, len(m.Fill), ec.Scale)
+			enc, _ := buffer.ParseEncoding(m.Enc)
 			for c, v := range m.Fill {
+				if enc == buffer.EncSRGB {
+					v = buffer.LinearToSRGB(v)
+				}
 				p := b.Plane(c)
 				for i := range p {
 					p[i] = float32(v)

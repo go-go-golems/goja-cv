@@ -157,7 +157,8 @@ func TestTwoFramesAreRefused(t *testing.T) {
 
 func TestReturnedInputsAreStampedCopies(t *testing.T) {
 	e := testEngine(t)
-	src := testSource(t, e, "srgb", window, 0.5) // one channel: toGray returns its input
+	// one channel, linear-encoded (no conversions around the physical ops): toGray returns its input
+	src := testSource(t, e, "linear", window, 0.5)
 	sv := evalValue(t, e, src, 1).(*graph.ImageValue)
 	for _, n := range []*graph.Node{call(t, e, "toGray", src.ID), call(t, e, "exposure", src.ID, 0.0)} {
 		v := evalValue(t, e, n, 1).(*graph.ImageValue)

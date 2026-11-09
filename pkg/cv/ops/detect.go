@@ -3,7 +3,6 @@ package ops
 import (
 	"context"
 
-	"github.com/go-go-golems/goja-cv/pkg/cv/buffer"
 	"github.com/go-go-golems/goja-cv/pkg/cv/graph"
 	"github.com/go-go-golems/goja-cv/pkg/cv/kernels"
 )
@@ -51,18 +50,18 @@ const DustScore = 0.5
 func detectOps() []graph.OpDef {
 	return []graph.OpDef{
 		{
-			Name: "detect.specks", On: graph.KindImage, Returns: graph.KindRegions, Space: graph.SpaceRule{Default: buffer.SpaceEncoded}, Global: true,
+			Name: "detect.specks", On: graph.KindImage, Returns: graph.KindRegions, Global: true,
 			Args:          speckArgs(200, 0.03),
 			AnalysisScale: analysisScale,
 			Run: func(ctx context.Context, ec *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
-				rv, _, err := runSpecks(ctx, ec, image(in[0]), a)
+				rv, _, err := runSpecks(ctx, ec, a.Luma(), a)
 				if err != nil {
 					return nil, err
 				}
 				return rv, nil
 			},
-			Gray: func(graph.Args) []int { return []int{0} },
-			Doc: "Find small dark/bright specks (dust): luminance in the working space (encoded by default) minus a morphological background, " +
+			Luma: true,
+			Doc: "Find small dark/bright specks (dust): the luminance in the image's space (file units for an opened file) minus a morphological background, " +
 				"thresholded at max(minContrast, 4σ noise) with hysteresis, labelled, at most maxArea. " +
 				"Each region has contrast, localNoise, sharpness (soft round blobs like stars are low) and score in [0, 1]; " +
 				"keep real dust with .where({ score: { gte: 0.5 } }). Regions are analysed at analysisScale (default 1), so ids and boxes are the same in a look and a measurement.",
@@ -71,13 +70,13 @@ func detectOps() []graph.OpDef {
 			See:      []string{"heal", "check.dust", "where", "overlay"},
 		},
 		{
-			Name: "check.dust", On: graph.KindImage, Returns: graph.KindValue, Space: graph.SpaceRule{Default: buffer.SpaceEncoded}, Global: true,
+			Name: "check.dust", On: graph.KindImage, Returns: graph.KindValue, Global: true,
 			Args:          speckArgs(200, 0.03),
 			AnalysisScale: analysisScale,
 			Fields:        fixedFields(dustFields),
-			Gray:          func(graph.Args) []int { return []int{0} },
-			Run: func(ctx context.Context, ec *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
-				src := image(in[0])
+			Luma:          true,
+			Run: func(ctx context.Context, ec *graph.EvalCtx, _ []graph.Value, a graph.Args) (graph.Value, error) {
+				src := a.Luma()
 				rv, res, err := runSpecks(ctx, ec, src, a)
 				if err != nil {
 					return nil, err

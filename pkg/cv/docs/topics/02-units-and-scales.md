@@ -1,6 +1,6 @@
 # Units, coordinates and scales
 
-Every length, box and point is in doc px (pixels of the file, absolute in the image's frame) at every scale; data is measured at full resolution and looks render at look scale; region detection runs at a fixed analysisScale; numbers are in the op's working space.
+Every length, box and point is in doc px (pixels of the file, absolute in the image's frame) at every scale; data is measured at full resolution and looks render at look scale; region detection runs at a fixed analysisScale; numbers are in the space of the image they were measured on.
 
 ## Doc px
 
@@ -50,6 +50,6 @@ const { meanL, area } = await img.stats({ box: [f[0] + 10, f[1] + 10, 32, 32] })
 return { frame: f, inside: { meanL, area } }
 ```
 
-## Working spaces
+## Spaces
 
-Numbers are in the op's working space: `linear` (the encoding undone: exposure, blur, blend, stats, levels) or `encoded` (what looks show: thresholds, contrast, histogram, specks). Pass `{ space }` to change it; `cv.docs.read("encodings-and-spaces")` explains encodings, spaces and looks.
+Images open in file units (`space: "encoded"`, what looks show); an op works in its receiver's space and returns it, so a level measured on an image fits ops on the same image. `img.as("linear")` gives light (or density); `cv.docs.read("encodings-and-spaces")` explains encodings, spaces, physical ops and looks.

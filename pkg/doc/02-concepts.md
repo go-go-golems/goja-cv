@@ -58,14 +58,16 @@ boxes so a look and a measurement agree. Region detection runs at a fixed
 `analysisScale`, so region ids and boxes are the same everywhere. Coordinates are absolute in the image's
 **frame** (a window read with `cv.open(path, { box })` keeps the scan's coordinates).
 
-## Encodings and working spaces
+## Encodings and spaces
 
 Every image has an **encoding**: `srgb` (photographs: the sRGB curve undone gives light) or `linear` (float
 TIFF, DNG raw scans, `.npy`, density maps: the stored value is the quantity). `cv.open(path, { encoding })`
-overrides what the file implies. Every pixel op has a **working space**: `linear` (exposure, blur, blend, stats,
-levels: physical steps count equally) or `encoded` (thresholds, contrast, histogram, specks: visible steps count
-equally), changed per call with `{ space }`. The graph inserts cached conversion nodes (`explain()` shows them),
-luminance is always computed from linear light, and a look shows encoded values; masks and derived images
+overrides what the file implies. Every image also has a **space**: images open in `encoded` space (file units,
+what looks show), and `img.as("linear")` gives light (or density). An op works in its receiver's space and returns
+it, so a level measured on an image fits ops on that image; physical ops (`exposure`, `heal`, `inpaint`, `toLab`,
+`encode`, `toGray`) compute in linear light and return the receiver's space, and pictures (`overlay`, `compare`,
+`sheet`) are encoded. The graph inserts cached conversion nodes (`cv.explain` shows them), luminance is always
+computed from linear light, and a look shows encoded values; masks and derived images
 (`chroma`, `toLab`) show their values directly. Several images can be open under names:
 `cv.open(path, { as: "ref" })`.
 

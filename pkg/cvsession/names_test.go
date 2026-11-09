@@ -82,7 +82,7 @@ func TestMCPOpenToolWithNameAndEncoding(t *testing.T) {
 		t.Fatalf("open: isErr=%v images=%d\n%s", isErr, len(images), out)
 	}
 	mustContain(t, out, "encoding: linear", "images: img = gradient-64x48-16bit.tif (64×48, 16-bit TIFF, srgb), v = lin.tif (256×192, 16-bit TIFF, linear)")
-	out, _, _ = callEval(t, cs, `return (await v.stats({ space: "encoded" })).w`)
+	out, _, _ = callEval(t, cs, `return (await v.stats()).w`)
 	mustContain(t, out, "256")
 }
 
@@ -91,12 +91,11 @@ func TestMCPOpenToolWithNameAndEncoding(t *testing.T) {
 func TestSpaceVocabulary(t *testing.T) {
 	app, sid := newApp(t, cvsession.Options{Image: tiffPath})
 	for code, want := range map[string][]string{
-		`return img.levels({ workingSpace: "encoded" })`:                   {"code: E_UNKNOWN_OPTION", `Did you mean "space"?`, `fix: 'levels({ space: …`},
 		`return cv.open(` + quote(pngPath) + `, { colorSpace: "linear" })`: {"code: E_UNKNOWN_OPTION", `Did you mean "encoding"?`, `fix: 'cv.open(path, { encoding: … })'`},
-		`return img.exposure(0.3, { space: "display" })`:                   {"code: E_ARG_TYPE", `Did you mean "encoded"?`, `fix: 'exposure({ space: "encoded" })'`},
-		`return cv.open(` + quote(pngPath) + `, { encoding: "lin" })`:      {"code: E_ARG_TYPE", `fix: 'cv.open(path, { encoding: "linear" })'`},
-		`return img.lab()`:     {"code: E_UNKNOWN_METHOD", `Did you mean "toLab"?`},
-		`return img.heatmap()`: {"code: E_UNKNOWN_METHOD", `Did you mean "colormap"?`},
+		`return img.as("display")`:                                    {"code: E_ARG_TYPE", "valid: [linear, encoded]"},
+		`return cv.open(` + quote(pngPath) + `, { encoding: "lin" })`: {"code: E_ARG_TYPE", `fix: 'cv.open(path, { encoding: "linear" })'`},
+		`return img.lab()`:                                            {"code: E_UNKNOWN_METHOD", `Did you mean "toLab"?`},
+		`return img.heatmap()`:                                        {"code: E_UNKNOWN_METHOD", `Did you mean "colormap"?`},
 	} {
 		out := text(eval(t, app, sid, code))
 		mustContain(t, out, want...)

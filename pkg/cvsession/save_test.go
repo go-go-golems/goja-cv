@@ -55,7 +55,7 @@ func TestSaveRefusals(t *testing.T) {
 		{`return await img.save("/etc/x.tif")`, "outside the out-root"},
 		{`return await img.save("speck.gif")`, "code: E_ARG_TYPE"},
 		{`return await img.save("x.png", { depth: 32 })`, "code: E_ARG_RANGE"},
-		{`return await img.exposure(0.2, { space: "linear" }).toGray().encode("linear").save("x.jpg")`, "fix: node.save(\"x.png\")"},
+		{`return await img.exposure(0.2).toGray().encode("linear").save("x.jpg")`, "fix: node.save(\"x.png\")"},
 		{`return await img.detect.specks().save("s.csv")`, "cv.json(x).save(\"s.json\")"},
 	} {
 		mustContain(t, text(eval(t, app, sid, tc.code)), tc.want)

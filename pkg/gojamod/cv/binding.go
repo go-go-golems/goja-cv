@@ -382,8 +382,8 @@ func (b *binding) explain(c goja.FunctionCall) goja.Value {
 	n := b.nodeArg(c.Argument(0))
 	b.noteUsed(n.ID)
 	d := map[string]any{
-		"id": float64(n.ID), "kind": string(n.Kind), "op": n.Op.Name, "label": graph.Label(n),
-		"call":  graph.Describe(b.eng.Builder(), n, 1),
+		"id": float64(n.ID), "kind": string(n.Kind), "op": graph.Shown(n).Op.Name, "label": graph.Label(n),
+		"call":  graph.Describe(b.eng.Builder(), graph.Shown(n), 1),
 		"frame": n.Frame.Data(),
 		"path":  toAny(b.eng.Path(n.ID)),
 		"graph": toAny(b.eng.Explain(n.ID)),

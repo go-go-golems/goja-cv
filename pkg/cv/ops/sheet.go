@@ -283,7 +283,7 @@ const WSheetTruncated = "SHEET_TRUNCATED"
 func sheetOp() graph.OpDef {
 	return graph.OpDef{
 		Name: "sheet", On: graph.KindNone, Returns: graph.KindImage, Result: graph.DisplayEnc, Lossless: true,
-		Space: graph.SpaceRule{Default: buffer.SpaceEncoded, Fixed: true}, // cells show what looks show
+		Space: graph.Display, // cells show what looks show
 		Args: []graph.ArgSpec{
 			{Name: "items", Type: "Regions|any[]", Positional: true,
 				Doc: "Regions (one cell per region, centred on its centroid), or a list of points ([x, y] or { cx, cy }: measurement rows), boxes ([x, y, w, h] or { x, y, w, h }) or region items (centred on cx, cy, labelled with id), doc px"},

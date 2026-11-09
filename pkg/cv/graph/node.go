@@ -63,10 +63,10 @@ func (b *Builder) Len() int {
 }
 
 // Intern checks raw call arguments against op (types, units, hard limits,
-// unknown option keys), lifts node-valued arguments into inputs, resolves
-// the op's working space and inserts the toGray and convert nodes its inputs
-// need, and returns the existing node with the same structure or a new one.
-// receiver is 0 for source ops. Warnings (RANGE, SPACE, ENCODING) are
+// unknown option keys), makes node arguments inputs, inserts the toGray and
+// as nodes its inputs need for the op's work space (and the closing as of a
+// physical op), and returns the existing node with the same structure or a
+// new one. receiver is 0 for source ops. Warnings (RANGE, ENCODING) are
 // returned alongside the node.
 func (b *Builder) Intern(op *OpDef, receiver NodeID, raw []any) (*Node, []Warning, error) {
 	return b.intern(op, receiver, raw, nil)
@@ -162,6 +162,14 @@ func (b *Builder) call(op *OpDef, receiver NodeID, raw []any, meta any, nested b
 	if op.Expand != nil {
 		return b.expand(op, args, recv, warnings)
 	}
+	if op.On == KindImage && op.Name == AsOp { // as() folds: identities, inverse pairs, the opened file's pyramid
+		s, _ := buffer.ParseSpace(args.String("to"))
+		n, err := b.as(recv, s)
+		if err != nil {
+			return CallResult{}, err
+		}
+		return CallResult{Nodes: []*Node{n}, Warnings: warnings}, nil
+	}
 	inputs, ws, err := b.resolveSpace(op, args)
 	if err != nil {
 		return CallResult{}, err
@@ -171,7 +179,11 @@ func (b *Builder) call(op *OpDef, receiver NodeID, raw []any, meta any, nested b
 	if op.Warn != nil {
 		ws = append(ws, op.Warn(b, args)...)
 	}
-	return CallResult{Nodes: []*Node{b.internNode(op, args, inputs)}, Warnings: ws}, nil
+	n, err := b.closeBracket(op, args, b.internNode(op, args, inputs), recv)
+	if err != nil {
+		return CallResult{}, err
+	}
+	return CallResult{Nodes: []*Node{n}, Warnings: ws}, nil
 }
 
 // internNode returns the node for (op, canonical args, inputs), creating it
@@ -364,7 +376,14 @@ func (b *Builder) Substitute(root, from, to NodeID) (NodeID, error) {
 			changed = changed || r.ID != in
 		}
 		out := n
-		if changed {
+		switch {
+		case changed && n.Op.Name == AsOp && n.HasReceiver(): // conversions fold as when built directly
+			to, _ := buffer.ParseSpace(n.Args.String("to"))
+			var err error
+			if out, err = b.as(ins[0], to); err != nil {
+				return nil, err
+			}
+		case changed:
 			out = b.internNode(n.Op, n.Args, ins)
 		}
 		memo[id] = out

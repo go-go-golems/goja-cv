@@ -140,22 +140,22 @@ func maskMakerOps() []graph.OpDef {
 	boxArg := graph.ArgSpec{Name: "box", Type: "box", Unit: graph.DocPx, Positional: true, InFrame: true, Doc: "[x, y, w, h] in doc px (absolute: in the image's frame)"}
 	return []graph.OpDef{
 		{
-			Name: "mask.luminance", On: graph.KindImage, Returns: graph.KindMask, Space: graph.SpaceRule{Default: buffer.SpaceEncoded},
+			Name: "mask.luminance", On: graph.KindImage, Returns: graph.KindMask,
 			Args: []graph.ArgSpec{
-				{Name: "above", Type: "number", Unit: graph.Level, Optional: true, Min: graph.F(-1), Max: graph.F(2), Doc: "select luminance above this level (encoded by default: the scale looks and histogram() show)"},
+				{Name: "above", Type: "number", Unit: graph.Level, Optional: true, Min: graph.F(-1), Max: graph.F(2), Doc: "select luminance above this level (in the image's space: the scale of stats() and histogram())"},
 				{Name: "below", Type: "number", Unit: graph.Level, Optional: true, Min: graph.F(-1), Max: graph.F(2), Doc: "select luminance below this level"},
 				{Name: "softness", Type: "number", Default: 0.05, Min: graph.F(0), Max: graph.F(1), Doc: "width of the smooth ramp around each threshold"},
 			},
 			Validate: func(a graph.Args) error {
 				if !a.Has("above") && !a.Has("below") {
 					return graph.Errorf(graph.EArgType, "mask.luminance needs above, below or both.").
-						WithHint("Thresholds are luminance levels in [0, 1] of the working space (encoded by default, the scale of histogram()): above selects highlights, below shadows.").
+						WithHint("Thresholds are luminance levels in [0, 1] of the image's space (the scale of stats() and histogram()): above selects highlights, below shadows.").
 						WithFix("img.mask.luminance({ above: 0.7 })   // or { below: 0.2 }, or both for a band")
 				}
 				return nil
 			},
-			Run: func(ctx context.Context, _ *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
-				src := image(in[0])
+			Run: func(ctx context.Context, _ *graph.EvalCtx, _ []graph.Value, a graph.Args) (graph.Value, error) {
+				src := a.Luma()
 				var above, below *float64
 				if a.Has("above") {
 					v := a.Number("above")
@@ -171,12 +171,12 @@ func maskMakerOps() []graph.OpDef {
 				}
 				return graph.NewMask(m), nil
 			},
-			Doc:  "Select by luminance (Rec. 709 of linear light, expressed in the working space: encoded by default, the scale of histogram()): above and/or below thresholds with a soft ramp.",
-			Gray: func(graph.Args) []int { return []int{0} },
+			Doc:  "Select by luminance (Rec. 709 of linear light, expressed in the image's space: file units for an opened file, the scale of stats() and histogram()): above and/or below thresholds with a soft ramp.",
+			Luma: true,
 			See:  []string{"mask.color", "feather", "histogram"},
 		},
 		{
-			Name: "mask.color", On: graph.KindImage, Returns: graph.KindMask, Space: graph.SpaceRule{Default: buffer.SpaceEncoded},
+			Name: "mask.color", On: graph.KindImage, Returns: graph.KindMask,
 			Args: []graph.ArgSpec{
 				{Name: "hue", Type: "number", Min: graph.F(0), Max: graph.F(360), Doc: "hue in degrees (0 red, 120 green, 240 blue)"},
 				{Name: "tol", Type: "number", Default: 20.0, Min: graph.F(0), Max: graph.F(180), Doc: "hue tolerance in degrees"},
@@ -250,10 +250,10 @@ func maskMakerOps() []graph.OpDef {
 			See: []string{"mask.luminance", "and"},
 		},
 		{
-			Name: "mask.flood", On: graph.KindImage, Returns: graph.KindMask, Space: graph.SpaceRule{Default: buffer.SpaceEncoded},
+			Name: "mask.flood", On: graph.KindImage, Returns: graph.KindMask,
 			Args: []graph.ArgSpec{
 				{Name: "point", Type: "point", Unit: graph.DocPx, Positional: true, InFrame: true, Doc: "seed [x, y] in doc px"},
-				{Name: "tol", Type: "number", Default: 0.05, Min: graph.F(0), Max: graph.F(1), Doc: "max difference per channel from the seed colour, in the working space (encoded by default)"},
+				{Name: "tol", Type: "number", Default: 0.05, Min: graph.F(0), Max: graph.F(1), Doc: "max difference per channel from the seed colour, in the image's space"},
 			},
 			Run: func(ctx context.Context, _ *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
 				src := image(in[0])
@@ -340,7 +340,7 @@ func maskOps() []graph.OpDef {
 		lengthMaskOp("grow", "Dilate the selection (m ≥ 0.5) by radius doc px using an exact Euclidean distance transform.", kernels.Grow),
 		lengthMaskOp("shrink", "Erode the selection (m ≥ 0.5) by radius doc px using an exact Euclidean distance transform.", kernels.Shrink),
 		{
-			Name: "refine", On: graph.KindMask, Returns: graph.KindMask, Space: graph.SpaceRule{Default: buffer.SpaceEncoded},
+			Name: "refine", On: graph.KindMask, Returns: graph.KindMask,
 			Args: []graph.ArgSpec{
 				{Name: "guide", Type: "Image", Positional: true, Doc: "the image whose edges the mask snaps to (its luminance)"},
 				{Name: "radius", Type: "number", Unit: graph.DocPx, Default: 8.0, Min: graph.F(0.5), Max: graph.F(500), Doc: "window radius in doc px"},
@@ -348,11 +348,11 @@ func maskOps() []graph.OpDef {
 			},
 			Halo: func(a graph.Args) float64 { return 2 * a.DocLength("radius") },
 			Run: func(ctx context.Context, _ *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
-				m, img := mask(in[0]), image(a.Value("guide"))
+				m, img := mask(in[0]), a.Luma() // the guide's luminance, in the guide's space
 				if err := sameFrame("refine", m, img); err != nil {
 					return nil, err
 				}
-				guide := img.Buf.Luminance() // one channel: the builder feeds luminance in the working space
+				guide := img.Buf.Plane(0)
 				r := max(1, int(math.Round(a.Length("radius", m.Buf.Scale))))
 				q, err := kernels.GuidedFilter(ctx, guide, m.Buf.Plane(0), m.Buf.W, m.Buf.H, r, a.Number("eps"))
 				if err != nil {
@@ -362,9 +362,10 @@ func maskOps() []graph.OpDef {
 				copy(out.Pix, q)
 				return graph.NewMask(out), nil
 			},
-			Doc:  "Snap soft mask edges to the image's edges with a guided filter (guide: the image's luminance in the working space, encoded by default).",
-			Gray: func(graph.Args) []int { return []int{1} },
-			See:  []string{"feather"},
+			Doc:    "Snap soft mask edges to the image's edges with a guided filter (guide: the image's luminance in its space).",
+			Luma:   true,
+			LumaOf: "guide",
+			See:    []string{"feather"},
 		},
 		{
 			Name: "coverage", On: graph.KindMask, Returns: graph.KindValue, Global: true,
@@ -374,7 +375,7 @@ func maskOps() []graph.OpDef {
 			Doc: "The fraction of the image the mask selects (its mean), in [0, 1].",
 		},
 		{
-			Name: "overlay", On: graph.KindMask, Returns: graph.KindImage, Space: graph.SpaceRule{Default: buffer.SpaceEncoded}, Class: graph.Decoration,
+			Name: "overlay", On: graph.KindMask, Returns: graph.KindImage, Space: graph.Display, Class: graph.Decoration,
 			DocFrame: func(a graph.Args) graph.Frame { return a.Input("image").Frame },
 			Args: []graph.ArgSpec{
 				{Name: "image", Type: "Image", Positional: true, Doc: "the image to tint the mask over"},

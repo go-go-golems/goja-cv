@@ -1,6 +1,6 @@
 # Measuring
 
-Numbers at points and in regions: the value at a point (sample), the values along a line (profile), how much a spot stands out from its surroundings (measure), and the same for every region of a set (regions.measure). All work in linear space at scale 1 by default.
+Numbers at points and in regions: the value at a point (sample), the values along a line (profile), how much a spot stands out from its surroundings (measure), and the same for every region of a set (regions.measure). All work in the receiver's space at scale 1.
 
 ## Points and the value there
 
@@ -60,8 +60,8 @@ const chroma = x => x === null ? "null" : x.toFixed(2)   // null when |snr| < 1
 return (await ranked).items.map(r => [r.id, r.cx, r.cy, r.dogMaxL, r.snr.toFixed(2), chroma(r.stepChroma)].join(" "))
 ```
 
-The unstretched DoG is measured (not `view("speck")`, which stretches per tile), so `dogMaxL` compares across tiles. On density tiles (linear = density) pass `{ polarity: "bright", space: "linear" }` to `dog`, as the speck view does: on 142 labelled points of 15 tiles the hot list then has about 37 spots per tile within 4 px of 72 % of the points, and labelled dust has a median snr of 2.2 (other spots 0.9).
+The unstretched DoG is measured (not `view("speck")`, which stretches per tile), so `dogMaxL` compares across tiles. On density tiles (linear = density) build the hot list on `const lin = img.as("linear")` (`lin.toGray("average").dog(…)` and `.measure(lin, { ring: true })`), as the speck view does: on 142 labelled points of 15 tiles the hot list then has about 37 spots per tile within 4 px of 72 % of the points, and labelled dust has a median snr of 2.2 (other spots 0.9).
 
 ## Names and spaces
 
-`x, y, w, h` is always a box (corner and size), `cx, cy` a point or centre, `meanL` the gray mean; radii are options only. Measurements are in the working space (linear by default: `{ space: "encoded" }` for the values a look shows) and read the image at scale 1 (`analysisScale`), so they do not depend on a look's scale. To hand all rows to a program, return `cv.csv(regions)` (see `cv.docs.read("data-out")`).
+`x, y, w, h` is always a box (corner and size), `cx, cy` a point or centre, `meanL` the gray mean; radii are options only. Measurements are in the receiver's space (on `img`, the values a look shows; measure `img.as("linear")` for physical units: light, density) and read the image at scale 1 (`analysisScale`), so they do not depend on a look's scale. To hand all rows to a program, return `cv.csv(regions)` (see `cv.docs.read("data-out")`).

@@ -44,7 +44,7 @@ const (
 	DocPx         // length or coordinate in original-image pixels; scaled per evaluation
 	Fraction      // 0..1 of width/height
 	DocPx2        // area in original-image pixels²; scaled by scale² per evaluation
-	Level         // a value on the scale of the op's working space (levels.black, mask.luminance.above)
+	Level         // a value on the scale of the receiver's space (levels.black, mask.luminance.above)
 )
 
 func (u Unit) String() string {
@@ -63,32 +63,25 @@ func (u Unit) String() string {
 	return "unknown"
 }
 
-// SpaceRule is an op's working space: the space its kernel's numbers are in.
-type SpaceRule struct {
-	// Default is the working space when the call passes no { space };
-	// SpaceNone means the op does not read levels (geometry, masks, data).
-	Default buffer.Space
-	// Fixed: the op only works in Default (toLab, encode); no space option.
-	Fixed bool
-	// For, when set, is the default of a call that passes no { space }
-	// (a view preset's own space); Default otherwise.
-	For func(args Args) buffer.Space
-}
+// SpaceRule is how an op relates to the space of its receiver (GCV-004
+// §4.3). The zero value is the common case.
+type SpaceRule uint8
 
-// DefaultSpace is the working space of a call of op that passes no
-// { space }.
-func (op *OpDef) DefaultSpace(args Args) buffer.Space {
-	if op.Space.For != nil && op.Space.Default != buffer.SpaceNone {
-		if s := op.Space.For(args); s != buffer.SpaceNone {
-			return s
-		}
-	}
-	return op.Space.Default
-}
+const (
+	// Follows: the op works in its receiver's space; other image inputs are
+	// converted to it (masks are read as stored).
+	Follows SpaceRule = iota
+	// Physical: the op works in linear light; the builder converts its inputs
+	// to linear and its result back to the receiver's space.
+	Physical
+	// Display: the op draws a picture: image inputs are converted to encoded
+	// values.
+	Display
+)
 
 // ResultEnc computes the encoding and space of an Image result. s is the
-// op's resolved working space (SpaceNone for ops without one). The three
-// named rules cover every op but sources, convert and encode.
+// op's work space (SpaceNone for ops without an image). The three named
+// rules cover every op but sources and as.
 type ResultEnc struct {
 	Enc   func(a Args) buffer.Encoding
 	Space func(a Args, s buffer.Space) buffer.Space
@@ -97,7 +90,7 @@ type ResultEnc struct {
 var (
 	// KeepEnc: the encoding of the receiver (or, for an op called on
 	// regions or a mask, of its image argument); the space is the op's
-	// working space, or that image's for ops without one.
+	// work space, or that image's for ops without one.
 	KeepEnc = &ResultEnc{
 		Enc: func(a Args) buffer.Encoding {
 			if in := a.imageSource(); in != nil {
@@ -129,23 +122,9 @@ var (
 	}
 )
 
-// SpaceArg is the name of the working-space option Register adds.
-const SpaceArg = "space"
-
-// spaceOption is the option Register appends to every op with a working
-// space that is not fixed.
-var spaceOption = ArgSpec{Name: SpaceArg, Type: "enum:linear,encoded", Optional: true,
-	Doc:           "working space: linear (the encoding undone) or encoded (the file's values, what looks show)",
-	ValueSynonyms: SpaceValueSynonyms}
-
-// SpaceValueSynonyms and EncodingValueSynonyms are the value synonyms of the
-// space option and of encoding arguments.
-var (
-	SpaceValueSynonyms = map[string]string{"file": "encoded", "stored": "encoded", "code": "encoded", "display": "encoded",
-		"perceptual": "encoded", "srgb": "encoded", "sRGB": "encoded", "lin": "linear", "light": "linear", "physical": "linear"}
-	EncodingValueSynonyms = map[string]string{"sRGB": "srgb", "SRGB": "srgb", "gamma": "srgb", "perceptual": "srgb",
-		"lin": "linear", "raw": "linear", "identity": "linear", "none": "linear"}
-)
+// EncodingValueSynonyms are the value synonyms of encoding arguments.
+var EncodingValueSynonyms = map[string]string{"sRGB": "srgb", "SRGB": "srgb", "gamma": "srgb", "perceptual": "srgb",
+	"lin": "linear", "raw": "linear", "identity": "linear", "none": "linear"}
 
 // ArgSpec declares one argument of an op.
 //
@@ -169,6 +148,7 @@ type ArgSpec struct {
 	InFrame    bool       // "box"/"point": a box must overlap, a point lie in, the receiver's frame (E_ARG_RANGE)
 	Min, Max   *float64   // hard limits: violation is E_ARG_RANGE
 	Usual      [2]float64 // soft range (zero value = none): violation is a RANGE warning
+	UsualHint  string     // appended to that RANGE warning: what to do instead
 	Options    []ArgSpec  // for "object": the allowed keys (unknown keys are E_UNKNOWN_OPTION)
 	// ValueSynonyms map words agents use for an enum value to the value they
 	// mean (scoped to this argument), for the did-you-mean hint and fix.
@@ -236,17 +216,23 @@ type RunFunc func(ctx context.Context, ec *EvalCtx, in []Value, args Args) (Valu
 
 // OpDef describes one registered op.
 type OpDef struct {
-	Name     string // "exposure", "mask.luminance": a dot puts the op in a namespace
-	On       Kind   // receiver kind; KindNone for source ops
-	Args     []ArgSpec
-	Returns  Kind
-	Class    OpClass               // pixel (default), geometric or decoration (render above scale 1)
-	Space    SpaceRule             // working space (SpaceNone: the op does not read levels)
-	Result   *ResultEnc            // encoding and space of an Image result; nil = KeepEnc
-	Gray     func(args Args) []int // positions of the Image inputs read as luminance (fed toGray rec709 in linear space)
-	Internal bool                  // not callable from JavaScript, not listed in help (convert)
-	Lossless bool                  // looks of its result are PNG by default (format "auto"): contact sheets
-	Chart    ChartKind             // look() of a Value result draws this chart (histogram: bars, profile: lines)
+	Name    string // "exposure", "mask.luminance": a dot puts the op in a namespace
+	On      Kind   // receiver kind; KindNone for source ops
+	Args    []ArgSpec
+	Returns Kind
+	Class   OpClass                // pixel (default), geometric or decoration (render above scale 1)
+	Space   SpaceRule              // follows its receiver (default), physical or display (§7.4)
+	SpaceOf func(a Args) SpaceRule // overrides Space per call (toGray: rec709 is physical, average follows)
+	Result  *ResultEnc             // encoding and space of an Image result; nil = KeepEnc
+	// Luma: the builder adds the luminance of the receiver (or of the argument
+	// LumaOf names) as an extra input, toGray with the op's gray weights in
+	// that image's space; Run reads it with Args.Luma (the one luminance).
+	Luma     bool
+	LumaOf   string
+	LumaWhen func(a Args) bool // nil: always; else only for these args (levels: auto; histogram: channel L)
+	Internal bool              // not callable from JavaScript, not listed in help (convert)
+	Lossless bool              // looks of its result are PNG by default (format "auto"): contact sheets
+	Chart    ChartKind         // look() of a Value result draws this chart (histogram: bars, profile: lines)
 	// MaxItems is a static upper bound on the item count of a Regions
 	// result (top(n)); ok false when unknown. A sheet sizes
 	// itself by it.
@@ -350,12 +336,6 @@ func (r *Registry) Register(def OpDef) error {
 		}
 	}
 	d := def
-	if d.Space.Default != buffer.SpaceNone && !d.Space.Fixed {
-		if d.spec(SpaceArg) != nil {
-			return errors.Errorf("op %s declares its own %s argument", def.Name, SpaceArg)
-		}
-		d.Args = append(append([]ArgSpec(nil), d.Args...), spaceOption)
-	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if _, ok := r.ops[d.Key()]; ok {

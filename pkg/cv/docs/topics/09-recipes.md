@@ -7,7 +7,7 @@ Worked evals for the common jobs: check and fix exposure, find and remove dust, 
 ```js
 const s = await img.stats()
 return {
-  meanL: s.meanL,          // mean linear luminance (mid-grey is about 0.18)
+  meanL: s.meanL,          // mean luminance in file units (mid-grey is about 0.46)
   black: s.clipLow,        // fraction of pixels clipped to black
   white: s.clipHigh,       // fraction clipped to white
   p01: s.p01, p99: s.p99,

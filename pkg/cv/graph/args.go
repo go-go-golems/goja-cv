@@ -7,8 +7,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-
-	"github.com/go-go-golems/goja-cv/pkg/cv/buffer"
 )
 
 // NodeArg is a node passed as an argument value in a raw call (from JS).
@@ -247,6 +245,24 @@ func (a Args) Func(name string) FuncID {
 		a.wrongType(name, x, "a function")
 	}
 	return f.ID
+}
+
+// Luma is the evaluated luminance input of an op with OpDef.Luma: one
+// channel, the luminance of the receiver (or of OpDef.LumaOf) in its space.
+func (a Args) Luma() *ImageValue {
+	if a.op == nil || !a.op.Luma {
+		panic(fmt.Sprintf("cv: %s has no luminance input", a.opName()))
+	}
+	a.evaluated(lumaArg)
+	x, ok := a.vals[lumaArg]
+	if !ok {
+		panic(fmt.Sprintf("cv: %s has no luminance input (no image to take it of)", a.opName()))
+	}
+	r, ok := x.(InputRef)
+	if !ok || r.Index >= len(a.vs) {
+		panic(fmt.Sprintf("cv: %s.%s is %v", a.opName(), lumaArg, x))
+	}
+	return a.vs[r.Index].(*ImageValue)
 }
 
 // HasInputs reports whether the args carry their node's inputs: false only
@@ -580,7 +596,7 @@ func AwaitExpr(n *Node) string {
 	}
 	recv := "node"
 	r := n.Args.ins[0]
-	for r.HasReceiver() && (r.Op.Name == ConvertOp || r.Op.Name == ToGrayOp) && len(r.Args.ins) > 0 {
+	for r.HasReceiver() && (r.Op.Name == AsOp || r.Op.Name == ToGrayOp) && len(r.Args.ins) > 0 {
 		r = r.Args.ins[0] // conversions the builder inserts (and a grey plane) do not change what to write
 	}
 	if r.Op.On == KindNone {
@@ -740,7 +756,7 @@ func (b *binder) check(s *ArgSpec, typ string, v any, where string) (any, error)
 		}
 		if s.hasUsual() && (f < s.Usual[0] || f > s.Usual[1]) {
 			b.warnings = append(b.warnings, Warning{Code: WRange,
-				Message: fmt.Sprintf("%s = %s is outside the usual range [%s, %s].", where, fmtNum(f), fmtNum(s.Usual[0]), fmtNum(s.Usual[1]))})
+				Message: strings.TrimSpace(fmt.Sprintf("%s = %s is outside the usual range [%s, %s]. %s", where, fmtNum(f), fmtNum(s.Usual[0]), fmtNum(s.Usual[1]), s.UsualHint))})
 		}
 		return f, nil
 	case typ == "string":
@@ -1088,7 +1104,7 @@ var OptionSynonyms = map[string][]string{
 	"midtones": {"gamma"}, "mid": {"gamma"}, "quantiles": {"percentiles"}, "percentile": {"percentiles"},
 	"region": {"mask", "box"}, "regions": {"mask"}, "selection": {"mask"}, "rect": {"box"}, "rectangle": {"box"}, "roi": {"box", "mask"},
 	"window": {"box"}, "crop": {"box"}, "colorSpace": {"encoding"}, "colorspace": {"encoding"}, "transfer": {"encoding"},
-	"gamma": {"encoding"}, "workingSpace": {"space"}, "working_space": {"space"}, "offset": {"origin"},
+	"gamma": {"encoding"}, "offset": {"origin"},
 	"amount": {"amount", "ev", "opacity"}, "stops": {"ev"}, "exposure": {"ev"},
 	"long": {"maxSide"}, "longSide": {"maxSide"}, "maxsize": {"maxSide"}, "max_side": {"maxSide"}, "width_px": {"maxSide"},
 	"caption": {"label"}, "title": {"label"}, "text": {"label"},
@@ -1337,9 +1353,7 @@ func callName(op *OpDef) string {
 func signatureHint(op *OpDef, call string) string {
 	var pos, opt []string
 	for _, a := range op.Args {
-		if isSpaceOption(op, &a) {
-			continue // the working-space option is on every pixel op; help and errors explain it
-		}
+
 		if a.Positional {
 			n := a.Name
 			if a.Variadic {
@@ -1354,11 +1368,6 @@ func signatureHint(op *OpDef, call string) string {
 		pos = append(pos, "{ "+strings.Join(opt, ", ")+" }")
 	}
 	return "Usage: " + call + "(" + strings.Join(pos, ", ") + ")"
-}
-
-// isSpaceOption reports whether a is the space option Register added.
-func isSpaceOption(op *OpDef, a *ArgSpec) bool {
-	return a.Name == SpaceArg && op.Space.Default != buffer.SpaceNone && !op.Space.Fixed
 }
 
 // resolveArgs gives a node's canonical args their evaluated inputs: node
