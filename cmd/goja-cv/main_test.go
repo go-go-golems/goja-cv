@@ -154,8 +154,8 @@ func TestMCPCommandServer(t *testing.T) {
 	if n != 0 || !strings.Contains(text, "meanL: 0.29507") {
 		t.Fatalf("stats: %d images\n%s", n, text)
 	}
-	text, n = call("const fixed = img.levels({ black: 0.0, white: 0.74 }).exposure(0.35)\nshow(img, { label: \"before\" })\nshow(fixed, { label: \"after\" })\nshow(fixed.histogram())\nreturn await fixed.stats().pick(\"meanL\", \"clipLow\", \"clipHigh\")")
-	if n != 3 || !strings.Contains(text, "look 2: after") || !strings.Contains(text, "meanL:") {
+	text, n = call("const fixed = img.levels({ black: 0.0, white: 0.74 }).exposure(0.35)\nshow(cv.compare([img, fixed], { mode: \"side\" }), { label: \"before / after\" })\nshow(fixed.histogram())\nreturn await fixed.stats().pick(\"meanL\", \"clipLow\", \"clipHigh\")")
+	if n != 2 || !strings.Contains(text, "look 1: before / after") || !strings.Contains(text, "meanL:") {
 		t.Fatalf("correction: %d images\n%s", n, text)
 	}
 	text, _ = call(`img = cv.open("/etc/hosts")`)

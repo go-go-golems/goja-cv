@@ -147,20 +147,19 @@ return {
 	mustContain(t, text, "meanL: 0.29507", "black: 0.036133", "p99: 0.83255")
 	mustNotContain(t, text, "warnings:")
 
-	text, images, isErr = callEval(t, cs, `const s = await img.stats()
-const fixed = img.levels({ black: s.p01, white: s.p99 }).exposure(0.35)
-show(img, { label: "before" })
-show(fixed, { label: "after" })
+	// Part 1 verbatim: cv.compare landed with M3.
+	text, images, isErr = callEval(t, cs, `const fixed = img.levels({ black: 0.0, white: 0.74 }).exposure(0.35)
+show(cv.compare([img, fixed], { mode: "side" }), { label: "before / after" })
 show(fixed.histogram())
 return await fixed.stats().pick("meanL", "clipLow", "clipHigh")`)
 	t.Logf("session A step 2:\n%s", text)
-	if isErr || len(images) != 3 {
+	if isErr || len(images) != 2 {
 		t.Fatalf("correction: isErr=%v images=%d\n%s", isErr, len(images), text)
 	}
-	mustContain(t, text, "meanL:", "clipLow:", "clipHigh:",
-		"shown:", "look 1: before", "look 2: after", "look 3: histogram (512×204 chart)")
-	if images[2].MIMEType != "image/png" {
-		t.Fatalf("histogram chart mime %s", images[2].MIMEType)
+	mustContain(t, text, "meanL: 0.5059", "clipLow:", "clipHigh:",
+		"shown:", "look 1: before / after (132×48, 1 image px = 1.0 doc px)", "look 2: histogram (512×204 chart)")
+	if images[0].MIMEType != "image/jpeg" || images[1].MIMEType != "image/png" {
+		t.Fatalf("mimes %s %s", images[0].MIMEType, images[1].MIMEType)
 	}
 	mustNotContain(t, text, "UNUSED_NODE", "error")
 }

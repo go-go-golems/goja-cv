@@ -104,7 +104,7 @@ func lookKindError(n *graph.Node) error {
 		e.Fix = "return { value: await node, look: img.look() }"
 	case graph.KindRegions:
 		e.Hint = "Regions are areas, not an image: draw them as a mask over the image."
-		e.Fix = "regions.toMask().overlay(img).look(\"regions\")"
+		e.Fix = "img.overlay(regions).look(\"regions\")"
 	}
 	return e
 }

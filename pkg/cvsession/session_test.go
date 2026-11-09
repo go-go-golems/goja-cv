@@ -257,7 +257,12 @@ return { n: await big.count(), sel: m.overlay(img).look("sel") }`)
 	mustContain(t, text(resp), "n: ", "look 3: sel")
 	mustNotContain(t, text(resp), "UNUSED_NODE", "error")
 	out = text(eval(t, app, sid, `return img.mask.luminance({ above: 0.5 }).components().look()`))
-	mustContain(t, out, "code: E_WRONG_KIND", "toMask().overlay(img)")
+	mustContain(t, out, "code: E_WRONG_KIND", "img.overlay(regions)")
+	resp = eval(t, app, sid, `const r = img.mask.luminance({ above: 0.5 }).components()
+return img.overlay(r, { labels: "id" }).look("regions")`)
+	if len(resp.Content) != 1 || strings.Contains(text(resp), "UNUSED_NODE") {
+		t.Fatalf("regions overlay look:\n%s", text(resp))
+	}
 	out = text(eval(t, app, sid, "img.within(img.mask.box({ box: [0, 0, 10, 10] }), i => i.exposure(1))\nreturn 1"))
 	mustContain(t, out, "UNUSED_NODE line 1: img.within(")
 	if strings.Count(out, "UNUSED_NODE") != 1 {
