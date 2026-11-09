@@ -95,7 +95,8 @@ return { count: r.count, items: r.items.length, last: r.items[r.items.length - 1
 // TestMeasureMatchesTheHelper: img.measure under the mapping of guide §13.2
 // returns what the colleague's mem.probe computed with masks and stats
 // (testdata/probe.js): step, channel steps and stepChroma with gray
-// "average", spread with the default rec709.
+// "average" (stepChroma only where |snr| ≥ 1, null elsewhere), spread with
+// the default rec709.
 func TestMeasureMatchesTheHelper(t *testing.T) {
 	app, sid := acceptanceApp(t)
 	probe, err := os.ReadFile("testdata/probe.js")
@@ -119,7 +120,8 @@ for (const [x, y, r] of pts) {
   const [l] = await img.measure([[x + 0.5, y + 0.5]], opts)
   dStep = Math.max(dStep, Math.abs(a.step - h.step))
   dCh = Math.max(dCh, Math.abs(a.stepR - h.ch[0]), Math.abs(a.stepG - h.ch[1]), Math.abs(a.stepB - h.ch[2]))
-  dChroma = Math.max(dChroma, Math.abs(a.stepChroma - h.chroma))
+  // stepChroma is null below |snr| 1 (the helper divides regardless)
+  dChroma = Math.max(dChroma, Math.abs(a.snr) < 1 ? (a.stepChroma === null ? 0 : 1) : Math.abs(a.stepChroma - h.chroma))
   dSpread = Math.max(dSpread, Math.abs(l.spread - h.ringSpread))
   dSnr = Math.max(dSnr, Math.abs(l.step / Math.max(l.spread, 1e-3) - l.snr))
 }
@@ -129,19 +131,19 @@ return { n: pts.length, ok: [dStep, dCh, dChroma, dSpread, dSnr].every(d => d < 
 
 // TestMeasurementOps: sample at radius 0 is the pixel, rows follow the
 // schema order, points outside the frame warn OUTSIDE, Regions are refused
-// with the fix, and the space option is respected.
+// with the fix, and the receiver's space is respected.
 func TestMeasurementOps(t *testing.T) {
 	app, sid := acceptanceApp(t)
 	out := mustOK(t, eval(t, app, sid, `
 const [s] = await img.sample([[200.5, 46.5]])
-const [e] = await img.sample([[200.5, 46.5]], { space: "encoded" })
+const [l] = await img.as("linear").sample([[200.5, 46.5]])
 const inside = await img.stats({ box: [200, 46, 1, 1] })
 const rows = await img.measure([[200.5, 46.5], [-20, 4]], { coreRadius: 2.5 })
 const p = await img.profile([190.5, 46.5], [210.5, 46.5], { width: 3 })
 return {
   keys: Object.keys(rows[0]).join(","),
   pixel: Math.abs(s.meanR - inside.perChannel.r.mean) < 1e-9 && s.area === 1,
-  encoded: e.meanB > s.meanB,
+  encoded: s.meanB > l.meanB,
   star: rows[0].step > 0 && rows[0].snr > 1,
   outside: rows[1].outside + " " + rows[1].step,
   profile: p.t.length + " " + p.meanL.length + " peak " + (p.meanL.indexOf(Math.max(...p.meanL)) === 10),

@@ -13,14 +13,14 @@ import (
 func compositeOps() []graph.OpDef {
 	return []graph.OpDef{
 		{
-			Name: "within", On: graph.KindImage, Returns: graph.KindImage, Space: graph.SpaceRule{Default: buffer.SpaceLinear},
+			Name: "within", On: graph.KindImage, Returns: graph.KindImage, Channels: graph.MaxChannels,
 			Args: []graph.ArgSpec{
 				{Name: "mask", Type: "Mask", Positional: true, Doc: "where the edit applies (weights in [0, 1])"},
 				{Name: "edit", Type: "Image", Positional: true, Doc: "the edit: a function i => i.exposure(-0.4) of this image, run once while the graph is built"},
 			},
 			Builders: []int{1},
 			Run: func(ctx context.Context, _ *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
-				base, m, edited := image(in[0]), mask(a.Value("mask")), image(a.Value("edit"))
+				base, m, edited := image(in[0]), image(a.Value("mask")), image(a.Value("edit"))
 				if err := sameFrame("within", base, m); err != nil {
 					return nil, err
 				}
@@ -33,11 +33,11 @@ func compositeOps() []graph.OpDef {
 				}
 				return graph.NewImage(out), nil
 			},
-			Doc: "Apply an edit inside a mask: within(mask, i => i.exposure(-0.4)). The function runs once while the graph is built, with a placeholder for this image; its result is blended through the mask in the working space (linear by default).",
+			Doc: "Apply an edit inside a mask: within(mask, i => i.exposure(-0.4)). The function runs once while the graph is built, with a placeholder for this image; its result is blended through the mask in the image's space (img.as(\"linear\").within(…) for linear light).",
 			See: []string{"blend", "mask.luminance", "feather"},
 		},
 		{
-			Name: "blend", On: graph.KindImage, Returns: graph.KindImage, Space: graph.SpaceRule{Default: buffer.SpaceLinear},
+			Name: "blend", On: graph.KindImage, Returns: graph.KindImage, Channels: graph.MaxChannels,
 			Args: []graph.ArgSpec{
 				{Name: "b", Type: "Image", Positional: true, Doc: "the image to blend over this one (same frame)"},
 				{Name: "mode", Type: "enum:" + joinModes(), Default: "normal", Redirects: blendRedirects,
@@ -53,7 +53,7 @@ func compositeOps() []graph.OpDef {
 				}
 				var m *buffer.Buffer
 				if v := a.Value("mask"); v != nil {
-					mb := mask(v)
+					mb := image(v)
 					if err := sameFrame("blend", base, mb); err != nil {
 						return nil, err
 					}
@@ -65,7 +65,7 @@ func compositeOps() []graph.OpDef {
 				}
 				return graph.NewImage(out), nil
 			},
-			Doc: "Blend another image over this one in the working space (linear by default): out = a + (mode(a, b) − a) · opacity · mask.",
+			Doc: "Blend another image over this one in this image's space (the other is converted to it; img.as(\"linear\") for light): out = a + (mode(a, b) − a) · opacity · mask.",
 			See: []string{"within"},
 		},
 	}
@@ -92,7 +92,7 @@ func targetMask(ctx context.Context, op string, v graph.Value, base *graph.Image
 		}
 		m = x.Buf
 	default:
-		return nil, graph.Errorf(graph.EWrongKind, "%s needs Regions or a Mask.", op)
+		return nil, graph.Errorf(graph.EWrongKind, "%s needs regions or a mask (a one-channel image).", op)
 	}
 	pl := m.Plane(0)
 	out := make([]bool, len(pl))
@@ -105,7 +105,7 @@ func targetMask(ctx context.Context, op string, v graph.Value, base *graph.Image
 func healOps() []graph.OpDef {
 	return []graph.OpDef{
 		{
-			Name: "heal", On: graph.KindImage, Returns: graph.KindImage, Space: graph.SpaceRule{Default: buffer.SpaceLinear},
+			Name: "heal", On: graph.KindImage, Returns: graph.KindImage, Space: graph.Physical,
 			Args: []graph.ArgSpec{
 				{Name: "target", Type: "Regions|Mask", Positional: true, Doc: "what to replace: regions, or a mask (≥ 0.5)"},
 				{Name: "radius", Type: "number", Unit: graph.DocPx, Default: 3.0, Min: graph.F(0), Max: graph.F(200), Usual: [2]float64{0.5, 20},
@@ -130,7 +130,7 @@ func healOps() []graph.OpDef {
 			See: []string{"inpaint", "detect.specks", "check.dust"},
 		},
 		{
-			Name: "inpaint", On: graph.KindImage, Returns: graph.KindImage, Space: graph.SpaceRule{Default: buffer.SpaceLinear},
+			Name: "inpaint", On: graph.KindImage, Returns: graph.KindImage, Space: graph.Physical,
 			Args: []graph.ArgSpec{
 				{Name: "mask", Type: "Mask", Positional: true, Doc: "what to replace: mask values ≥ 0.5"},
 				{Name: "method", Type: "enum:diffuse,patch", Default: "diffuse"},
@@ -158,7 +158,7 @@ func joinModes() string { return strings.Join(kernels.BlendModeNames, ",") }
 
 // blendRedirects are the removed blend modes: each is an arithmetic op.
 var blendRedirects = func() map[string]graph.Redirect {
-	opacity := " With opacity or a mask, blend the result: a.blend(a.%s(b, { space: \"linear\" }), { opacity, mask })."
+	opacity := " With opacity or a mask, blend the result: a.blend(a.%s(b), { opacity, mask })."
 	return map[string]graph.Redirect{
 		"difference": {Hint: "The difference of two images is an image: subtract (sub keeps the sign; abs drops it)." + fmt.Sprintf(opacity, "sub"), Fix: "a.sub(b).abs()"},
 		"add":        {Hint: "Adding is an op of its own." + fmt.Sprintf(opacity, "add"), Fix: "a.add(b)"},

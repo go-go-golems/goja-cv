@@ -32,7 +32,7 @@ with measurements instead of guesses.
   writes images under `--out-root` with their encoding and frame.
 - **Select.** Masks from luminance, colour, boxes, ellipses, gradients and flood fill; set algebra and
   morphology; regions from masks; declarative `where` filters.
-- **Edit.** `exposure` (in linear space), `levels`, `contrast`, `gaussian`, `blend`, `within(mask, …)`, `heal`
+- **Edit.** `exposure` (stops of linear light), `levels`, `contrast`, `gaussian`, `blend`, `within(mask, …)`, `heal`
   (patch-based dust removal), `inpaint`.
 - **Look.** `node.look("label")` returns an image the agent sees, with its number burned in and its op chain and
   scale in the caption; `look({ zoom, ruler })` magnifies a crop with absolute coordinates; `img.view("speck")`

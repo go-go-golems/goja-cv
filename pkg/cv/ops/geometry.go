@@ -20,10 +20,10 @@ func cropFrame(box [4]float64, in graph.Frame) graph.Frame {
 	return graph.Intersect(graph.Frame{X: x0, Y: y0, W: x1 - x0, H: y1 - y0}, in)
 }
 
-func cropOp(on graph.Kind) graph.OpDef {
-	recv := map[graph.Kind]string{graph.KindImage: "img", graph.KindMask: "mask"}[on]
+func cropOp() graph.OpDef {
+	const recv = "img"
 	return graph.OpDef{
-		Name: "crop", On: on, Returns: on, Class: graph.GeometricOp,
+		Name: "crop", On: graph.KindImage, Returns: graph.KindImage, Class: graph.GeometricOp,
 		Args: []graph.ArgSpec{{Name: "box", Type: "box", Unit: graph.DocPx, Positional: true, InFrame: true,
 			Doc: "[x, y, w, h] in doc px (absolute, in the frame of the file); rounded outward to whole px and clipped to the image"}},
 		Validate: func(a graph.Args) error {
@@ -71,9 +71,6 @@ func cropValue(v *graph.ImageValue, f graph.Frame, s float64) (graph.Value, erro
 		return nil, err
 	}
 	out := graph.NewImage(b)
-	if v.IsMask() {
-		out = graph.NewMask(b)
-	}
 	if s == 1 && sx == 1 && sy == 1 {
 		return out, nil
 	}
@@ -81,5 +78,5 @@ func cropValue(v *graph.ImageValue, f graph.Frame, s float64) (graph.Value, erro
 }
 
 func geometryOps() []graph.OpDef {
-	return []graph.OpDef{cropOp(graph.KindImage), cropOp(graph.KindMask)}
+	return []graph.OpDef{cropOp()}
 }

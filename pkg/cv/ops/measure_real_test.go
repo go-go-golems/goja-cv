@@ -18,10 +18,10 @@ import (
 // The hot list of GCV-003 §7.4 on the colleague's labelled tiles (§13.4):
 // blobs of the unstretched DoG above 2 × its p99, measured with
 // regions.measure(img, { ring: true }) and ranked by snr. Gated like
-// TestRealViewRanking (GOJACV_TILES, GOJACV_GOLD). The DoG runs in linear
-// space (density on these tiles), as the speck view does; GOJACV_HOT_SPACE
-// overrides it for experiments (encoded: 63.4 % of gold points near any
-// spot, 59.2 % near a top-30 one, against 71.8 % and 62.7 % in linear).
+// TestRealViewRanking (GOJACV_TILES, GOJACV_GOLD). The DoG and the ring
+// measure run on img.as("linear") (density on these tiles), as the speck
+// view does (encoded: 63.4 % of gold points near any spot, 59.2 % near a
+// top-30 one, against 71.8 % and 62.7 % in linear).
 
 func goldDirOrSkip(t *testing.T) string {
 	t.Helper()
@@ -39,10 +39,6 @@ func goldDirOrSkip(t *testing.T) string {
 // hotList builds the measured, snr-ranked hot regions of tile tif.
 func hotList(t testing.TB, e *graph.Engine, img *graph.Node) *graph.Node {
 	t.Helper()
-	opts := map[string]any{"polarity": "bright", "space": "linear"}
-	if sp := os.Getenv("GOJACV_HOT_SPACE"); sp != "" {
-		opts["space"] = sp
-	}
 	mk := func(name string, recv graph.NodeID, raw ...any) *graph.Node {
 		r, err := e.Call(name, recv, raw)
 		if err != nil {
@@ -50,8 +46,9 @@ func hotList(t testing.TB, e *graph.Engine, img *graph.Node) *graph.Node {
 		}
 		return r.Node()
 	}
-	gray := mk("toGray", img.ID, "average")
-	dog := mk("dog", gray.ID, 1.0, 4.0, opts)
+	lin := mk(graph.AsOp, img.ID, "linear")
+	gray := mk("toGray", lin.ID, "average")
+	dog := mk("dog", gray.ID, 1.0, 4.0, map[string]any{"polarity": "bright"})
 	st, err := e.Evaluate(context.Background(), mk("stats", dog.ID).ID, graph.EvalOptions{Scale: 1})
 	if err != nil {
 		t.Fatalf("stats: %v", err)
@@ -60,7 +57,7 @@ func hotList(t testing.TB, e *graph.Engine, img *graph.Node) *graph.Node {
 	lv := mk("levels", dog.ID, map[string]any{"black": 0.0, "white": white})
 	hot := mk("components", mk("mask.luminance", lv.ID, map[string]any{"above": 0.99}).ID, map[string]any{"minArea": 4.0})
 	m := mk("measure", hot.ID, graph.NodeArg{ID: dog.ID}, map[string]any{"stats": []any{"max"}, "prefix": "dog"})
-	m = mk("measure", m.ID, graph.NodeArg{ID: img.ID}, map[string]any{"ring": true})
+	m = mk("measure", m.ID, graph.NodeArg{ID: lin.ID}, map[string]any{"ring": true})
 	return mk("sortBy", m.ID, "snr")
 }
 
@@ -137,7 +134,9 @@ func TestRealHotListMeasures(t *testing.T) {
 			for _, r := range rv.Items {
 				if near(r, p, 4) {
 					dustSNR = append(dustSNR, r.Measures["snr"])
-					dustChroma = append(dustChroma, r.Measures["stepChroma"])
+					if c := r.Measures["stepChroma"]; !math.IsNaN(c) { // null below |snr| 1
+						dustChroma = append(dustChroma, c)
+					}
 					break
 				}
 			}
@@ -152,7 +151,9 @@ func TestRealHotListMeasures(t *testing.T) {
 			}
 			if !labelled {
 				otherSNR = append(otherSNR, r.Measures["snr"])
-				otherChroma = append(otherChroma, r.Measures["stepChroma"])
+				if c := r.Measures["stepChroma"]; !math.IsNaN(c) { // null below |snr| 1
+					otherChroma = append(otherChroma, c)
+				}
 			}
 		}
 	}
@@ -177,8 +178,8 @@ func TestRealHotListMeasures(t *testing.T) {
 }
 
 // hotPoints are the centroids (buffer px) of the hot list of the harness
-// tile, and its linear buffer.
-func hotPoints(tb testing.TB) (*buffer.Buffer, [][2]float64, []float64) {
+// tile, its linear buffer and that buffer's luminance plane.
+func hotPoints(tb testing.TB) (*buffer.Buffer, []float32, [][2]float64, []float64) {
 	tb.Helper()
 	dir := os.Getenv("GOJACV_TILES")
 	if dir == "" {
@@ -213,21 +214,25 @@ func hotPoints(tb testing.TB) (*buffer.Buffer, [][2]float64, []float64) {
 	if err != nil {
 		tb.Fatal(err)
 	}
-	return lin, pts, cores
+	gray, err := kernels.ToGray(context.Background(), lin, kernels.GrayWeights["rec709"])
+	if err != nil {
+		tb.Fatal(err)
+	}
+	return lin, gray.Plane(0), pts, cores
 }
 
 // probeNative is regions.measure's work for the hot list: one probe per
 // spot in a window around it.
-func probeNative(b *buffer.Buffer, pts [][2]float64, cores []float64) {
+func probeNative(b *buffer.Buffer, gray []float32, pts [][2]float64, cores []float64) {
 	for i, p := range pts {
-		kernels.ProbePoint(context.Background(), b, p[0], p[1], kernels.CoreRingOptions{Core: cores[i], R1: cores[i] + 3, R2: cores[i] + 9})
+		kernels.ProbePoint(context.Background(), b, p[0], p[1], kernels.CoreRingOptions{Core: cores[i], R1: cores[i] + 3, R2: cores[i] + 9, Gray: gray})
 	}
 }
 
 // probeHelper is the colleague's mem.probe for the same spots: three
 // whole-image ellipse masks, a minus, and two whole-image weighted stats per
 // spot (56 stats calls for 28 spots).
-func probeHelper(tb testing.TB, b *buffer.Buffer, pts [][2]float64, cores []float64) {
+func probeHelper(tb testing.TB, b *buffer.Buffer, gray []float32, pts [][2]float64, cores []float64) {
 	ctx := context.Background()
 	for i, p := range pts {
 		c := cores[i]
@@ -243,25 +248,25 @@ func probeHelper(tb testing.TB, b *buffer.Buffer, pts [][2]float64, cores []floa
 		if err != nil {
 			tb.Fatal(err)
 		}
-		if _, err := kernels.StatsWeighted(ctx, b, core.Plane(0), nil); err != nil {
+		if _, err := kernels.StatsWeighted(ctx, b, gray, core.Plane(0), nil); err != nil {
 			tb.Fatal(err)
 		}
-		if _, err := kernels.StatsWeighted(ctx, b, ring.Plane(0), []float64{0.1, 0.9}); err != nil {
+		if _, err := kernels.StatsWeighted(ctx, b, gray, ring.Plane(0), []float64{0.1, 0.9}); err != nil {
 			tb.Fatal(err)
 		}
 	}
 }
 
 func BenchmarkHotList(b *testing.B) {
-	buf, pts, cores := hotPoints(b)
+	buf, gray, pts, cores := hotPoints(b)
 	b.Run("measure", func(b *testing.B) {
 		for range b.N {
-			probeNative(buf, pts, cores)
+			probeNative(buf, gray, pts, cores)
 		}
 	})
 	b.Run("helper", func(b *testing.B) {
 		for range b.N {
-			probeHelper(b, buf, pts, cores)
+			probeHelper(b, buf, gray, pts, cores)
 		}
 	})
 }
@@ -273,15 +278,15 @@ func TestHotListIsFasterThanTheHelper(t *testing.T) {
 	if testing.Short() {
 		t.Skip("benchmark")
 	}
-	buf, pts, cores := hotPoints(t)
+	buf, gray, pts, cores := hotPoints(t)
 	native := testing.Benchmark(func(b *testing.B) {
 		for range b.N {
-			probeNative(buf, pts, cores)
+			probeNative(buf, gray, pts, cores)
 		}
 	})
 	helper := testing.Benchmark(func(b *testing.B) {
 		for range b.N {
-			probeHelper(b, buf, pts, cores)
+			probeHelper(b, buf, gray, pts, cores)
 		}
 	})
 	ratio := float64(helper.NsPerOp()) / float64(max(1, native.NsPerOp()))

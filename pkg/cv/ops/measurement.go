@@ -6,7 +6,6 @@ import (
 	"math"
 	"strings"
 
-	"github.com/go-go-golems/goja-cv/pkg/cv/buffer"
 	"github.com/go-go-golems/goja-cv/pkg/cv/graph"
 	"github.com/go-go-golems/goja-cv/pkg/cv/kernels"
 )
@@ -14,8 +13,8 @@ import (
 // Measurement ops (GCV-003 §7.2-§7.4): sample, profile and measure read a
 // small window around each point through the probe kernel. They take
 // points only (Regions are measured by regions.measure, which keeps their
-// ids), work in linear space by default and read the image at analysis
-// scale 1, so their numbers do not depend on the preview scale.
+// ids), work in the receiver's space and read the image at analysis scale
+// 1, so their numbers do not depend on a look's scale.
 
 // WOutside is the evaluation-time warning of points outside the frame.
 const WOutside = "OUTSIDE"
@@ -24,15 +23,9 @@ const WOutside = "OUTSIDE"
 const MaxProfileSamples = 4096
 
 var grayArg = graph.ArgSpec{Name: "gray", Type: "enum:rec709,average", Default: "rec709",
-	Doc:       "weights of the gray plane: rec709 (luminance) or average (equal weights)",
-	ValueDocs: map[string]string{"rec709": "Rec. 709 luminance weights 0.2126, 0.7152, 0.0722", "average": "(r + g + b) / 3"}}
-
-func grayOf(a graph.Args) kernels.Gray {
-	if a.String("gray") == "average" {
-		return kernels.GrayAverage
-	}
-	return kernels.GrayRec709
-}
+	Doc: "the gray plane: rec709 (the luminance: Rec. 709 of linear light, in the image's space) or average (the mean of the stored channels)",
+	ValueDocs: map[string]string{"rec709": "the luminance: Rec. 709 weights 0.2126, 0.7152, 0.0722 on linear light, expressed in the image's space",
+		"average": "(r + g + b) / 3 of the values in the image's space"}}
 
 // pointsArg takes points; a Regions node is accepted by the type only to be
 // refused with the fix (validatePoints).
@@ -151,7 +144,7 @@ func coreRingFields(channels string) []graph.FieldSpec {
 			f.Optional = opt
 			fs = append(fs, f)
 		}
-		f := numField("stepChroma", graph.Unitless, "(max − min of the channel steps) / max(|step|, 1e-3): 0 for a neutral spot (dust), larger for coloured ones")
+		f := numField("stepChroma", graph.Unitless, "(max − min of the channel steps) / |step|: 0 for a neutral spot (dust), larger for coloured ones; null when |snr| < 1 (the step is within the ring's spread, so its colour cannot be attributed)")
 		f.Optional = opt
 		fs = append(fs, f)
 	}
@@ -225,7 +218,7 @@ func runSample(ctx context.Context, ec *graph.EvalCtx, in []graph.Value, a graph
 		return nil, err
 	}
 	sx, sy := graph.AxisScales(src)
-	res, err := kernels.SamplePoints(ctx, src.Buf, toBuffer(pts, src), a.Length("radius", sx), grayOf(a))
+	res, err := kernels.SamplePoints(ctx, src.Buf, a.Luma().Buf.Plane(0), toBuffer(pts, src), a.Length("radius", sx))
 	if err != nil {
 		return nil, err
 	}
@@ -259,7 +252,7 @@ func runMeasure(ctx context.Context, ec *graph.EvalCtx, in []graph.Value, a grap
 		return nil, err
 	}
 	sx, _ := graph.AxisScales(src)
-	res, err := kernels.ProbeCoreRing(ctx, src.Buf, toBuffer(pts, src), kernels.CoreRingOptions{Core: core * sx, R1: r1 * sx, R2: r2 * sx, Gray: grayOf(a)})
+	res, err := kernels.ProbeCoreRing(ctx, src.Buf, toBuffer(pts, src), kernels.CoreRingOptions{Core: core * sx, R1: r1 * sx, R2: r2 * sx, Gray: a.Luma().Buf.Plane(0)})
 	if err != nil {
 		return nil, graph.Errorf(graph.EArgRange, "measure: %v", err)
 	}
@@ -291,9 +284,17 @@ func coreRingRow(row map[string]any, prefix string, r kernels.CoreRing, channels
 		for c, n := range channelNames(len(r.ChanSteps)) {
 			row[name("step"+n)] = r.ChanSteps[c]
 		}
-		row[name("stepChroma")] = r.StepChroma
+		row[name("stepChroma")] = nullable(r.StepChroma)
 	}
 	row[name("ringCoverage")] = r.RingCoverage
+}
+
+// nullable is x, or nil (JavaScript null) for NaN.
+func nullable(x float64) any {
+	if math.IsNaN(x) {
+		return nil
+	}
+	return x
 }
 
 // prefixed is prefix + Name in camelCase ("dog", "maxL" → "dogMaxL").
@@ -327,7 +328,7 @@ func runProfile(ctx context.Context, ec *graph.EvalCtx, in []graph.Value, a grap
 	for c := 0; c < b.C; c++ {
 		planes = append(planes, b.Plane(c))
 	}
-	gray := grayOf(a)
+	luma := a.Luma().Buf.Plane(0)
 	t, xs, ys, vl := make([]any, n), make([]any, n), make([]any, n), make([]any, n)
 	vc := make([][]any, b.C)
 	for c := range vc {
@@ -344,11 +345,13 @@ func runProfile(ctx context.Context, ec *graph.EvalCtx, in []graph.Value, a grap
 		x, y := from[0]+ux*d, from[1]+uy*d
 		t[k], xs[k], ys[k] = d, x, y
 		sums := make([]float64, b.C)
+		var gsum float64
 		cnt := 0
 		for j := 0; j < width; j++ {
 			o := float64(j) - float64(width-1)/2
 			bx, by := (x+nx*o-ox)*sx, (y+ny*o-oy)*sy
-			ok := true
+			g, ok := kernels.Bilinear(luma, b.W, b.H, bx, by)
+			gsum += g
 			for c := 0; c < b.C && ok; c++ {
 				var v float64
 				v, ok = kernels.Bilinear(planes[c], b.W, b.H, bx, by)
@@ -376,7 +379,7 @@ func runProfile(ctx context.Context, ec *graph.EvalCtx, in []graph.Value, a grap
 			sums[c] /= float64(cnt)
 			vc[c][k] = sums[c]
 		}
-		vl[k] = grayValue(sums, gray)
+		vl[k] = gsum / float64(cnt)
 	}
 	if len(outside) > 0 {
 		ec.Warn(WOutside, fmt.Sprintf("profile: %d of %d samples lie outside the frame %s (null).", len(outside), n, src.Frame), "")
@@ -389,17 +392,6 @@ func runProfile(ctx context.Context, ec *graph.EvalCtx, in []graph.Value, a grap
 		out["mean"+name] = vc[c]
 	}
 	return data(out), nil
-}
-
-// grayValue is the gray plane of one pixel's channel values.
-func grayValue(ch []float64, g kernels.Gray) float64 {
-	if len(ch) == 1 {
-		return ch[0]
-	}
-	if g == kernels.GrayAverage {
-		return (ch[0] + ch[1] + ch[2]) / 3
-	}
-	return float64(buffer.LumR)*ch[0] + float64(buffer.LumG)*ch[1] + float64(buffer.LumB)*ch[2]
 }
 
 // profileSamples is the number of samples of a profile: t = 0, step, … ≤
@@ -425,10 +417,9 @@ func literalPoint(v any) ([]float64, bool) {
 }
 
 func measurementOps() []graph.OpDef {
-	linear := graph.SpaceRule{Default: buffer.SpaceLinear}
 	return []graph.OpDef{
 		{
-			Name: "sample", On: graph.KindImage, Returns: graph.KindValue, Space: linear,
+			Name: "sample", On: graph.KindImage, Returns: graph.KindValue, Luma: true,
 			Args: []graph.ArgSpec{
 				pointsArg("points in absolute doc px: [x, y] lists or objects with cx, cy (region items, measurement rows); the centre of pixel (i, j) is [i + 0.5, j + 0.5]"),
 				{Name: "radius", Type: "number", Unit: graph.DocPx, Default: 0.0, Min: graph.F(0), Max: graph.F(500),
@@ -439,12 +430,12 @@ func measurementOps() []graph.OpDef {
 			Validate:      validatePoints("sample", `regions.measure(img, { stats: ["mean"] })`),
 			Fields:        sampleFields,
 			Run:           runSample,
-			Doc: "The value at points: one row per point { cx, cy, meanL, meanR, meanG, meanB, area } in the working space (linear by default). " +
+			Doc: "The value at points: one row per point { cx, cy, meanL, meanR, meanG, meanB, area } in the image's space (img.as(\"linear\") for light). " +
 				"Points outside the frame give a row with outside: true and null values (OUTSIDE warning).",
 			See: []string{"measure", "profile", "stats"},
 		},
 		{
-			Name: "measure", On: graph.KindImage, Returns: graph.KindValue, Space: linear,
+			Name: "measure", On: graph.KindImage, Returns: graph.KindValue, Luma: true,
 			Args: []graph.ArgSpec{
 				pointsArg("points in absolute doc px: [x, y] lists or objects with cx, cy (region items, measurement rows)"),
 				{Name: "coreRadius", Type: "number", Unit: graph.DocPx, Default: coreDefault, Min: graph.F(0.5), Max: graph.F(200),
@@ -467,11 +458,11 @@ func measurementOps() []graph.OpDef {
 			Run:    runMeasure,
 			Doc: "How much each point stands out from its surroundings: one row per point { cx, cy, coreMean, ringMean, step, spread, snr, stepR, stepG, stepB, stepChroma, ringCoverage }, " +
 				"comparing the core disk (coreRadius) with the ring (ringRadii) on the gray plane, linear by default. step > 0 is brighter; snr = step / ring spread (p90 − p10); " +
-				"stepChroma ≈ 0 for a neutral (grey) spot such as dust. The helper mem.probe(x, y, r) is img.measure([[x + 0.5, y + 0.5]], { coreRadius: r + 0.5, ringRadii: [r + 3.5, r + 9.5], gray: \"average\" }).",
+				"stepChroma ≈ 0 for a neutral (grey) spot such as dust, null when |snr| < 1 (a step within the ring's spread has no attributable colour). The helper mem.probe(x, y, r) is img.measure([[x + 0.5, y + 0.5]], { coreRadius: r + 0.5, ringRadii: [r + 3.5, r + 9.5], gray: \"average\" }).",
 			See: []string{"sample", "profile", "Regions.measure"},
 		},
 		{
-			Name: "profile", On: graph.KindImage, Returns: graph.KindValue, Space: linear, Chart: graph.ChartLines,
+			Name: "profile", On: graph.KindImage, Returns: graph.KindValue, Luma: true, Chart: graph.ChartLines,
 			Args: []graph.ArgSpec{
 				{Name: "from", Type: "point", Unit: graph.DocPx, Positional: true, Doc: "start point (doc px; [x, y] or an object with cx, cy)"},
 				{Name: "to", Type: "point", Unit: graph.DocPx, Positional: true, Doc: "end point"},

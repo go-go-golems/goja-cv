@@ -24,8 +24,13 @@ type WeightedStats struct {
 // Stats measures an image. Otherwise means and clip fractions are weighted
 // averages, and percentiles are weighted quantiles that reduce to NumPy's
 // linear interpolation when all weights are equal.
-func StatsWeighted(ctx context.Context, b *buffer.Buffer, w []float32, percentiles []float64) (*WeightedStats, error) {
+// lum is the luminance plane (nil for a one-channel b), as for Stats.
+func StatsWeighted(ctx context.Context, b *buffer.Buffer, lum []float32, w []float32, percentiles []float64) (*WeightedStats, error) {
 	n := b.N()
+	lum, err := luminance(b, lum)
+	if err != nil {
+		return nil, err
+	}
 	if len(w) != n {
 		return nil, errors.Errorf("weights have %d values for %d pixels", len(w), n)
 	}
@@ -53,7 +58,11 @@ func StatsWeighted(ctx context.Context, b *buffer.Buffer, w []float32, percentil
 				dst[j] = src[i]
 			}
 		}
-		s, err := Stats(ctx, sub, percentiles)
+		subL := make([]float32, len(idx))
+		for j, i := range idx {
+			subL[j] = lum[i]
+		}
+		s, err := Stats(ctx, sub, subL, percentiles)
 		if err != nil {
 			return nil, err
 		}
@@ -77,8 +86,7 @@ func StatsWeighted(ctx context.Context, b *buffer.Buffer, w []float32, percentil
 		}
 		return out
 	}
-	var err error
-	if res.L, err = weightedChannel(ctx, gather(b.Luminance()), ws, total, percentiles); err != nil {
+	if res.L, err = weightedChannel(ctx, gather(lum), ws, total, percentiles); err != nil {
 		return nil, err
 	}
 	if b.C > 1 {

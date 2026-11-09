@@ -44,7 +44,7 @@ func newOpsCommand(opts *rootOptions) *cobra.Command {
 		RunE: func(_ *cobra.Command, _ []string) error {
 			reg := cvmod.DefaultRegistry()
 			valid := []string{"cv"}
-			for _, k := range graph.Kinds {
+			for _, k := range reg.Receivers() {
 				valid = append(valid, string(k))
 			}
 			if kind != "" && !contains(valid, kind) {
@@ -73,9 +73,7 @@ func newOpsCommand(opts *rootOptions) *cobra.Command {
 			for _, op := range list {
 				names := make([]string, 0, len(op.Args))
 				for n := range op.Args {
-					if n != graph.SpaceArg { // the working-space option is on every pixel op
-						names = append(names, n)
-					}
+					names = append(names, n)
 				}
 				sort.Strings(names)
 				doc := op.Doc
@@ -87,13 +85,13 @@ func newOpsCommand(opts *rootOptions) *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&kind, "kind", "", "Receiver kind: cv (sources), Image, Mask, Regions, Value")
+	cmd.Flags().StringVar(&kind, "kind", "", "Receiver kind: cv (sources), Image, Regions, Value")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "Print JSON")
 	return cmd
 }
 
 func kindOrder(k string) int {
-	order := []string{"cv", "Image", "Mask", "Regions", "Value"}
+	order := []string{"cv", "Image", "Regions", "Value"}
 	for i, x := range order {
 		if x == k {
 			return i

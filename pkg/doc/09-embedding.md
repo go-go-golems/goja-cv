@@ -44,7 +44,7 @@ The cv module itself is `pkg/gojamod/cv` (`cvmod.Registrar`, `cvmod.New()`); the
 ## xgoja: the cv module in generated binaries
 
 `pkg/xgoja/providers/cv` registers provider package **`goja-cv`** with module `cv` (module config: `baseDir`,
-`cacheBytes`, `previewLong`, `lookLong`). Combined with go-go-goja's `mcp` command set:
+`cacheBytes`, `lookLong`). Combined with go-go-goja's `mcp` command set:
 
 ```yaml
 schema: xgoja/v2

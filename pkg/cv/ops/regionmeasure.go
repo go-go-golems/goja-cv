@@ -7,7 +7,6 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/go-go-golems/goja-cv/pkg/cv/buffer"
 	"github.com/go-go-golems/goja-cv/pkg/cv/graph"
 	"github.com/go-go-golems/goja-cv/pkg/cv/kernels"
 	"github.com/go-go-golems/goja-cv/pkg/cv/parallel"
@@ -139,7 +138,7 @@ func validateRegionMeasure(a graph.Args) error {
 	on, radii := ringOf(a)
 	if len(statNames(a)) == 0 && !on {
 		return graph.Errorf(graph.EArgType, "regions.measure needs stats, ring or both.").
-			WithHint("stats measures each region's own pixels (mean, max, …); ring compares a disk at its centroid with a ring around it (step, spread, snr, stepChroma).").
+			WithHint("stats measures each region's own pixels (mean, max, …); ring compares a disk at its centroid with a ring around it (step, spread, snr, stepChroma; stepChroma is null when |snr| < 1).").
 			WithFix(`regions.measure(img, { ring: true })   // or { stats: ["mean", "max"] }`)
 	}
 	if p, ok := a.Raw("prefix").(string); ok && !identifier.MatchString(p) {
@@ -163,7 +162,7 @@ func validateRegionMeasure(a graph.Args) error {
 	for _, f := range newRegionFields(a) {
 		if _, ok := graph.FindField(have, f.Name); ok {
 			prefix := "img"
-			if a.Input("image").Kind == graph.KindMask {
+			if a.Input("image").Channels == 1 {
 				prefix = "mask"
 			}
 			return graph.Errorf(EFieldExists, "regions.measure would add %s, which these regions already have.", f.Name).
@@ -187,15 +186,18 @@ func runRegionMeasure(ctx context.Context, _ *graph.EvalCtx, in []graph.Value, a
 		return nil, err
 	}
 	prefix, _ := a.Raw("prefix").(string)
-	gray := grayOf(a)
 	b := src.Buf
+	gray := b.Plane(0) // a mask: its weights
+	if a.Input("image").Kind == graph.KindImage {
+		gray = a.Luma().Buf.Plane(0) // the image's luminance, in its space
+	}
 	sx, sy := graph.AxisScales(src)
 	ox, oy := src.BufferOrigin()
 	stats := statNames(a)
 	chans := statChannels(a)
 	var planes [][]float32 // per stats channel: gray, then r, g, b
 	if len(stats) > 0 {
-		planes = append(planes, kernels.GrayPlane(b, gray))
+		planes = append(planes, gray)
 		if len(chans) > 1 && b.C > 1 {
 			for c := 0; c < b.C; c++ {
 				planes = append(planes, b.Plane(c))
@@ -220,8 +222,8 @@ func runRegionMeasure(ctx context.Context, _ *graph.EvalCtx, in []graph.Value, a
 				idx, w := regionWeights(rv, r, raster, sameRaster)
 				for pi, plane := range planes {
 					suffix := "L"
-					if pi > 0 {
-						suffix = []string{"R", "G", "B"}[pi-1]
+					if pi > 0 && pi <= 3 { // planes: gray, then R, G, B
+						suffix = string("RGB"[pi-1])
 					}
 					s, err := kernels.StatsOf(ctx, plane, idx, w, b.Scale)
 					if err != nil {
@@ -252,7 +254,11 @@ func runRegionMeasure(ctx context.Context, _ *graph.EvalCtx, in []graph.Value, a
 				row := map[string]any{}
 				coreRingRow(row, prefix, p, rmode)
 				for key, v := range row {
-					c.Measures[key] = v.(float64)
+					f, ok := v.(float64)
+					if !ok { // stepChroma is null below |snr| 1: kept as NaN, read back as null
+						f = math.NaN()
+					}
+					c.Measures[key] = f
 				}
 			}
 			items[k] = &c
@@ -297,16 +303,15 @@ func regionWeights(rv *graph.RegionsValue, r *graph.Region, t graph.Raster, same
 
 func regionMeasureOp() graph.OpDef {
 	return graph.OpDef{
-		Name: "measure", On: graph.KindRegions, Returns: graph.KindRegions,
-		Space: graph.SpaceRule{Default: buffer.SpaceLinear},
+		Name: "measure", On: graph.KindRegions, Returns: graph.KindRegions, Luma: true, LumaOf: "image",
 		Args: []graph.ArgSpec{
-			{Name: "image", Type: "Image|Mask", Positional: true, Doc: "the image (or mask) to measure, in the regions' frame"},
+			{Name: "image", Type: "Image", Positional: true, Doc: "the image (or a mask, a grey image) to measure, in the regions' frame"},
 			{Name: "stats", Type: "string[]", Optional: true,
 				Doc: "statistics over each region's own pixels, on the gray plane (fields meanL, maxL, …): " + strings.Join(regionStats, ", ")},
 			{Name: "channels", Type: "bool", Optional: true,
 				Doc: "true: the stats per channel too (meanR, maxG, …); false: no channel steps in the ring fields"},
 			{Name: "ring", Type: "bool|number[]", Unit: graph.DocPx, Optional: true,
-				Doc: "true or [r1, r2] (doc px): the core/ring measure at each centroid (coreMean, ringMean, step, spread, snr, stepR/G/B, stepChroma, ringCoverage)",
+				Doc: "true or [r1, r2] (doc px): the core/ring measure at each centroid (coreMean, ringMean, step, spread, snr, stepR/G/B, stepChroma (null when |snr| < 1), ringCoverage)",
 				Redirects: map[string]graph.Redirect{
 					"ringRadii": {Hint: "regions.measure takes the ring radii as ring: [r1, r2] (img.measure calls them ringRadii).", Fix: "regions.measure(img, { ring: [6, 12], coreRadius: 3 })"},
 					"radius":    {Hint: "The core radius is coreRadius; the ring is ring: [r1, r2].", Fix: "regions.measure(img, { ring: true, coreRadius: 3 })"},
@@ -322,7 +327,7 @@ func regionMeasureOp() graph.OpDef {
 		Produces:      regionMeasureProduces(),
 		Run:           runRegionMeasure,
 		Doc: "The regions with fields measured on an image (or mask) of the same frame: { stats: [\"mean\", \"max\"] } over each region's pixels (meanL, maxL; with channels: true also R, G, B), " +
-			"{ ring: true } the core/ring measure at each centroid (step, spread, snr, stepChroma, …), names prefixed with prefix. Ids and order are kept: rank with sortBy(\"snr\").",
+			"{ ring: true } the core/ring measure at each centroid (step, spread, snr, stepChroma (null when |snr| < 1), …), names prefixed with prefix. Ids and order are kept: rank with sortBy(\"snr\").",
 		See: []string{"Image.measure", "sortBy", "components"},
 	}
 }

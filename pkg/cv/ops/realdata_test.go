@@ -67,7 +67,8 @@ func TestRealTileReEncodedAsLinear(t *testing.T) {
 	if tile.Enc != buffer.EncSRGB {
 		t.Fatalf("tile encoding %v", tile.Enc)
 	}
-	lin1 := evalImage(t, e, tile)
+	lin := call(t, e, graph.AsOp, tile.ID, "linear")
+	lin1 := evalImage(t, e, lin)
 	vPath := filepath.Join(t.TempDir(), realTile+"_v.tif")
 	if err := testimage.WriteFile(vPath, lin1.Buf, 16, buffer.Meta{}); err != nil {
 		t.Fatal(err)
@@ -77,12 +78,12 @@ func TestRealTileReEncodedAsLinear(t *testing.T) {
 	if d := maxDiff(lin1.Buf, lin2.Buf); d > 0.5/65535+1e-7 {
 		t.Fatalf("linear buffers differ by %g", d)
 	}
-	m1 := evalImage(t, e, call(t, e, "mask.luminance", tile.ID, map[string]any{"above": 0.9, "space": "linear"}))
+	m1 := evalImage(t, e, call(t, e, "mask.luminance", lin.ID, map[string]any{"above": 0.9}))
 	m2 := evalImage(t, e, call(t, e, "mask.luminance", v.ID, map[string]any{"above": 0.9}))
 	if d := maxDiff(m1.Buf, m2.Buf); d > 1e-3 {
 		t.Fatalf("masks differ by %g", d)
 	}
-	s1 := evalData(t, e, call(t, e, "stats", tile.ID), 1).(map[string]any)
+	s1 := evalData(t, e, call(t, e, "stats", lin.ID), 1).(map[string]any)
 	s2 := evalData(t, e, call(t, e, "stats", v.ID), 1).(map[string]any)
 	for k, want := range map[string]float64{"meanL": 0.33567, "p01": 0.0085, "p99": 0.918} {
 		a, b := s1[k].(float64), s2[k].(float64)

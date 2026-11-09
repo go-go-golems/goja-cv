@@ -38,17 +38,39 @@ func TestEvalWritesLookFiles(t *testing.T) {
 			t.Fatalf("output does not name %s:\n%s", p, out)
 		}
 	}
-	for _, s := range []string{"meanL: 0.29507", "after: '[look 1: after — open(gradient-64x48-16bit.tif) → exposure(0.5) (64×48, 1 image px = 1.0 doc px)]'", "files:"} {
+	for _, s := range []string{"meanL: 0.52726", "after: '[look 1: after — open(gradient-64x48-16bit.tif) → exposure(0.5) (64×48, 1 image px = 1.0 doc px)]'", "files:"} {
 		if !strings.Contains(out, s) {
 			t.Fatalf("output lacks %q:\n%s", s, out)
 		}
 	}
 }
 
+// TestEvalWarnsAboutLooksBeyondTheBudget: looks beyond the four of an eval
+// are not written and the LOOKS warning names them.
+func TestEvalWarnsAboutLooksBeyondTheBudget(t *testing.T) {
+	dir := t.TempDir()
+	code, out, errOut := runCLI(t, "eval", "--image", tiffPath, "--out", dir, "-e",
+		`for (const i of [1, 2, 3, 4, 5, 6]) img.exposure(i / 10).look("s" + i); return 1`)
+	if code != exitOK {
+		t.Fatalf("exit %d\n%s\n%s", code, out, errOut)
+	}
+	for _, s := range []string{"warnings:", `LOOKS line 1: 2 looks were not delivered (at most 4 per eval): line 1 look("s5"), line 1 look("s6"). Split the work over several calls, or return fewer looks`} {
+		if !strings.Contains(out, s) {
+			t.Fatalf("output lacks %q:\n%s", s, out)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, "look-4-s4.png")); err != nil {
+		t.Fatalf("fourth look not written: %v", err)
+	}
+	if m, _ := filepath.Glob(filepath.Join(dir, "*s5*")); len(m) > 0 {
+		t.Fatalf("a dropped look was written: %v", m)
+	}
+}
+
 func TestRunScriptJSONAndExitCodes(t *testing.T) {
 	dir := t.TempDir()
 	script := filepath.Join(dir, "a.js")
-	if err := os.WriteFile(script, []byte("show(img.exposure(-1), \"dark\")\nconsole.log(\"hi\")\nreturn 42\n"), 0o644); err != nil {
+	if err := os.WriteFile(script, []byte("img.exposure(-1).look(\"dark\")\nconsole.log(\"hi\")\nreturn 42\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	code, out, errOut := runCLI(t, "run", script, "--image", tiffPath, "--out", filepath.Join(dir, "looks"), "--json")
@@ -67,7 +89,7 @@ func TestRunScriptJSONAndExitCodes(t *testing.T) {
 	}
 
 	// cv error: printed, exit 1; looks shown before the throw are still written
-	code, out, _ = runCLI(t, "eval", "--image", tiffPath, "--out", dir, "-e", "show(img, \"before\")\nreturn img.brightness(1)")
+	code, out, _ = runCLI(t, "eval", "--image", tiffPath, "--out", dir, "-e", "img.look(\"before\")\nreturn img.brightness(1)")
 	if code != exitCVError || !strings.Contains(out, "code: E_UNKNOWN_METHOD") || !strings.Contains(out, "look-1-before.png") {
 		t.Fatalf("cv error: exit %d\n%s", code, out)
 	}
@@ -152,10 +174,10 @@ func TestMCPCommandServer(t *testing.T) {
 		return text, images
 	}
 	text, n := call("const s = await img.stats()\nreturn { meanL: s.meanL, black: s.clipLow, white: s.clipHigh, p01: s.p01, p99: s.p99 }")
-	if n != 0 || !strings.Contains(text, "meanL: 0.29507") {
+	if n != 0 || !strings.Contains(text, "meanL: 0.52726") {
 		t.Fatalf("stats: %d images\n%s", n, text)
 	}
-	text, n = call("const fixed = img.levels({ black: 0.0, white: 0.74 }).exposure(0.35)\nshow(cv.compare([img, fixed], { mode: \"side\" }), { label: \"before / after\" })\nshow(fixed.histogram())\nconst { meanL, clipLow, clipHigh } = await fixed.stats()\nreturn { meanL, clipLow, clipHigh }")
+	text, n = call("const fixed = img.levels({ black: 0.0, white: 0.74 }).exposure(0.35)\ncv.compare([img, fixed], { mode: \"side\" }).look(\"before / after\")\nfixed.histogram().look()\nconst { meanL, clipLow, clipHigh } = await fixed.stats()\nreturn { meanL, clipLow, clipHigh }")
 	if n != 2 || !strings.Contains(text, "look 1: before / after") || !strings.Contains(text, "meanL:") {
 		t.Fatalf("correction: %d images\n%s", n, text)
 	}

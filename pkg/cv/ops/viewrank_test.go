@@ -149,11 +149,7 @@ func speckLook(t *testing.T, tif string) [][]float64 {
 	if err != nil {
 		t.Fatal(err)
 	}
-	raw := []any{"speck"}
-	if sp := os.Getenv("GOJACV_VIEW_SPACE"); sp != "" { // experiments: the same view in another space
-		raw = append(raw, map[string]any{"space": sp})
-	}
-	cr, err := e.Call("view", img.ID, raw)
+	cr, err := e.Call("view", img.ID, []any{"speck"})
 	if err != nil {
 		t.Fatal(err)
 	}

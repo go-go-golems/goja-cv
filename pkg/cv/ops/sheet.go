@@ -3,6 +3,7 @@ package ops
 import (
 	"context"
 	"fmt"
+	goimage "image"
 	"math"
 	"strconv"
 
@@ -151,6 +152,27 @@ func cellLabel(full, id string, cell int) (string, int) {
 	return id, 1
 }
 
+// sheetBadgeDigits is the look number the sheet keeps room for: the badge a
+// look burns into its top-left corner is as wide as the number's digits.
+const sheetBadgeDigits = 999
+
+// badgeZone is the top-left rectangle the look-number badge covers on a
+// look of the w × h sheet at scale 1 (text.BurnNumber).
+func badgeZone(w, h int) goimage.Rectangle { return text.NumberBox(sheetBadgeDigits, w, h) }
+
+// placeLabel moves a cell label (lw × lh at the cell's top-left corner) off
+// the badge zone: below it when the label still fits in the cell, else to
+// its right. Labels clear of the zone stay where they are.
+func placeLabel(gx, gy, lw, lh, cell int, badge goimage.Rectangle) (int, int) {
+	if !goimage.Rect(gx, gy, gx+lw, gy+lh).Overlaps(badge) {
+		return gx, gy
+	}
+	if badge.Max.Y+lh <= gy+cell {
+		return gx, badge.Max.Y
+	}
+	return badge.Max.X, gy
+}
+
 func fill(b *buffer.Buffer, x0, y0, w, h int, v float32) {
 	for c := 0; c < b.C; c++ {
 		p := b.Plane(c)
@@ -199,6 +221,7 @@ func runSheet(ctx context.Context, ec *graph.EvalCtx, _ []graph.Value, a graph.A
 		out.Pix[i] = compareBackground
 	}
 	size := a.DocLength("size")
+	badge := badgeZone(f.W, f.H)
 	for i, it := range items {
 		gx := (i % l.cols) * (l.group + sheetGap)
 		gy := (i / l.cols) * (l.cell + sheetGap)
@@ -246,8 +269,10 @@ func runSheet(ctx context.Context, ec *graph.EvalCtx, _ []graph.Value, a graph.A
 			full += " (edge)"
 		}
 		s, px := cellLabel(full, id, l.cell)
-		fill(out, gx, gy, text.Width(s, px)+2*sheetLabelPad, text.Height(px)+2*sheetLabelPad, sheetLabelBack)
-		kernels.DrawText(out, gx+sheetLabelPad, gy+sheetLabelPad, s, px, [3]float32{0.95, 0.95, 0.95})
+		lw, lh := text.Width(s, px)+2*sheetLabelPad, text.Height(px)+2*sheetLabelPad
+		lx, ly := placeLabel(gx, gy, lw, lh, l.cell, badge) // the first cell's label clears the look number
+		fill(out, lx, ly, lw, lh, sheetLabelBack)
+		kernels.DrawText(out, lx+sheetLabelPad, ly+sheetLabelPad, s, px, [3]float32{0.95, 0.95, 0.95})
 	}
 	return graph.NewImage(out), nil
 }
@@ -257,8 +282,8 @@ const WSheetTruncated = "SHEET_TRUNCATED"
 
 func sheetOp() graph.OpDef {
 	return graph.OpDef{
-		Name: "sheet", On: graph.KindNone, Returns: graph.KindImage, Result: graph.DisplayEnc, Lossless: true,
-		Space: graph.SpaceRule{Default: buffer.SpaceEncoded, Fixed: true}, // cells show what looks show
+		Name: "sheet", On: graph.KindNone, Returns: graph.KindImage, Result: graph.DisplayEnc, Lossless: true, Channels: graph.Three,
+		Space: graph.Display, // cells show what looks show
 		Args: []graph.ArgSpec{
 			{Name: "items", Type: "Regions|any[]", Positional: true,
 				Doc: "Regions (one cell per region, centred on its centroid), or a list of points ([x, y] or { cx, cy }: measurement rows), boxes ([x, y, w, h] or { x, y, w, h }) or region items (centred on cx, cy, labelled with id), doc px"},

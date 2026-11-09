@@ -27,10 +27,9 @@ func TestOverlayAndCompare(t *testing.T) {
 	e, img, _ := plantedEngine(t)
 	specks := call(t, e, "where", call(t, e, "detect.specks", img.ID).ID, map[string]any{"score": map[string]any{"gte": DustScore}})
 	ov := call(t, e, "overlay", img.ID, graph.NodeArg{ID: specks.ID}, map[string]any{"labels": "id", "color": "red"})
-	same := call(t, e, "overlay", specks.ID, graph.NodeArg{ID: img.ID}, map[string]any{"labels": "id", "color": "red"})
 	ob := evalValue(t, e, ov, 1).(*graph.ImageValue).Buf
-	if sb := evalValue(t, e, same, 1).(*graph.ImageValue).Buf; len(sb.Pix) != len(ob.Pix) || sb.Pix[1234] != ob.Pix[1234] {
-		t.Fatal("regions.overlay(img) differs from img.overlay(regions)")
+	if _, err := e.Call("overlay", specks.ID, []any{graph.NodeArg{ID: img.ID}}); err == nil {
+		t.Fatal("regions.overlay(img): there is one overlay, on the image")
 	}
 	src := encodedOf(t, e, img) // overlays and compare run in encoded space
 	// box outlines are drawn in red: count strongly red pixels that were not

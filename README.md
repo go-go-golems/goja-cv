@@ -66,13 +66,13 @@ goja-cv run fix-exposure.js --image scan.tif --out looks
 goja-cv run fix-exposure.js --image scan.tif --json
 goja-cv ops --kind Regions
 goja-cv help levels
-goja-cv help Mask
+goja-cv help Regions
 goja-cv help concepts
 ```
 
 - Output is YAML (`--json` for a JSON envelope). Exit codes: **0** ok, **1** cv error (the structured error is
   still printed, with a literal `fix:`), **2** usage error.
-- `goja-cv help NAME` shows a guide page, a command's help, or a cv op / kind / function (`levels`, `Mask`,
+- `goja-cv help NAME` shows a guide page, a command's help, or a cv op / kind / function (`levels`, `Regions`,
   `Regions.filter`), in that order.
 - `--timeout-ms` raises the 60 s limit per eval; `--log-level debug` logs to stderr.
 - **Data for programs:** return `cv.csv(x, { name: "spots" })` or `cv.json(x)` and the CLI writes `spots.csv` /
@@ -188,9 +188,9 @@ from six per task to two, every one corrected on the next call):
 - **Keep nodes, await only for data**: `const specks = img.detect.specks()` is a node; `await specks` is data
   (`{ count, items }`). Awaited data still accepts node methods, but `r.count` is a number.
 - **Use `mem`** for anything needed in a later call; `const`/`let` do not survive.
-- **Return looks** to see results (`node.look("label")`, `show(node)`, `cv.compare([a, b])`), zoom into crops with
+- **Look** to see results (`node.look("label")`, `cv.compare([a, b]).look()`: every look of an eval is delivered), zoom into crops with
   rulers (`img.crop([x, y, 64, 64]).look({ zoom: 8, ruler: 8 })`), and back judgements with numbers:
-  `img.measure(points)` (step, spread, snr, stepChroma of a spot against its surroundings),
+  `img.measure(points)` (step, spread, snr, stepChroma of a spot against its surroundings; stepChroma is null when |snr| < 1),
   `regions.measure(img, { ring: true }).sortBy("snr")`, `img.profile(a, b).look()`.
 - **Region items are flat** (`{ id, x, y, w, h, cx, cy, area, aspect, … }`; `x, y` a corner, `cx, cy` a centre) and
   can be passed wherever a box, point or id is expected: `img.crop(item)`, `img.measure(items)`, `only(item)`.

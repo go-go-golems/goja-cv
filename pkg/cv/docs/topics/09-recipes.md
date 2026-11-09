@@ -7,7 +7,7 @@ Worked evals for the common jobs: check and fix exposure, find and remove dust, 
 ```js
 const s = await img.stats()
 return {
-  meanL: s.meanL,          // mean linear luminance (mid-grey is about 0.18)
+  meanL: s.meanL,          // mean luminance in file units (mid-grey is about 0.46)
   black: s.clipLow,        // fraction of pixels clipped to black
   white: s.clipHigh,       // fraction clipped to white
   p01: s.p01, p99: s.p99,
@@ -22,7 +22,7 @@ Stretch the 1st–99th percentiles to black and white, then lift the midtones, a
 ```js
 const s = await img.stats()                 // options are numbers: await the measurement first
 const fixed = img.levels({ black: s.p01, white: s.p99 }).exposure(0.25)
-show(cv.compare([img, fixed], { mode: "side" }), { label: "before / after" })
+cv.compare([img, fixed], { mode: "side" }).look("before / after")
 mem.fixed = fixed
 const { meanL, clipLow, clipHigh } = await fixed.stats()
 return { meanL, clipLow, clipHigh }
@@ -45,7 +45,7 @@ return {
 
 ```js
 const healed = img.heal(mem.dust, { radius: 3 })
-show(cv.compare([img, healed], { mode: "split" }), { label: "before | healed" })
+cv.compare([img, healed], { mode: "split" }).look("before | healed")
 return { after: await healed.check.dust() }
 ```
 
@@ -53,7 +53,7 @@ To keep a speck that is real detail, drop it by id before healing: `img.heal(mem
 
 ## Measure a spot, a box or regions
 
-`img.measure(points)` says how much each point stands out from a ring around it (step, spread, snr, stepChroma); `img.sample(points)` reads values; `img.stats({ box })` or `{ mask }` measures inside an area (plus `area`, `coverage`). Region items are points and boxes. Details: `cv.docs.read("measuring")`.
+`img.measure(points)` says how much each point stands out from a ring around it (step, spread, snr, stepChroma: null when |snr| < 1); `img.sample(points)` reads values; `img.stats({ box })` or `{ mask }` measures inside an area (plus `area`, `coverage`). Region items are points and boxes. Details: `cv.docs.read("measuring")`.
 
 ```js
 const top = (await img.detect.specks().sortBy("area").top(2)).items

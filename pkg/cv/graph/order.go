@@ -16,7 +16,7 @@ import (
 //     computes on the drawn marks (levels({ auto }) counts the tint).
 
 func (b *Builder) orderWarnings(op *OpDef, args Args, recv *Node) []Warning {
-	if op.Class != PixelOp || op.Internal || op.Lazy || (op.On != KindImage && op.On != KindMask) {
+	if op.Class != PixelOp || op.Internal || op.Lazy || op.On != KindImage {
 		return nil
 	}
 	var ws []Warning

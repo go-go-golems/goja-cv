@@ -72,7 +72,8 @@ func TestWithinPlaceholder(t *testing.T) {
 }
 
 func TestBlendModes(t *testing.T) {
-	e, img := newEngine(t)
+	e, file := newEngine(t)
+	img := call(t, e, graph.AsOp, file.ID, "linear") // exposure(-1) halves linear values
 	dark := call(t, e, "exposure", img.ID, -1)
 	src := evalValue(t, e, img, 1).(*graph.ImageValue).Buf
 	for _, tc := range []struct {

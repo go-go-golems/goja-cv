@@ -17,8 +17,8 @@ import (
 //   - data (Regions, Value): evaluated as usual (at 1 or the AnalysisScale);
 //   - a macro node: its expansion's output;
 //   - a geometric op (crop): its receiver rendered in the window ∩ its frame;
-//   - a decoration (overlay, annotate): run at the render scale on Image and
-//     Mask inputs rendered in the window;
+//   - a decoration (overlay, annotate): run at the render scale on Image
+//     inputs (masks included) rendered in the window;
 //   - a pixel op or a source: evaluated at scale 1 over its whole frame
 //     (cached as usual), cut to the window and upsampled.
 //
@@ -39,7 +39,7 @@ type RenderOptions struct {
 
 // Render computes node id for a look or a sheet cell. At scale ≤ 1 it is
 // Evaluate, cut to the window. Above 1 it renders by op class (see above).
-// An Image or Mask result covers the window: its Frame is the window and its
+// An Image result covers the window: its Frame is the window and its
 // buffer is exactly ScaledSize(window, scale), which the one exit enforces.
 func (e *Evaluator) Render(ctx context.Context, id NodeID, o RenderOptions) (Value, error) {
 	n, win, s, err := e.renderRequest(id, o)
@@ -47,13 +47,11 @@ func (e *Evaluator) Render(ctx context.Context, id NodeID, o RenderOptions) (Val
 		return nil, err
 	}
 	v, err := e.renderBranch(ctx, n, win, s, o)
-	if err != nil || !isImageKind(n.Kind) {
+	if err != nil || n.Kind != KindImage {
 		return v, err
 	}
 	return exactSize(ctx, v.(*ImageValue), win, s) // the only place the size is decided
 }
-
-func isImageKind(k Kind) bool { return k == KindImage || k == KindMask }
 
 // renderRequest validates a render and returns the node, its window (the
 // node's frame for data) and the quantized scale (1 for data).
@@ -65,7 +63,7 @@ func (e *Evaluator) renderRequest(id NodeID, o RenderOptions) (*Node, Frame, flo
 	if !(o.Scale > 0 && o.Scale <= MaxRenderScale) {
 		return nil, Frame{}, 0, Errorf(EArgRange, "render scale %g is outside (0, %d].", o.Scale, MaxRenderScale)
 	}
-	if !isImageKind(n.Kind) {
+	if n.Kind != KindImage {
 		return n, n.Frame, 1, nil // data does not upsample
 	}
 	win := n.Frame
@@ -88,7 +86,7 @@ func (e *Evaluator) renderBranch(ctx context.Context, n *Node, win Frame, s floa
 			return nil, err
 		}
 		r.replayTree(n.ID, map[NodeID]bool{})
-		if !isImageKind(n.Kind) {
+		if n.Kind != KindImage {
 			return v, nil
 		}
 		return cutValue(v.(*ImageValue), win, s)
@@ -118,7 +116,7 @@ func (rr *renderRun) render(ctx context.Context, n *Node, win Frame) (Value, err
 	if err := ctx.Err(); err != nil {
 		return nil, ctxError(err)
 	}
-	if n.Kind != KindImage && n.Kind != KindMask {
+	if n.Kind != KindImage {
 		return rr.one.eval(ctx, n.ID)
 	}
 	if IsMacro(n) {
@@ -188,7 +186,7 @@ func (rr *renderRun) key(n *Node, win Frame) Signature {
 	return out
 }
 
-// decorate runs a decoration at the render scale: Image and Mask inputs
+// decorate runs a decoration at the render scale: Image inputs (masks too)
 // rendered in the window, other inputs evaluated as usual.
 func (rr *renderRun) decorate(ctx context.Context, n *Node, win Frame) (Value, error) {
 	ins := make([]Value, len(n.Inputs))
@@ -198,7 +196,7 @@ func (rr *renderRun) decorate(ctx context.Context, n *Node, win Frame) (Value, e
 		g.Go(func() (err error) { //nolint:nonamedreturns // recover needs named results
 			defer Recover(&err, "rendering "+n.Op.Name+"'s input")
 			var v Value
-			if in.Kind == KindImage || in.Kind == KindMask {
+			if in.Kind == KindImage {
 				v, err = rr.render(gctx, in, intersect(win, in.Frame))
 			} else {
 				v, err = rr.one.eval(gctx, id)

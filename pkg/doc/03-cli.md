@@ -44,7 +44,7 @@ goja-cv eval --image scan.tif --out looks -e 'const s = await img.stats(); retur
 ```
 
 ```yaml
-{meanL: 0.29507, p99: 0.83255, after: '[look 1: levels (64×48, 1 image px = 1.0 doc px)]'}
+{meanL: 0.52726, p99: 0.92244, after: '[look 1: levels (64×48, 1 image px = 1.0 doc px)]'}
 
 context:
   images: img = scan.tif (64×48, 16-bit TIFF, srgb)
@@ -103,7 +103,7 @@ goja-cv ops
 goja-cv ops --kind Regions
 goja-cv ops --json
 goja-cv help levels
-goja-cv help Mask
+goja-cv help Regions
 goja-cv help Regions.filter
 goja-cv help levels --json
 goja-cv help concepts
@@ -111,7 +111,7 @@ goja-cv help eval
 ```
 
 `goja-cv help NAME` resolves NAME as a guide page (this page is `cli`), then as a command, then as a cv op, kind
-(`Mask`), `Kind.method` or cv function, exactly like `cv.help(NAME)` inside eval. An unknown name prints
+(`Regions`), `Kind.method`, cv function or concept (`mask`, `space`), exactly like `cv.help(NAME)` inside eval. An unknown name prints
 `{ found: false, didYouMean }` and exits 1. `goja-cv help --list` lists the guide pages.
 
 ## mcp

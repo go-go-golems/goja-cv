@@ -31,14 +31,14 @@ return {
 }
 ```
 
-`meanL` is linear luminance (mid-grey is about 0.18); `clipLow`/`clipHigh` are the fractions of clipped pixels.
+`meanL` is luminance in file units, the scale a look shows (mid-grey is about 0.46; `img.as("linear").stats()` for linear light, where it is 0.18); `clipLow`/`clipHigh` are the fractions of clipped pixels.
 
 ## Fix exposure and compare
 
 ```js
 const s = await img.stats()     // options are numbers: await the measurement first
 const fixed = img.levels({ black: s.p01, white: s.p99 }).exposure(0.25)
-show(cv.compare([img, fixed], { mode: "side" }), { label: "before / after" })
+cv.compare([img, fixed], { mode: "side" }).look("before / after")
 const { meanL, clipLow, clipHigh } = await fixed.stats()
 return { meanL, clipLow, clipHigh }
 ```
@@ -80,7 +80,7 @@ return {
 
 ## Measure spots, boxes and regions
 
-`img.measure(points)` compares a disk around each point with a ring around it (step, spread, snr, stepChroma); region items are points, so the specks' own rows come back with their coordinates. `regions.measure(img, { ring: true })` adds the same fields to every region and keeps the ids, ready for `sortBy("snr")`.
+`img.measure(points)` compares a disk around each point with a ring around it (step, spread, snr, stepChroma: null when |snr| < 1); region items are points, so the specks' own rows come back with their coordinates. `regions.measure(img, { ring: true })` adds the same fields to every region and keeps the ids, ready for `sortBy("snr")`.
 
 ```js
 const specks = img.detect.specks().sortBy("area").top(3)

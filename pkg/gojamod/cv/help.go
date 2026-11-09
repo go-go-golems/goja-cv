@@ -11,9 +11,9 @@ import (
 
 // cv.help(name) never throws: agents batch several help calls in one eval,
 // and one bad name used to kill the whole eval. It accepts op names
-// ("levels", "mask.box"), kind names ("Mask" → its methods), Kind.method
-// ("Mask.coverage", "Regions.filter"), cv functions and globals ("evaluate",
-// "compare", "docs", "show"), with or without a "cv." prefix.
+// ("levels", "mask.box"), kind names ("Regions" → its methods), Kind.method
+// ("Regions.filter", "Image.coverage"), cv functions and globals ("explain",
+// "compare", "docs", "mem"), with or without a "cv." prefix.
 // Anything else returns { found: false, name, didYouMean, hint }.
 
 type cvFunc struct {
@@ -25,20 +25,18 @@ type cvFunc struct {
 // function: cv properties, session globals and concepts.
 var cvFuncs = map[string]cvFunc{
 	"version":  {"cv.version", "The cv module version.", nil},
-	"kinds":    {"cv.kinds", "The node kinds: Image, Mask, Regions, Value.", nil},
 	"mem":      {"mem.name = value", "A plain object that persists between evals (const/let do not).", nil},
 	"img":      {"img · img = cv.open(path)", "The open image (an Image node); assigning a cv.open node rebinds it. More images: cv.open(path, { as: \"ref\" }).", []string{"open", "names"}},
 	"encoding": {"cv.open(path, { encoding: \"srgb\" | \"linear\" }) · (await img).encoding · img.encode(\"srgb\")", "How a file's values relate to the quantity: srgb (photographs) or linear (float TIFF, DNG, .npy, density data). Decoders report it; cv.open's option overrides it. Read cv.docs.read(\"encodings-and-spaces\").", []string{"open", "encode", "space"}},
-	"space":    {"op({ space: \"linear\" | \"encoded\" })", "The working space of a pixel op: linear (the encoding undone: exposure, blur, blend, stats, levels) or encoded (what looks show: thresholds, contrast, histogram, specks). explain() shows the conversions. Read cv.docs.read(\"encodings-and-spaces\").", []string{"stats", "levels", "encoding"}},
+	"space":    {"img.as(\"linear\" | \"encoded\") · (await img).space", "Which numbers an image's pixels hold: encoded (file units, what looks show; cv.open gives these) or linear (the encoding undone: light, or the quantity). An op works in its receiver's space and returns it: img.as(\"linear\").gaussian(2) blurs light. Physical ops (exposure, heal, inpaint, toLab, encode, toGray) compute in linear light and return the receiver's space; overlay, annotate, compare and sheet draw encoded. cv.explain(node) shows the conversions. Read cv.docs.read(\"encodings-and-spaces\").", []string{"as", "stats", "encoding"}},
 	"frame":    {"(await img).frame · cv.open(path, { box, origin })", "The rectangle an image covers in doc px, [x, y, w, h]; boxes, points and region geometry are absolute in it. Read cv.docs.read(\"units-and-scales\", { section: \"Frames\" }).", []string{"open"}},
+	"mask":     {"img.mask.luminance({ above }) · img.toGray() · regions.toMask()", "A mask is a one-channel image of weights in [0, 1]: every image op works on it (m.stats(), m.crop(box), m.look()). The mask ops (and, or, minus, not, grow, shrink, feather, refine, coverage, components) need a one-channel receiver; an argument that takes a mask (within, blend, stats, heal, overlay) accepts any one-channel image and reads it as stored (never converted between spaces). Read cv.docs.read(\"masks-and-regions\").", []string{"within", "coverage", "components", "toMask"}},
 	"names":    {"cv.open(path, { as: \"ref\" })", "Several images per session: as binds a global that persists between evals (img is the first); the context block lists every name with file, frame and encoding. Read cv.docs.read(\"encodings-and-spaces\", { section: \"Frames and names\" }).", []string{"open", "img"}},
-	"doc":      {"doc", "The document layer (history, apply, propose, undo, export) is not available yet; any use throws E_NO_DOCUMENT.", nil},
 }
 
 // helpRedirects map names agents reach for to the call that does it.
 var helpRedirects = map[string][2]string{
-	"mask.stats":    {"stats", "Measure inside a mask with img.stats({ mask: m }); inside a box with img.stats({ box: [x, y, w, h] })."},
-	"Mask.stats":    {"stats", "Measure inside a mask with img.stats({ mask: m })."},
+	"mask.stats":    {"stats", "A mask is an image: m.stats() measures the mask; img.stats({ mask: m }) measures the image inside it, img.stats({ box: [x, y, w, h] }) inside a box."},
 	"Regions.stats": {"stats", "Measure inside regions with img.stats({ mask: regions.toMask() })."},
 	"mask.mean":     {"stats", "img.stats({ mask: m }).meanL is the mean inside a mask."},
 	"metadata":      {"open", "Await the image for its metadata: (await img) has file, format, bitDepth, sample, fileChannels, encoding, frame and notes."},
@@ -55,7 +53,7 @@ func Help(reg *graph.Registry, name string) map[string]any {
 		h["functions"] = toAny(functionNames(reg))
 		h["docs"] = "Guides: cv.docs.list(), cv.docs.search(text), cv.docs.read(id, { section }). Start with cv.docs.read(\"getting-started\")."
 		h["topics"] = toAny(docs.IDs())
-		h["usage"] = "cv.help(name) takes an op (\"levels\"), a kind (\"Mask\"), Kind.method (\"Mask.coverage\") or a cv function (\"evaluate\"). Calls build lazy nodes; await a node to compute it."
+		h["usage"] = "cv.help(name) takes an op (\"levels\"), a kind (\"Regions\"), Kind.method (\"Regions.filter\"), a cv function (\"explain\") or a concept (\"mask\", \"space\"). Calls build lazy nodes; await a node to compute it; node.look() shows it."
 		return h
 	}
 	if r, ok := helpRedirects[name]; ok {
@@ -101,6 +99,9 @@ func Help(reg *graph.Registry, name string) map[string]any {
 	if f, ok := cvFuncs[name]; ok {
 		return funcHelp(name, f)
 	}
+	if f, ok := cvFuncs[strings.ToLower(name)]; ok { // "Mask": a concept now, not a kind
+		return funcHelp(strings.ToLower(name), f)
+	}
 	if len(reg.Find(name)) > 0 {
 		return opHelp(reg, name, "")
 	}
@@ -108,7 +109,7 @@ func Help(reg *graph.Registry, name string) map[string]any {
 }
 
 // functionNames lists the module ops and registered functions as they are
-// called: cv.compare, cv.evaluate, …, show, node.look.
+// called: cv.compare, cv.explain, …, node.look.
 func functionNames(reg *graph.Registry) []string {
 	var out []string
 	for _, n := range reg.ModuleOps() {
@@ -121,8 +122,11 @@ func functionNames(reg *graph.Registry) []string {
 	return out
 }
 
+// helpKinds are the kind names help resolves.
+var helpKinds = []graph.Kind{graph.KindImage, graph.KindRegions, graph.KindValue}
+
 func kindNamed(s string) (graph.Kind, bool) {
-	for _, k := range graph.Kinds {
+	for _, k := range helpKinds {
 		if strings.EqualFold(s, string(k)) {
 			return k, true
 		}
@@ -249,7 +253,7 @@ func suggest(reg *graph.Registry, name string, k graph.Kind) []string {
 	for _, f := range reg.Funcs() {
 		cands = append(cands, f.Name)
 	}
-	for _, kk := range graph.Kinds {
+	for _, kk := range helpKinds {
 		cands = append(cands, string(kk))
 	}
 	sort.Strings(cands)
@@ -282,12 +286,11 @@ func remove(xs []string, x string) []string {
 // memberFixes are literal fixes for names agents call on cv that are not
 // functions there.
 var memberFixes = map[string]string{
-	"info":     "await img   // or cv.describe(img)",
-	"meta":     "await img   // or cv.describe(img)",
-	"metadata": "await img   // or cv.describe(img)",
+	"info":     "await img   // or cv.explain(img)",
+	"meta":     "await img   // or cv.explain(img)",
+	"metadata": "await img   // or cv.explain(img)",
 	"load":     `img = cv.open("scan.tif")`,
 	"read":     `img = cv.open("scan.tif")`,
-	"show":     "show(node, { label })   // a global, not cv.show",
 	"look":     "node.look(\"label\")",
 }
 
@@ -328,7 +331,7 @@ func UnknownMember(reg *graph.Registry, obj, name string, members []string) *gra
 			if op.On == graph.KindNone {
 				continue
 			}
-			recv := map[graph.Kind]string{graph.KindImage: "img", graph.KindMask: "mask", graph.KindRegions: "regions", graph.KindValue: "value"}[op.On]
+			recv := map[graph.Kind]string{graph.KindImage: "img", graph.KindRegions: "regions", graph.KindValue: "value"}[op.On]
 			if recv == "" {
 				recv = "node"
 			}

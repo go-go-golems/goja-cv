@@ -20,8 +20,9 @@ type SourceMeta struct {
 // PlaceholderMeta gives a builder lambda's placeholder the statics of the
 // receiver it stands for.
 type PlaceholderMeta struct {
-	For   NodeID          `json:"for"`
-	Frame Frame           `json:"frame"`
-	Enc   buffer.Encoding `json:"enc"`
-	Space buffer.Space    `json:"space"`
+	For      NodeID          `json:"for"`
+	Frame    Frame           `json:"frame"`
+	Enc      buffer.Encoding `json:"enc"`
+	Space    buffer.Space    `json:"space"`
+	Channels int             `json:"channels"`
 }

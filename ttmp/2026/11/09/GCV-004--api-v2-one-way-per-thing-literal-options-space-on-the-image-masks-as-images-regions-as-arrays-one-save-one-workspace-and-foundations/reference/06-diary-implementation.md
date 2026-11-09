@@ -451,3 +451,458 @@ Goldens: none moved (checked without `-update`). Real data: identical to Step 1.
 
 `git diff --stat ceb1ec4 01e5607 -- pkg cmd internal README.md`: 85 files changed, 658 insertions(+), 1550
 deletions(-).
+
+## Step 4: Phase 2 — one way to evaluate, show and explain
+
+Phase 2 leaves one spelling for each: `await` evaluates (data at scale 1; an awaited Image is its static summary
+and computes nothing), `look()` shows (every look created in an eval is delivered, up to four, and a `LOOKS` warning
+names the others), and `cv.explain(node)` describes. `cv.evaluate`, the preview scale, `show`, `cv.describe`, the
+`explain` op, `cv.isNode`, `cv.warnings`, `cv.kinds` and the `doc` stub are gone.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 1)
+
+**Assistant interpretation:** Implement guide Phase 2 (§6.5, §7.7, D8, D9, D18; §9 item 7) with docs `01`, `03`,
+`06` and the instructions. The v1 patch is not on `origin/main` yet, so the `LOOKS` warning is this branch's own.
+
+**Inferred user intent:** Remove the second ways of doing things that confused agents (85 `cv.evaluate` calls, 87
+`show` calls, looks lost silently) and make data exact.
+
+**Commit (code):** `e73cfd1` — "GCV-004 Phase 2: one way to evaluate, show and explain"
+
+### What I did
+
+- Graph: `EngineOptions.PreviewLong` and `Engine.PreviewScale` deleted; `Engine.Evaluate` with scale 0 means 1;
+  `Engine.Explain(id)` renders at scale 1; `OpDef.NoCache`, `graph.Kinds` (replaced by `Registry.Receivers()` and a
+  private display order) and `FuncDef.Global` deleted; `graph.ImageSummary(n)` builds the awaited summary from
+  statics and source metadata (`ImageValue.Summary` deleted).
+- Ops: `meta.go` (the per-kind `explain` op) deleted; `funcs.go` loses `evaluate`, `describe`, `isNode`, `warnings`,
+  `show` and gains the bespoke `explain`; `look`'s doc says looks are queued.
+- Binding: `__evaluate(id)` resolves Image/Mask promises on the owner goroutine from `ImageSummary`; Values and
+  Regions are evaluated at scale 1 (`scaleArg` gone). `__explain` replaces `__describe` (adds `graph`, `encoding`,
+  `space`; marks the node used). `__kinds` and `__warnings` deleted. Looks are queued in the eval tracker
+  (`QueuedLook` with the call site; `EvalTrace.Looks`); a look created while no eval is tracked goes to
+  `binding.late` and comes back as `EvalTrace.Late` at the next `EndEval`. `look.Look` gains `Key()` (node + options)
+  and `AgentLabel()`.
+- Session: `collect(fromValue, trace)` orders returned looks first, then creation order; folds equal keys (the
+  duplicate gets the delivered look's number); keeps `MaxLooks`; returns the `LOOKS` warnings
+  (`LOOKS line 4: 4 of 6 looks delivered; not delivered: line 4 look("4"), line 5 look("5"). Return one cv.sheet of
+  the crops, or look in two evals.`) and the late-look warning. `state.prelude` (an `atomic.Bool` set by
+  `runPreludes`) makes `collect` discard everything. `show`, `native.queue`, `state.shows`, the `shown:` block, the
+  `doc` proxy, `native.noDoc`, `ENoDocument` deleted; `init.js` no longer uses `cv.isNode`; `show`, `doc` and `P`
+  left the reserved-name list. UNUSED_NODE says "look at it" instead of "show() it".
+- xgoja: config `previewLong` and its schema entry deleted.
+- Docs: `06-looks.md` has a "Delivery" section (with a `looks=4 warns=LOOKS` block) instead of `show()`; `02`'s scale
+  table (await = scale 1, an Image = its summary); `03`'s evaluation list and `cv.explain`; `01`'s globals; `08` (no
+  `E_NO_DOCUMENT`); every `.explain()` became `cv.explain(x).graph` and every `show(...)` a `.look(...)`; guidebook
+  `02`, `04`, `08`, `09`, `10`; README; `cmd/goja-cv/root.go`'s help; MCP `Instructions` and `EvalToolDescription`.
+- Tests: `TestAwaitIsScaleOneAndImagesAreStatic` (a 2000 × 30 TIFF: `await` of an Image chain leaves
+  `TotalRuns() == 0` and its summary is the statics; `stats().w == 2000` at scale 1), `TestPart2Section3…` checks
+  every `cv.explain` field, `TestLookQueue` (unreturned look delivered, order, equal looks once, six looks → four
+  images and the `LOOKS` line, prelude looks discarded, a late look named by the next eval), `cv.evaluate` is an
+  unknown `cv` member (`TestUnknownNamesOnCv`), `TestLookBeforeThrowStillDeliversTheImage`.
+
+### Why
+
+- D8/D9/D18: agents asked for `"full"` in 77 of 79 `cv.evaluate` calls; bare `x.look()` statements were dropped
+  silently in v1; an evaluating `await img` would compute a 53-megapixel scan to report its size.
+
+### What worked
+
+- Gate green; goldens unchanged; real-data numbers identical.
+
+### What didn't work
+
+- The first test run: `docs_test.go:91: looks.md line 66: want warning LOOKS` — the docs test wants warnings in the
+  `CODE line N:` form, so the `LOOKS` warning is tagged with the line of the first look it drops.
+- `TestDocsCodeBlocksRun/nodes-and-evaluation: unexpected warnings: UNUSED_NODE … const b = a.gaussian(2)`:
+  `cv.explain(b)` did not count as using `b`; `__explain` now marks the node used.
+- `looks is 6476 characters; keep topics short`: the Delivery section pushed the topic over 6000; I tightened the
+  topic's prose (6000 − 1 characters of margin is not much; the Phase 8 sweep may want to split it).
+- The late-look test: `setTimeout` is not a session global (`ReferenceError: setTimeout is not defined`), and
+  `img.stats().then(f)` never ran `f`: the evaluation's context is cancelled when the eval ends, so the promise
+  rejects. `.then(f, f)` runs after the eval returned and creates the late look.
+- `TestSessionB`'s heal-run count: `await scan.heal(keep0)` no longer computes anything (an Image await), so the test
+  measures the heal instead.
+
+### What I learned
+
+- Promise continuations from an eval run on the owner goroutine between evals (the runtime's event loop keeps
+  running), so a late look is recorded while no eval is tracked; the tracker's `active` flag is enough to tell.
+
+### What was tricky to build
+
+- Duplicate looks: two equal looks are one delivered image, but the returned one must still show a numbered
+  placeholder; `collect` gives the duplicate the delivered look's number (`AssignNumber`) instead of rendering it.
+- Awaited summaries without a channel count: the guide's summary has `channels`, but the static arrives in Phase 4.
+  Until then the summary has no `channels` (an opened file's `fileChannels` stays); tests that read `channels` from an
+  awaited image were changed to `fileChannels` or other fields.
+
+### What warrants a second pair of eyes
+
+- `collect`'s order and budget with data items (still counted separately until Phase 6) and the alias numbering.
+- The late-look warning's wording: it cannot name a line (the site belongs to the previous eval's source).
+
+### What should be done in the future
+
+- Phase 4: add `channels` to `ImageSummary` and `cv.explain` once `Node.Channels` exists.
+- When the v1 patch lands on `main`, its `LOOKS` warning and this one must be reconciled in the merge (the guide says
+  Phase 2 reuses the v1 code and message).
+
+### Code review instructions
+
+- Start with `pkg/cvsession/processor.go` (`collect`, `lookName`), `pkg/gojamod/cv/evaltrack.go` (`noteLook`,
+  `EndEval`), `pkg/gojamod/cv/binding.go` (`evaluate`, `explain`), `pkg/cv/graph/value.go` (`ImageSummary`).
+- Validate: `scripts/04-gate.sh`; `go test ./pkg/cvsession -run TestLookQueue -count=3`.
+
+### Technical details
+
+Goldens: none moved. Real data: identical.
+
+`git diff --stat 01e5607 e73cfd1 -- pkg cmd internal README.md`: 58 files changed, 478 insertions(+), 509 deletions(-).
+
+## Step 5: Phase 0a — merging the v1 field fixes from `main`
+
+The v1 patch (PR #5, merge commit `b42502b`) landed on `main` while Phase 3 was being planned; the coordinator asked
+for the merge at the next phase boundary. I merged `origin/main` into the branch with a merge commit (no rebase);
+that merge is Phase 0a. It brings the sheet badge fix, the ruler label gap, the `stepChroma` gate (null when
+|snr| < 1), the v1 `LOOKS`/`DATA` warnings and a GoSec-safe lookup in `regionmeasure.go`.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 1) and the coordinator's message: "The v1 patch has landed on main: PR #5,
+merge commit b42502b. Please merge it into your branch now, as the guide's Phase 0a step 3 describes. … Phase 2
+(`look()` queues and the `LOOKS` warning) should reuse the v1 warning text and code, adapted to the new queue: there
+is no `show()` any more. … Move [the patch diary] into the GCV-004 ticket as `reference/` "Diary - v1 field fixes"
+with `git mv`, update its frontmatter `Ticket: GCV-004`, and delete the V1-FIXES `index.md`. … If your gate runs [the
+real-data tests] locally, set `GOJACV_GOLD` and `GOJACV_TILES` to an empty directory … and note this in your diary."
+
+**Assistant interpretation:** Merge `origin/main` now (between Phase 2 and Phase 3), resolve conflicts keeping
+Phase 2's queue with the v1 warning code and text, gate, record it, and move the v1 diary into this ticket.
+
+**Inferred user intent:** One branch with both the v1 field fixes and API v2, so the goldens of Phase 0a and Phase 3
+move in separate commits and batch 2 starts from the merged state.
+
+**Commit (code):** `4b69185` — "Merge origin/main (v1 field fixes, PR #5) into task/gcv-004-api-v2: GCV-004 Phase 0a"
+
+### What I did
+
+- `git fetch origin && git merge --no-ff origin/main`. Two conflicts:
+  - `pkg/cvsession/processor.go`: v1 kept `show()` and its `shown:` list and named dropped looks by label; Phase 2
+    deleted `show` and queues every look. I kept the queue (returned looks first, creation order, equal looks once,
+    late looks) and adopted the v1 code (`graph.WLooks`, `graph.WData` from v1's `errors.go`) and text, adapted to
+    lines: `LOOKS line 4: 2 looks were not delivered (at most 4 per eval): line 4 look("4"), line 5 look("5"). Split
+    the work over several calls, or return fewer looks (one cv.sheet of many crops).` The v1 `DATA` warning and its
+    `notDelivered` placeholder helper are kept; the branch's own `WLooks` constant and v1's `lookList` are gone.
+  - `pkg/cv/ops/regionmeasure.go`: v1's `stepChroma (null when |snr| < 1)` doc on the branch's named `image`
+    argument, without `Static` (deleted in Phase 1).
+- v1 tests that used `show()` (`TestEvalWarnsAboutLooksBeyondTheBudget`, `TestDataSaveAndBudgets`,
+  `TestMCPLooksBeyondTheBudgetWarn`) now create unreturned looks and expect the line-tagged text; `TestLookQueue`
+  expects the v1 text.
+- The v1 diary moved: `git mv ttmp/2026/11/09/V1-FIXES/reference/01-diary-v1-field-fixes.md
+  reference/07-diary-v1-field-fixes.md`, frontmatter `Ticket: GCV-004`; `V1-FIXES/index.md` deleted.
+
+### Why
+
+- Guide Phase 0a step 3: the merge does Phase 0a; Phase 2 reuses the v1 warning; Phase 5 keeps the v1 `stepChroma`
+  rule.
+
+### What worked
+
+- Gate green after the resolution (`gofmt=0 build=0 vet=0 test=0 lint=0 logcopter=0 smoke=0`); the golden test
+  passes with `main`'s regenerated `sheet-2x2.png`.
+
+### What didn't work
+
+- After the textual resolution three v1 tests failed (they call `show()`, which Phase 2 deleted), e.g.
+  `main_test.go:55: exit 1` for `TestEvalWarnsAboutLooksBeyondTheBudget`; rewritten as above.
+
+### What I learned
+
+- The real-data tests: my gate already skips them by pointing `GOJACV_TILES` and `GOJACV_GOLD` at a directory that
+  does not exist (Step 1), which is what the patch agent did with an empty directory; the coordinator confirms they
+  fail on `main` too because `~/dustds/gold` changed after they were tuned. Re-tuning them is batch 2's.
+
+### What was tricky to build
+
+- The two `LOOKS` texts: v1 says how many looks were dropped and names them by label; Phase 2 named them by line. The
+  merged text keeps v1's wording and budget, and names each as `line N look("label")`, tagged with the first line
+  so the warning keeps the `CODE line N:` form the docs tests rely on.
+
+### What warrants a second pair of eyes
+
+- `collect` after the merge (`pkg/cvsession/processor.go`): one function now carries the queue, the dedup, the v1
+  `LOOKS` and `DATA` warnings and the late-look warning.
+
+### What should be done in the future
+
+- Phase 5 must keep the v1 `stepChroma` rule (`kernels.StepChromaMinSNR`, NaN in region measures read back as null)
+  when it rewrites `measure`.
+
+### Code review instructions
+
+- `git show 4b69185 --cc -- pkg/cvsession/processor.go pkg/cv/ops/regionmeasure.go`; validate with
+  `scripts/04-gate.sh`.
+
+### Technical details
+
+Goldens moved by the merge (from `main`, not regenerated here): `sheet-2x2.png` (4752 → 4743 bytes: the badge no
+longer covers cell 0's label). `ruler-crop-zoom8.png` and `grid-gray-crop-zoom4.png` did not move (the v1 ruler fix
+changed no existing golden).
+
+## Step 6: Phase 3 — space on the image
+
+Phase 3 moves the space from the op to the image. `cv.open` returns file units (`space: "encoded"`), `img.as("linear")`
+gives light, and an op works in its receiver's space and returns it. Physical ops (`exposure`, `heal`, `inpaint`,
+`toLab`, `encode`, `toGray("rec709")`) compute in linear light inside a bracket the builder closes with `as`, and the
+pictures (`overlay`, `annotate`, `compare`, `sheet`) draw encoded. Every luminance read (`stats`, `histogram` L,
+`mask.luminance`, `refine`, `detect.specks`, `check.dust`, `levels({ auto })`, the measurements' gray plane) is one
+`toGray()` input of the node. The `{ space }` option and its machinery are gone.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 1)
+
+**Assistant interpretation:** Guide §13 Phase 3: tests first (§14 Phase 3 list), then the `SpaceRule` enum and the
+resolution of §7.4, the encoded source and `openLinear`, `as` with folding, brackets, `OpDef.Luma`, `colormap`
+following, views; regenerate exactly the four named goldens; docs 10, 11, 12, recipes and the op docs.
+
+**Inferred user intent:** Numbers measured on an image are thresholds for ops on that image; no op silently changes
+the scale of its result; nothing extra is copied on a 0.6 GB scan.
+
+**Commit (code):** `ae53037` — "GCV-004 Phase 3: space on the image"
+
+### What I did
+
+- `pkg/cv/graph`: `SpaceRule` (`Follows`, `Physical`, `Display`) with `OpDef.SpaceOf` for `toGray`; `workSpace`;
+  `Builder.as` with three folds (identity; `as(as(x, s1), s0) = x`; `as(open, linear) = openLinear`;
+  `as(openLinear, encoded) = open`); `resolveSpace` adds the luminance input and converts image inputs to the work
+  space; `closeBracket` after `internNode`; `Substitute` folds `as` like the builder. `OpDef.Gray`, the space option,
+  `SpaceArg`, `SpaceValueSynonyms`, `Default`/`Fixed`/`For`, `presetSpace` and the `workingSpace` option synonyms are
+  deleted. `Args.Luma()` reads the luminance input. `Shown`, `Label`, `Chain`, `Path` hide inserted `as`;
+  `cv.explain` lists them.
+- `pkg/cv/ops`: `open`'s `Run` converts the pyramid level to encoded; internal `openLinear` returns the level; public
+  `as` (positional `linear|encoded`, `Identity` when the conversion is one); `Space` rules mapped (Display for the
+  four pictures, Physical for exposure/heal/inpaint/toLab/encode, the rest follow); the speck and speckColor presets
+  start with `as("linear")`, the other presets and `highpass`/`dog` follow; `stats`, `histogram`, masks, `detect`,
+  `sample`/`measure`/`profile`, `regions.measure` read `a.Luma()`; `exposure`'s doc and RANGE hint name
+  `levels({ auto: true })` and `mul(2 ** ev)` (new `ArgSpec.UsualHint`).
+- `pkg/cv/kernels`: `Stats`, `StatsWeighted`, `SamplePoints` and the probe take the luminance plane explicitly
+  (`luminance()` accepts a one-channel buffer without one, and refuses a three-channel buffer without one); the
+  `GrayPlane` enum is gone.
+- Tests: `space_test.go` rewritten for the §14 Phase 3 list (`TestOpenIsEncodedAndAsConverts`, `TestPhysicalBracket`
+  with run counter and cache bytes, `TestReceiverDecides`, `TestOutputSpaceFollowsTheReceiver`, `TestOneLuminance`,
+  `TestColormapRangeOnItsReceiver`, `TestEncodingWarnings`, `{ space }` → `E_UNKNOWN_OPTION`); ops, cvsession,
+  gojamod and cmd tests updated for file units (see deviation 23).
+- Docs: `10-encodings-and-spaces` rewritten (the space of an image, `as`, the receiver decides, physical ops and
+  pictures, one luminance, `ENCODING`'s fix); `11-views`, `12-measuring`, `02-units-and-scales`, `09-recipes`,
+  `04-lambdas`, `05-masks-and-regions`, `03-nodes-and-evaluation`; `pkg/doc` 01, 02, 03, 08; help `space`; the MCP
+  instructions line (shortened to stay under the 4000-character cap); every op and argument doc that said "working space
+  (… by default)".
+- Guide deviations 19–23.
+
+### Why
+
+- Guide §4.2, §6.2, §7.4, D2, D3, D15, D16, D20.
+
+### What worked
+
+- The gate: `gofmt=0 build=0 vet=0 test=0 lint=0 logcopter=0 smoke=0 gate=0`.
+- The golden check before `-update` failed on exactly the four named looks and nothing else; `sheet-2x2` (the speck
+  views) stayed exact.
+- Real data (`05-real-data.sh`) identical to the post-merge numbers (below): the speck view and the hot list compute
+  in linear light as before.
+
+### What didn't work
+
+- `go test ./pkg/cv/ops`: `pkg/cv/ops/measure_real_test.go:250:61: not enough arguments in call to
+  kernels.StatsWeighted` (the kernels take the luminance plane now); the benchmark then panicked with `index out of
+  range [393474] with length 0` in `ProbePoint` (no gray plane) until `hotPoints` computed one.
+- `TestOneNodeMacro` panicked: `cv: op testview has no arg "space"` (a test macro that forwarded the option).
+- `TestPart2Section3NodesAndEvaluation`: explain had four lines, not three: `#4 as(to: "encoded")` closes the exposure
+  bracket and the source is `source gradient-64x48-16bit.tif (linear)`.
+- The first `10-encodings-and-spaces` draft showed `img.mask.luminance(…).stats()` (masks get `stats` in Phase 4) and
+  `img.blend(ref)` of an srgb and a linear file, which warns `ENCODING`: the block now blends `img.as("linear")`.
+- I had first made `speckDark` linear too; the guide (§6.2, §7.4 "Views") names only `speck` and `speckColor`, so
+  `speckDark` follows its receiver as before.
+
+### What I learned
+
+- The post-merge real-data numbers differ from Step 1's baseline in the `stepChroma` quartiles only (labelled dust
+  0.00–0.62 → 0.00–0.45, unlabelled median 0.64 → 0.00): that is the v1 `stepChroma` rule from the merge (checked on
+  a worktree at `37f451f`), not Phase 3.
+- A cache entry carries 64 bytes of overhead beyond its pixels, so the "no extra buffer" test bounds the bytes
+  between three and four buffers instead of comparing exactly.
+
+### What was tricky to build
+
+- Folding in two places. The builder interns `as` through `b.as`, but lambdas rebuild their graph with `Substitute`,
+  which first produced `as(as(…))` chains a hand-written call never has (`TestLambdasResolveLikeDirectCalls`). Both
+  paths now go through the same `b.as`.
+- The fourth fold (`as(openLinear, encoded) = open`) is what makes `img.sub(img.as("linear"))` read the opened node
+  twice instead of an encoded copy of the pyramid.
+- `LumaWhen`: adding a luminance input to every `levels` and `histogram` would change their hash and hold a gray
+  plane nobody reads; the input is added only for `auto` and for channel `L`.
+
+### What warrants a second pair of eyes
+
+- `pkg/cv/graph/space.go` (`resolveSpace`, `as`, `closeBracket`) and its call sites in `node.go` (`call`,
+  `intern`, `Substitute`).
+- The rule table in the ops (`Space:` fields): every op that is not listed follows.
+- `kernels.luminance` refusing a three-channel buffer without a plane: any new kernel caller must pass `Args.Luma()`.
+
+### What should be done in the future
+
+- Batch 2 (Phase 5) re-tunes the hot-list and view-ranking thresholds on the current gold labels; the tests already
+  build on `img.as("linear")`.
+
+### Code review instructions
+
+- Start with `pkg/cv/graph/space.go`, then `registry.go` (`SpaceRule`, `Luma*`), `node.go`, `explain.go`,
+  `pkg/cv/ops/source.go` and `space.go`, `views.go`, then `pkg/cv/graph/space_test.go`.
+- Validate: `scripts/04-gate.sh` (`gate=0`); `scripts/05-real-data.sh`; `go test ./pkg/cv/look -run Golden`.
+
+### Technical details
+
+Goldens moved (regenerated after the check failed on exactly these):
+
+| golden | bytes | why |
+|---|---|---|
+| `gaussian.png` | 19875 → 20175 | `img.gaussian(2)` blurs file units (it blurred light) |
+| `levels-gamma.png` | 48857 → 48250 | `levels({ black: 0.02, white: 0.6, gamma: 1.4 })` maps file units |
+| `levels-stats.png` | 60806 → 58589 | `levels` from `stats()` p01/p99, both in file units |
+| `profile-chart.png` | 2830 → 2982 | the profile's values are file units |
+
+Real data (`05-real-data.sh`), identical to the state after the merge:
+
+```
+hot list: 15 tiles, 884 regions (58.9 per tile), 197 gold points: 43.7 % within 4 px of a top-30 spot (by snr), 48.2 % of any spot
+labelled dust (94 matched): snr median 4.87 (middle half 2.21–7.84), stepChroma median 0.00 (0.00–0.45)
+unlabelled spots (772): snr median 0.53 (middle half 0.29–1.06), stepChroma median 0.00 (0.00–0.26)
+tile stats: meanL 0.13604 p01 0.00066 p99 0.84013   (now of img.as("linear"))
+speck view: 197 points on 15 tiles, median rank 75, top50 39.6 %
+77 specks, first at raw (1765.5, 2404.3)
+```
+
+`git diff --stat 37f451f ae53037 -- pkg cmd internal Makefile`: 75 files changed, 1005 insertions(+), 836
+deletions(-).
+
+## Step 7: Phase 4 — masks are one-channel images
+
+Phase 4 removes the Mask kind. A mask is an Image with one channel: `await m` says `channels: 1`, every image op
+works on it, the mask ops are Image methods that need a one-channel receiver, and an argument typed `Mask` accepts any
+one-channel image. Every Image node now carries its channel count, so channel errors (a colour image as a mask, a grey
+image for `toLab`) are `E_WRONG_KIND` when the call is built, on the agent's line, with a literal fix.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 1)
+
+**Assistant interpretation:** Guide §13 Phase 4 with §6.3, §7.5 and §9 item 9: `Node.Channels`, `OpDef.Channels`,
+`OneChannel`, `ThreeChannel`, the `Mask` type word, the mask exemption in `resolveSpace`,
+`PlaceholderMeta.Channels`; delete the Mask kind and its duplicates (one `crop`, one `overlay`); the Phase 4 tests;
+mask goldens exact; docs.
+
+**Inferred user intent:** One kind for pixels, so agents can measure and transform masks like images and get channel
+mistakes at build time instead of at evaluation.
+
+**Commit (code):** `cdc6326` — "GCV-004 Phase 4: masks are one-channel images"
+
+### What I did
+
+- `pkg/cv/graph`: `Node.Channels` (`nodeChannels`: a macro's output, `op.Channels`, else the receiver's or the image
+  argument's); `graph.One`, `graph.Three`, `graph.MaxChannels` (the larger count of the image inputs, as
+  `kernels.binary` broadcasts); `MaskType`, `acceptsNode`, `takesMask`; `wrongNode` (the argument error, fix
+  `img.toGray()`) and `checkChannels` (the receiver error) replace `kindHint`; `maskInputs` marks inputs read as
+  stored (Mask-typed arguments, `OneChannel` receivers, the luminance input) for `resolveSpace` and the `ENCODING`
+  warning; a one-channel source is its own luminance (no `toGray` node); `PlaceholderMeta.Channels`;
+  `ImageSummary` and `cv.explain` report `channels`.
+- Deleted: `KindMask`, `ImageValue.kind`, `NewMask`, `IsMask`, `kindHint`, the Mask branches of `conversionHint`,
+  `crossKind`, `receiverVar`, `argFix`, render, explain, order warnings, looks, save, data, help, the session's
+  reference and `goja-cv ops`; the second `crop`; the Mask `overlay` (`mask.go`) and the Regions `overlay`
+  (`present.go`); the `mask()` helper (`image()` does it).
+- `pkg/cv/ops`: mask makers and `toMask` return `DerivedEnc` one-channel images; mask ops, `coverage` and
+  `components` are Image methods with `OneChannel`; `colormap` is `OneChannel` (its run-time check is gone);
+  `toLab`, `split`, `chroma`, `mask.color` are `ThreeChannel`; `channel`'s `Validate` refuses `"g"`/`"b"` on a grey
+  receiver; `Channels` declared on `toGray`, `channel`, `chroma` (1), `colormap`, `toLab`, `overlay`, `annotate`,
+  `compare`, `sheet` (3), `add`/`sub`/`mul`/`min`/`max`, `blend`, `within` (`MaxChannels`), the sources.
+- Looks: a one-channel linear-encoded image is PNG (`isMaskLike`).
+- Help: the `mask` concept; `cv.help("Mask")` resolves to it; `mask.stats` redirect rewritten.
+- Tests: `TestRegistryWalk` became the channel property test (colour, grey and mask receivers; colour and grey
+  argument passes; `Buf.C == Node.Channels`; mask values in [0, 1]); `TestMasksAreOneChannelImages`
+  (`img.toGray().grow(2)`, `m.stats()`, `img.within(img, …)` and `img.within(m.mul(img), …)` refused with
+  `img.toGray()`, same mask node under `img` and `img.as("linear")`, no `toGray` for a grey input); colour ops on grey
+  and `colormap` on colour at build time (`channel_test.go`); the agent's line in the `within` error
+  (`TestCrossKindErrorsHaveALiteralFixAndGrammar`); `m3_test.go` in graph with a colour test op.
+- Docs: `05-masks-and-regions` (the mask sections; regions stay for Phase 5), `02-concepts` (kinds), `06-looks`,
+  `08-errors`, `01-getting-started`, `02-units-and-scales`, `13-data-out`, `pkg/doc` 03, 04, 10, README, the MCP
+  instructions (4000-character cap kept by shortening the masks line).
+- Guide deviations 24–28.
+
+### Why
+
+- Guide §6.3, §7.5, D16, §9 item 9, review findings F1, F2, F28.
+
+### What worked
+
+- The gate: `gofmt=0 build=0 vet=0 test=0 lint=0 logcopter=0 smoke=0 gate=0`.
+- Goldens: none moved (`mask-overlay` is now built as `img.overlay(mask)` and renders the same bytes).
+- The property test passed on its first full run once the receivers were chosen by `OneChannel`/`ThreeChannel`:
+  every op's evaluated channel count matched its static.
+- Real data identical to Step 6.
+
+### What didn't work
+
+- `TestGoldenLooks/mask-refine`: `look differs from its golden: largest difference 49 codes, 6233 of 49152 samples
+  differ (12.681 %)`. The mask receiver is linear (derived) and `refine` follows it, so the guide's encoded
+  luminance input was converted to linear. The luminance input is now read as stored (deviation 24).
+- `TestGoldenLooks/mask-overlay`: `overlay: E_WRONG_KIND: overlay.target needs a one-channel image (a mask) or
+  regions; this image has 3 channels.` — the golden called the deleted `mask.overlay(img)`; rebuilt as
+  `img.overlay(mask)`.
+- The first walk failed on `Image:channel on 1-channel #4: E_ARG_RANGE: channel(g)`: the new build-time check on a
+  grey receiver; the sample became `"r"`.
+- The MCP instructions grew to 4061, then 4009 characters; the masks line was shortened until under 4000.
+
+### What I learned
+
+- `MaxChannels` over all image inputs is safe for masks and the luminance input: both have one channel and the
+  receiver has at least one, so they never raise the maximum.
+- With `Channels` static, `colormap`'s and `channel`'s run-time channel errors became dead code and could go.
+
+### What was tricky to build
+
+- Mask exemptions by position: `resolveSpace` works on the input list, so `maskInputs` maps the Mask-typed argument
+  specs to their input indices through `Args.refs`; the luminance input is the one appended after `args.ins`.
+- Keeping `imageSource` (the encoding a result keeps) blind to Mask-typed arguments: `accepts` stays a kind check
+  (`"Mask"` is not a kind), and only `acceptsNode` knows that a mask is a one-channel Image.
+
+### What warrants a second pair of eyes
+
+- `pkg/cv/graph/space.go` (`maskInputs`, the luminance exemption, the grey-input rule) and `args.go`
+  (`wrongNode`, `checkChannels`).
+- The `isMaskLike` PNG rule in `look.go`: derived one-channel looks are now lossless too (deviation 25).
+
+### What should be done in the future
+
+- Phase 5 rewrites the regions half of `05-masks-and-regions` and adds the `regions` help concept.
+- The GCV-001 golden tolerance classes and `-golden.tolerant` flag could go (§14.3 says they are no longer needed);
+  not done in batch 1.
+
+### Code review instructions
+
+- Start with `pkg/cv/graph/node.go` (`nodeChannels`, `MaxChannels`, `checkChannels` call), `registry.go`
+  (`MaskType`, `acceptsNode`, `OpDef.Channels`/`OneChannel`/`ThreeChannel`), `args.go`, `space.go`; then
+  `pkg/cv/ops/mask.go`, `channel.go`, `present.go`, `regions.go`; then `ops_test.go` (`TestRegistryWalk`) and
+  `mask_test.go`.
+- Validate: `scripts/04-gate.sh`; `go test ./pkg/cv/ops -run 'TestRegistryWalk|TestMasksAreOneChannelImages' -v`.
+
+### Technical details
+
+Goldens: none moved. Real data (`05-real-data.sh`): identical to Step 6.
+
+`git diff --stat 7554bd1 cdc6326 -- pkg cmd internal Makefile README.md`: 60 files changed, 514 insertions(+), 333
+deletions(-).
+
+Batch 1 total, `git diff --stat fa115dc cdc6326 -- pkg cmd internal Makefile`: 146 files changed, 4238
+insertions(+), 3768 deletions(-).

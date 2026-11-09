@@ -65,7 +65,7 @@ func TestSearchRanksTheRightSection(t *testing.T) {
 		"E_NOT_AWAITED":         "nodes-and-evaluation/E_NOT_AWAITED",
 		"analysisScale":         "units-and-scales/analysisScale",
 		"literal options await": "nodes-and-evaluation/Options are literal values",
-		"show before throw":     "looks/show()",
+		"looks delivered order": "looks/Delivery",
 	} {
 		hits := Search(q, 3)
 		found := false

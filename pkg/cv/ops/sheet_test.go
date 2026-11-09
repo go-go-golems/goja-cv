@@ -2,6 +2,7 @@ package ops
 
 import (
 	"context"
+	goimage "image"
 	"strings"
 	"testing"
 
@@ -93,9 +94,13 @@ func TestSheetCellsLabelsEdgesAndTruncation(t *testing.T) {
 	if c := b.Plane(0)[30*b.W+66]; c != compareBackground {
 		t.Fatalf("gap %g", c)
 	}
-	// labels: a dark box in the top-left corner of each cell with light text
-	if c := b.Plane(0)[0]; c != sheetLabelBack {
-		t.Fatalf("label box %g", c)
+	// labels: a dark box in the top-left corner of each cell with light text;
+	// the first one below the look number's badge
+	if c := b.Plane(0)[badgeZone(b.W, b.H).Max.Y*b.W]; c != sheetLabelBack {
+		t.Fatalf("label box of cell 0 %g", c)
+	}
+	if c := b.Plane(0)[70]; c != sheetLabelBack {
+		t.Fatalf("label box of cell 1 %g", c)
 	}
 	// more regions than cells: SHEET_TRUNCATED, reported by every evaluation (also from the cache)
 	specks := call(t, e, "detect.specks", img.ID)
@@ -197,5 +202,55 @@ func TestSheetSizesItselfByTop(t *testing.T) {
 	s := sheetCall(t, e, graph.NodeArg{ID: top.ID}, map[string]any{"views": graph.NodeArg{ID: img.ID}})
 	if f := s.Frame; f.W != 6*256+5*6 || f.H != 2*256+6 {
 		t.Fatalf("sheet of top(8): %s, want two rows", f)
+	}
+}
+
+// TestSheetFirstLabelClearsTheLookNumber: the look number is burned into
+// the top-left corner of a look, so the first cell's label moves below the
+// badge (or to its right when the cell is too short); other labels stay.
+func TestSheetFirstLabelClearsTheLookNumber(t *testing.T) {
+	ctx := context.Background()
+	e, img, _ := plantedEngine(t)
+	s := sheetCall(t, e, []any{[]any{200.5, 46.5}, []any{40.0, 150.0, 30.0, 12.0}}, map[string]any{"views": graph.NodeArg{ID: img.ID}, "size": 24.0, "zoom": 4.0})
+	v, err := e.Evaluate(ctx, s.ID, graph.EvalOptions{Scale: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := v.(*graph.ImageValue).Buf
+	badge := badgeZone(b.W, b.H)
+	if badge.Empty() || badge.Min.X != 0 || badge.Min.Y != 0 {
+		t.Fatalf("badge zone %v", badge)
+	}
+	isBack := func(x, y int) bool {
+		for c := 0; c < 3; c++ {
+			if b.Plane(c)[y*b.W+x] != sheetLabelBack {
+				return false
+			}
+		}
+		return true
+	}
+	if !isBack(1, badge.Max.Y+1) {
+		t.Fatalf("no label background below the badge at (1, %d)", badge.Max.Y+1)
+	}
+	if isBack(1, 1) {
+		t.Fatal("the first label is still under the badge")
+	}
+	if gx := 96 + 6; !isBack(gx+1, 1) {
+		t.Fatal("the second label moved")
+	}
+	// placement rules
+	zone := goimage.Rect(0, 0, 34, 18)
+	for _, tc := range []struct {
+		gx, gy, lw, lh, cell int
+		x, y                 int
+	}{
+		{0, 0, 60, 18, 96, 0, 18},    // below the badge
+		{0, 0, 60, 18, 30, 34, 0},    // too short a cell: right of it
+		{102, 0, 60, 18, 96, 102, 0}, // clear of the badge: unchanged
+		{0, 102, 60, 18, 96, 0, 102}, // second row: unchanged
+	} {
+		if x, y := placeLabel(tc.gx, tc.gy, tc.lw, tc.lh, tc.cell, zone); x != tc.x || y != tc.y {
+			t.Errorf("placeLabel(%d, %d, %d×%d, cell %d) = (%d, %d), want (%d, %d)", tc.gx, tc.gy, tc.lw, tc.lh, tc.cell, x, y, tc.x, tc.y)
+		}
 	}
 }

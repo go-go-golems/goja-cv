@@ -28,8 +28,6 @@ type Config struct {
 	BaseDir string `json:"baseDir,omitempty"`
 	// CacheBytes caps the value cache (default 2 GiB).
 	CacheBytes int64 `json:"cacheBytes,omitempty"`
-	// PreviewLong is the long side of the preview scale (default 1600).
-	PreviewLong int `json:"previewLong,omitempty"`
 	// LookLong is the long side of looks (default 1568).
 	LookLong int `json:"lookLong,omitempty"`
 }
@@ -41,7 +39,6 @@ var ConfigSchema = json.RawMessage(`{
   "properties": {
     "baseDir": {"type": "string", "description": "Directory relative cv.open paths resolve against"},
     "cacheBytes": {"type": "integer", "minimum": 0, "description": "Byte cap of the value cache"},
-    "previewLong": {"type": "integer", "minimum": 0, "description": "Long side of the preview scale in px"},
     "lookLong": {"type": "integer", "minimum": 0, "description": "Long side of looks in px"}
   }
 }`)
@@ -72,7 +69,7 @@ func Register(registry *providerapi.ProviderRegistry) error {
 			if err != nil {
 				return nil, err
 			}
-			opts := graph.EngineOptions{BaseDir: cfg.BaseDir, CacheBytes: cfg.CacheBytes, PreviewLong: cfg.PreviewLong, LookLong: cfg.LookLong}
+			opts := graph.EngineOptions{BaseDir: cfg.BaseDir, CacheBytes: cfg.CacheBytes, LookLong: cfg.LookLong}
 			mod := cvmod.New(cvmod.WithEngineFactory(func() *graph.Engine {
 				return graph.NewEngine(cvmod.DefaultRegistry(), opts)
 			}))

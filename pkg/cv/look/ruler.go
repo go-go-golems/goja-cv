@@ -16,7 +16,10 @@ import (
 // fit the longest y label. Tick labels are absolute doc px (from the
 // frame): the tick at doc x = t is at the left edge of doc pixel t, image x =
 // margin + (t − origin) · scale. Labels are thinned so that adjacent labels
-// are at least their width + 4 px apart.
+// are at least their width + 4 px apart. A label is centred on its tick but
+// kept inside the image span, so the labels at the ends of an axis shift
+// inwards; a label that would then come closer than 4 px to the label
+// before it is dropped (placeLabels).
 
 const (
 	rulerMargin   = 28  // top and bottom margins, the minimum of the side margins
@@ -87,6 +90,36 @@ func ticks(a axis, t float64, need int) []tick {
 	return out
 }
 
+// placedLabel is a tick label and the image px where it starts along its
+// axis.
+type placedLabel struct {
+	text string
+	at   int
+}
+
+// placeLabels places the labels of the labelled ticks along one axis: each
+// centred on its tick at off + px, clamped to [lo, hi − its extent], and kept
+// only when it starts at least labelGap px after the end of the previous kept
+// label. extent is a label's width (x axis) or the line height (y axis).
+func placeLabels(ts []tick, off, lo, hi int, extent func(string) int) []placedLabel {
+	var out []placedLabel
+	end := math.MinInt
+	for _, t := range ts {
+		if !t.labeled {
+			continue
+		}
+		s := strconv.Itoa(t.doc)
+		e := extent(s)
+		at := min(max(off+t.px-e/2, lo), hi-e)
+		if end != math.MinInt && at < end+labelGap {
+			continue // would touch the previous label (the first one, shifted inwards)
+		}
+		out = append(out, placedLabel{text: s, at: at})
+		end = at + e
+	}
+	return out
+}
+
 func maxLabelWidth(ts []tick) int {
 	w := 0
 	for _, t := range ts {
@@ -143,15 +176,13 @@ func addRulers(m draw.Image, x, y axis, spacing, grid float64) draw.Image {
 		if l.bottom > 0 {
 			vline(out, px, l.top+b.Dy(), l.top+b.Dy()+tickLen-1)
 		}
-		if !t.labeled {
-			continue
-		}
-		s := strconv.Itoa(t.doc)
-		w := text.Width(s, labelPx)
-		x0 := min(max(px-w/2, l.left), out.Bounds().Dx()-w) // the top-left corner keeps the look number
-		text.Draw(out, x0, l.top-tickLen-2-lh, s, labelPx, rulerInk, nil)
+	}
+	width := func(s string) int { return text.Width(s, labelPx) }
+	// x labels start at the left margin: the top-left corner keeps the look number
+	for _, p := range placeLabels(l.xt, l.left, l.left, out.Bounds().Dx(), width) {
+		text.Draw(out, p.at, l.top-tickLen-2-lh, p.text, labelPx, rulerInk, nil)
 		if l.bottom > 0 {
-			text.Draw(out, x0, l.top+b.Dy()+tickLen+2, s, labelPx, rulerInk, nil)
+			text.Draw(out, p.at, l.top+b.Dy()+tickLen+2, p.text, labelPx, rulerInk, nil)
 		}
 	}
 	for _, t := range l.yt {
@@ -160,15 +191,11 @@ func addRulers(m draw.Image, x, y axis, spacing, grid float64) draw.Image {
 		if l.right > 0 {
 			hline(out, l.left+b.Dx(), l.left+b.Dx()+tickLen-1, py)
 		}
-		if !t.labeled {
-			continue
-		}
-		s := strconv.Itoa(t.doc)
-		w := text.Width(s, labelPx)
-		y0 := min(max(py-lh/2, l.top), out.Bounds().Dy()-lh)
-		text.Draw(out, l.left-tickLen-2-w, y0, s, labelPx, rulerInk, nil)
+	}
+	for _, p := range placeLabels(l.yt, l.top, l.top, out.Bounds().Dy(), func(string) int { return lh }) {
+		text.Draw(out, l.left-tickLen-2-width(p.text), p.at, p.text, labelPx, rulerInk, nil)
 		if l.right > 0 {
-			text.Draw(out, l.left+b.Dx()+tickLen+2, y0, s, labelPx, rulerInk, nil)
+			text.Draw(out, l.left+b.Dx()+tickLen+2, p.at, p.text, labelPx, rulerInk, nil)
 		}
 	}
 	return out

@@ -41,7 +41,7 @@ func smoothstep(e0, e1, x float64) float64 {
 // LuminanceMask selects pixels by luminance: above and/or below a threshold,
 // with a smoothstep ramp of total width softness centred on it. A nil bound
 // is not applied. b is normally one channel (the graph feeds luminance in
-// the op's working space); for three channels the Rec. 709 weighted sum of
+// the receiver's space); for three channels the Rec. 709 weighted sum of
 // the given values is used.
 func LuminanceMask(ctx context.Context, b *buffer.Buffer, above, below *float64, softness float64) (*buffer.Buffer, error) {
 	L := b.Luminance()

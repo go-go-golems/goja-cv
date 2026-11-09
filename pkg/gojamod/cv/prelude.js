@@ -129,7 +129,7 @@
   }
 
   function label(t) {
-    const d = native.__describe(t.__id);
+    const d = native.__explain(t.__id);
     return "[" + d.kind + " #" + d.id + " " + d.call + "]";
   }
 
@@ -201,9 +201,11 @@
     }
     switch (prop) {
       case "then":
+        // await: a Value or Regions node evaluates at scale 1; an Image
+        // resolves to its static summary (nothing is computed)
         return function (onFulfilled, onRejected) {
           const node = proxies.get(t.__id);
-          return native.__evaluate(t.__id, null)
+          return native.__evaluate(t.__id)
             .then((v) => link(v, node))
             .then(onFulfilled, onRejected);
         };
@@ -224,7 +226,8 @@
           return { node: label(t) };
         };
       case "look":
-        // look({ label, maxSide }) → a Go-backed look (an image the eval returns)
+        // look(label | { label, zoom, … }) → a Go-backed look, queued: every
+        // look created in an eval is delivered (up to four)
         return function (opts) {
           return native.__look(t.__id, opts === undefined ? null : marshal(opts));
         };
@@ -282,6 +285,8 @@
     if (!isNode(x)) {
       const e = new Error(where + " needs a cv node.");
       e.name = e.code = "E_ARG_TYPE";
+      e.cv = true;
+      e.fix = where + "(img.gaussian(2))";
       throw e;
     }
     return x;
@@ -289,7 +294,6 @@
 
   const cv = {
     version: native.__version,
-    kinds: native.__kinds(), // graph.Kinds
     // open(path, { encoding, box, origin }) → Image
     open(path, opts) {
       return nodeFor(native.__open(path, opts === undefined ? null : marshal(opts)));
@@ -309,17 +313,11 @@
         return native.__docsRead(id, opts === undefined ? null : opts);
       },
     }),
-    // evaluate(node, { scale }) evaluates at an explicit scale: a number in
-    // (0, 1], "preview" (default for await), "look" or "full" (1.0).
-    evaluate(node, opts) {
-      requireNode(node, "cv.evaluate");
-      const scale = opts && opts.scale !== undefined ? opts.scale : null;
-      return native.__evaluate(node.__id, scale).then((v) => link(v, node));
+    // explain(node) → { id, kind, op, call, frame, encoding, space, path,
+    // graph }: synchronous, evaluates nothing
+    explain(node) {
+      return native.__explain(requireNode(node, "cv.explain").__id);
     },
-    describe(node) {
-      return native.__describe(requireNode(node, "cv.describe").__id);
-    },
-    isNode: isNode,
     // json(x, { name }) / csv(x, { name, columns }) → a Data handle: content
     // for programs (CLI: a file), or .save(path) under --out-root. Plain
     // data is passed as it is (not lifted back to its node).
@@ -328,10 +326,6 @@
     },
     csv(x, opts) {
       return native.__data("csv", x, opts === undefined ? null : opts);
-    },
-    // warnings({ clear }) lists RANGE warnings collected while building nodes.
-    warnings(opts) {
-      return native.__warnings(!!(opts && opts.clear));
     },
   };
   for (const name of MODULE_OPS) {

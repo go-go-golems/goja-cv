@@ -13,7 +13,6 @@ import (
 // EngineOptions configures an Engine. Zero values select the defaults.
 type EngineOptions struct {
 	CacheBytes     int64  // byte cap of the value cache (default 2 GiB)
-	PreviewLong    int    // long side of the preview scale (default 1600)
 	LookLong       int    // long side of the look scale (default 1568)
 	PyramidMinLong int    // pyramids stop at this long side (default 256)
 	BaseDir        string // relative paths given to Open resolve against it (default: cwd)
@@ -25,9 +24,6 @@ type EngineOptions struct {
 func (o EngineOptions) withDefaults() EngineOptions {
 	if o.CacheBytes <= 0 {
 		o.CacheBytes = 2 << 30
-	}
-	if o.PreviewLong <= 0 {
-		o.PreviewLong = 1600
 	}
 	if o.LookLong <= 0 {
 		o.LookLong = 1568
@@ -145,30 +141,24 @@ func (e *Engine) Placeholder(receiver NodeID) (*Node, error) {
 	if r.Kind != op.Returns {
 		return nil, Errorf(EWrongKind, "builder lambdas take %s; the receiver is %s.", A(string(op.Returns)), A(string(r.Kind)))
 	}
-	n, _, err := e.b.InternSource(op, nil, PlaceholderMeta{For: receiver, Frame: r.Frame, Enc: r.Enc, Space: r.Space})
+	n, _, err := e.b.InternSource(op, nil, PlaceholderMeta{For: receiver, Frame: r.Frame, Enc: r.Enc, Space: r.Space, Channels: r.Channels})
 	return n, err
 }
 
 // Display returns the node a look of node id renders: id itself, or
-// convert(id → encoded) when its values are not already the encoded values
-// a look shows (masks and linear-encoded images are shown as they are).
+// as(id, encoded) when its values are not already the encoded values a look
+// shows (masks and linear-encoded images are shown as they are).
 func (e *Engine) Display(id NodeID) (NodeID, error) {
 	n, ok := e.b.Node(id)
 	if !ok {
 		return 0, Errorf(EInternal, "unknown node #%d", id)
 	}
-	if n.Kind != KindImage || buffer.Identity(n.Enc, n.Space, buffer.SpaceEncoded) {
-		return id, nil
-	}
-	c, _, err := e.b.internOp(ConvertOp, n, buffer.SpaceEncoded.String())
+	c, err := e.b.as(n, buffer.SpaceEncoded)
 	if err != nil {
 		return 0, err
 	}
 	return c.ID, nil
 }
-
-// PreviewScale is min(1, PreviewLong / long side) for node id.
-func (e *Engine) PreviewScale(id NodeID) float64 { return e.ScaleForLong(id, e.opts.PreviewLong) }
 
 // ScaleForLong is min(1, long / the node's doc long side); 1 for data nodes.
 func (e *Engine) ScaleForLong(id NodeID, long int) float64 {
@@ -183,21 +173,18 @@ func (e *Engine) ScaleForLong(id NodeID, long int) float64 {
 	return QuantizeScale(float64(long) / float64(l))
 }
 
-// Evaluate computes node id; a zero opt.Scale means the preview scale.
+// Evaluate computes node id; a zero opt.Scale means scale 1 (data is
+// always measured at full resolution).
 func (e *Engine) Evaluate(ctx context.Context, id NodeID, opt EvalOptions) (Value, error) {
 	if opt.Scale == 0 {
-		opt.Scale = e.PreviewScale(id)
+		opt.Scale = 1
 	}
 	return e.ev.Evaluate(ctx, id, opt)
 }
 
-// Explain renders the graph under id at scale (0 = preview).
-func (e *Engine) Explain(id NodeID, scale float64) []string {
-	if scale == 0 {
-		scale = e.PreviewScale(id)
-	}
-	return e.ev.Explain(id, scale)
-}
+// Explain renders the graph under id at scale 1: each node's call, kind,
+// size and whether its value is cached.
+func (e *Engine) Explain(id NodeID) []string { return e.ev.Explain(id, 1) }
 
 // Path is the receiver chain of node id.
 func (e *Engine) Path(id NodeID) []string { return e.ev.Path(id) }

@@ -1,6 +1,6 @@
 # Nodes and evaluation
 
-Calls build lazy, immutable, hash-consed nodes; nothing runs until you await a node, return a look, or use the node in something that is evaluated. Options are literal values. explain() shows the graph; UNUSED_NODE and E_NOT_AWAITED catch the usual mistakes.
+Calls build lazy, immutable, hash-consed nodes; nothing runs until you await a node, return a look, or use the node in something that is evaluated. Options are literal values. cv.explain(node) shows the graph; UNUSED_NODE and E_NOT_AWAITED catch the usual mistakes.
 
 ## Kinds
 
@@ -8,7 +8,7 @@ Every node has one kind, and every op says which kind it takes and returns.
 
 | kind | evaluated value | made by |
 |---|---|---|
-| Image | linear float32 pixels (awaits to a summary) | `img`, `exposure`, `levels`, `within`, `heal`, `overlay`, `compare` |
+| Image | float32 pixels in a space, encoded (file units) or linear (awaits to a summary) | `img`, `exposure`, `levels`, `within`, `heal`, `overlay`, `compare` |
 | Mask | one channel in [0, 1] | `mask.luminance`, `mask.box`, `regions.toMask()`, `a.and(b)` |
 | Regions | a list of areas with flat fields id, x, y, w, h, cx, cy, area, aspect and measures | `detect.specks`, `mask.components()`, `regions.where()` |
 | Value | plain data | `stats`, `histogram`, `coverage`, `count` |
@@ -21,16 +21,17 @@ Every node has one kind, and every op says which kind it takes and returns.
 const a = img.exposure(0.3)
 const same = a === img.exposure(0.3)
 const b = a.gaussian(2)
-return { same, graph: b.explain() }
+return { same, graph: cv.explain(b).graph }
 ```
 
 ## Evaluating
 
 Evaluation happens when you:
 
-- `await` a node: a Value gives its data, an Image a summary `{ kind, w, h, scale, … }`, Regions `{ count, items, … }`;
-- return a look (`node.look()`) or `show(node)`;
-- `cv.evaluate(node, { scale })` for an explicit scale.
+- `await` a node: a Value is evaluated at full resolution and gives its data, Regions give `{ count, items, … }`; an Image gives its summary `{ kind, w, h, encoding, space, frame, … }` (plus file metadata for an opened file) without computing anything;
+- create a look (`node.look()`): every look of an eval is rendered after it.
+
+`await` is the only way to evaluate. `cv.explain(node)` describes a node without evaluating it: id, kind, op, call, frame, encoding, space, path, and `graph`, one line per node (call, kind, size, cached).
 
 ## Options are literal values
 
@@ -87,7 +88,7 @@ return "the line above was a no-op"
 
 ```yaml
 warnings:
-  - 'UNUSED_NODE line 1: img.exposure(0.3) builds a node and discards it. Nodes are lazy: nothing ran. Return it, await it, show() it, or keep it in mem.'
+  - 'UNUSED_NODE line 1: img.exposure(0.3) builds a node and discards it. Nodes are lazy: nothing ran. Return it, await it, look at it, or keep it in mem.'
 ```
 
 ## E_NOT_AWAITED

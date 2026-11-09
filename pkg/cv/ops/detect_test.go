@@ -111,7 +111,10 @@ func TestDetectSpecksOnPlantedScan(t *testing.T) {
 		t.Fatalf("check.dust %v", cd)
 	}
 	t.Logf("check.dust: %v", cd)
-	clean := evalValue(t, e, call(t, e, "check.dust", call(t, e, "gaussian", img.ID, 6).ID), 1).(*graph.DataValue).Data.(map[string]any)
+	// blurred in linear light (an encoded blur of sigma 6 still leaves one
+	// candidate of 191 px), checked in file units
+	blurred := call(t, e, graph.AsOp, call(t, e, "gaussian", call(t, e, graph.AsOp, img.ID, "linear").ID, 6).ID, "encoded")
+	clean := evalValue(t, e, call(t, e, "check.dust", blurred.ID), 1).(*graph.DataValue).Data.(map[string]any)
 	if clean["verdict"] != "clean" {
 		t.Fatalf("blurred scan: %v", clean)
 	}

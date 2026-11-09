@@ -93,7 +93,7 @@ func goldenCases() []goldenCase {
 			return call(t, e, "refine", lum(t, e, img), graph.NodeArg{ID: img}).ID
 		}, Options{}},
 		{"mask-overlay", classOverlay, func(t *testing.T, e *graph.Engine, img graph.NodeID) graph.NodeID {
-			return call(t, e, "overlay", lum(t, e, img), graph.NodeArg{ID: img}).ID
+			return call(t, e, "overlay", img, graph.NodeArg{ID: lum(t, e, img)}).ID
 		}, Options{}},
 		{"specks-overlay", classSpecks, func(t *testing.T, e *graph.Engine, img graph.NodeID) graph.NodeID {
 			sp := call(t, e, "detect.specks", img)

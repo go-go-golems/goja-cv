@@ -7,8 +7,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-
-	"github.com/go-go-golems/goja-cv/pkg/cv/buffer"
 )
 
 // NodeArg is a node passed as an argument value in a raw call (from JS).
@@ -249,6 +247,24 @@ func (a Args) Func(name string) FuncID {
 	return f.ID
 }
 
+// Luma is the evaluated luminance input of an op with OpDef.Luma: one
+// channel, the luminance of the receiver (or of OpDef.LumaOf) in its space.
+func (a Args) Luma() *ImageValue {
+	if a.op == nil || !a.op.Luma {
+		panic(fmt.Sprintf("cv: %s has no luminance input", a.opName()))
+	}
+	a.evaluated(lumaArg)
+	x, ok := a.vals[lumaArg]
+	if !ok {
+		panic(fmt.Sprintf("cv: %s has no luminance input (no image to take it of)", a.opName()))
+	}
+	r, ok := x.(InputRef)
+	if !ok || r.Index >= len(a.vs) {
+		panic(fmt.Sprintf("cv: %s.%s is %v", a.opName(), lumaArg, x))
+	}
+	return a.vs[r.Index].(*ImageValue)
+}
+
 // HasInputs reports whether the args carry their node's inputs: false only
 // when an op's schema is computed for help (DocFields), without a call.
 func (a Args) HasInputs() bool { return a.ins != nil }
@@ -287,7 +303,7 @@ func (a Args) refs(name string) []InputRef {
 	return out
 }
 
-// Input is the node passed for a node argument (an Image, a Mask, Regions);
+// Input is the node passed for a node argument (an Image, a mask, Regions);
 // nil only when the argument is optional and absent.
 func (a Args) Input(name string) *Node {
 	a.mustSpec(name)
@@ -560,9 +576,8 @@ func (b *binder) lift(s *ArgSpec, id NodeID, where string, want string) (any, er
 	if !ok {
 		return nil, Errorf(EArgType, "%s: unknown node #%d", where, id)
 	}
-	if !accepts(Kind(want), n.Kind) {
-		return nil, Errorf(EWrongKind, "%s wants %s node, got %s node.", where, A(want), A(string(n.Kind))).
-			WithHint(kindHint(Kind(want), n.Kind))
+	if !acceptsNode(want, n) {
+		return nil, wrongNode(where, want, n)
 	}
 	b.inputs = append(b.inputs, id) // every node argument is its own input: [img, img] is two
 	return InputRef{Index: b.base + len(b.inputs) - 1}, nil
@@ -572,7 +587,7 @@ func (b *binder) lift(s *ArgSpec, id NodeID, where string, want string) (any, er
 // op called on the opened image, node.stats() on another node, img for an
 // image.
 func AwaitExpr(n *Node) string {
-	if n.Kind == KindImage || n.Kind == KindMask {
+	if n.Kind == KindImage {
 		return "img"
 	}
 	if !n.HasReceiver() || len(n.Args.ins) == 0 {
@@ -580,7 +595,7 @@ func AwaitExpr(n *Node) string {
 	}
 	recv := "node"
 	r := n.Args.ins[0]
-	for r.HasReceiver() && (r.Op.Name == ConvertOp || r.Op.Name == ToGrayOp) && len(r.Args.ins) > 0 {
+	for r.HasReceiver() && (r.Op.Name == AsOp || r.Op.Name == ToGrayOp) && len(r.Args.ins) > 0 {
 		r = r.Args.ins[0] // conversions the builder inserts (and a grey plane) do not change what to write
 	}
 	if r.Op.On == KindNone {
@@ -608,7 +623,7 @@ func literalError(n *Node, where, want string, option bool) *Error {
 		switch n.Kind {
 		case KindValue:
 			expr = AwaitExpr(n)
-		case KindImage, KindMask:
+		case KindImage:
 			expr, field = "img.stats()", "p99"
 		case KindRegions:
 			expr, field = AwaitExpr(n), "items"
@@ -624,29 +639,55 @@ func literalError(n *Node, where, want string, option bool) *Error {
 		WithFix(fix)
 }
 
-// isKindType reports whether typ names node kinds ("Mask", "Regions|Mask").
+// isKindType reports whether typ names node types ("Image", "Mask",
+// "Regions|Mask").
 func isKindType(typ string) bool {
 	if typ == "" {
 		return false
 	}
 	for _, part := range strings.Split(typ, "|") {
-		if k := Kind(part); k != KindImage && k != KindMask && k != KindRegions {
+		if k := Kind(part); k != KindImage && k != KindRegions && part != MaskType {
 			return false
 		}
 	}
 	return true
 }
 
-func kindHint(want, got Kind) string {
-	switch {
-	case got == KindRegions && accepts(want, KindMask):
-		return "Convert regions with .toMask()."
-	case got == KindMask && accepts(want, KindRegions):
-		return "Convert a mask with .components()."
-	case got == KindImage && accepts(want, KindMask):
-		return "Make a mask from the image, e.g. img.mask.luminance({ above: 0.5 })."
+// wrongNode is the E_WRONG_KIND of a node argument of the wrong kind or,
+// for a mask, the wrong channel count (§7.5).
+func wrongNode(where, want string, n *Node) *Error {
+	if n.Kind == KindImage && takesMask(want) {
+		what := "a one-channel image (a mask)"
+		if accepts(Kind(want), KindRegions) {
+			what += " or regions"
+		}
+		return Errorf(EWrongKind, "%s needs %s; this image has %d channels.", where, what, n.Channels).
+			WithHint("A mask is any one-channel image (weights in [0, 1]): toGray(), a mask op such as img.mask.luminance({ above: 0.5 }), or regions.toMask().").
+			WithFix(AwaitExpr(n) + ".toGray()")
 	}
-	return ""
+	e := Errorf(EWrongKind, "%s wants %s node, got %s node.", where, A(want), A(string(n.Kind)))
+	switch {
+	case n.Kind == KindRegions && takesMask(want):
+		e.Hint = "Convert regions with .toMask()."
+	case n.Kind == KindImage && n.Channels == 1 && accepts(Kind(want), KindRegions):
+		e.Hint = "Find the regions of a mask with .components()."
+	}
+	return e
+}
+
+// checkChannels refuses a receiver of the wrong channel count at build time
+// (OpDef.OneChannel, OpDef.ThreeChannel).
+func checkChannels(op *OpDef, recv *Node) error {
+	switch {
+	case recv.Kind != KindImage || recv.Channels == 0:
+	case op.OneChannel && recv.Channels != 1:
+		return Errorf(EWrongKind, "%s needs a one-channel image (a mask or a grey image); this image has %d channels.", callName(op), recv.Channels).
+			WithFix(AwaitExpr(recv) + ".toGray()." + op.Name + "(…)")
+	case op.ThreeChannel && recv.Channels != 3:
+		return Errorf(EWrongKind, "%s needs a colour image; this image has one channel.", callName(op)).
+			WithHint("A grey image or a mask has no colour to read; call it on the colour image.")
+	}
+	return nil
 }
 
 // identifier reports whether s is a plain JavaScript identifier (an option
@@ -704,7 +745,7 @@ func (b *binder) check(s *ArgSpec, typ string, v any, where string) (any, error)
 			switch {
 			case accepts(Kind(typ), KindRegions):
 				e.Fix = fmt.Sprintf("const regions = img.detect.specks()   // a node; then %s(regions, …)", b.callName())
-			case accepts(Kind(typ), KindMask):
+			case takesMask(typ):
 				e.Fix = fmt.Sprintf("const m = img.mask.luminance({ above: 0.6 })   // a node; then %s(m, …)", b.callName())
 			default:
 				e.Fix = fmt.Sprintf("const other = img.exposure(0.3)   // a node; then %s(other, …)", b.callName())
@@ -740,7 +781,7 @@ func (b *binder) check(s *ArgSpec, typ string, v any, where string) (any, error)
 		}
 		if s.hasUsual() && (f < s.Usual[0] || f > s.Usual[1]) {
 			b.warnings = append(b.warnings, Warning{Code: WRange,
-				Message: fmt.Sprintf("%s = %s is outside the usual range [%s, %s].", where, fmtNum(f), fmtNum(s.Usual[0]), fmtNum(s.Usual[1]))})
+				Message: strings.TrimSpace(fmt.Sprintf("%s = %s is outside the usual range [%s, %s]. %s", where, fmtNum(f), fmtNum(s.Usual[0]), fmtNum(s.Usual[1]), s.UsualHint))})
 		}
 		return f, nil
 	case typ == "string":
@@ -1088,7 +1129,7 @@ var OptionSynonyms = map[string][]string{
 	"midtones": {"gamma"}, "mid": {"gamma"}, "quantiles": {"percentiles"}, "percentile": {"percentiles"},
 	"region": {"mask", "box"}, "regions": {"mask"}, "selection": {"mask"}, "rect": {"box"}, "rectangle": {"box"}, "roi": {"box", "mask"},
 	"window": {"box"}, "crop": {"box"}, "colorSpace": {"encoding"}, "colorspace": {"encoding"}, "transfer": {"encoding"},
-	"gamma": {"encoding"}, "workingSpace": {"space"}, "working_space": {"space"}, "offset": {"origin"},
+	"gamma": {"encoding"}, "offset": {"origin"},
 	"amount": {"amount", "ev", "opacity"}, "stops": {"ev"}, "exposure": {"ev"},
 	"long": {"maxSide"}, "longSide": {"maxSide"}, "maxsize": {"maxSide"}, "max_side": {"maxSide"}, "width_px": {"maxSide"},
 	"caption": {"label"}, "title": {"label"}, "text": {"label"},
@@ -1337,9 +1378,7 @@ func callName(op *OpDef) string {
 func signatureHint(op *OpDef, call string) string {
 	var pos, opt []string
 	for _, a := range op.Args {
-		if isSpaceOption(op, &a) {
-			continue // the working-space option is on every pixel op; help and errors explain it
-		}
+
 		if a.Positional {
 			n := a.Name
 			if a.Variadic {
@@ -1354,11 +1393,6 @@ func signatureHint(op *OpDef, call string) string {
 		pos = append(pos, "{ "+strings.Join(opt, ", ")+" }")
 	}
 	return "Usage: " + call + "(" + strings.Join(pos, ", ") + ")"
-}
-
-// isSpaceOption reports whether a is the space option Register added.
-func isSpaceOption(op *OpDef, a *ArgSpec) bool {
-	return a.Name == SpaceArg && op.Space.Default != buffer.SpaceNone && !op.Space.Fixed
 }
 
 // resolveArgs gives a node's canonical args their evaluated inputs: node

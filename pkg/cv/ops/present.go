@@ -107,9 +107,9 @@ const compareBackground = 0.1517
 func presentOps() []graph.OpDef {
 	return []graph.OpDef{
 		{
-			Name: "overlay", On: graph.KindImage, Returns: graph.KindImage, Space: graph.SpaceRule{Default: buffer.SpaceEncoded}, Class: graph.Decoration,
+			Name: "overlay", On: graph.KindImage, Returns: graph.KindImage, Space: graph.Display, Class: graph.Decoration, Channels: graph.Three,
 			Args: append([]graph.ArgSpec{{Name: "target", Type: "Regions|Mask", Positional: true,
-				Doc: "what to draw: regions (outlines, tint, ids) or a mask (tint)"}}, overlayArgs()...),
+				Doc: "what to draw: regions (outlines, tint, ids) or a mask, any one-channel image (tint)"}}, overlayArgs()...),
 			Validate: validateColor("color"),
 			Run: func(ctx context.Context, _ *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
 				img := image(in[0])
@@ -117,25 +117,15 @@ func presentOps() []graph.OpDef {
 				if rv, ok := target.(*graph.RegionsValue); ok {
 					return drawRegions(ctx, img, rv, a)
 				}
-				return tint(ctx, img, mask(target), a)
+				return tint(ctx, img, image(target), a)
 			},
 			DocFrame: func(a graph.Args) graph.Frame { return a.Receiver().Frame },
 			Doc:      "The image with regions (tinted pixels, box outlines, optional ids) or a mask (tint) drawn over it, for looking. A decoration: in a zoomed look outlines stay 1 image px and ids readable, before or after a crop; regions found on the whole image can be drawn on a crop.",
 			See:      []string{"compare", "detect.specks"},
 		},
 		{
-			Name: "overlay", On: graph.KindRegions, Returns: graph.KindImage, Space: graph.SpaceRule{Default: buffer.SpaceEncoded}, Class: graph.Decoration,
-			Args:     append([]graph.ArgSpec{{Name: "image", Type: "Image", Positional: true, Doc: "the image to draw the regions on"}}, overlayArgs()...),
-			Validate: validateColor("color"),
-			Run: func(ctx context.Context, _ *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
-				return drawRegions(ctx, image(a.Value("image")), regions(in[0]), a)
-			},
-			DocFrame: func(a graph.Args) graph.Frame { return a.Input("image").Frame },
-			Doc:      "regions.overlay(img, opts) is img.overlay(regions, opts).",
-		},
-		{
-			Name: "compare", On: graph.KindNone, Returns: graph.KindImage, Result: graph.DisplayEnc,
-			Space: graph.SpaceRule{Default: buffer.SpaceEncoded, Fixed: true}, // a layout of what looks show
+			Name: "compare", On: graph.KindNone, Returns: graph.KindImage, Result: graph.DisplayEnc, Channels: graph.Three,
+			Space: graph.Display, // a layout of what looks show
 			Args: []graph.ArgSpec{
 				{Name: "images", Type: "Image[]", Positional: true, Doc: "the images to compare: [before, after, …]"},
 				{Name: "mode", Type: "enum:side,split", Default: "side", Doc: "side by side (top-aligned, 4 doc px apart) or split into vertical strips (same frame)",

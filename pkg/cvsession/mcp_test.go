@@ -112,7 +112,7 @@ func TestMCPServerToolsResourcesPrompt(t *testing.T) {
 	mustContain(t, text, "after: '[look 1: after — open(gradient-64x48-16bit.tif) → exposure(0.5) (64×48, 1 image px = 1.0 doc px)]'",
 		"content 1 look 1: after — open(gradient-64x48-16bit.tif) → exposure(0.5) (64×48, 1 image px = 1.0 doc px): attached (image/png")
 
-	text, images, isErr = callEval(t, cs, "show(img, \"before\")\nreturn img.blur(2)")
+	text, images, isErr = callEval(t, cs, "img.look(\"before\")\nreturn img.blur(2)")
 	if !isErr || len(images) != 1 {
 		t.Fatalf("error eval: isErr=%v images=%d\n%s", isErr, len(images), text)
 	}
@@ -149,21 +149,21 @@ return {
 	if isErr || len(images) != 0 {
 		t.Fatalf("stats: %v %d\n%s", isErr, len(images), text)
 	}
-	mustContain(t, text, "meanL: 0.29507", "black: 0.036133", "p99: 0.83255")
+	mustContain(t, text, "meanL: 0.52726", "black: 0.036133", "p99: 0.92244")
 	mustNotContain(t, text, "warnings:")
 
 	// Part 1 verbatim: cv.compare landed with M3.
 	text, images, isErr = callEval(t, cs, `const fixed = img.levels({ black: 0.0, white: 0.74 }).exposure(0.35)
-show(cv.compare([img, fixed], { mode: "side" }), { label: "before / after" })
-show(fixed.histogram())
+cv.compare([img, fixed], { mode: "side" }).look("before / after")
+fixed.histogram().look()
 const { meanL, clipLow, clipHigh } = await fixed.stats()
 return { meanL, clipLow, clipHigh }`)
 	t.Logf("session A step 2:\n%s", text)
 	if isErr || len(images) != 2 {
 		t.Fatalf("correction: isErr=%v images=%d\n%s", isErr, len(images), text)
 	}
-	mustContain(t, text, "meanL: 0.50822", "clipLow:", "clipHigh:",
-		"shown:", "look 1: before / after — compare([2 images]) (132×48, 1 image px = 1.0 doc px)", "look 2: open(gradient-64x48-16bit.tif) → levels → exposure(0.35) → histogram (512×204 chart)")
+	mustContain(t, text, "meanL: 0.79605", "clipLow:", "clipHigh:",
+		"content 1 look 1: before / after — compare([2 images]) (132×48, 1 image px = 1.0 doc px)", "content 2 look 2: open(gradient-64x48-16bit.tif) → levels → exposure(0.35) → histogram (512×204 chart)")
 	if images[0].MIMEType != "image/png" || images[1].MIMEType != "image/png" {
 		t.Fatalf("mimes %s %s", images[0].MIMEType, images[1].MIMEType)
 	}
@@ -177,9 +177,9 @@ func TestMCPInstructionsAreCompactAndDocsAreResources(t *testing.T) {
 	if len(ins) > 4000 {
 		t.Fatalf("instructions are %d characters, want < 4000", len(ins))
 	}
-	for _, s := range []string{"body of an async function", "mem", "node.look(", "show(", "doc px", "fix",
+	for _, s := range []string{"body of an async function", "mem", "node.look(", "cv.explain(", "doc px", "fix",
 		"img.stats()", "img.stats({ box:", "img.levels(", "cv.compare(", "img.mask.luminance(", "img.within(", "img.detect.specks()", "img.heal(",
-		"cv.docs.search(", "cv.docs.read(", "cv.help(op)", "cv://docs/<id>", "cv://reference", "cv://guide/<slug>", "not available yet"} {
+		"cv.docs.search(", "cv.docs.read(", "cv.help(op)", "cv://docs/<id>", "cv://reference", "cv://guide/<slug>"} {
 		if !strings.Contains(ins, s) {
 			t.Fatalf("instructions lack %q", s)
 		}
@@ -297,5 +297,22 @@ func TestMCPDataContent(t *testing.T) {
 	text, _, _ = callEval(t, cs, `return cv.csv(Array.from({ length: 6000 }, (_, i) => ({ i, a: "0123456789012345678901234567890123456789", b: i * 0.5 })), { name: "big" })`)
 	if !strings.Contains(text, "too large for the conversation") || !strings.Contains(text, `.save("big.csv")`) {
 		t.Fatalf("300 KiB item:\n%.600s", text)
+	}
+}
+
+// TestMCPLooksBeyondTheBudgetWarn: an eval that makes more looks than
+// MaxLooks delivers four images and a LOOKS warning naming the others
+// (returned looks come first, then the shown ones).
+func TestMCPLooksBeyondTheBudgetWarn(t *testing.T) {
+	img := planted(t)
+	cs := connect(t, cvsession.Options{Image: img, BaseDir: filepath.Dir(img)})
+	text, images, isErr := callEval(t, cs, `img.toGray().look("first"); return ["a", "b", "c", "d", "e"].map((l, i) => img.exposure(i / 10).look(l))`)
+	if isErr || len(images) != 4 {
+		t.Fatalf("error %v, %d images:\n%s", isErr, len(images), text)
+	}
+	for _, s := range []string{`LOOKS line 1: 2 looks were not delivered (at most 4 per eval): line 1 look("e"), line 1 look("first"). Split the work over several calls, or return fewer looks`, "[not delivered: look: e"} {
+		if !strings.Contains(text, s) {
+			t.Fatalf("result lacks %q:\n%s", s, text)
+		}
 	}
 }

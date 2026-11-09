@@ -28,6 +28,7 @@ type binding struct {
 	funcs    map[graph.FuncID]goja.Callable
 	nextFunc graph.FuncID
 	track    tracker        // per-eval state (evaltrack.go)
+	late     []QueuedLook   // looks created while no eval was running (evaltrack.go)
 	opened   []graph.NodeID // sources opened with cv.open
 	// itemProto is the prototype of region items (prelude: throwing
 	// accessors for removed field names); owner goroutine only.
@@ -106,16 +107,14 @@ func (b *binding) object() *goja.Object {
 	set := func(name string, fn func(goja.FunctionCall) goja.Value) { _ = o.Set(name, b.export(name, fn)) }
 	_ = o.Set("__version", Version)
 	set("__registry", b.registry)
-	set("__kinds", b.kinds)
 	set("__call", b.call)
 	set("__open", b.open)
 	set("__evaluate", b.evaluate)
-	set("__describe", b.describe)
+	set("__explain", b.explain)
 	set("__unknown", b.unknown)
 	set("__notAwaited", b.notAwaited)
 	set("__immutable", b.immutable)
 	set("__help", b.help)
-	set("__warnings", b.warningsJS)
 	set("__func", b.funcJS)
 	set("__builders", b.builders)
 	set("__placeholder", b.placeholder)
@@ -221,19 +220,10 @@ func (b *binding) drainWarnings() []graph.Warning {
 // cv.<name>)
 func (b *binding) registry(goja.FunctionCall) goja.Value {
 	out := map[string]any{}
-	for _, k := range graph.Kinds {
+	for _, k := range b.eng.Registry().Receivers() {
 		out[string(k)] = toAny(b.eng.Registry().Methods(k))
 	}
 	out["cv"] = toAny(b.eng.Registry().ModuleOps())
-	return toJS(b.vm, out)
-}
-
-// __kinds() → ["Image", "Mask", …]: graph.Kinds in display order.
-func (b *binding) kinds(goja.FunctionCall) goja.Value {
-	out := make([]any, len(graph.Kinds))
-	for i, k := range graph.Kinds {
-		out[i] = string(k)
-	}
 	return toJS(b.vm, out)
 }
 
@@ -322,49 +312,30 @@ func (b *binding) open(c goja.FunctionCall) goja.Value {
 	return handle(b.vm, n)
 }
 
-func (b *binding) scaleArg(n *graph.Node, v goja.Value) float64 {
-	if goja.IsUndefined(v) || goja.IsNull(v) {
-		return b.eng.PreviewScale(n.ID)
-	}
-	switch x := graph.Normalize(v.Export()).(type) {
-	case string:
-		switch x {
-		case "preview":
-			return b.eng.PreviewScale(n.ID)
-		case "look":
-			return b.eng.ScaleForLong(n.ID, b.eng.Options().LookLong)
-		case "full":
-			return 1
-		}
-	case float64:
-		if x > 0 && x <= 1 {
-			return x
-		}
-	}
-	b.throw(graph.Errorf(graph.EArgRange, "scale must be a number in (0, 1] or \"preview\", \"look\", \"full\"; got %s.", v.String()))
-	return 0
-}
-
-// __evaluate(id, scale|null) → Promise. The promise is created here, on the
-// owner goroutine; the engine runs on a goroutine; the result is converted
-// and the promise settled in a callback posted back to the owner. The
-// goroutine never touches the VM.
+// __evaluate(id) → Promise: await. A Value or Regions node is evaluated at
+// scale 1 (data is exact); the promise is created here, on the owner
+// goroutine, the engine runs on a goroutine and the result is converted and
+// the promise settled in a callback posted back to the owner. An Image node
+// (a mask too) resolves at once to its static summary: nothing is evaluated.
 func (b *binding) evaluate(c goja.FunctionCall) goja.Value {
 	vm := b.vm
 	n := b.nodeArg(c.Argument(0))
-	scale := b.scaleArg(n, c.Argument(1))
+	b.noteUsed(n.ID)
+	promise, resolve, reject := vm.NewPromise()
+	if n.Kind == graph.KindImage {
+		_ = resolve(toJS(vm, graph.ImageSummary(n)))
+		return vm.ToValue(promise)
+	}
 	svc, ok := runtimebridge.Lookup(vm)
 	if !ok || svc.Owner == nil {
 		b.throw(graph.Errorf(graph.EInternal, "cv: runtime services missing (create the runtime with go-go-goja's engine)"))
 	}
-	b.noteUsed(n.ID)
-	promise, resolve, reject := vm.NewPromise()
 	callCtx := b.evalContext()
 	site := b.site()
 	go func() {
 		v, err := func() (v graph.Value, err error) { //nolint:nonamedreturns // recover needs named results
 			defer graph.Recover(&err, "await")
-			return b.eng.Evaluate(callCtx, n.ID, graph.EvalOptions{Scale: scale, OnWarn: func(w graph.Warning) { b.noteEvalWarning(w, site) }})
+			return b.eng.Evaluate(callCtx, n.ID, graph.EvalOptions{Scale: 1, OnWarn: func(w graph.Warning) { b.noteEvalWarning(w, site) }})
 		}()
 		settleCtx := callCtx
 		if callCtx.Err() != nil {
@@ -392,14 +363,6 @@ func (b *binding) evaluate(c goja.FunctionCall) goja.Value {
 
 func resultToJS(vm *goja.Runtime, v graph.Value, n *graph.Node) (goja.Value, error) {
 	switch x := v.(type) {
-	case *graph.ImageValue:
-		s := x.Summary()
-		if info, ok := graph.SourceInfo(n); ok { // an opened file: its metadata too
-			for k, val := range info {
-				s[k] = val
-			}
-		}
-		return toJS(vm, s), nil
 	case *graph.RegionsValue:
 		s, err := x.Summary()
 		if err != nil {
@@ -409,19 +372,24 @@ func resultToJS(vm *goja.Runtime, v graph.Value, n *graph.Node) (goja.Value, err
 	case *graph.DataValue:
 		return toJS(vm, graph.OrderBySchema(x.Data, n.Fields)), nil
 	}
-	return goja.Undefined(), nil
+	return nil, graph.Errorf(graph.EInternal, "%s evaluated to %T", graph.Label(n), v)
 }
 
-// __describe(id) → {id, kind, op, call, label, frame, path}
-func (b *binding) describe(c goja.FunctionCall) goja.Value {
+// __explain(id) → { id, kind, op, call, label, frame, space, path, graph }:
+// cv.explain(node), synchronous; it evaluates nothing (graph lists each
+// node's call, kind, size at scale 1 and whether its value is cached).
+func (b *binding) explain(c goja.FunctionCall) goja.Value {
 	n := b.nodeArg(c.Argument(0))
-	scale := b.eng.PreviewScale(n.ID)
+	b.noteUsed(n.ID)
 	d := map[string]any{
-		"id": float64(n.ID), "kind": string(n.Kind), "op": n.Op.Name, "label": graph.Label(n),
-		"call":  graph.Describe(b.eng.Builder(), n, scale),
+		"id": float64(n.ID), "kind": string(n.Kind), "op": graph.Shown(n).Op.Name, "label": graph.Label(n),
+		"call":  graph.Describe(b.eng.Builder(), graph.Shown(n), 1),
 		"frame": n.Frame.Data(),
 		"path":  toAny(b.eng.Path(n.ID)),
-		"scale": scale,
+		"graph": toAny(b.eng.Explain(n.ID)),
+	}
+	if n.Kind == graph.KindImage {
+		d["encoding"], d["space"], d["channels"] = n.Enc.String(), n.Space.String(), float64(n.Channels)
 	}
 	if info, ok := graph.SourceInfo(n); ok {
 		for k, v := range info {
@@ -455,7 +423,7 @@ func (b *binding) notAwaited(c goja.FunctionCall) goja.Value {
 	}
 	call := n.Op.Name + "()"
 	expr := graph.AwaitExpr(n)
-	if n.Kind == graph.KindImage || n.Kind == graph.KindMask {
+	if n.Kind == graph.KindImage {
 		call = graph.Label(n)
 	}
 	var e *graph.Error
@@ -463,7 +431,7 @@ func (b *binding) notAwaited(c goja.FunctionCall) goja.Value {
 	case prop == "":
 		e = graph.Errorf(graph.ENotAwaited, "%s is a lazy node used as %s: nothing has been computed yet.", call, graph.A(c.Argument(2).String()))
 		e.Hint = "Await the node first; awaited, a Value is its data and an Image its summary { kind, w, h, … }."
-		if n.Kind == graph.KindImage || n.Kind == graph.KindMask {
+		if n.Kind == graph.KindImage {
 			e.Fix = "(await img).w"
 		} else {
 			e.Fix = fmt.Sprintf("(await %s).%s", expr, sampleField(n))
@@ -547,23 +515,6 @@ func (b *binding) help(c goja.FunctionCall) goja.Value {
 		name = a.String()
 	}
 	return toJS(b.vm, Help(b.eng.Registry(), name))
-}
-
-// __warnings(clear) → [{code, message}]
-func (b *binding) warningsJS(c goja.FunctionCall) goja.Value {
-	var ws []graph.Warning
-	if c.Argument(0).ToBoolean() {
-		ws = b.drainWarnings()
-	} else {
-		b.mu.Lock()
-		ws = append(ws, b.warnings...)
-		b.mu.Unlock()
-	}
-	out := make([]any, len(ws))
-	for i, w := range ws {
-		out[i] = map[string]any{"code": w.Code, "message": w.Message}
-	}
-	return toJS(b.vm, out)
 }
 
 func sortedKeys(m map[string]any) []string {

@@ -18,6 +18,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/dop251/goja"
@@ -48,8 +49,6 @@ const (
 	// MCPMaxDataBytes is the size above which the MCP server replaces a data
 	// item by a note to save it (data enters the model's context).
 	MCPMaxDataBytes = 256 << 10
-	// ENoDocument is the error code of any use of doc before the document layer exists.
-	ENoDocument = "E_NO_DOCUMENT"
 	// ENoImage is the error code of using img when no image is open.
 	ENoImage = "E_NO_IMAGE"
 )
@@ -222,8 +221,15 @@ func (a *App) CreateSession(ctx context.Context) (*replsession.SessionSummary, e
 // whereLine finds the agent line of a rendered error ("where: 'line 12: …'").
 var whereLine = regexp.MustCompile(`where: '?line (\d+)`)
 
-// runPreludes evaluates the prelude files in session id, in order.
+// runPreludes evaluates the prelude files in session id, in order. Preludes
+// have no output: the looks they create are discarded.
 func (a *App) runPreludes(ctx context.Context, id string) error {
+	st, err := a.stateFor(ctx, id)
+	if err != nil {
+		return err
+	}
+	st.prelude.Store(true)
+	defer st.prelude.Store(false)
 	for _, p := range a.opts.Preludes {
 		code, err := os.ReadFile(p)
 		if err != nil {
@@ -349,12 +355,12 @@ type state struct {
 	eng  *graph.Engine
 
 	mu      sync.Mutex
-	pending string // body of the next eval (set by App.Evaluate)
+	pending string      // body of the next eval (set by App.Evaluate)
+	prelude atomic.Bool // a prelude is running: its looks are discarded
 
 	// (owner)
 	wrapped  bool     // the current eval came through App.Evaluate
 	lines    []string // agent code of the current eval
-	shows    []*look.Look
 	failure  *failure
 	lookSeq  int
 	names    *nameTable // named images (img first)
@@ -428,7 +434,6 @@ func (s *state) begin() {
 	s.mu.Unlock()
 	s.wrapped = wrapped
 	s.lines = strings.Split(body, "\n")
-	s.shows = nil
 	s.failure = nil
 }
 

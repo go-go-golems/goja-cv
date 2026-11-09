@@ -60,7 +60,7 @@ func TestOpenEncodingsWindowsAndOrigins(t *testing.T) {
 
 	// the file says linear: values are what is stored
 	lin := mustOpen(t, e, linTIF, nil)
-	if lin.Enc != buffer.EncLinear || lin.Space != buffer.SpaceLinear || lin.Frame != (graph.Frame{W: 256, H: 192}) {
+	if lin.Enc != buffer.EncLinear || lin.Space != buffer.SpaceEncoded || lin.Frame != (graph.Frame{W: 256, H: 192}) {
 		t.Fatalf("linear tiff: %s %s", graph.Statics(lin), lin.Frame)
 	}
 	lv := evalValue(t, e, lin, 1).(*graph.ImageValue)
@@ -75,14 +75,16 @@ func TestOpenEncodingsWindowsAndOrigins(t *testing.T) {
 	if plain.Enc != buffer.EncSRGB || over.Enc != buffer.EncLinear || plain.ID == over.ID {
 		t.Fatalf("encoding override: %v %v", plain.Enc, over.Enc)
 	}
+	// both open in file units (the stored codes); in linear they differ
 	pv, ov := evalValue(t, e, plain, 1).(*graph.ImageValue), evalValue(t, e, over, 1).(*graph.ImageValue)
-	if math.Abs(float64(ov.Buf.Pix[100]-lv.Buf.Pix[100])) > 1e-7 ||
-		math.Abs(float64(pv.Buf.Pix[100])-buffer.SRGBToLinear(float64(ov.Buf.Pix[100]))) > 1e-6 {
-		t.Fatalf("plain %g, override %g, linear %g", pv.Buf.Pix[100], ov.Buf.Pix[100], lv.Buf.Pix[100])
+	pl := evalValue(t, e, call(t, e, graph.AsOp, plain.ID, "linear"), 1).(*graph.ImageValue)
+	if math.Abs(float64(ov.Buf.Pix[100]-lv.Buf.Pix[100])) > 1e-7 || pv.Buf.Pix[100] != ov.Buf.Pix[100] ||
+		math.Abs(float64(pl.Buf.Pix[100])-buffer.SRGBToLinear(float64(ov.Buf.Pix[100]))) > 1e-6 {
+		t.Fatalf("plain %g (linear %g), override %g, linear %g", pv.Buf.Pix[100], pl.Buf.Pix[100], ov.Buf.Pix[100], lv.Buf.Pix[100])
 	}
 	// the mask of a linear-encoded file thresholds the stored values: no conversion node
 	m := call(t, e, "mask.luminance", lin.ID, map[string]any{"above": 0.5})
-	if g, _ := e.Node(m.Inputs[0]); g.Op.Name != "toGray" || g.Inputs[0] != lin.ID {
+	if g, _ := e.Node(m.Inputs[len(m.Inputs)-1]); g.Op.Name != "toGray" || g.Inputs[0] != lin.ID { // the luminance input
 		t.Fatal("mask.luminance on linear data must read toGray(source) directly")
 	}
 

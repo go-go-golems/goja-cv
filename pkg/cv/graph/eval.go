@@ -304,9 +304,6 @@ func (r *evalRun) eval(ctx context.Context, id NodeID) (Value, error) {
 	if fs := r.scaleFor(n); fs != r.scale {
 		return r.at(fs).eval(ctx, id)
 	}
-	if n.Op.NoCache {
-		return r.compute(ctx, n, Signature{})
-	}
 	sig := r.sig(id)
 	r.mu.Lock()
 	v, ok := r.vals[sig]
@@ -339,7 +336,7 @@ func (r *evalRun) memo(sig Signature, v Value) {
 }
 
 // compute evaluates inputs in parallel, applies the identity short-circuit,
-// runs the op and caches the result (unless NoCache).
+// runs the op and caches the result.
 func (r *evalRun) compute(ctx context.Context, n *Node, sig Signature) (Value, error) {
 	ins := make([]Value, len(n.Inputs))
 	if !n.Op.Lazy && len(n.Inputs) > 0 {
@@ -372,14 +369,6 @@ func (r *evalRun) compute(ctx context.Context, n *Node, sig Signature) (Value, e
 	}
 	out = stamp(n, out, ins)
 	r.e.countRun(n.ID)
-	if n.Op.NoCache {
-		if r.group.onWarn != nil {
-			for _, w := range ec.warnings() {
-				r.group.onWarn(w)
-			}
-		}
-		return out, nil
-	}
 	ws := ec.warnings()
 	r.e.keepWarnings(sig, ws)
 	if !r.e.cache.Put(sig, out) && r.group.onWarn != nil { // too large to cache: nothing to replay, report now
@@ -468,7 +457,9 @@ func (e *Evaluator) wrapWithPath(err error, n *Node) error {
 func (e *Evaluator) Path(id NodeID) []string {
 	var rev []string
 	for n := e.node(id); n != nil; {
-		rev = append(rev, Label(n))
+		if n.Op.Name != AsOp { // conversions are not steps the agent wrote
+			rev = append(rev, Label(n))
+		}
 		if !n.HasReceiver() {
 			break
 		}

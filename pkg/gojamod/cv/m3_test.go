@@ -21,12 +21,13 @@ func TestMasksAndRegionsFromJS(t *testing.T) {
 		const same = regs.filter(x => x.area > 50) === big
 		const n1 = await regs.where({ area: { gte: 50 } }).count()
 		const n2 = await regs.where({ area: { gte: 5 } }).count()
-		return { m, count: r.count, first: r.items[0], fcount: f.count, fid: f.items[0].id, same, n1, n2 }`).(map[string]any)
+		const coverage = await boxes.coverage()
+		return { m, coverage, count: r.count, first: r.items[0], fcount: f.count, fid: f.items[0].id, same, n1, n2 }`).(map[string]any)
 	m := got["m"].(map[string]any)
-	if m["kind"] != "Mask" || m["coverage"] == nil {
+	if m["kind"] != "Image" || m["channels"] != int64(1) || fmt.Sprint(m["frame"]) != "[0 0 64 48]" {
 		t.Fatalf("mask summary %v", m)
 	}
-	near(t, "coverage", m["coverage"], 96.0/(64*48), 1e-6)
+	near(t, "coverage", got["coverage"], 96.0/(64*48), 1e-6)
 	first := got["first"].(map[string]any)
 	if fmt.Sprint(first["x"], first["y"], first["w"], first["h"]) != "4 4 10 8" || got["count"] != int64(2) {
 		t.Fatalf("regions %v", got)
@@ -59,7 +60,7 @@ func TestWithinBuilderFromJS(t *testing.T) {
 		const direct = img.within(sky, img.exposure(-0.4))
 		const a = (await out.stats()).meanL
 		const b = (await img.within(sky, i => i.exposure(-1.5)).stats()).meanL
-		return { seen, same: out === again && out === direct, a, b, explain: await out.explain() }`).(map[string]any)
+		return { seen, same: out === again && out === direct, a, b, explain: cv.explain(out).graph }`).(map[string]any)
 	if got["seen"] != int64(1) || got["same"] != true {
 		t.Fatalf("builder: %v", got)
 	}

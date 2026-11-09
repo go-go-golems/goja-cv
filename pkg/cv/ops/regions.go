@@ -17,7 +17,7 @@ func regions(v graph.Value) *graph.RegionsValue { return v.(*graph.RegionsValue)
 // analysisScaleArg is the static argument of Regions-producing ops that
 // fixes the scale they analyse at (see OpDef.AnalysisScale).
 var analysisScaleArg = graph.ArgSpec{Name: "analysisScale", Type: "number", Default: 1.0, Min: graph.F(0.05), Max: graph.F(1),
-	Doc: "scale the input is analysed at, whatever the evaluation scale, so region ids and doc-px coordinates are the same in preview and export"}
+	Doc: "scale the input is analysed at, whatever the evaluation scale, so region ids and doc-px coordinates are the same in a look and a measurement"}
 
 func analysisScale(a graph.Args) float64 {
 	f, _ := a.Raw("analysisScale").(float64)
@@ -106,6 +106,11 @@ func compare(op string, got, want any) (bool, error) {
 			}
 		}
 		return false, nil
+	}
+	if got == nil { // a null measure (stepChroma below |snr| 1) fails every numeric comparison
+		if _, ok := want.(float64); ok {
+			return false, nil
+		}
 	}
 	g, ok1 := got.(float64)
 	w, ok2 := want.(float64)
@@ -219,7 +224,7 @@ func idFilterOp(name string, keep bool, doc string) graph.OpDef {
 func regionOps() []graph.OpDef {
 	return []graph.OpDef{
 		{
-			Name: "components", On: graph.KindMask, Returns: graph.KindRegions, Global: true,
+			Name: "components", On: graph.KindImage, Returns: graph.KindRegions, Global: true, OneChannel: true,
 			Args: []graph.ArgSpec{
 				{Name: "minArea", Type: "number", Unit: graph.DocPx2, Default: 1.0, Min: graph.F(0), Doc: "smallest region kept, in doc px²",
 					Redirects: map[string]graph.Redirect{"maxArea": {Hint: "components keeps every region from minArea up; drop large ones with where.",
@@ -229,7 +234,7 @@ func regionOps() []graph.OpDef {
 			},
 			AnalysisScale: analysisScale,
 			Run: func(ctx context.Context, ec *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
-				m := mask(in[0])
+				m := image(in[0])
 				pl := m.Buf.Plane(0)
 				thr := float32(a.Number("threshold"))
 				fg := make([]bool, len(pl))
@@ -306,6 +311,9 @@ func regionOps() []graph.OpDef {
 				var ferr error
 				val := func(r *graph.Region) float64 {
 					v, ok := r.Field(key)
+					if ok && v == nil { // null (stepChroma below |snr| 1): sorted last
+						return math.NaN()
+					}
 					f, isNum := v.(float64)
 					if !ok || !isNum {
 						if ferr == nil {
@@ -317,6 +325,9 @@ func regionOps() []graph.OpDef {
 				}
 				sort.SliceStable(items, func(i, j int) bool {
 					vi, vj := val(items[i]), val(items[j])
+					if math.IsNaN(vi) || math.IsNaN(vj) {
+						return !math.IsNaN(vi) && math.IsNaN(vj)
+					}
 					if desc {
 						return vi > vj
 					}
@@ -327,7 +338,7 @@ func regionOps() []graph.OpDef {
 				}
 				return rv.With(items), nil
 			},
-			Doc: "Order the regions by a numeric field (largest first unless desc: false).",
+			Doc: "Order the regions by a numeric field (largest first unless desc: false); null values go last.",
 			See: []string{"top"},
 		},
 		{
@@ -353,7 +364,7 @@ func regionOps() []graph.OpDef {
 			Doc: "The number of regions.",
 		},
 		{
-			Name: "toMask", On: graph.KindRegions, Returns: graph.KindMask,
+			Name: "toMask", On: graph.KindRegions, Returns: graph.KindImage, Result: graph.DerivedEnc, Channels: graph.One,
 			Args: []graph.ArgSpec{{Name: "grow", Type: "number", Unit: graph.DocPx, Default: 0.0, Min: graph.F(0), Max: graph.F(500),
 				Doc: "dilate each region by this many doc px"}},
 			Run: func(ctx context.Context, ec *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
@@ -367,9 +378,9 @@ func regionOps() []graph.OpDef {
 						return nil, err
 					}
 				}
-				return graph.NewMask(m), nil
+				return graph.NewImage(m), nil
 			},
-			Doc: "The regions as a Mask at the evaluation scale (exact area coverage), optionally grown.",
+			Doc: "The regions as a mask (a one-channel image) at the evaluation scale (exact area coverage), optionally grown.",
 			See: []string{"components", "grow"},
 		},
 		{

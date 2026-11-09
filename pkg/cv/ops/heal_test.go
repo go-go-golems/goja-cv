@@ -61,11 +61,16 @@ func stat(xs []float64) (float64, float64) {
 func TestHealRemovesPlantedSpecks(t *testing.T) {
 	e, img, p := plantedEngine(t)
 	keep := call(t, e, "where", call(t, e, "detect.specks", img.ID).ID, map[string]any{"score": map[string]any{"gte": DustScore}})
-	src := evalValue(t, e, img, 1).(*graph.ImageValue).Buf
+	// the deviations are computed from linear buffers: heal is physical, so
+	// as(healed, "linear") is heal's own result
+	linear := func(n *graph.Node) *buffer.Buffer {
+		return evalValue(t, e, call(t, e, graph.AsOp, n.ID, "linear"), 1).(*graph.ImageValue).Buf
+	}
+	src := linear(img)
 	before, worstBefore := stat(speckDeviation(t, src, p))
 	for _, method := range []string{"patch", "diffuse"} {
 		healed := call(t, e, "heal", img.ID, graph.NodeArg{ID: keep.ID}, map[string]any{"radius": 1.5, "method": method})
-		hb := evalValue(t, e, healed, 1).(*graph.ImageValue).Buf
+		hb := linear(healed)
 		after, worst := stat(speckDeviation(t, hb, p))
 		t.Logf("%s: speck deviation from background mean %.4f (worst %.4f) → %.4f (worst %.4f); noise σ %.4f",
 			method, before, worstBefore, after, worst, testimage.PlantedNoise)
@@ -91,7 +96,7 @@ func TestHealRemovesPlantedSpecks(t *testing.T) {
 	}
 	// patch keeps grain: the residual noise inside healed specks is near σ
 	grain := func(method string) float64 {
-		hb := evalValue(t, e, call(t, e, "heal", img.ID, graph.NodeArg{ID: keep.ID}, map[string]any{"radius": 1.5, "method": method}), 1).(*graph.ImageValue).Buf
+		hb := linear(call(t, e, "heal", img.ID, graph.NodeArg{ID: keep.ID}, map[string]any{"radius": 1.5, "method": method}))
 		L := perceptualLuminance(hb)
 		var vals []float32
 		for _, s := range p.Specks {

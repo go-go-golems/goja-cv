@@ -40,8 +40,10 @@ and point to `cv.docs` and `cv.help`. They are deliberately short: some clients 
 - The value comes back as **YAML**, capped at 9000 characters (`# CUT` note), followed by `warnings:` and a
   `context:` block (open images with size and bit depth, `mem` keys).
 - `const`/`let` do not survive between calls; `mem` is a plain object that does.
-- `img` is the open image (`img = cv.open(path)` rebinds it); `doc` is not available yet.
-- Images come back as **looks** (`node.look()`, `show(node)`), at most four per eval.
+- `img` is the open image (`img = cv.open(path)` rebinds it).
+- `await` evaluates: measurements at full resolution; an awaited Image is its summary (nothing computed).
+- Images come back as **looks** (`node.look()`): every look created in an eval is delivered, at most four (a
+  `LOOKS` warning names the others).
 - Errors are YAML with a literal `fix:`; the agent should apply it.
 
 ## Docs from inside eval
@@ -56,7 +58,7 @@ return {
 }
 ```
 
-`cv.docs.read(id, { section })` returns Markdown; `cv.help(name)` takes ops, kinds (`"Mask"`), `Kind.method`
+`cv.docs.read(id, { section })` returns Markdown; `cv.help(name)` takes ops, kinds (`"Regions"`), `Kind.method`
 and cv functions, and never throws. In test runs with a small model (deepseek-4.1-flash via pi), making the
 docs reachable from eval and making every error carry a fix cut the calls per task from 30 to about 20, with
 every remaining error corrected on the next call.

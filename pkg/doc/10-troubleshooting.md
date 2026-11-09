@@ -24,13 +24,12 @@ marks the failing call), `hint` and usually `fix` (literal code). Apply the fix 
 | E_UNKNOWN_METHOD / E_NAMESPACE | wrong method name or kind (`specks.heal()` → `img.heal(specks)`); see `fix` |
 | E_UNKNOWN_OPTION | option misspelt or named differently (`min` → `above`, `radius` → `sigma` on a blur) |
 | E_ARG_TYPE / E_ARG_RANGE | wrong type or outside hard limits; `cv.help(op)` lists units and ranges |
-| E_WRONG_KIND | a Mask where Regions were expected, or plain data where a node was expected |
+| E_WRONG_KIND | a colour image where a mask (one channel) is expected (fix `img.toGray()`), regions where a mask is expected (`.toMask()`), or plain data where a node was expected |
 | E_NOT_AWAITED | a field of, or a number from, an unawaited measurement: `(await img.stats()).p99` |
 | E_NOT_ARRAY | awaited Regions used as an array: they are `{ count, items }`; use `.items` |
 | TypeError with a hint | a JavaScript error on cv data, translated (`r.count()` after await → `r.count`) |
 | E_NO_IMAGE | nothing open: `img = cv.open("scan.tif")` or start with `--image` |
 | E_ACCESS | the path is outside `--root` |
-| E_NO_DOCUMENT | `doc` (history/apply/export) is not implemented yet |
 | E_TIMEOUT | the eval ran longer than the limit (60 s; `--timeout-ms`) |
 
 `cv.help(name)` never throws and suggests names; `cv.docs.search(text)` finds the guide section.
@@ -60,5 +59,7 @@ in that session at once with "Start a new session". Use `create_session` or rest
 ## Results are cut or images missing
 
 - Results over 9000 characters end with `# CUT …`: return less (pick fields, slice arrays).
-- More than four looks in one eval: the extra ones are listed as dropped in the `content:` notes.
+- More than four looks in one eval: the extra ones are not delivered; they are marked `[not delivered: …]` and the
+  `LOOKS` warning names them by label. Split the work over several calls, or return fewer looks (one `cv.sheet`).
+  Data items beyond four get the same treatment with a `DATA` warning.
 - A look of a Value or Regions node is `E_WRONG_KIND`: use `img.overlay(regions).look()` or a histogram look.

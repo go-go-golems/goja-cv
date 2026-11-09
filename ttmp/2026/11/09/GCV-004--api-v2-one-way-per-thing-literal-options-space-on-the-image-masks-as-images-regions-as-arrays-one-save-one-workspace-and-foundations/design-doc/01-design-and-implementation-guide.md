@@ -2790,3 +2790,52 @@ order found; the phase is in brackets.
     of a DoG ≈ 0.045 in the measuring recipe) are now literals and would raise RANGE.
 14. [1] `fields.go` keeps `__removedFields`, `__noField` and `__itemProto` (and `E_NO_FIELD` stays) until Phase 5,
     which deletes the item prototype; Phase 1 deleted `__fieldNames` only.
+15. [2] The awaited Image summary and `cv.explain` have no `channels` until Phase 4, when `Node.Channels` exists
+    (an opened file's `fileChannels` is there from the start); a mask's summary no longer has `coverage` (it was
+    evaluated; `await m.coverage()` gives it).
+16. [2] The `LOOKS` warning is tagged with the line of the first look it drops (`LOOKS line 4: 4 of 6 looks
+    delivered; not delivered: line 4 look("4"), line 5 look("5"). …`), so every warning keeps the `CODE line N:`
+    form; the v1 patch's warning was not on `main` when Phase 2 was done, so this is the branch's own code and text.
+17. [2] `graph.Kinds` is gone; `Registry.Receivers()` lists the receiver kinds that have methods (help, the
+    reference, `goja-cv ops`). With the Value ops and the `explain` op deleted, Value has no methods, so help lists
+    Image, Mask and Regions.
+18. [0a] Phase 0a was done by merging `origin/main` (PR #5, `b42502b`) after Phase 2, not before Phase 0b: the v1
+    patch landed then. Only `sheet-2x2` moved (on `main`); `ruler-crop-zoom8` and `grid-gray-crop-zoom4` did not.
+    The merged `LOOKS` warning uses the v1 code and wording with Phase 2's line-tagged names (deviation 16 is
+    superseded); the v1 `DATA` warning stays until Phase 6 deletes the data items.
+19. [3] `Builder.as` has a third fold besides §7.4's two: `as(openLinear(…), encoded)` is the encoded `open(…)` node.
+    Without it `img.sub(lin)` with `lin = img.as("linear")` (the argument converted back to the receiver's space)
+    and `img.as("linear").as("encoded")` would hold a second encoded copy of the source. The folds also run in
+    `Substitute`, so a lambda's graph equals the hand-written chain.
+20. [3] The one luminance is `OpDef.Luma` plus two refinements: `LumaOf` names the argument whose luminance is read
+    when it is not the receiver (`refine` reads its `guide`, `measure` its `image`), and `LumaWhen` adds the input
+    only when it is used (`levels` with `auto`, `histogram` with channel `L`), so plain `levels` and per-channel
+    histograms keep their hash and their goldens. `toGray`'s rule is `SpaceOf`: Physical for `rec709`, Follows for
+    `average`.
+21. [3] `exposure`'s RANGE hint is carried by a new `ArgSpec.UsualHint` (appended to the RANGE message); the same
+    text ends `exposure`'s doc.
+22. [3] `cv.explain` lists the inserted `as` nodes and shows `openLinear` as `source <file> (linear)`; captions,
+    `path` and the caption chain hide both (`open(f) → exposure(0.5)`).
+23. [3] Test changes forced by the receiver rule: `a.sub(b).add(b) == a` became `b.add(a.sub(b))` (a derived
+    receiver works in linear, §7.4); the "blurred scan is clean" check of `check.dust` blurs in linear light
+    (`img.as("linear").gaussian(6).as("encoded")`: an encoded blur of σ 6 leaves one 191 px candidate); the hot-list
+    test and benchmark build on `img.as("linear")` and the `GOJACV_HOT_SPACE` / `GOJACV_VIEW_SPACE` experiment
+    switches are gone with the option. Session numbers in tests and `03-cli.md` moved to file units (gradient meanL
+    0.29507 → 0.52726, p99 0.83255 → 0.92244).
+24. [4] The luminance input of a `Luma` op is never converted either (with masks and `OneChannel` receivers): it is
+    `toGray` in its source's space by definition. Without this, `refine`'s guide luminance (encoded, from the
+    photograph) was converted to the mask receiver's linear space, which moved the `mask-refine` golden.
+25. [4] Mask ops (`and`, `or`, `minus`, `not`, `grow`, `shrink`, `feather`, `refine`) and `toMask` return
+    linear-encoded (`DerivedEnc`) results like the mask makers, also on a grey photograph (`img.toGray().grow(2)` is
+    a mask). A look of a one-channel linear-encoded image is PNG by default (masks were PNG by kind); derived grey
+    images (`chroma`, a grey DoG) are now PNG too. All goldens are below `smallLook` and stayed exact.
+26. [4] A channel count of 0 means unknown and skips the checks; every source declares `Channels` (`open` and
+    `openLinear` from the probe, the placeholder from `PlaceholderMeta.Channels`, the test sources).
+27. [4] The fix for a colour receiver of a `OneChannel` op is `img.toGray().<op>(…)` (`colormap`'s run-time error
+    and its `toGray("average")` fix are gone); `channel("g")` on a grey image is `E_ARG_RANGE` at build time.
+    `cv.help("Mask")` resolves to the new `mask` concept (concepts are looked up case-insensitively); the
+    `Mask.stats` redirect is gone and `mask.stats` explains `m.stats()` against `img.stats({ mask: m })`.
+28. [4] The channel property test is `TestRegistryWalk`: every op on colour, grey and mask receivers (as
+    `OneChannel`/`ThreeChannel` allow) in two passes with colour and grey image arguments; the arithmetic samples
+    use an image operand (the number operand is covered by `arith_test.go`) and `channel`'s sample is `"r"`.
+    `regions.measure`'s image argument is typed `Image` (a mask is one).

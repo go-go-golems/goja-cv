@@ -21,11 +21,11 @@ return {
 
 - `name` is a plain name (letters, digits, `-`, `_`): the item becomes `name.csv` or `name.json`. Without a name it is `data-<N>`, N its content number.
 - CSV has a header row; `columns: ["id", "cx", "cy", "snr"]` selects and orders; a profile gives one row per sample; nested values are JSON in their cell.
-- At most 4 looks and 4 data items per eval; over MCP an item larger than 256 KiB is replaced by a note to save it.
+- At most 4 looks and 4 data items per eval (the rest are not delivered: `LOOKS` and `DATA` warnings name them); over MCP an item larger than 256 KiB is replaced by a note to save it.
 
 ## Saving files
 
-`node.save(path, { depth })` writes an Image or Mask, `cv.csv(x).save(path)` a data item, under the out-root: the directory the session was started with (`--out-root DIR`). Without it saving is `E_ACCESS`. Paths are relative to the out-root; `..` and symlinks may not leave it. The promise resolves to `{ path, format, depth, encoding, frame, bytes, replaced }`.
+`node.save(path, { depth })` writes an Image (a mask too), `cv.csv(x).save(path)` a data item, under the out-root: the directory the session was started with (`--out-root DIR`). Without it saving is `E_ACCESS`. Paths are relative to the out-root; `..` and symlinks may not leave it. The promise resolves to `{ path, format, depth, encoding, frame, bytes, replaced }`.
 
 | extension | depths (default first) | records |
 |---|---|---|
