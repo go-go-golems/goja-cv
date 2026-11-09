@@ -115,4 +115,6 @@ go run ./internal/testimage/gen -out /tmp -planted   # the planted-fault dust sc
 CV_LOOK_DIR=/tmp/look go test ./pkg/cv/ops -run OverlayAndCompare   # write overlay/side/diff PNGs
 ```
 
-go-go-goja is consumed through a local `replace ../go-go-goja`.
+go-go-goja is pinned to the commit of go-go-golems/go-go-goja#108 (result content, replmcp, xgoja mcp provider)
+until that PR is merged and released. To work against a local checkout, add
+`replace github.com/go-go-golems/go-go-goja => ../go-go-goja` (do not commit it).
