@@ -95,16 +95,16 @@ func TestKindTypedArgsStaticLenValidate(t *testing.T) {
 		t.Fatalf("paint through mask: %v %v", b.Pix[0], b.Pix[b.W-1])
 	}
 	// wrong kind for a kind-typed arg
-	_, _, err = e.Call("paint", src.ID, []any{map[string]any{"mask": NodeArg{src.ID}}})
+	_, err = e.Call("paint", src.ID, []any{map[string]any{"mask": NodeArg{src.ID}}})
 	if ce := codeOf(t, err); ce.Code != EWrongKind || !strings.Contains(ce.Hint, "mask.luminance") {
 		t.Fatalf("image as mask: %+v", ce)
 	}
-	_, _, err = e.Call("paint", src.ID, []any{map[string]any{"mask": 0.5}})
+	_, err = e.Call("paint", src.ID, []any{map[string]any{"mask": 0.5}})
 	if ce := codeOf(t, err); ce.Code != EWrongKind {
 		t.Fatalf("number as mask: %+v", ce)
 	}
 	// Len
-	_, _, err = e.Call("blobs", src.ID, []any{[]any{1, 2, 3}})
+	_, err = e.Call("blobs", src.ID, []any{[]any{1, 2, 3}})
 	if ce := codeOf(t, err); ce.Code != EArgType || !strings.Contains(ce.Hint, "[x, y, w, h]") {
 		t.Fatalf("box len: %+v", ce)
 	}
@@ -113,12 +113,12 @@ func TestKindTypedArgsStaticLenValidate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _, err = e.Call("blobs", src.ID, []any{[]any{0, 0, 4, 4}, map[string]any{"analysisScale": NodeArg{par.ID}}})
+	_, err = e.Call("blobs", src.ID, []any{[]any{0, 0, 4, 4}, map[string]any{"analysisScale": NodeArg{par.ID}}})
 	if ce := codeOf(t, err); ce.Code != EArgType || !strings.Contains(ce.Message, "literal") {
 		t.Fatalf("static: %+v", ce)
 	}
 	// Validate runs at build time
-	_, _, err = e.Call("pred", src.ID, []any{3})
+	_, err = e.Call("pred", src.ID, []any{3})
 	if ce := codeOf(t, err); ce.Code != EArgType {
 		t.Fatalf("validate: %+v", ce)
 	}

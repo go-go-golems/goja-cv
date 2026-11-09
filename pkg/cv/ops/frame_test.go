@@ -28,7 +28,7 @@ func testSource(t *testing.T, e *graph.Engine, enc string, f graph.Frame, fill .
 
 func callErr(t *testing.T, e *graph.Engine, name string, recv graph.NodeID, raw ...any) *graph.Error {
 	t.Helper()
-	_, _, err := e.Call(name, recv, raw)
+	_, err := e.Call(name, recv, raw)
 	ce, ok := graph.AsError(err)
 	if !ok {
 		t.Fatalf("%s: want a cv error, got %v", name, err)

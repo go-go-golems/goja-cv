@@ -117,7 +117,8 @@
   }
 
   function callOp(t, op, args) {
-    return nodeFor(native.__call(op, t.__id, args.map(marshal)));
+    const h = native.__call(op, t.__id, args.map(marshal));
+    return Array.isArray(h) ? h.map(nodeFor) : nodeFor(h); // a macro may build several nodes (split)
   }
 
   // Builder lambdas (within(mask, i => …)) run here, once, while the graph

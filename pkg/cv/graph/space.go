@@ -199,6 +199,10 @@ func inputRefs(v any) []InputRef {
 // nodeStatics computes a node's encoding and space from (op, args, inputs)
 // alone, so a hash hit has exactly the statics a new node would get.
 func nodeStatics(op *OpDef, args Args, inputs []*Node) (buffer.Encoding, buffer.Space) {
+	if op.Expand != nil && len(inputs) > 0 { // a macro node: its expansion's output
+		last := inputs[len(inputs)-1]
+		return last.Enc, last.Space
+	}
 	s := OpSpace(op, args)
 	switch op.Returns {
 	case KindImage:

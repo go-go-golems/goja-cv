@@ -385,3 +385,16 @@ func TestRegistrarAndNamespaces(t *testing.T) {
 		t.Fatal("EngineFor returned another engine")
 	}
 }
+
+// TestSplitReturnsNodes: a macro that builds several nodes returns an array
+// of node proxies in JavaScript.
+func TestSplitReturnsNodes(t *testing.T) {
+	rt := newRuntime(t)
+	got := mustRun(t, rt, `
+		const [r, g, b] = img.split()
+		const s = await b.stats()
+		return { kinds: [r, g, b].map(n => cv.isNode(n)).join(","), same: g === img.channel("g"), ch: (await g).channels, enc: (await img.chroma()).encoding, p99: s.p99 }`).(map[string]any)
+	if got["kinds"] != "true,true,true" || got["same"] != true || got["enc"] != "linear" {
+		t.Fatalf("split: %v", got)
+	}
+}

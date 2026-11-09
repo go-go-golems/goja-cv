@@ -75,7 +75,7 @@ func toneOps() []graph.OpDef {
 		},
 		{
 			Name: "toGray", On: graph.KindImage, Returns: graph.KindImage, Space: graph.SpaceRule{Default: buffer.SpaceLinear},
-			Args: []graph.ArgSpec{{Name: "weights", Type: "enum:rec709,rec601,average", Default: "rec709", Positional: true}},
+			Args: []graph.ArgSpec{{Name: "weights", Type: "enum:rec709,average", Default: "rec709", Positional: true}},
 			Halo: func(graph.Args) float64 { return 0 },
 			Run: func(ctx context.Context, _ *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
 				src := image(in[0])

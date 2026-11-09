@@ -180,10 +180,15 @@ type OpDef struct {
 	Inputs   []Kind // extra node inputs beyond the receiver, passed positionally first
 	Args     []ArgSpec
 	Returns  Kind
-	Space    SpaceRule                             // working space (SpaceNone: the op does not read levels)
-	Result   *ResultEnc                            // encoding and space of an Image result; nil = KeepEnc
-	Gray     func(args Args) []int                 // positions of the Image inputs read as luminance (fed toGray rec709 in linear space)
-	Internal bool                                  // not callable from JavaScript, not listed in help (convert)
+	Space    SpaceRule             // working space (SpaceNone: the op does not read levels)
+	Result   *ResultEnc            // encoding and space of an Image result; nil = KeepEnc
+	Gray     func(args Args) []int // positions of the Image inputs read as luminance (fed toGray rec709 in linear space)
+	Internal bool                  // not callable from JavaScript, not listed in help (convert)
+	// Expand makes the op a macro: a graph of other ops built at intern
+	// time (exactly one of Run and Expand is set). See ExpandFunc.
+	Expand ExpandFunc
+	// Warn adds build-time warnings for a call (toLab on camera RGB).
+	Warn     func(b *Builder, args Args, inputs []*Node) []Warning
 	Identity func(args Args) bool                  // neutral arguments: the receiver is returned unchanged
 	Halo     func(args Args) float64               // doc px of border a tile needs (for tiled export; unused in M1)
 	Global   bool                                  // needs the whole image (stats, histogram)
@@ -237,8 +242,8 @@ func (r *Registry) Register(def OpDef) error {
 	if def.Name == "" {
 		return errors.New("op without name")
 	}
-	if def.Run == nil {
-		return errors.Errorf("op %s has no Run", def.Name)
+	if (def.Run == nil) == (def.Expand == nil) {
+		return errors.Errorf("op %s must have exactly one of Run and Expand", def.Name)
 	}
 	if def.Returns == KindNone {
 		return errors.Errorf("op %s has no Returns kind", def.Name)

@@ -445,6 +445,8 @@ func (b *binder) check(s *ArgSpec, typ string, v any, where string) (any, error)
 		return nil, Errorf(EInternal, "%s: unresolved input reference", where)
 	}
 	switch {
+	case isUnionType(typ):
+		return b.checkUnion(s, typ, v, where)
 	case typ == "number":
 		f, ok := v.(float64)
 		if !ok {
@@ -511,8 +513,6 @@ func (b *binder) check(s *ArgSpec, typ string, v any, where string) (any, error)
 		return b.checkBox(s, v, where)
 	case typ == "point":
 		return b.checkPoint(s, v, where)
-	case isUnionType(typ):
-		return b.checkUnion(s, typ, v, where)
 	case typ == "object":
 		m, ok := v.(map[string]any)
 		if !ok {

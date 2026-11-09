@@ -62,14 +62,15 @@ func (e *Engine) Evaluator() *Evaluator        { return e.ev }
 func (e *Engine) Cache() *Cache                { return e.ev.cache }
 func (e *Engine) Node(id NodeID) (*Node, bool) { return e.b.Node(id) }
 
-// Call interns op name on receiver (0 for source ops) with raw arguments.
-// An unknown name yields E_UNKNOWN_METHOD / E_NAMESPACE with suggestions.
-func (e *Engine) Call(name string, receiver NodeID, raw []any) (*Node, []Warning, error) {
+// Call interns op name on receiver (0 for source ops) with raw arguments:
+// one node, or several for a macro such as split(). An unknown name yields
+// E_UNKNOWN_METHOD / E_NAMESPACE with suggestions.
+func (e *Engine) Call(name string, receiver NodeID, raw []any) (CallResult, error) {
 	kind := KindNone
 	if receiver != 0 {
 		n, ok := e.b.Node(receiver)
 		if !ok {
-			return nil, nil, Errorf(EInternal, "unknown node #%d", receiver)
+			return CallResult{}, Errorf(EInternal, "unknown node #%d", receiver)
 		}
 		kind = n.Kind
 	}
@@ -79,9 +80,9 @@ func (e *Engine) Call(name string, receiver NodeID, raw []any) (*Node, []Warning
 		if receiver != 0 {
 			path = e.ev.Path(receiver)
 		}
-		return nil, nil, e.reg.UnknownMethod(kind, name, path)
+		return CallResult{}, e.reg.UnknownMethod(kind, name, path)
 	}
-	return e.b.Intern(op, receiver, raw, nil)
+	return e.b.Call(op, receiver, raw, nil)
 }
 
 // Open interns a source node for an image file with the options of

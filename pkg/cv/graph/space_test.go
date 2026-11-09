@@ -50,7 +50,8 @@ func src(t *testing.T, e *graph.Engine, enc string, fill ...float64) *graph.Node
 
 func mustCall(t *testing.T, e *graph.Engine, name string, recv *graph.Node, raw ...any) (*graph.Node, []graph.Warning) {
 	t.Helper()
-	n, ws, err := e.Call(name, recv.ID, raw)
+	cr, err := e.Call(name, recv.ID, raw)
+	n, ws := cr.Node(), cr.Warnings
 	if err != nil {
 		t.Fatalf("%s: %v", name, err)
 	}
@@ -118,7 +119,7 @@ func TestSpaceDefaults(t *testing.T) {
 	}
 	e := spaceEngine(t)
 	img := src(t, e, "srgb", 0.2, 0.3, 0.4)
-	if _, _, err := e.Call(graph.ConvertOp, img.ID, []any{"encoded"}); err == nil {
+	if _, err := e.Call(graph.ConvertOp, img.ID, []any{"encoded"}); err == nil {
 		t.Error("convert must not be callable")
 	}
 }
@@ -149,7 +150,7 @@ func TestSpaceOptionAndStatics(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := e.Call("exposure", img.ID, []any{0.3, map[string]any{"space": graph.NodeArg{ID: p.ID}}}); err == nil {
+	if _, err := e.Call("exposure", img.ID, []any{0.3, map[string]any{"space": graph.NodeArg{ID: p.ID}}}); err == nil {
 		t.Fatal("a node for space was accepted")
 	}
 	// Value statics: stats measured img (srgb) in linear space; fields inherit

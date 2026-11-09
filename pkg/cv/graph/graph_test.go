@@ -112,7 +112,8 @@ func newTestEngine(t *testing.T) (*Engine, *atomic.Int64) {
 
 func mustCall(t *testing.T, e *Engine, name string, recv NodeID, raw ...any) *Node {
 	t.Helper()
-	n, _, err := e.Call(name, recv, raw)
+	cr, err := e.Call(name, recv, raw)
+	n := cr.Node()
 	if err != nil {
 		t.Fatalf("%s: %v", name, err)
 	}
@@ -154,36 +155,37 @@ func TestArgumentErrorsAndWarnings(t *testing.T) {
 	e, _ := newTestEngine(t)
 	src := mustCall(t, e, "fill", 0, 1)
 
-	_, _, err := e.Call("mix", src.ID, []any{NodeArg{src.ID}, map[string]any{"wt": 0.3}})
+	_, err := e.Call("mix", src.ID, []any{NodeArg{src.ID}, map[string]any{"wt": 0.3}})
 	ce := codeOf(t, err)
 	if ce.Code != EUnknownOption || ce.Hint != `Did you mean "w"?` || strings.Join(ce.Valid, ",") != "w" {
 		t.Fatalf("nested unknown option: %+v", ce)
 	}
-	_, _, err = e.Call("scale", src.ID, []any{map[string]any{"kk": 2}})
+	_, err = e.Call("scale", src.ID, []any{map[string]any{"kk": 2}})
 	if ce = codeOf(t, err); ce.Code != EUnknownOption || ce.Fix != "scale({ k: 2 })" {
 		t.Fatalf("unknown option: %+v", ce)
 	}
-	_, _, err = e.Call("scale", src.ID, []any{500})
+	_, err = e.Call("scale", src.ID, []any{500})
 	if ce = codeOf(t, err); ce.Code != EArgRange {
 		t.Fatalf("hard range: %+v", ce)
 	}
-	_, _, err = e.Call("scale", src.ID, []any{"two"})
+	_, err = e.Call("scale", src.ID, []any{"two"})
 	if ce = codeOf(t, err); ce.Code != EArgType {
 		t.Fatalf("type: %+v", ce)
 	}
-	_, _, err = e.Call("scale", src.ID, nil)
+	_, err = e.Call("scale", src.ID, nil)
 	if ce = codeOf(t, err); ce.Code != EArgType || !strings.Contains(ce.Hint, "scale(k)") {
 		t.Fatalf("missing: %+v", ce)
 	}
-	_, w, err := e.Call("scale", src.ID, []any{7})
+	cr, err := e.Call("scale", src.ID, []any{7})
+	w := cr.Warnings
 	if err != nil || len(w) != 1 || w[0].Code != WRange {
 		t.Fatalf("usual range: %v %v", w, err)
 	}
-	_, _, err = e.Call("scale", src.ID, []any{NodeArg{src.ID}})
+	_, err = e.Call("scale", src.ID, []any{NodeArg{src.ID}})
 	if ce = codeOf(t, err); ce.Code != EWrongKind {
 		t.Fatalf("image as number: %+v", ce)
 	}
-	_, _, err = e.Call("mix", src.ID, []any{2})
+	_, err = e.Call("mix", src.ID, []any{2})
 	if ce = codeOf(t, err); ce.Code != EWrongKind {
 		t.Fatalf("number as image input: %+v", ce)
 	}
@@ -198,7 +200,7 @@ func TestUnknownMethodSuggestions(t *testing.T) {
 		{"field", EUnknownMethod, `"field" is a Value method`},
 		{"mean", EUnknownMethod, `"mean" is a field of the Value returned by sum()`},
 	} {
-		_, _, err := e.Call(tc.name, src.ID, nil)
+		_, err := e.Call(tc.name, src.ID, nil)
 		ce := codeOf(t, err)
 		if ce.Code != tc.code || !strings.HasPrefix(ce.Hint, tc.hint) {
 			t.Fatalf("%s: %+v", tc.name, ce)
@@ -207,7 +209,7 @@ func TestUnknownMethodSuggestions(t *testing.T) {
 			t.Fatalf("%s: path %v", tc.name, ce.Path)
 		}
 	}
-	_, _, err := e.Call("lum", src.ID, nil)
+	_, err := e.Call("lum", src.ID, nil)
 	if ce := codeOf(t, err); ce.Fix != "img.mask.lum(…)" {
 		t.Fatalf("namespace fix: %q", ce.Fix)
 	}

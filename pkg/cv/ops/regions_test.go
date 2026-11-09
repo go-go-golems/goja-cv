@@ -100,7 +100,7 @@ func TestRegionPredicateErrors(t *testing.T) {
 		{"without", []any{"x"}, graph.EArgType, ""},
 		{"filter", []any{3}, graph.EArgType, ""},
 	} {
-		_, _, err := e.Call(tc.op, comps.ID, tc.raw)
+		_, err := e.Call(tc.op, comps.ID, tc.raw)
 		ce, ok := graph.AsError(err)
 		if !ok || ce.Code != tc.code || (tc.hint != "" && ce.Hint != tc.hint) {
 			t.Fatalf("%s %v: %+v", tc.op, tc.raw, err)

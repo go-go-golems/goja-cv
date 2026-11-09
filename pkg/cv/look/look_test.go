@@ -31,7 +31,8 @@ func newEngine(t *testing.T, path string) (*graph.Engine, *graph.Node) {
 
 func call(t *testing.T, e *graph.Engine, name string, recv graph.NodeID, raw ...any) *graph.Node {
 	t.Helper()
-	n, _, err := e.Call(name, recv, raw)
+	cr, err := e.Call(name, recv, raw)
+	n := cr.Node()
 	if err != nil {
 		t.Fatalf("%s: %v", name, err)
 	}

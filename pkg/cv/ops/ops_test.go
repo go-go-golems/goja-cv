@@ -26,7 +26,8 @@ func newEngine(t *testing.T) (*graph.Engine, *graph.Node) {
 
 func call(t *testing.T, e *graph.Engine, name string, recv graph.NodeID, raw ...any) *graph.Node {
 	t.Helper()
-	n, _, err := e.Call(name, recv, raw)
+	cr, err := e.Call(name, recv, raw)
+	n := cr.Node()
 	if err != nil {
 		t.Fatalf("%s: %v", name, err)
 	}
@@ -113,6 +114,7 @@ func nodeArg(n *graph.Node) graph.NodeArg { return graph.NodeArg{ID: n.ID} }
 // walkSamples gives sample arguments for ops that need some; ops not listed
 // are called without arguments.
 var walkSamples = map[string]func(w walkNodes) []any{
+	"channel": func(walkNodes) []any { return []any{"g"} }, "encode": func(walkNodes) []any { return []any{"srgb"} },
 	"exposure": func(walkNodes) []any { return []any{0.5} }, "contrast": func(walkNodes) []any { return []any{0.2} },
 	"gaussian": func(walkNodes) []any { return []any{1.5} }, "field": func(walkNodes) []any { return []any{"meanL"} },
 	"pick": func(walkNodes) []any { return []any{"meanL", "p99"} }, "percentile": func(walkNodes) []any { return []any{0.5} },
@@ -154,7 +156,7 @@ var walkSamples = map[string]func(w walkNodes) []any{
 
 // walkSkip are ops the Go-only walk cannot evaluate (data lambdas need a
 // JavaScript runtime; they are covered by the runtime tests).
-var walkSkip = map[string]bool{"filter": true}
+var walkSkip = map[string]bool{"filter": true, "split": true, "colormap": true} // split builds 3 nodes, colormap needs one channel: channel_test.go
 
 // TestRegistryWalk builds every op with sample arguments on the test image,
 // evaluates it at preview scale and at 1.0, checks the result kind and that
@@ -185,7 +187,8 @@ func TestRegistryWalk(t *testing.T) {
 		} else if f, ok := walkSamples[op.Name]; ok {
 			raw = f(w)
 		}
-		n, _, err := e.Call(op.Name, r, raw)
+		cr, err := e.Call(op.Name, r, raw)
+		n := cr.Node()
 		if err != nil {
 			t.Fatalf("%s:%s: %v", op.On, op.Name, err)
 		}
@@ -247,7 +250,7 @@ func TestStatsInsideBoxAndMask(t *testing.T) {
 		t.Fatal("whole-image stats should not report area")
 	}
 	// a box outside the frame is refused when the node is built, with the nearest valid box as the fix
-	_, _, err = e.Call("stats", img.ID, []any{map[string]any{"box": []any{500.0, 500.0, 4.0, 4.0}}})
+	_, err = e.Call("stats", img.ID, []any{map[string]any{"box": []any{500.0, 500.0, 4.0, 4.0}}})
 	if ce, ok := graph.AsError(err); !ok || ce.Code != graph.EArgRange || ce.Fix != "img.stats({ box: [60, 44, 4, 4] })" {
 		t.Fatalf("box outside the frame: %v", err)
 	}
@@ -283,7 +286,7 @@ func TestOptionSynonyms(t *testing.T) {
 		{"mask.flood", img.ID, []any{[]any{1.0, 1.0}, map[string]any{"tolerance": 0.1}}, "tol", ""},
 		{"stats", img.ID, []any{map[string]any{"region": graph.NodeArg{ID: m.ID}}}, "mask", ""},
 	} {
-		_, _, err := e.Call(tc.op, tc.recv, tc.raw)
+		_, err := e.Call(tc.op, tc.recv, tc.raw)
 		ce, ok := graph.AsError(err)
 		if !ok || ce.Code != graph.EUnknownOption || !strings.Contains(ce.Hint, `Did you mean "`+tc.sug+`"?`) {
 			t.Fatalf("%s %v: %+v, want did-you-mean %q", tc.op, tc.raw, err, tc.sug)

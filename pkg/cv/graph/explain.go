@@ -166,6 +166,10 @@ func (e *Evaluator) Explain(id NodeID, scale float64) []string {
 			right += fmt.Sprintf("  (analysed at scale %s)", fmtNum(run.scale))
 		}
 		rows = append(rows, row{fmt.Sprintf("%s#%d %s", indent, id, Describe(e.b, n, run.scale, run.params)), right, Statics(n)})
+		if n.Op.Expand != nil { // a macro: its expansion below it
+			walk(run, n.Inputs[len(n.Inputs)-1], depth+1)
+			return
+		}
 		for _, in := range n.Inputs {
 			walk(run, in, depth+1)
 		}

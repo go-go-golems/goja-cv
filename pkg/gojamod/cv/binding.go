@@ -238,7 +238,8 @@ func (b *binding) placeholder(c goja.FunctionCall) goja.Value {
 	return handle(b.vm, n)
 }
 
-// __call(op, receiverId, args[]) → {id, kind}
+// __call(op, receiverId, args[]) → {id, kind}, or an array of them for a
+// macro that builds several nodes (split)
 func (b *binding) call(c goja.FunctionCall) goja.Value {
 	name := c.Argument(0).String()
 	recv := jsNodeID(c.Argument(1))
@@ -247,13 +248,25 @@ func (b *binding) call(c goja.FunctionCall) goja.Value {
 		list, _ := fromJS(a.Export()).([]any)
 		raw = list
 	}
-	n, ws, err := b.eng.Call(name, recv, raw)
+	r, err := b.eng.Call(name, recv, raw)
 	if err != nil {
 		b.throw(err)
 	}
-	b.addWarnings(ws)
-	b.noteCall(n.ID, ws)
-	return handle(b.vm, n)
+	b.addWarnings(r.Warnings)
+	if len(r.Nodes) == 1 {
+		b.noteCall(r.Nodes[0].ID, r.Warnings)
+		return handle(b.vm, r.Nodes[0])
+	}
+	hs := make([]any, len(r.Nodes))
+	for i, n := range r.Nodes {
+		ws := r.Warnings
+		if i > 0 {
+			ws = nil
+		}
+		b.noteCall(n.ID, ws)
+		hs[i] = handle(b.vm, n)
+	}
+	return b.vm.NewArray(hs...)
 }
 
 // __open(path, opts|null) → {id, kind}

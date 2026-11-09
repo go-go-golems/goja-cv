@@ -70,10 +70,10 @@ func TestOverlayAndCompare(t *testing.T) {
 	if nz == 0 || nz > len(db.Pix)/5 {
 		t.Fatalf("diff non-zero samples %d of %d", nz, len(db.Pix))
 	}
-	if _, _, err := e.Call("compare", img.ID, []any{[]any{graph.NodeArg{ID: healed.ID}, graph.NodeArg{ID: img.ID}}, map[string]any{"mode": "diff"}}); err == nil {
+	if _, err := e.Call("compare", img.ID, []any{[]any{graph.NodeArg{ID: healed.ID}, graph.NodeArg{ID: img.ID}}, map[string]any{"mode": "diff"}}); err == nil {
 		t.Fatal("diff of three images accepted")
 	}
-	if _, _, err := e.Call("compare", img.ID, []any{[]any{graph.NodeArg{ID: specks.ID}}}); err == nil {
+	if _, err := e.Call("compare", img.ID, []any{[]any{graph.NodeArg{ID: specks.ID}}}); err == nil {
 		t.Fatal("regions accepted as an image to compare")
 	}
 	// for looking at the results by hand: CV_LOOK_DIR=/tmp/x go test ./pkg/cv/ops -run OverlayAndCompare

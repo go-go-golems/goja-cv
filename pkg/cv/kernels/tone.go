@@ -67,7 +67,6 @@ func Contrast(ctx context.Context, in *buffer.Buffer, amount float64) (*buffer.B
 // on linear light) and the plain average.
 var GrayWeights = map[string][3]float32{
 	"rec709":  {buffer.LumR, buffer.LumG, buffer.LumB},
-	"rec601":  {0.299, 0.587, 0.114},
 	"average": {1.0 / 3, 1.0 / 3, 1.0 / 3},
 }
 

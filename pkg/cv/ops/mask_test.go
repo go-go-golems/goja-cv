@@ -67,17 +67,17 @@ func TestMaskArgumentErrors(t *testing.T) {
 		{"mask.gradient", []any{map[string]any{"from": "top", "to": 1.5}}, graph.EArgRange},
 		{"mask.gradient", []any{map[string]any{"from": []any{0, 0}, "to": 0.5}}, graph.EArgType},
 	} {
-		_, _, err := e.Call(tc.op, img.ID, tc.raw)
+		_, err := e.Call(tc.op, img.ID, tc.raw)
 		if ce, ok := graph.AsError(err); !ok || ce.Code != tc.code {
 			t.Fatalf("%s %v: %v", tc.op, tc.raw, err)
 		}
 	}
 	m := call(t, e, "mask.box", img.ID, []any{0, 0, 10, 10})
-	_, _, err := e.Call("overlay", m.ID, []any{graph.NodeArg{ID: img.ID}, map[string]any{"color": "purpleish"}})
+	_, err := e.Call("overlay", m.ID, []any{graph.NodeArg{ID: img.ID}, map[string]any{"color": "purpleish"}})
 	if ce, ok := graph.AsError(err); !ok || ce.Code != graph.EArgType || len(ce.Valid) == 0 {
 		t.Fatalf("bad colour: %v", err)
 	}
-	_, _, err = e.Call("and", m.ID, []any{graph.NodeArg{ID: img.ID}})
+	_, err = e.Call("and", m.ID, []any{graph.NodeArg{ID: img.ID}})
 	if ce, ok := graph.AsError(err); !ok || ce.Code != graph.EWrongKind {
 		t.Fatalf("image as mask input: %v", err)
 	}

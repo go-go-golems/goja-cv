@@ -72,25 +72,44 @@ func (b *Builder) kindOf(id NodeID) (Kind, bool) {
 // arguments. Warnings (RANGE, SPACE, ENCODING) are returned alongside the
 // node.
 func (b *Builder) Intern(op *OpDef, receiver NodeID, raw []any, trusted map[string]any) (*Node, []Warning, error) {
+	r, err := b.Call(op, receiver, raw, trusted)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(r.Nodes) != 1 {
+		return nil, nil, Errorf(EInternal, "%s returns %d nodes; use Builder.Call", op.Name, len(r.Nodes))
+	}
+	return r.Nodes[0], r.Warnings, nil
+}
+
+// CallResult is what one call builds: one node, or several for a macro
+// such as split(), with the warnings of the call and its expansion.
+type CallResult struct {
+	Nodes    []*Node
+	Warnings []Warning
+}
+
+// Call is Intern for any op, including macros that return several nodes.
+func (b *Builder) Call(op *OpDef, receiver NodeID, raw []any, trusted map[string]any) (CallResult, error) {
 	var recv *Node
 	if receiver != 0 {
 		var ok bool
 		if recv, ok = b.Node(receiver); !ok {
-			return nil, nil, Errorf(EInternal, "unknown receiver node #%d", receiver)
+			return CallResult{}, Errorf(EInternal, "unknown receiver node #%d", receiver)
 		}
 		if !accepts(op.On, recv.Kind) {
-			return nil, nil, Errorf(EWrongKind, "%s is %s method; the receiver is %s.", op.Name, A(string(op.On)), A(string(recv.Kind)))
+			return CallResult{}, Errorf(EWrongKind, "%s is %s method; the receiver is %s.", op.Name, A(string(op.On)), A(string(recv.Kind)))
 		}
 	} else if op.On != KindNone {
-		return nil, nil, Errorf(EInternal, "%s needs %s receiver", op.Name, A(string(op.On)))
+		return CallResult{}, Errorf(EInternal, "%s needs %s receiver", op.Name, A(string(op.On)))
 	}
 	raw, err := b.resolveBuilt(raw, receiver)
 	if err != nil {
-		return nil, nil, err
+		return CallResult{}, err
 	}
 	bd, err := bind(op, recv != nil, raw, trusted, b.kindOf)
 	if err != nil {
-		return nil, nil, err
+		return CallResult{}, err
 	}
 	var all []NodeID
 	if recv != nil {
@@ -104,26 +123,33 @@ func (b *Builder) Intern(op *OpDef, receiver NodeID, raw []any, trusted map[stri
 	for i, id := range all {
 		in, ok := b.Node(id)
 		if !ok {
-			return nil, nil, Errorf(EInternal, "unknown input node #%d", id)
+			return CallResult{}, Errorf(EInternal, "unknown input node #%d", id)
 		}
 		inputs[i] = in
 	}
 	args := Args{op: op, vals: bd.args}
 	if op.Validate != nil {
 		if err := op.Validate(args); err != nil {
-			return nil, nil, err
+			return CallResult{}, err
 		}
 	}
 	if recv != nil {
 		if err := checkInFrame(op, args, recv.Frame); err != nil {
-			return nil, nil, err
+			return CallResult{}, err
 		}
+	}
+	if op.Expand != nil {
+		return b.expand(op, args, recv, inputs, nExplicit, bd.warnings)
 	}
 	inputs, ws, err := b.resolveSpace(op, args, inputs)
 	if err != nil {
-		return nil, nil, err
+		return CallResult{}, err
 	}
-	return b.internNode(op, args, inputs, nExplicit), append(bd.warnings, ws...), nil
+	ws = append(bd.warnings, ws...)
+	if op.Warn != nil {
+		ws = append(ws, op.Warn(b, args, inputs)...)
+	}
+	return CallResult{Nodes: []*Node{b.internNode(op, args, inputs, nExplicit)}, Warnings: ws}, nil
 }
 
 // internNode returns the node for (op, canonical args, inputs), creating it
@@ -205,6 +231,9 @@ func argFix(op *OpDef, s *ArgSpec, value string) string {
 // non-empty frame. It depends only on the hash inputs, so a hash hit has the
 // frame a new node would get.
 func nodeFrame(op *OpDef, args Args, inputs []*Node) Frame {
+	if op.Expand != nil && len(inputs) > 0 { // a macro node: its expansion's output
+		return inputs[len(inputs)-1].Frame
+	}
 	if op.DocFrame != nil {
 		return op.DocFrame(args, inputs)
 	}

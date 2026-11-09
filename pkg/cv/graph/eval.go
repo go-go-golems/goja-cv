@@ -228,6 +228,10 @@ func (r *evalRun) eval(ctx context.Context, id NodeID) (Value, error) {
 		return nil, ctxError(err)
 	}
 	n := r.e.node(id)
+	if n.Op.Expand != nil {
+		// a macro node is its expansion's output: no compute, no cache entry
+		return r.eval(ctx, n.Inputs[len(n.Inputs)-1])
+	}
 	if fs := r.scaleFor(n); fs != r.scale {
 		return r.at(fs).eval(ctx, id)
 	}
