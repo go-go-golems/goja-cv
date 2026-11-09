@@ -158,3 +158,47 @@ fixes named explicitly so they are solved once.
 
 ### Code review instructions
 - `reference/*review-read-findings*` in each ticket.
+
+## Step 4: Revision 2, re-checks, revision 3
+
+The writer's revision 2 (`48e3a50`, `a31654a`, `f6b03be`, diary `2915fb2`) added a shared foundations chapter
+(`reference/05-foundations-goja-cv-for-the-gcv-guides.md`) and resolved the P1s. I asked each reviewer to re-check
+its own P1s; their re-checks are committed (`3b5c033`). GCV-002 and GCV-003: all P1s resolved, no new P1s.
+GCV-001: P1-1 partly resolved and five new P2-level items (N1–N5). I sent one short revision-3 list.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 1)
+
+**Assistant interpretation:** Converge the guides before implementation.
+
+**Inferred user intent:** Executable guides with concepts introduced properly.
+
+### What I did
+- Resumed the three reviewers for a P1 re-check of revision 2.
+- Collected new items: GCV-001 N1 (goldens cannot be byte-identical: exact transfer functions flip ~0.26% of 8-bit codes), N2 (test inputs before Phase 4/5), N3 (luminance rule must cover `refine`'s image input), N4 (speck `meanL` space change undocumented), N5 (evaluator must not write statics into values it did not create); GCV-002 N1 (oversized box items vs fixed cells) and P3s; GCV-003 P2-14 (file-name sanitizing), P2-15 (`mem.hot` 0–1 px offset) and P3s.
+- Sent revision 3 to the writer.
+
+### Why
+- Cheap re-checks caught real problems the revision introduced (N5 came from the P2-8 fix).
+
+### What worked
+- The re-check pattern: the reviewer who raised a P1 judges its resolution.
+
+### What didn't work
+- N/A
+
+### What I learned
+- Fixes can introduce new defects at the same level of detail; a second cold read pays for itself.
+
+### What was tricky to build
+- N/A
+
+### What warrants a second pair of eyes
+- N/A
+
+### What should be done in the future
+- After revision 3: implement GCV-001 (branch, PR, CI), then 002, then 003.
+
+### Code review instructions
+- "Re-check (revision 2)" sections at the end of each findings doc.
