@@ -126,3 +126,63 @@ uses the exact transfer functions instead of the interpolated tables.
 
 ### Technical details
 - `Convert` maps `linear→encoded` to `LinearToSRGB` and `encoded→linear` to `SRGBToLinear`, computed in float64 per sample and stored as float32.
+
+## Step 3: Phase 2 - frames, box and point types, test source
+
+Phase 2 replaces every `DocW`/`DocH` pair with a `graph.Frame` (integer origin and size in doc px) and makes
+coordinates absolute: a box or point an agent passes is in the frame of the file, `Args.XY` subtracts the frame origin
+before scaling to buffer px, and regions add it back when they are created. The evaluator, not `Run`, now gives values
+their frame. Every frame still has origin (0, 0) for opened files, and all goldens pass unchanged.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 1)
+
+**Assistant interpretation:** Implement guide Phase 2 (frames, box/point argument types, the test-only source op), keep goldens byte-identical.
+
+**Inferred user intent:** Make windows of large scans possible later (Phase 4 `open({ box })`) without any coordinate translation by the agent.
+
+**Commit (code):** 5709062 - "GCV-001 Phase 2: frames, box and point argument types, test source"
+
+### What I did
+- `pkg/cv/graph/frame.go`: `Frame` with `Empty`, `String` ("[x, y, w, h]"), `Data`, `ContainsPoint`, `OverlapsBox`, `NearestBox/NearestPoint`, and `SameFrame` (new code `E_FRAME`).
+- `Node.Frame` computed in `internNode` by `nodeFrame` (op `DocFrame`, else the first input with a non-empty frame). `OpDef.DocSize` → `DocFrame`. `ImageValue{Buf, Frame}`, `NewImage(buf)`, `NewMask(buf)`; `RegionsValue.Frame`, `NewRegions(w, h, scale, frame)`; summaries carry `frame` instead of `docW/docH`.
+- `eval.go`: `stamp(n, v, ins)` after `Run` and on the identity short-circuit; a value that is one of the inputs is shallow-copied first.
+- Binder (`args.go`): types `box` and `point` (lists, or objects `{x, y, w, h}` / `{cx, cy}`; `{x, y}` as a point is `E_ARG_TYPE` with the fix `[x, y]`), unions such as `point|number` and `point|enum:top,bottom,left,right` (the alternative is picked by the value's shape), positional coordinate objects are not mistaken for options objects; `Args.XY(name, imageValue)`.
+- `ArgSpec.InFrame` (stats.box, mask.box, mask.ellipse, mask.flood): checked in `Intern` against the receiver's frame; the fix is a literal call with the nearest valid box or point (`img.stats({ box: [100, 50, 10, 10] })`).
+- Enum errors now carry a literal fix `op({ name: "value" })` (`withEnumFix`) - needed because `mask.gradient.from` is now checked by the binder before the op's `Validate`.
+- `pkg/cv/graph/graphtest`: `RegisterSource(reg)` and `Source(e, enc, frame, fill...)`.
+- Ops ported (`sameSize` → `sameFrame`, compare's side layout frame, overlays shift region boxes by the frame origin); tests and the four docs lines that read `docW`/`docH`.
+- `pkg/cv/ops/frame_test.go`: frames propagate; box/point forms and refusals; absolute coordinates in a window at (100, 50) (mask pixels, coverage at scale 1 and 0.5, component geometry, stats area, out-of-frame errors); `E_FRAME` for blend across frames; returned inputs are stamped copies.
+
+### Why
+- Guide §3.7, §7.2, §7.4 and the frames/box-point decision records.
+
+### What worked
+- The new tests passed on the first run; goldens byte-identical.
+
+### What didn't work
+- `TestGoldenLooks/compare-side` failed at first with "largest difference 216 codes, 294848 of 297216 samples differ": my regex rewrite of `NewImage(x, a.DocW, a.DocH)` also hit compare's `ims[i] = graph.NewImage(kernels.ToRGB(...))`, which dropped the frames the side layout uses for paste offsets. Fixed by building `&graph.ImageValue{Buf, Frame}` there.
+- `TestWithinPlaceholderAndParams` failed: `mask.box([0, 0, 0, 0])` is a zero-area box and did not "overlap" the frame. Zero-area boxes now pass when their corner lies in the closed frame.
+- Session tests expected `docW/docH` keys and the old flood fix; updated (`fix: img.mask.flood([63, 10])`, `fix: 'mask.gradient({ from: "top" })'`).
+- `make logcopter-check`: "generated file is not current: .../pkg/cv/graph/graphtest/logcopter.go" - new packages need `make logcopter-generate`.
+
+### What I learned
+- The binder positional loop treats any object as the trailing options object; coordinate objects must be recognised by shape (`isCoordinateObject`) or `mask.box({x, y, w, h})` turns into "unknown option x".
+
+### What was tricky to build
+- Where to check "outside the frame": the binder does not know frames, ops' `Validate` gets no nodes, and `Run` is too late for a build-time fix. `Intern` knows the receiver's frame after binding, so the check lives there behind an explicit `InFrame` flag (gradient points may legitimately lie outside the image).
+
+### What warrants a second pair of eyes
+- `checkUnion`'s shape-based choice of alternative and the `InFrame` semantics (a box must overlap, not be contained; zero-area boxes allowed at the edge).
+- `stamp` relies on pointer identity with the inputs; a `Run` that returns a value it got from elsewhere (not an input) would be stamped in place.
+
+### What should be done in the future
+- GCV-003 switches the remaining measurement ops to `box`/`point` (guide note).
+
+### Code review instructions
+- Start at `pkg/cv/graph/frame.go`, `node.go` (`checkInFrame`, `nodeFrame`), `eval.go` (`stamp`), `args.go` (`checkBox`, `checkPoint`, `checkUnion`, `XY`).
+- `go test ./pkg/cv/ops -run 'Frame|BoxAndPoint|Absolute|TwoFrames|Stamped' -v`; `go test ./pkg/cv/look -run TestGoldenLooks`.
+
+### Technical details
+- `Args.XY` shifts elements 0 and 1 (point, or box corner) by the origin; elements 2 and 3 (box size) are only scaled.
