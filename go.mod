@@ -6,6 +6,8 @@ require (
 	github.com/dop251/goja v0.0.0-20261103151521-97b96e1e55f5
 	github.com/go-go-golems/go-go-goja v0.0.0
 	github.com/pkg/errors v0.9.1
+	golang.org/x/image v0.47.0
+	golang.org/x/sync v0.24.0
 )
 
 require (
