@@ -391,3 +391,49 @@ The stack #2 → #3 → #4 is ready for the user to review and merge in order.
 
 ### Code review instructions
 - PR #4; start with the field schema (`pkg/cv/graph` FieldSpec/Produces), probe kernel, `regions.measure`, writers in `pkg/cv/buffer`, FuncDefs `save`/`json`/`csv`, and the guide's deviation notes.
+
+## Step 9: Codex review comments on PRs #2–#4 addressed
+
+The user approved the font license, enabled the repository's Dependency graph, and asked me to read the code
+review comments. Codex left 9 comments across the three PRs; one (the smoke check) was already fixed in
+`fc226ce`, the other 8 were real and are fixed on the branch they belong to, each with a regression test that
+fails without the fix. The fixes flow down the stack by merging (no rebase, no force push).
+
+### Prompt Context
+
+**User prompt (verbatim):** "3. ok 1. read code review comments, 2. i enabled dependency"
+
+**Assistant interpretation:** Read the review comments on #2–#4 and address them; the license is fine; the
+Dependency Review job should pass now.
+
+**Inferred user intent:** Get the stack mergeable.
+
+### What I did
+- PR #2 (`4c79173`): `cv.open({ encoding })` and `encode(to)` are `Static` (a param there silently fell back to srgb); an empty TIFF `BitsPerSample` is a format error instead of a panic before the recovery boundary.
+- Merged into GCV-002 (`bfa238c`). PR #3 (`cd5f46c`): `cv.compare([img, img])` lays out from the bound list (`listInputs`), not the deduplicated inputs; `Evaluator.Render` below scale 1 resizes a result computed at its `AnalysisScale` (sheets) to the requested size (`fitScale`).
+- Merged into GCV-003 (`cc4a88e`). PR #4 (`319a6fc`): dangling symlinks are followed when checking out-root containment and `WriteOut` never writes through a symlink (P1); JSON strings and keys use `encoding/json` escapes; CLI data file names reserve generated suffixes (`uniqueName`); profile CSV columns come from the schema's `number[]` fields (profile `from`/`to` typed `point`), so short profiles are one row per sample.
+- Gate on each branch: gofmt, build, vet, `go test ./... -count=1 -race`, `make lint`, `make logcopter-check`.
+
+### Why
+- Each fix sits on the branch that introduced the code, so each PR is correct on its own.
+
+### What worked
+- Every new test failed on the old code (checked with `git stash` of the fix) and passes with it.
+
+### What didn't work
+- First gate on GCV-003 failed on gofmt (an aligned comment in `writeString`); fixed before committing.
+
+### What I learned
+- The binder's lift deduplication means any op that lays out a list of nodes must read the bound list, not `inputs`.
+
+### What was tricky to build
+- Symlink containment: `EvalSymlinks` fails on a dangling link, and the old fallback treated the link name as a plain missing path. The fix follows the link with a depth bound and, independently, refuses to write through any symlink.
+
+### What warrants a second pair of eyes
+- `columnArrays` is schema-driven when fields exist: any future op whose output has a `number[]` field that is not per-row data must type it otherwise (as profile's `from`/`to` now are `point`).
+
+### What should be done in the future
+- Merge #2 → #3 → #4 once CI is green; Codex may re-review the new commits.
+
+### Code review instructions
+- `4c79173`, `cd5f46c`, `319a6fc`; tests: `TestEncodingArgsAreStatic`, `TestTIFFEmptyBitsPerSample`, `TestOverlayAndCompare`, `TestSheetCellsLabelsEdgesAndTruncation`, `TestOutPathSymlinks`, `TestDataContentLazyEagerAndColumns`, `TestUniqueName`.
