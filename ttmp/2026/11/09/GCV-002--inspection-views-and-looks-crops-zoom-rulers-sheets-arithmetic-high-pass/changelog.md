@@ -19,3 +19,8 @@ Step 2 (Phase 2): Evaluator.Render, op classes, windows, EvalCtx.Warn, look zoom
 
 Step 3 (Phase 3): crop, rulers/grid, chain captions, order warnings (commit b3db2b0)
 
+
+## 2026-11-09
+
+Step 4 (Phase 4): image arithmetic, reduced blend, cv.compare module op, picture frames (commit fe816fe)
+

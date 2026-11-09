@@ -8,8 +8,8 @@
 - [x] Phase 2: Engine.Render with RenderOptions{Scale, Interp, Window}, OpDef.Class (pixel, geometric, decoration), macro-node dispatch, buffer.Upsample, EvalCtx.Warn with cache replay; look zoom/interp and captions below scale 1 <!-- t:h78y -->
 - [x] Phase 3: crop (geometric, box type, Args.Box, integer frame, RANGE/E_ARG_RANGE nearest valid box), CROP_FIRST (first reader of Halo) and DECORATION_FIRST warnings <!-- t:nm2q -->
 - [x] Phase 3: rulers and grid in look/ruler.go (margins, absolute labels, thinning) with golden PNG; chain captions through macro nodes <!-- t:410s -->
-- [ ] Phase 4: kernels.Binary; Image add, sub (derived), mul, abs, min, max; Image|number union operand; frame checks; gray broadcast; tests incl. lifted Value SPACE <!-- t:fblc -->
-- [ ] Phase 4: blend keeps normal/multiply/screen with enum redirects; delete AbsDiff and img.compare; cv.compare module op (side, split) with picture frames and diff redirect; prelude builds cv.* from module ops and functions <!-- t:v6od -->
+- [x] Phase 4: kernels.Binary; Image add, sub (derived), mul, abs, min, max; Image|number union operand; frame checks; gray broadcast; tests incl. lifted Value SPACE <!-- t:fblc -->
+- [x] Phase 4: blend keeps normal/multiply/screen with enum redirects; delete AbsDiff and img.compare; cv.compare module op (side, split) with picture frames and diff redirect; prelude builds cv.* from module ops and functions <!-- t:v6od -->
 - [ ] Phase 5: highpass and dog macros (Space default encoded, polarity) with node-identity tests; localContrast kernel; levels auto (Optional black/white, Identity off with auto) <!-- t:2g2r -->
 - [ ] Phase 5: img.view presets (scene, speck, speckDark, speckColor, signed, detail, neutral) in ops/views.go; every preset renders on the RGB planted scan <!-- t:55ax -->
 - [ ] Phase 6: overlay as decoration with Rasterize(target Frame, scale), containing-frame inputs; annotate marks with goldens <!-- t:lrvd -->
