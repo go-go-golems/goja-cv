@@ -2484,3 +2484,15 @@ details and numbers.
     shapes (a doc comment on `mem.tile`, mid-body comments in `mem.best` and `mem.probe`, a `/*` block, an expression
     body, method shorthand, accessors, a bound function) instead of copying the file: the dust-scanning repository was
     off limits for this batch. goja does not parse async generator methods, so the fixture's generator is plain.
+
+### Phase A3 (commit `c9987c0`)
+
+26. **The caption list is an op hook**, `OpDef.Short` (the compact call `graph.Short` uses for chains and captions),
+    fed by `graph.ItemTexts` (the items node's entries: label, else id, else position from 1, as the cells are
+    labelled). The count is the array's length; with `max` the list stops at `max` cells. A label with whitespace is
+    JSON-quoted, as in tables.
+27. **`labels: "index"` is `E_ARG_TYPE`** (the binder's enum error: `cv.sheet.labels = "index" is not one of "id",
+    "none"`, with `valid: [id, none]`), not `E_UNKNOWN_OPTION` as §11 says.
+28. **Golden `sheet-2x2` moved**: it passed `labels: "index"` (GCV-004 deviation 35) to keep its labels 0 and 1; with
+    the mode gone its literal items show their ids 1 and 2. Only the two label texts changed (99 of 113,472 samples).
+    No other golden moved.

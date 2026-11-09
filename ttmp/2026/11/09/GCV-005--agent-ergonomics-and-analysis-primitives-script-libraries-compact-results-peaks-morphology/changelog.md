@@ -30,3 +30,8 @@ Phase A1: cv.load (JS load stack, file:line locations, no cache), cv.scripts (bo
 
 Phase A2: compact tables exempt from the item/string caps (shared 2/3 budget, paging note), DescribeFunction, context block functions and new-function docs (not consumed by preludes) (commit b10ff2d); UNUSED_NODE deletion moved to A4; deviations 21-25; diary step 4
 
+
+## 2026-11-09
+
+Phase A3: sheet captions list cells (label else id) for arrays, 'cells in region order' for Regions nodes; labels id|none; golden sheet-2x2 regenerated (commit c9987c0); deviations 26-28; diary step 5
+

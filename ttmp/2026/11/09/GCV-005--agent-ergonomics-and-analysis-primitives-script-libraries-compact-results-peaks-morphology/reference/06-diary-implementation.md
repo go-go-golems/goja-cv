@@ -579,3 +579,75 @@ context:
     mem.sheet(items, size = 40): contact sheet of up to 15 items: image | speck view, captioned with their ids
     mem.spots(level = 0.3): blobs of the speck view above level, measured on the linear image
 ```
+
+## Step 5: Phase A3 — sheet captions list their cells; labels id | none
+
+A3 makes a contact sheet carry its mapping as text: the caption of a sheet of an array lists the label (else id) of
+each cell in cell order, so a model maps cell 7 to a row by reading, never by squinting at a burned-in number. A sheet of
+a detector's Regions node, whose ids exist only after evaluation, says "cells in region order". The `index` label mode
+is deleted; `labels: "none"` keeps the caption list.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 2)
+
+**Assistant interpretation:** implement guide §13 Phase A3 (§6.7, §7.7, D11) on top of GCV-004 Phase 5's items.
+
+**Inferred user intent:** sheets come with the ids they show, as data.
+
+**Commit (code):** c9987c0 — "GCV-005 A3: sheet captions list their cells; sheet labels are id | none"
+
+### What I did
+
+- `pkg/cv/graph/registry.go`: `OpDef.Short`; `pkg/cv/graph/explain.go`: `Short` uses it.
+- `pkg/cv/graph/items.go`: `ItemTexts` (label, else id, else position).
+- `pkg/cv/ops/sheet.go`: `sheetCaption` (40 cells, `… (N more)`), `labels` enum `id | none`, the index branch deleted,
+  the op's Doc.
+- Tests: `pkg/cvsession/sheet_test.go` (`TestSheetCaptionListsCells`: linked items, a labelled literal with a space, a
+  point, a Regions node with `max`, `labels: "none"`, 45 items cut at 40, `labels: "index"` refused).
+- Golden: ran `go test ./pkg/cv/look -run TestGoldenLooks` first (only `sheet-2x2` failed: 99 of 113,472 samples), then
+  updated it alone; looked at the PNG: labels "1 (201, 47)" and "2 (55, 156) ×3.2".
+- Docs: `06-looks` (the caption sentence; the topic was trimmed to stay at 6,000 characters).
+- Deviations 26–28.
+
+### Why
+
+- The caption is built when the look is created, before evaluation, so only an items node (an array) can list ids;
+  `ItemTexts` reads the entries GCV-004 Phase 5 already interns (each linked item's id and label are copied in).
+
+### What worked
+
+- The look caption already ran through `graph.Short` per chain step; one hook gave the sheet its own text.
+
+### What didn't work
+
+- `go test … -run 'TestGoldenLooks/sheet-2x2' -update` also rewrote `counts.json` to `{}` (the counts of the cases that
+  did not run were dropped); restored it with `git checkout` and reran the full golden test.
+- `looks is 6043 characters; keep topics short`, then `6003`: trimmed two sentences.
+
+### What I learned
+
+- `-update` on a subset of the golden cases is not safe for `counts.json`; update all cases or restore the file.
+
+### What was tricky to build
+
+- Nothing deep; the subtle part is the count versus the list when `max` is given (the count is the array's length,
+  the list stops at `max`).
+
+### What warrants a second pair of eyes
+
+- `ItemTexts` formats a numeric id with `fmtNum` (whole numbers print as integers), the same as `Region.Text`.
+
+### What should be done in the future
+
+- A4: the recipes and docs that keep parallel arrays to map cells to rows should read the caption instead.
+
+### Code review instructions
+
+- `pkg/cv/ops/sheet.go` (`sheetCaption`), `pkg/cv/graph/items.go` (`ItemTexts`), `pkg/cv/graph/explain.go` (`Short`).
+- `go test ./pkg/cvsession -run TestSheetCaptionListsCells`; `go test ./pkg/cv/look -run TestGoldenLooks`.
+
+### Technical details
+
+`git diff --stat b0ae2b3 c9987c0`: 8 files, +98 / −8. A caption:
+`[look 1: a — sheet(6 items; cells: 9 11 14 40 "big one" 6) (…)]`.
