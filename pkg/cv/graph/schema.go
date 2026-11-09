@@ -19,7 +19,7 @@ import (
 // FieldSpec describes one field of a result.
 type FieldSpec struct {
 	Name string
-	Type string // "number" | "string" | "bool" | "number[]" | "object"
+	Type string // "number" | "string" | "bool" | "number[]" (one value per sample/row) | "point" ([x, y]) | "object"
 	Unit Unit   // DocPx (x, y, w, h, cx, cy), DocPx2 (area), Level (meanL, step, …), Unitless
 	Doc  string
 	// Optional fields are present only in some items or rows (check.dust's

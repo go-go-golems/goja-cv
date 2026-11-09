@@ -53,6 +53,19 @@ return {
 	if p := prof["data prof.csv"]; !strings.HasPrefix(p, "t,cx,cy,meanL,meanR,meanG,meanB\n0,190.5,46.5,") || strings.Count(p, "\n") != 7 {
 		t.Fatalf("prof.csv:\n%s", p)
 	}
+	// review of PR #4: a 2-sample profile is 2 rows (its from/to pairs are not
+	// columns), and control characters are JSON escapes, not Go ones.
+	_, short := contentByCaption(t, app, sid, `return {
+  p: cv.csv(img.profile([0.5, 0.5], [1.5, 0.5]), { name: "short" }),
+  j: cv.json({ "k\u0007": "a\u0000b\u000bc<&>" }, { name: "ctl" }),
+}`)
+	if p := short["data short.csv"]; !strings.HasPrefix(p, "t,cx,cy,meanL,") || strings.Count(p, "\n") != 3 {
+		t.Fatalf("2-sample profile csv:\n%s", p)
+	}
+	var ctl map[string]string
+	if err := json.Unmarshal([]byte(short["data ctl.json"]), &ctl); err != nil || ctl["k\a"] != "a\x00b\vc<&>" {
+		t.Fatalf("ctl.json %v: %q", err, short["data ctl.json"])
+	}
 	for _, tc := range []struct{ code, want string }{
 		{`return cv.json(img)`, `fix: node.save("x.tif")`},
 		{`return cv.csv(img.detect.specks(), { name: "../x.csv" })`, `fix: 'cv.csv(x, { name: "x" })'`},

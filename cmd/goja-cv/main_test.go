@@ -247,3 +247,16 @@ func TestPreludeFlag(t *testing.T) {
 		t.Fatalf("missing prelude: exit %d", code)
 	}
 }
+
+// TestUniqueName: generated names are reserved, so items named a, a and a-2
+// never overwrite each other (review of PR #4).
+func TestUniqueName(t *testing.T) {
+	used := map[string]bool{}
+	var got []string
+	for _, n := range []string{"a", "a", "a-2", "a"} {
+		got = append(got, uniqueName(used, n, ".csv"))
+	}
+	if want := []string{"a.csv", "a-2.csv", "a-2-2.csv", "a-3.csv"}; strings.Join(got, " ") != strings.Join(want, " ") {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+}

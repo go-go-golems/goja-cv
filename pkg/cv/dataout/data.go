@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/csv"
+	"encoding/json"
 	"fmt"
 	"math"
 	"path/filepath"
@@ -275,7 +276,7 @@ func writeJSON(b *bytes.Buffer, v any) error {
 			b.WriteString(strconv.FormatFloat(x, 'g', -1, 64))
 		}
 	case string:
-		b.WriteString(strconv.Quote(x))
+		writeString(b, x)
 	case []any:
 		b.WriteByte('[')
 		for i, e := range x {
@@ -300,9 +301,18 @@ func writeJSON(b *bytes.Buffer, v any) error {
 		if f, ok := graph.Normalize(v).(float64); ok { // other numeric types
 			return writeJSON(b, f)
 		}
-		b.WriteString(strconv.Quote(fmt.Sprint(v)))
+		writeString(b, fmt.Sprint(v))
 	}
 	return nil
+}
+
+// writeString writes s as a JSON string. strconv.Quote is Go syntax: its \x00,
+// \a and \v escapes are not JSON.
+func writeString(b *bytes.Buffer, s string) {
+	enc := json.NewEncoder(b)
+	enc.SetEscapeHTML(false)
+	_ = enc.Encode(s)       // a string always encodes
+	b.Truncate(b.Len() - 1) // Encode appends a newline
 }
 
 func writeObject(b *bytes.Buffer, keys []string, vals map[string]any) error {
@@ -311,7 +321,7 @@ func writeObject(b *bytes.Buffer, keys []string, vals map[string]any) error {
 		if i > 0 {
 			b.WriteByte(',')
 		}
-		b.WriteString(strconv.Quote(k))
+		writeString(b, k)
 		b.WriteByte(':')
 		if err := writeJSON(b, vals[k]); err != nil {
 			return err
@@ -319,6 +329,38 @@ func writeObject(b *bytes.Buffer, keys []string, vals map[string]any) error {
 	}
 	b.WriteByte('}')
 	return nil
+}
+
+// columnArrays finds the per-row arrays of a column table. With a schema they
+// are its number[] fields, whatever their length (a 2-sample profile is 2
+// rows; its from/to points are not columns). Without one they are the
+// longest arrays, when longer than a point.
+func columnArrays(ks []string, m map[string]any, fields []graph.FieldSpec) ([]string, int) {
+	var cols []string
+	longest := 0
+	if len(fields) > 0 {
+		for _, f := range fields {
+			if l, ok := m[f.Name].([]any); ok && f.Type == "number[]" {
+				cols = append(cols, f.Name)
+				longest = max(longest, len(l))
+			}
+		}
+		return cols, longest
+	}
+	for _, k := range ks {
+		if l, ok := m[k].([]any); ok {
+			longest = max(longest, len(l))
+		}
+	}
+	if longest <= 2 {
+		return nil, 0
+	}
+	for _, k := range ks {
+		if l, ok := m[k].([]any); ok && len(l) == longest {
+			cols = append(cols, k)
+		}
+	}
+	return cols, longest
 }
 
 // table turns data into CSV rows: a list of objects (Regions items, rows)
@@ -357,35 +399,15 @@ func table(v any, fields []graph.FieldSpec) ([]string, []map[string]any) {
 		if items, ok := m["items"].([]any); ok && m["kind"] == string(graph.KindRegions) {
 			return table(items, fields)
 		}
-		longest := 0
-		for _, k := range ks {
-			if l, ok := m[k].([]any); ok {
-				longest = max(longest, len(l))
-			}
-		}
-		if longest > 2 { // a column table such as a profile
-			var arrayCols []string
-			for _, k := range ks {
-				if l, ok := m[k].([]any); ok && len(l) == longest {
-					arrayCols = append(arrayCols, k)
-				}
-			}
-			if len(fields) > 0 { // schema order
-				var ordered []string
-				for _, f := range graph.FieldNames(fields) {
-					for _, c := range arrayCols {
-						if c == f {
-							ordered = append(ordered, c)
-						}
-					}
-				}
-				arrayCols = ordered
-			}
+		arrayCols, longest := columnArrays(ks, m, fields)
+		if len(arrayCols) > 0 { // a column table such as a profile
 			rows := make([]map[string]any, longest)
 			for i := range rows {
 				rows[i] = map[string]any{}
 				for _, c := range arrayCols {
-					rows[i][c] = m[c].([]any)[i]
+					if l := m[c].([]any); i < len(l) {
+						rows[i][c] = l[i]
+					}
 				}
 			}
 			return arrayCols, rows

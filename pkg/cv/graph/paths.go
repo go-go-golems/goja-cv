@@ -22,17 +22,33 @@ func Within(root, p string) bool {
 }
 
 // resolveExisting resolves the symlinks of the longest existing prefix of
-// the absolute path p and appends the rest.
-func resolveExisting(p string) string {
+// the absolute path p and appends the rest. A dangling symlink is followed to
+// its target (EvalSymlinks fails on it), so a link inside root pointing to a
+// missing file outside root resolves outside root.
+func resolveExisting(p string) string { return resolveDepth(p, 0) }
+
+func resolveDepth(p string, depth int) string {
 	if r, err := filepath.EvalSymlinks(p); err == nil {
 		return r
+	}
+	if fi, err := os.Lstat(p); err == nil && fi.Mode()&os.ModeSymlink != 0 {
+		if depth >= 40 {
+			return p // a symlink loop; WriteOut refuses symlinks anyway
+		}
+		target, err := os.Readlink(p)
+		if err == nil {
+			if !filepath.IsAbs(target) {
+				target = filepath.Join(filepath.Dir(p), target)
+			}
+			return resolveDepth(filepath.Clean(target), depth+1)
+		}
 	}
 	dir, base := filepath.Split(p)
 	dir = filepath.Clean(dir)
 	if dir == p || dir == "" || dir == "." {
 		return p
 	}
-	return filepath.Join(resolveExisting(dir), base)
+	return filepath.Join(resolveDepth(dir, depth), base)
 }
 
 // OutPath resolves a path an agent passed to save against the out-root:
@@ -72,8 +88,13 @@ func WriteOut(root, abs string, data []byte) (bool, error) {
 	if !Within(root, abs) {
 		return false, Errorf(EAccess, "save: %s is outside the out-root %s.", abs, root)
 	}
-	_, err := os.Lstat(abs)
+	fi, err := os.Lstat(abs)
 	replaced := err == nil
+	if replaced && fi.Mode()&os.ModeSymlink != 0 {
+		// os.WriteFile follows symlinks: never write through one.
+		return false, Errorf(EAccess, "save: %s is a symlink; save writes only regular files under the out-root.", abs).
+			WithHint("Remove the link or save under another name.")
+	}
 	if err := os.WriteFile(abs, data, 0o644); err != nil { // #nosec G306 -- files the agent saves for people and programs
 		return false, Errorf(EEval, "save: %v", err)
 	}

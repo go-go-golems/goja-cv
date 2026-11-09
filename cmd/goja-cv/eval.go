@@ -216,7 +216,7 @@ func writeContent(resp *replsession.EvaluateResponse, dir string) ([]contentFile
 		return nil, errors.Wrap(err, "create --out directory")
 	}
 	var out []contentFile
-	used := map[string]int{}
+	used := map[string]bool{}
 	for _, ref := range refs {
 		cf := contentFile{Caption: ref.Caption, MIMEType: ref.MIMEType, Bytes: ref.Bytes, Dropped: ref.Dropped}
 		if ref.Index < 0 || ref.Index >= len(resp.Content) {
@@ -238,10 +238,8 @@ func writeContent(resp *replsession.EvaluateResponse, dir string) ([]contentFile
 				cf.Rows = &rows
 			}
 		}
-		if used[name+ext]++; used[name+ext] > 1 {
-			name = fmt.Sprintf("%s-%d", name, used[name+ext])
-		}
-		abs, err := filepath.Abs(filepath.Join(dir, name+ext))
+		file := uniqueName(used, name, ext)
+		abs, err := filepath.Abs(filepath.Join(dir, file))
 		if err != nil {
 			return nil, err
 		}
@@ -252,6 +250,18 @@ func writeContent(resp *replsession.EvaluateResponse, dir string) ([]contentFile
 		out = append(out, cf)
 	}
 	return out, nil
+}
+
+// uniqueName returns name+ext, or name-2+ext, name-3+ext, … : the first file
+// name not yet in used, which it reserves. Generated names are reserved too,
+// so items named a, a and a-2 get a, a-2 and a-2-2 instead of overwriting.
+func uniqueName(used map[string]bool, name, ext string) string {
+	file := name + ext
+	for k := 2; used[file]; k++ {
+		file = fmt.Sprintf("%s-%d%s", name, k, ext)
+	}
+	used[file] = true
+	return file
 }
 
 // countRows counts CSV records (without the header) or JSON array items

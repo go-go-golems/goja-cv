@@ -193,7 +193,7 @@ func measureFields(a graph.Args, _ []*graph.Node) []graph.FieldSpec {
 func profileFields(graph.Args, []*graph.Node) []graph.FieldSpec {
 	list := func(n, doc string) graph.FieldSpec { return graph.FieldSpec{Name: n, Type: "number[]", Doc: doc} }
 	fs := []graph.FieldSpec{
-		list("from", "start point (doc px)"), list("to", "end point (doc px)"),
+		{Name: "from", Type: "point", Unit: graph.DocPx, Doc: "start point [x, y] (doc px)"}, {Name: "to", Type: "point", Unit: graph.DocPx, Doc: "end point [x, y] (doc px)"},
 		numField("step", graph.DocPx, "distance between samples"), numField("width", graph.DocPx, "samples averaged across the line"),
 		list("t", "distance of each sample from the start (doc px)"), list("cx", "sample x"), list("cy", "sample y"),
 		list("meanL", "the gray plane at each sample (null outside the frame)"),
