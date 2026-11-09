@@ -380,3 +380,20 @@ func TestImageMetadata(t *testing.T) {
 	out = text(eval(t, app, sid, `img = cv.open(`+quote(pngPath)+`); return await img`))
 	mustContain(t, out, "bitDepth: 8", "format: png", "file: gradient-64x48-8bit.png")
 }
+
+func TestArgumentErrorsHaveFixesAndWarningsFold(t *testing.T) {
+	app, sid := newApp(t, cvsession.Options{Image: tiffPath})
+	for code, want := range map[string][]string{
+		`return await img.mask.luminance({}).coverage()`:                                    {"code: E_ARG_TYPE", "perceptual luminance in [0, 1]", "fix: 'img.mask.luminance({ above: 0.7 })"},
+		`return await img.mask.flood([500, 10]).coverage()`:                                 {"code: E_ARG_RANGE", "fix: 'img.mask.flood([32, 24], { tol: 0.05 })'"},
+		`return await img.mask.gradient({ from: "up" }).coverage()`:                         {"fix: 'img.mask.gradient({ from: \"top\", to: 0.45 })'"},
+		`return await img.overlay(img.mask.box([0, 0, 9, 9]), { color: "chartreuse-ish" })`: {"fix: 'color: \"red\""},
+	} {
+		mustContain(t, text(eval(t, app, sid, code)), want...)
+	}
+	out := text(eval(t, app, sid, "let m = 0\nfor (let i = 0; i < 5; i++) m += (await img.exposure(4).stats()).meanL\nreturn m"))
+	mustContain(t, out, "RANGE line 2: ", "(×5)")
+	if strings.Count(out, "RANGE") != 1 {
+		t.Fatalf("warnings not folded:\n%s", out)
+	}
+}

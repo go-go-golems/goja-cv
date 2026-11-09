@@ -2,6 +2,7 @@ package ops
 
 import (
 	"context"
+	"fmt"
 	"math"
 
 	"github.com/go-go-golems/goja-cv/pkg/cv/buffer"
@@ -42,7 +43,7 @@ func parseColor(v any, where string) ([3]float32, error) {
 	case string:
 		c, ok := namedColors[x]
 		if !ok {
-			return [3]float32{}, graph.Errorf(graph.EArgType, "%s = %q is not a colour name.", where, x).WithValid(colorNames())
+			return [3]float32{}, graph.Errorf(graph.EArgType, "%s = %q is not a colour name.", where, x).WithValid(colorNames()).WithFix(`color: "red"   // or [1, 0, 0] (perceptual r, g, b)`)
 		}
 		p = c
 	case []any:
@@ -57,7 +58,7 @@ func parseColor(v any, where string) ([3]float32, error) {
 			p[i] = f
 		}
 	default:
-		return [3]float32{}, graph.Errorf(graph.EArgType, "%s must be a colour name or [r, g, b] in [0, 1].", where).WithValid(colorNames())
+		return [3]float32{}, graph.Errorf(graph.EArgType, "%s must be a colour name or [r, g, b] in [0, 1].", where).WithValid(colorNames()).WithFix(`color: "red"   // or [1, 0, 0]`)
 	}
 	return [3]float32{buffer.ToLinear(float32(p[0])), buffer.ToLinear(float32(p[1])), buffer.ToLinear(float32(p[2]))}, nil
 }
@@ -82,7 +83,7 @@ func validateGradient(a graph.Args) error {
 	switch f := from.(type) {
 	case string:
 		if !contains(edges, f) {
-			return graph.Errorf(graph.EArgType, "mask.gradient.from = %q is not an edge or a point.", f).WithValid(edges)
+			return graph.Errorf(graph.EArgType, "mask.gradient.from = %q is not an edge or a point.", f).WithValid(edges).WithFix(`img.mask.gradient({ from: "top", to: 0.45 })`)
 		}
 		if t, ok := to.(float64); ok && !(t > 0 && t <= 1) {
 			return graph.Errorf(graph.EArgRange, "mask.gradient.to = %g: from an edge, to is the fraction of the height/width where the mask reaches 0, in (0, 1].", t)
@@ -97,7 +98,7 @@ func validateGradient(a graph.Args) error {
 				WithFix("img.mask.gradient({ from: [0, 0], to: [0, 800] })")
 		}
 	default:
-		return graph.Errorf(graph.EArgType, "mask.gradient.from must be an edge or a point [x, y].").WithValid(edges)
+		return graph.Errorf(graph.EArgType, "mask.gradient.from must be an edge or a point [x, y].").WithValid(edges).WithFix(`img.mask.gradient({ from: "top", to: 0.45 })   // or { from: [x0, y0], to: [x1, y1] }`)
 	}
 	return nil
 }
@@ -115,7 +116,8 @@ func maskMakerOps() []graph.OpDef {
 			Validate: func(a graph.Args) error {
 				if !a.Has("above") && !a.Has("below") {
 					return graph.Errorf(graph.EArgType, "mask.luminance needs above, below or both.").
-						WithFix("img.mask.luminance({ above: 0.6 })")
+						WithHint("Thresholds are perceptual luminance in [0, 1], the scale of histogram(): above selects highlights, below shadows.").
+						WithFix("img.mask.luminance({ above: 0.7 })   // or { below: 0.2 }, or both for a band")
 				}
 				return nil
 			},
@@ -200,7 +202,7 @@ func maskMakerOps() []graph.OpDef {
 				if from, ok := a.Raw("from").(string); ok {
 					to, _ := a.Raw("to").(float64) // a fraction: scale-free
 					if !(to > 0 && to <= 1) {
-						return nil, graph.Errorf(graph.EArgRange, "mask.gradient.to = %v must be in (0, 1] from an edge.", a.Raw("to"))
+						return nil, graph.Errorf(graph.EArgRange, "mask.gradient.to = %v must be in (0, 1] from an edge.", a.Raw("to")).WithHint("From an edge, to is the fraction of the height/width where the mask reaches 0.").WithFix(`img.mask.gradient({ from: "top", to: 0.45 })`)
 					}
 					m, err = kernels.EdgeGradientMask(ctx, w, h, sc, from, to)
 				} else {
@@ -229,7 +231,9 @@ func maskMakerOps() []graph.OpDef {
 				x, y := int(math.Floor(p[0])), int(math.Floor(p[1]))
 				if x < 0 || y < 0 || x >= src.Buf.W || y >= src.Buf.H {
 					return nil, graph.Errorf(graph.EArgRange, "mask.flood: point [%g, %g] is outside the %d×%d image.",
-						a.Raw("point").([]any)[0], a.Raw("point").([]any)[1], src.DocW, src.DocH)
+						a.Raw("point").([]any)[0], a.Raw("point").([]any)[1], src.DocW, src.DocH).
+						WithHint("Points are [x, y] in doc px; read them off a look and multiply by its doc-px factor.").
+						WithFix(fmt.Sprintf("img.mask.flood([%d, %d], { tol: 0.05 })", src.DocW/2, src.DocH/2))
 				}
 				m, err := kernels.FloodMask(ctx, src.Buf, x, y, a.Number("tol"))
 				if err != nil {

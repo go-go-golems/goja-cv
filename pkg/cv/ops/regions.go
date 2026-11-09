@@ -59,7 +59,7 @@ func validatePredicate(a graph.Args) error {
 			continue // shorthand { field: value } means eq
 		}
 		if len(cond) == 0 {
-			return graph.Errorf(graph.EArgType, "where.%s is an empty condition; use one of %s.", f, strings.Join(predOps, ", ")).WithValid(predOps)
+			return graph.Errorf(graph.EArgType, "where.%s is an empty condition; use one of %s.", f, strings.Join(predOps, ", ")).WithValid(predOps).WithFix(fmt.Sprintf("where({ %s: { gte: 0.5 } })", f))
 		}
 		for _, op := range sortedKeys(cond) {
 			if !contains(predOps, op) {
@@ -76,11 +76,11 @@ func validatePredicate(a graph.Args) error {
 			switch op {
 			case "in":
 				if _, ok := v.([]any); !ok {
-					return graph.Errorf(graph.EArgType, "where.%s.in must be a list.", f)
+					return graph.Errorf(graph.EArgType, "where.%s.in must be a list.", f).WithFix(fmt.Sprintf("where({ %s: { in: [1, 2, 3] } })", f))
 				}
 			case "lt", "lte", "gt", "gte":
 				if _, ok := v.(float64); !ok {
-					return graph.Errorf(graph.EArgType, "where.%s.%s must be a number (or a Value/Param node).", f, op)
+					return graph.Errorf(graph.EArgType, "where.%s.%s must be a number (or a Value/Param node).", f, op).WithFix(fmt.Sprintf("where({ %s: { %s: 0.5 } })", f, op))
 				}
 			}
 		}
@@ -166,7 +166,7 @@ func idSet(v any) (map[int]bool, error) {
 	case []any:
 		list = x
 	default:
-		return nil, graph.Errorf(graph.EArgType, "ids must be a number or a list of numbers, got %v.", v)
+		return nil, graph.Errorf(graph.EArgType, "ids must be a number or a list of numbers, got %v.", v).WithFix("without([3, 17])   // region ids from (await regions).items")
 	}
 	for _, e := range list {
 		f, ok := e.(float64)

@@ -45,7 +45,7 @@ return img.levels({ blak: 0.02 })
 
 ## Warnings
 
-- `RANGE line N: …` an argument is outside its usual range (it still runs).
+- `RANGE line N: …` an argument is outside its usual range (it still runs). The same warning from a loop is listed once with `(×N)`.
 - `UNUSED_NODE line N: …` a node was built and discarded (see `cv.docs.read("nodes-and-evaluation")`).
 
 ```js warns=RANGE

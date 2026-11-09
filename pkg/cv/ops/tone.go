@@ -43,7 +43,7 @@ func toneOps() []graph.OpDef {
 			Run: func(ctx context.Context, _ *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
 				b, w := a.Number("black"), a.Number("white")
 				if !(w > b) {
-					return nil, graph.Errorf(graph.EArgRange, "levels: white (%g) must be above black (%g).", w, b)
+					return nil, graph.Errorf(graph.EArgRange, "levels: white (%g) must be above black (%g).", w, b).WithFix("img.levels({ black: s.p01, white: s.p99 })   // with s = img.stats()")
 				}
 				src := image(in[0])
 				out, err := kernels.Levels(ctx, src.Buf, b, w, a.Number("gamma"))

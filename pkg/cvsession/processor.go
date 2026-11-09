@@ -196,6 +196,26 @@ func (s *state) warnings(vm *goja.Runtime, trace cvmod.EvalTrace, returned []gra
 	if lint {
 		out = append(out, s.unusedNodes(vm, trace, returned)...)
 	}
+	return dedupe(out)
+}
+
+// dedupe folds identical warnings (a call in a loop) into one with a count.
+func dedupe(ws []string) []string {
+	count := map[string]int{}
+	var order []string
+	for _, w := range ws {
+		if count[w] == 0 {
+			order = append(order, w)
+		}
+		count[w]++
+	}
+	out := make([]string, len(order))
+	for i, w := range order {
+		out[i] = w
+		if n := count[w]; n > 1 {
+			out[i] = fmt.Sprintf("%s (×%d)", w, n)
+		}
+	}
 	return out
 }
 
