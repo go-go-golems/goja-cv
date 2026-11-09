@@ -1,6 +1,6 @@
 # Recipes
 
-Worked evals for the common jobs: check and fix exposure, find and remove dust, edit inside a mask, compare before and after. Each block runs as written.
+Worked evals for the common jobs: check and fix exposure, find and remove dust, measure inside a box or region, edit inside a mask, compare before and after. Each block runs as written.
 
 ## Check exposure
 
@@ -49,6 +49,23 @@ return { after: await healed.check.dust() }
 ```
 
 To keep a speck that is real detail, drop it by id before healing: `img.heal(mem.dust.without([31]))`.
+
+## Measure inside a box or region
+
+`img.stats({ box: [x, y, w, h] })` (doc px) and `img.stats({ mask })` measure only those pixels (a mask weights them; Regions count as their pixels). The result has the usual fields plus `area` (doc px²) and `coverage`. Use it to compare a speck with its surroundings or to probe a highlight; there is no need to darken everything else first.
+
+```js
+const specks = img.detect.specks()
+const top = (await specks.sortBy("area").top(1)).items[0]
+const [x, y, w, h] = top.box
+const ring = img.mask.box([x - 6, y - 6, w + 12, h + 12]).minus(img.mask.box(top.box))
+return {
+  id: top.id,
+  inside: await img.stats({ box: top.box }).pick("meanL", "p99", "area"),
+  around: await img.stats({ mask: ring }).pick("meanL", "area"),
+  dust: await img.stats({ mask: specks.where({ score: { gte: 0.5 } }) }).pick("meanL", "area"),
+}
+```
 
 ## Edit inside a mask
 

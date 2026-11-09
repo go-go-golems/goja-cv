@@ -7,7 +7,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/go-go-golems/goja-cv/pkg/cv/buffer"
 	"github.com/go-go-golems/goja-cv/pkg/cv/graph"
+	"github.com/go-go-golems/goja-cv/pkg/cv/kernels"
 )
 
 var testTIFF = filepath.Join("..", "..", "..", "testdata", "gradient-64x48-16bit.tif")
@@ -207,5 +209,45 @@ func TestRegistryWalk(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+func TestStatsInsideBoxAndMask(t *testing.T) {
+	e, img := newEngine(t)
+	ctx := context.Background()
+	v, err := e.Evaluate(ctx, img.ID, graph.EvalOptions{Scale: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	full := v.(*graph.ImageValue).Buf
+	// reference: the left half [0, 0, 32, 48] cropped by hand
+	crop := buffer.New(32, 48, 3, 1)
+	for c := 0; c < 3; c++ {
+		for y := 0; y < 48; y++ {
+			copy(crop.Plane(c)[y*32:(y+1)*32], full.Plane(c)[y*64:y*64+32])
+		}
+	}
+	ref, _ := kernels.Stats(ctx, crop, nil)
+
+	box := call(t, e, "stats", img.ID, map[string]any{"box": []any{0.0, 0.0, 32.0, 48.0}})
+	got := evalData(t, e, box, 1).(map[string]any)
+	if math.Abs(got["meanL"].(float64)-ref.L.Mean) > 1e-6 || math.Abs(got["medianL"].(float64)-ref.L.Median) > 1e-6 {
+		t.Fatalf("box stats %v, want meanL %v medianL %v", got, ref.L.Mean, ref.L.Median)
+	}
+	if got["area"].(float64) != 32*48 || math.Abs(got["coverage"].(float64)-0.5) > 1e-9 {
+		t.Fatalf("area %v coverage %v", got["area"], got["coverage"])
+	}
+	m := call(t, e, "mask.box", img.ID, []any{0.0, 0.0, 32.0, 48.0})
+	byMask := evalData(t, e, call(t, e, "stats", img.ID, map[string]any{"mask": graph.NodeArg{ID: m.ID}}), 1).(map[string]any)
+	if byMask["meanL"] != got["meanL"] {
+		t.Fatalf("mask %v vs box %v", byMask["meanL"], got["meanL"])
+	}
+	whole := evalData(t, e, call(t, e, "stats", img.ID), 1).(map[string]any)
+	if _, ok := whole["area"]; ok {
+		t.Fatal("whole-image stats should not report area")
+	}
+	if _, err := e.Evaluate(ctx, call(t, e, "stats", img.ID, map[string]any{"box": []any{500.0, 500.0, 4.0, 4.0}}).ID, graph.EvalOptions{Scale: 1}); err == nil ||
+		!strings.Contains(err.Error(), "selects no pixels") {
+		t.Fatalf("empty box: %v", err)
 	}
 }

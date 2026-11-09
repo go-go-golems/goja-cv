@@ -25,7 +25,7 @@ Eval contract
 Globals: img (the open image; img = cv.open(path) rebinds it), cv, P, mem, show.
 
 Most used calls
-- await img.stats() → { meanL, p01, p99, clipLow, clipHigh, … } (linear light); img.histogram().look()
+- await img.stats() → { meanL, p01, p99, clipLow, clipHigh, … } (linear light); img.stats({ box: [x, y, w, h] }) or img.stats({ mask }) measures only there (+ area, coverage); img.histogram().look()
 - img.exposure(ev), img.levels({ black, white, gamma }) (black/white are linear levels like stats), img.contrast(a), img.gaussian(r), img.toGray()
 - node.look("label") or node.look({ label, maxSide }) inside the returned value attaches an image; show(node, opts) queues one that survives a later throw. Captions give the scale: 1 image px = S doc px.
 - cv.compare([a, b], { mode: "side" | "split" | "diff" }) to see before/after.

@@ -14,7 +14,7 @@ return { bright: await bright.coverage(), centre: await centre.coverage() }
 
 ## Combining and refining
 
-Set algebra: `a.and(b)`, `a.or(b)`, `a.minus(b)`, `a.not()`. Morphology in doc px: `grow(r)`, `shrink(r)`, `feather(r)`; `refine(img)` snaps soft edges to image edges. `coverage()` is the selected fraction.
+Set algebra: `a.and(b)`, `a.or(b)`, `a.minus(b)`, `a.not()`. Morphology in doc px: `grow(r)`, `shrink(r)`, `feather(r)`; `refine(img)` snaps soft edges to image edges. `coverage()` is the selected fraction; `img.stats({ mask })` measures the image inside the mask.
 
 ```js
 const sel = img.mask.luminance({ above: 0.45 })

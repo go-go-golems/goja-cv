@@ -2,8 +2,10 @@ package ops
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 
+	"github.com/go-go-golems/goja-cv/pkg/cv/buffer"
 	"github.com/go-go-golems/goja-cv/pkg/cv/graph"
 	"github.com/go-go-golems/goja-cv/pkg/cv/kernels"
 )
@@ -11,7 +13,7 @@ import (
 // PercentileKey is the key of percentile p in stats().percentiles.
 func PercentileKey(p float64) string { return strconv.FormatFloat(p, 'g', -1, 64) }
 
-var statsFields = []string{"meanL", "medianL", "p01", "p99", "clipLow", "clipHigh", "percentiles", "perChannel", "w", "h", "scale"}
+var statsFields = []string{"meanL", "medianL", "p01", "p99", "clipLow", "clipHigh", "percentiles", "perChannel", "w", "h", "scale", "area", "coverage"}
 
 func channelData(c kernels.ChannelStats, ps []float64) map[string]any {
 	m := map[string]any{
@@ -48,24 +50,93 @@ func statsData(s *kernels.StatsResult, ps []float64, scale float64) map[string]a
 	}
 }
 
+// runStats measures the whole image, or only the pixels of a mask, regions
+// and/or a box (weighted by the mask).
+func runStats(ctx context.Context, ec *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
+	ps := a.Numbers("percentiles")
+	src := image(in[0])
+	var w []float32
+	if v := a.Node("mask"); v != nil {
+		m, err := selectionWeights(ctx, v, src)
+		if err != nil {
+			return nil, err
+		}
+		w = m
+	}
+	if a.Has("box") {
+		sx, sy := graph.AxisScales(src)
+		b := a.XY("box", sx, sy)
+		bm := kernels.BoxMask(src.Buf.W, src.Buf.H, src.Buf.Scale, b[0], b[1], b[2], b[3]).Plane(0)
+		if w == nil {
+			w = bm
+		} else {
+			for i := range w {
+				w[i] *= bm[i]
+			}
+		}
+	}
+	if w == nil {
+		s, err := kernels.Stats(ctx, src.Buf, ps)
+		if err != nil {
+			return nil, err
+		}
+		return data(statsData(s, ps, ec.Scale)), nil
+	}
+	ws, err := kernels.StatsWeighted(ctx, src.Buf, w, ps)
+	if err == kernels.ErrEmptySelection {
+		return nil, graph.Errorf(graph.EArgRange, "stats: the mask/box selects no pixels of this %d×%d image.", src.DocW, src.DocH).
+			WithHint("Boxes are [x, y, w, h] in doc px inside the image; check a mask with await mask.coverage().").
+			WithFix(fmt.Sprintf("img.stats({ box: [0, 0, %d, %d] })", max(1, src.DocW/2), max(1, src.DocH/2)))
+	}
+	if err != nil {
+		return nil, err
+	}
+	d := statsData(ws.StatsResult, ps, ec.Scale)
+	d["area"] = ws.Weight / (src.Buf.Scale * src.Buf.Scale) // doc px²
+	d["coverage"] = ws.Weight / float64(src.Buf.N())
+	return data(d), nil
+}
+
+// selectionWeights is a mask (soft weights) or rasterized regions at the
+// image's evaluation size.
+func selectionWeights(ctx context.Context, v graph.Value, src *graph.ImageValue) ([]float32, error) {
+	var m *buffer.Buffer
+	switch x := v.(type) {
+	case *graph.RegionsValue:
+		if x.DocW != src.DocW || x.DocH != src.DocH {
+			return nil, graph.Errorf(graph.EWrongKind, "stats: the regions belong to a %d×%d image, this one is %d×%d.", x.DocW, x.DocH, src.DocW, src.DocH)
+		}
+		var err error
+		if m, err = x.Rasterize(ctx, src.Buf.W, src.Buf.H, src.Buf.Scale); err != nil {
+			return nil, err
+		}
+	case *graph.ImageValue:
+		if err := sameSize("stats", src, x); err != nil {
+			return nil, err
+		}
+		m = x.Buf
+	default:
+		return nil, graph.Errorf(graph.EWrongKind, "stats.mask needs a Mask or Regions.")
+	}
+	out := make([]float32, m.N())
+	copy(out, m.Plane(0))
+	return out, nil
+}
+
 func measureOps() []graph.OpDef {
 	return []graph.OpDef{
 		{
 			Name: "stats", On: graph.KindImage, Returns: graph.KindValue, Space: "analysis", Global: true,
-			Args: []graph.ArgSpec{{Name: "percentiles", Type: "number[]", Default: []any{}, Min: graph.F(0), Max: graph.F(1),
-				Doc: "extra luminance/channel percentiles as fractions, e.g. [0.005, 0.995]"}},
-			Fields: statsFields,
-			Run: func(ctx context.Context, ec *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
-				ps := a.Numbers("percentiles")
-				src := image(in[0])
-				s, err := kernels.Stats(ctx, src.Buf, ps)
-				if err != nil {
-					return nil, err
-				}
-				return data(statsData(s, ps, ec.Scale)), nil
+			Args: []graph.ArgSpec{
+				{Name: "percentiles", Type: "number[]", Default: []any{}, Min: graph.F(0), Max: graph.F(1),
+					Doc: "extra luminance/channel percentiles as fractions, e.g. [0.005, 0.995]"},
+				{Name: "mask", Type: "Regions|Mask", Optional: true, Doc: "measure only inside this mask (weighted by it) or these regions"},
+				{Name: "box", Type: "number[]", Unit: graph.DocPx, Len: 4, Optional: true, Doc: "measure only inside [x, y, w, h] (doc px); combines with mask"},
 			},
-			Doc: "Luminance and per-channel statistics in linear light: meanL, medianL, p01, p99, clipLow, clipHigh (fractions of pixels with any channel clipped), percentiles, perChannel.",
-			See: []string{"histogram", "levels", "percentile"},
+			Fields: statsFields,
+			Run:    runStats,
+			Doc:    "Luminance and per-channel statistics in linear light: meanL, medianL, p01, p99, clipLow, clipHigh (fractions of pixels with any channel clipped), percentiles, perChannel. With { mask } or { box: [x, y, w, h] } only those pixels count (adds area in doc px² and coverage).",
+			See:    []string{"histogram", "levels", "percentile"},
 		},
 		{
 			Name: "histogram", On: graph.KindImage, Returns: graph.KindValue, Space: "analysis", Global: true,

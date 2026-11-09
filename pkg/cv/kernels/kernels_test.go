@@ -197,3 +197,57 @@ func TestHistogram(t *testing.T) {
 		t.Fatal("channel g on a gray image must fail")
 	}
 }
+
+func TestStatsWeighted(t *testing.T) {
+	ctx := context.Background()
+	b := buffer.New(10, 10, 3, 1)
+	for c := 0; c < 3; c++ {
+		p := b.Plane(c)
+		for i := range p {
+			p[i] = float32(i) / 99
+		}
+	}
+	// binary weights: exactly Stats of the selected pixels (the first row)
+	w := make([]float32, 100)
+	for i := 0; i < 10; i++ {
+		w[i] = 1
+	}
+	got, err := StatsWeighted(ctx, b, w, []float64{0.25})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub := buffer.New(10, 1, 3, 1)
+	for c := 0; c < 3; c++ {
+		copy(sub.Plane(c), b.Plane(c)[:10])
+	}
+	want, _ := Stats(ctx, sub, []float64{0.25})
+	if got.Weight != 10 || got.W != 10 || got.H != 10 || got.L.Mean != want.L.Mean || got.L.Median != want.L.Median || got.L.Percentiles[0] != want.L.Percentiles[0] {
+		t.Fatalf("binary: %+v vs %+v", got.L, want.L)
+	}
+	// equal soft weights give the same numbers as binary ones
+	for i := 0; i < 10; i++ {
+		w[i] = 0.5
+	}
+	soft, err := StatsWeighted(ctx, b, w, []float64{0.25})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, pair := range [][2]float64{{soft.L.Mean, want.L.Mean}, {soft.L.Median, want.L.Median}, {soft.L.P01, want.L.P01}, {soft.L.P99, want.L.P99}, {soft.L.Percentiles[0], want.L.Percentiles[0]}} {
+		if math.Abs(pair[0]-pair[1]) > 1e-6 {
+			t.Fatalf("equal soft weights: %v vs %v", soft.L, want.L)
+		}
+	}
+	if soft.Weight != 5 {
+		t.Fatalf("weight %v", soft.Weight)
+	}
+	// a weight pulls the mean towards its pixel
+	w2 := make([]float32, 100)
+	w2[0], w2[99] = 1, 0.25 // values 0 and 1
+	m, _ := StatsWeighted(ctx, b, w2, nil)
+	if math.Abs(m.L.Mean-0.2) > 1e-6 {
+		t.Fatalf("weighted mean %v, want 0.2", m.L.Mean)
+	}
+	if _, err := StatsWeighted(ctx, b, make([]float32, 100), nil); err != ErrEmptySelection {
+		t.Fatalf("empty: %v", err)
+	}
+}

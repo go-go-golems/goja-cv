@@ -175,7 +175,7 @@ func TestMCPInstructionsAreCompactAndDocsAreResources(t *testing.T) {
 		t.Fatalf("instructions are %d characters, want < 4000", len(ins))
 	}
 	for _, s := range []string{"body of an async function", "mem", "node.look(", "show(", "doc px", "fix",
-		"img.stats()", "img.levels(", "cv.compare(", "img.mask.luminance(", "img.within(", "img.detect.specks()", "img.heal(",
+		"img.stats()", "img.stats({ box:", "img.levels(", "cv.compare(", "img.mask.luminance(", "img.within(", "img.detect.specks()", "img.heal(",
 		"P.slider(", "cv.docs.search(", "cv.docs.read(", "cv.help(op)", "cv://docs/<id>", "cv://reference", "not available yet"} {
 		if !strings.Contains(ins, s) {
 			t.Fatalf("instructions lack %q", s)
