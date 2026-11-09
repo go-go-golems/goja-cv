@@ -283,6 +283,11 @@ func (b *binding) open(c goja.FunctionCall) goja.Value {
 				WithFix(`cv.open("scan.tif", { encoding: "linear" })`))
 		}
 		opts = m
+		if _, ok := m["as"]; ok {
+			b.throw(graph.Errorf(graph.EUnknownOption, "cv.open has no option \"as\" here: names exist only in eval sessions.").
+				WithHint("In a goja-cv eval session (CLI eval/run, the MCP server) cv.open(path, { as: \"ref\" }) binds a global; here keep the node in a variable.").
+				WithFix(fmt.Sprintf("const ref = cv.open(%q)", p.String())))
+		}
 	}
 	n, err := b.eng.Open(p.String(), opts)
 	if err != nil {

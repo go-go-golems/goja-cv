@@ -398,3 +398,12 @@ func TestSplitReturnsNodes(t *testing.T) {
 		t.Fatalf("split: %v", got)
 	}
 }
+
+// TestBareModuleRejectsAs: names exist only in eval sessions.
+func TestBareModuleRejectsAs(t *testing.T) {
+	rt := newRuntime(t)
+	e := mustFail(t, rt, "E_UNKNOWN_OPTION", fmt.Sprintf(`return cv.open(%q, { as: "ref" })`, tiffPath))
+	if !strings.Contains(e.Message, "names exist only in eval sessions") || !strings.HasPrefix(e.Fix, "const ref = cv.open(") {
+		t.Fatalf("as in a bare module: %+v", e)
+	}
+}

@@ -42,9 +42,12 @@ type EvalInput struct {
 	SessionID string `json:"sessionId,omitempty" jsonschema:"Optional; omit it to use the default session (where img and mem live); only pass ids returned by create_session or list_sessions."`
 }
 
-// OpenInput is the input of the open tool.
+// OpenInput is the input of the open tool. The descriptions say when to
+// omit the optional fields: agents invent values for unexplained options.
 type OpenInput struct {
-	Path      string `json:"path" jsonschema:"Image file to open (PNG, JPEG, TIFF, LinearRaw DNG, .npy); it becomes img."`
+	Path      string `json:"path" jsonschema:"Image file to open (PNG, JPEG, TIFF, LinearRaw DNG, .npy)."`
+	Encoding  string `json:"encoding,omitempty" jsonschema:"Optional; omit it to use what the file says (photographs: srgb; float TIFF, DNG, .npy: linear). Pass linear only for data stored linearly in an integer file (scientific data, density maps, raw scans), srgb to treat linear-looking data as a photograph."`
+	As        string `json:"as,omitempty" jsonschema:"Optional; omit it to bind the image to img (replacing the current one). Pass a name (an identifier such as ref or scan) to keep img and open this image as a second global."`
 	SessionID string `json:"sessionId,omitempty" jsonschema:"Optional; omit it to use the default session; only pass ids returned by create_session or list_sessions."`
 }
 
@@ -94,7 +97,7 @@ func (s *MCPServer) register(server *mcp.Server) {
 	}, s.eval)
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "open",
-		Description: "Open an image file and bind it to img in the session; returns its summary and a first look.",
+		Description: "Open an image file and bind it to img (or to the name given as as) in the session; returns its summary and a first look.",
 		Annotations: &mcp.ToolAnnotations{Title: "Open image", DestructiveHint: &notDestructive},
 	}, s.open)
 	server.AddResource(&mcp.Resource{
@@ -161,7 +164,16 @@ func (s *MCPServer) open(ctx context.Context, _ *mcp.CallToolRequest, in OpenInp
 		return nil, nil, errors.New("path is empty")
 	}
 	path, _ := json.Marshal(in.Path)
-	code := "img = cv.open(" + string(path) + ")\nreturn { image: await img, look: img.look(\"opened\") }"
+	name := strings.TrimSpace(in.As)
+	if name == "" {
+		name = "img"
+	}
+	opts := map[string]any{"as": name}
+	if e := strings.TrimSpace(in.Encoding); e != "" {
+		opts["encoding"] = e
+	}
+	optJS, _ := json.Marshal(opts)
+	code := "const opened = cv.open(" + string(path) + ", " + string(optJS) + ")\nreturn { image: await opened, look: opened.look(\"opened\") }"
 	return s.run(ctx, s.session(in.SessionID), code)
 }
 

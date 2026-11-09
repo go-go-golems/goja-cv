@@ -44,7 +44,7 @@ goja-cv eval --image scan.tif --out looks -e 'const s = await img.stats(); retur
 {meanL: 0.29507, p99: 0.83255, after: '[look 1: levels (64×48, 1 image px = 1.0 doc px)]'}
 
 context:
-  images: img = scan.tif (64×48, 16-bit TIFF)
+  images: img = scan.tif (64×48, 16-bit TIFF, srgb)
 
 files:
     'look 1: levels (64×48, 1 image px = 1.0 doc px)': /abs/path/looks/look-1-levels.jpg

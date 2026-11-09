@@ -71,7 +71,7 @@ func TestStatsAndLookReturnYAMLAndOneImage(t *testing.T) {
 		t.Fatalf("status %s: %s", resp.Cell.Execution.Status, resp.Cell.Execution.Error)
 	}
 	mustContain(t, out, "stats:", "meanL: 0.29507", "after: '[look 1: after (64×48, 1 image px = 1.0 doc px)]'",
-		"context:", "images: img = gradient-64x48-16bit.tif (64×48, 16-bit TIFF)")
+		"context:", "images: img = gradient-64x48-16bit.tif (64×48, 16-bit TIFF, srgb)")
 	mustNotContain(t, out, "UNUSED_NODE")
 	if len(resp.Content) != 1 || resp.Content[0].MIMEType != "image/jpeg" || len(resp.Content[0].Data) == 0 {
 		t.Fatalf("content %+v", resp.Content)
@@ -168,7 +168,7 @@ func TestNoImageThenOpenPersists(t *testing.T) {
 	out := text(eval(t, app, sid, "return await img.stats()"))
 	mustContain(t, out, "code: E_NO_IMAGE", "fix: img = cv.open(\"scan.tif\")")
 	out = text(eval(t, app, sid, "img = cv.open("+quote(pngPath)+")\nreturn await img"))
-	mustContain(t, out, "kind: Image", "images: img = gradient-64x48-8bit.png (64×48, 8-bit PNG)")
+	mustContain(t, out, "kind: Image", "images: img = gradient-64x48-8bit.png (64×48, 8-bit PNG, srgb)")
 	out = text(eval(t, app, sid, "mem.n = 3; return (await img.stats()).w"))
 	mustContain(t, out, "64", "mem: n (number)")
 }
@@ -376,7 +376,7 @@ func TestImageMetadata(t *testing.T) {
 	app, sid := newApp(t, cvsession.Options{Image: tiffPath})
 	out := text(eval(t, app, sid, `return { img: await img, d: cv.describe(img), derived: await img.exposure(1) }`))
 	mustContain(t, out, "bitDepth: 16", "format: tiff", "file: gradient-64x48-16bit.tif", "encoding: srgb", "sample: uint", "frame: [0, 0, 64, 48]",
-		"images: img = gradient-64x48-16bit.tif (64×48, 16-bit TIFF)")
+		"images: img = gradient-64x48-16bit.tif (64×48, 16-bit TIFF, srgb)")
 	out = text(eval(t, app, sid, `img = cv.open(`+quote(pngPath)+`); return await img`))
 	mustContain(t, out, "bitDepth: 8", "format: png", "file: gradient-64x48-8bit.png")
 }

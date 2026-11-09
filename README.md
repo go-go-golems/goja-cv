@@ -25,7 +25,7 @@ On goja-cv's synthetic test scan the answer is (the look arrives as an image nex
 {meanL: 0.22726, p99: 0.45755, dust: 40, look: '[look 1: dust (256×192, 1 image px = 1.0 doc px)]'}
 
 context:
-  images: img = planted-256x192-16bit.tif (256×192, 16-bit TIFF)
+  images: img = planted-256x192-16bit.tif (256×192, 16-bit TIFF, srgb)
 ```
 
 The full guidebook ships inside the binary: `goja-cv help` (pages listed [below](#documentation)).

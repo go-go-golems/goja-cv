@@ -3,7 +3,6 @@ package cvsession
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"reflect"
 	"regexp"
 	"sort"
@@ -239,9 +238,7 @@ func (s *state) unusedNodes(vm *goja.Runtime, trace cvmod.EvalTrace, returned []
 		r.render(mem, 0)
 		roots = append(roots, r.nodes...)
 	}
-	if id, ok := cvmod.NodeOf(s.img); ok {
-		roots = append(roots, id)
-	}
+	roots = append(roots, s.namedNodes()...)
 	used := map[graph.NodeID]bool{}
 	var mark func(id graph.NodeID)
 	mark = func(id graph.NodeID) {
@@ -471,7 +468,8 @@ func jsHint(f *failure) string {
 	return ""
 }
 
-// contextBlock is rebuilt for every eval: open images, params, mem (owner).
+// contextBlock is rebuilt for every eval: named and unnamed images, params,
+// mem (owner).
 func (s *state) contextBlock(vm *goja.Runtime) *yaml.Node {
 	n := &yaml.Node{Kind: yaml.MappingNode}
 	add := func(k, v string) {
@@ -479,23 +477,7 @@ func (s *state) contextBlock(vm *goja.Runtime) *yaml.Node {
 			n.Content = append(n.Content, str(k), str(v))
 		}
 	}
-	imgID, _ := cvmod.NodeOf(s.img)
-	var images []string
-	for _, id := range cvmod.Opened(vm) {
-		node, ok := s.eng.Node(id)
-		if !ok {
-			continue
-		}
-		desc := fmt.Sprintf("%s (%s)", filepath.Base(node.Args.String("path")), node.Frame.Size())
-		if info, ok := graph.SourceInfo(node); ok && info["bitDepth"] != nil && info["format"] != nil {
-			desc = fmt.Sprintf("%s (%s, %v-bit %s)", info["file"], node.Frame.Size(), info["bitDepth"], strings.ToUpper(fmt.Sprint(info["format"])))
-		}
-		if id == imgID {
-			desc = "img = " + desc
-		}
-		images = append(images, desc)
-	}
-	add("images", strings.Join(images, ", "))
+	add("images", s.imagesLine(vm))
 
 	params := s.eng.Params().List()
 	var ps, moved []string

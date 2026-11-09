@@ -3,7 +3,8 @@
 //   cv, P     the module and its params
 //   mem       a plain object that persists between evals
 //   show      show(node, opts) / show(look): queue a look and return it
-//   img       the open image (a getter/setter; throws E_NO_IMAGE when unset)
+//   img       the first named image (a getter/setter; throws E_NO_IMAGE when unset);
+//             cv.open(path, { as: "ref" }) binds more names the same way
 //   doc       the document layer (not available before M4: E_NO_DOCUMENT)
 //   __cv_run  the eval wrapper used by cvsession.App.Evaluate
 (function (native, cv) {
@@ -13,11 +14,40 @@
     Object.defineProperty(g, name, { value: value, writable: true, configurable: true, enumerable: false });
   }
 
-  // cv.open is restricted to the session's roots (when configured).
+  // a name is a global backed by the session's name table
+  function defineName(name) {
+    Object.defineProperty(g, name, {
+      configurable: true,
+      enumerable: false,
+      get() {
+        return native.getName(name);
+      },
+      set(v) {
+        native.setName(name, v);
+      },
+    });
+  }
+
+  // cv.open is restricted to the session's roots (when configured), and
+  // takes { as } (or name, bind, alias) to bind the image to a global; the
+  // module's open does not know as.
   const open = cv.open;
   cv.open = function (path, opts) {
     native.checkPath(path);
-    return open(path, opts);
+    let as;
+    let rest = opts;
+    if (opts !== null && typeof opts === "object" && !Array.isArray(opts) && !cv.isNode(opts)) {
+      const key = native.asKey(Object.keys(opts));
+      if (key !== null) {
+        as = opts[key];
+        rest = Object.assign({}, opts);
+        delete rest[key];
+        native.checkName(as);
+      }
+    }
+    const node = open(path, rest);
+    if (as !== undefined && native.bindName(as, node)) defineName(as);
+    return node;
   };
 
   // cv and P give a structured unknown-name error (with did-you-mean) instead
@@ -44,16 +74,7 @@
     return l;
   });
 
-  Object.defineProperty(g, "img", {
-    configurable: true,
-    enumerable: false,
-    get() {
-      return native.getImg();
-    },
-    set(v) {
-      native.setImg(v);
-    },
-  });
+  defineName("img");
 
   define(
     "doc",
