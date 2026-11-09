@@ -92,6 +92,15 @@ func goldenCases() []goldenCase {
 		{"mask-refine", classMask, func(t *testing.T, e *graph.Engine, img graph.NodeID) graph.NodeID {
 			return call(t, e, "refine", lum(t, e, img), graph.NodeArg{ID: img}).ID
 		}, Options{}},
+		// GCV-005 B1: a mask dilated by a disk, and a white top-hat of the grey image
+		{"dilate-mask", classMask, func(t *testing.T, e *graph.Engine, img graph.NodeID) graph.NodeID {
+			return call(t, e, "dilate", lum(t, e, img), 4.0).ID
+		}, Options{}},
+		{"tophat-gray", classStrict, func(t *testing.T, e *graph.Engine, img graph.NodeID) graph.NodeID {
+			g := call(t, e, "toGray", img).ID
+			open := call(t, e, "dilate", call(t, e, "erode", g, 6.0).ID, 6.0).ID
+			return call(t, e, "sub", g, graph.NodeArg{ID: open}).ID
+		}, Options{}},
 		{"mask-overlay", classOverlay, func(t *testing.T, e *graph.Engine, img graph.NodeID) graph.NodeID {
 			return call(t, e, "overlay", img, graph.NodeArg{ID: lum(t, e, img)}).ID
 		}, Options{}},

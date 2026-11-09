@@ -30,8 +30,8 @@ error:
 | E_UNKNOWN_METHOD | no such method on this kind | the `fix`; synonyms are mapped (`blur` → `gaussian`, `brightness` → `exposure`) |
 | E_NAMESPACE | the method lives in a namespace | `img.mask.luminance`, `img.detect.specks` |
 | E_UNKNOWN_OPTION | an option key is misspelt or named differently (`min` → `above`, `radius` → `sigma` on a blur, `opacity` → `alpha`) | the `fix` / `valid` list |
-| E_ARG_TYPE, E_ARG_RANGE | wrong type or outside the hard limits | read `cv.help(op)` |
-| E_WRONG_KIND | the receiver or an input has the wrong kind or channel count | a mask is one channel: `.toGray()`; convert: `.toMask()`, `.components()` |
+| E_ARG_TYPE, E_ARG_RANGE | wrong type or outside the hard limits (a disk above 64 doc px in `erode`/`dilate`) | read `cv.help(op)`; for a large disk crop first, or `x.dilate(64).dilate(36)` |
+| E_WRONG_KIND | the receiver or an input has the wrong kind or channel count (`img.erode(2)` on colour) | a mask is one channel: `.toGray()` (`img.toGray().erode(2)`); convert: `.toMask()`, `.components()` |
 | E_NOT_AWAITED | a property of, or a number from, a lazy Value or Regions node (`img.stats().p99`, `img.stats() > 0.5`) | `(await img.stats()).p99` |
 | E_ARG_TYPE (a node as an option) | options are literal values: `levels({ white: d.stats() })` | `levels({ white: (await d.stats()).p99 })` |
 | E_NO_IMAGE | no image is open | `img = cv.open("scan.tif")` |
@@ -44,6 +44,10 @@ return img.levels({ blak: 0.02 })
 
 ```js error=E_UNKNOWN_OPTION
 return await img.mask.luminance({ min: 0.99 }).coverage()   // hint: Did you mean "above"?
+```
+
+```js error=E_ARG_RANGE
+return await img.toGray().dilate(100).stats()   // fix: img.dilate(64).dilate(36)
 ```
 
 ## Warnings

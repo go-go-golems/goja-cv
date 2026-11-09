@@ -271,7 +271,7 @@ func maskMakerOps() []graph.OpDef {
 				return graph.NewImage(m), nil
 			},
 			Doc: "The connected area around a point whose colour is within tol of the point's colour (magic wand).",
-			See: []string{"mask.color", "grow"},
+			See: []string{"mask.color", "dilate"},
 		},
 	}
 }
@@ -312,7 +312,7 @@ func lengthMaskOp(name, doc string, k func(ctx context.Context, m *buffer.Buffer
 			return graph.NewImage(out), nil
 		},
 		Doc: doc,
-		See: []string{"grow", "shrink", "feather"},
+		See: []string{"dilate", "erode", "feather"},
 	}
 }
 
@@ -335,8 +335,6 @@ func maskOps() []graph.OpDef {
 			See: []string{"minus"},
 		},
 		lengthMaskOp("feather", "Soften the mask edge: a Gaussian blur of standard deviation radius/2 (doc px), so the ramp is about radius wide on each side.", kernels.Feather),
-		lengthMaskOp("grow", "Dilate the selection (m ≥ 0.5) by radius doc px using an exact Euclidean distance transform.", kernels.Grow),
-		lengthMaskOp("shrink", "Erode the selection (m ≥ 0.5) by radius doc px using an exact Euclidean distance transform.", kernels.Shrink),
 		{
 			Name: "refine", On: graph.KindImage, Returns: graph.KindImage, OneChannel: true, Result: graph.DerivedEnc,
 			Args: []graph.ArgSpec{

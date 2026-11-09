@@ -78,7 +78,7 @@ func TestHealRemovesPlantedSpecks(t *testing.T) {
 			t.Fatalf("%s: specks not healed: mean %.4f worst %.4f", method, after, worst)
 		}
 		// nothing changes away from the (grown) targets
-		tm := evalValue(t, e, call(t, e, "toMask", keep.ID, map[string]any{"grow": 2.5}), 1).(*graph.ImageValue).Buf.Plane(0)
+		tm := evalValue(t, e, call(t, e, "dilate", call(t, e, "toMask", keep.ID).ID, 3.0), 1).(*graph.ImageValue).Buf.Plane(0)
 		for i := range hb.Pix {
 			if tm[i%len(tm)] == 0 && hb.Pix[i] != src.Pix[i] {
 				t.Fatalf("%s changed pixel %d outside the targets", method, i)

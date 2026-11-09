@@ -5,7 +5,7 @@
 goja-cv is an image-analysis and editing engine written in Go and exposed to JavaScript as `require("cv")`
 through [go-go-goja](https://github.com/go-go-golems/go-go-goja). An agent (or you) sends a few lines of
 JavaScript; goja-cv builds a lazy graph of operations, evaluates it in Go, and answers with YAML and images
-("looks"). It measures (statistics, histograms, dust detection), selects (masks, regions), edits (exposure,
+("looks"). It measures (statistics, histograms, dust detection), selects (masks, regions, erosion and dilation), edits (exposure,
 levels, masked edits, healing, inpainting) and shows (numbered looks, overlays, comparisons). The pixels never
 enter JavaScript, and the runtime has no filesystem, process or network access.
 

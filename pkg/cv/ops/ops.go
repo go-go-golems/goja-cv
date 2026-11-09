@@ -22,6 +22,7 @@ func Register(r *graph.Registry) {
 	r.MustRegister(measurementOps()...)
 	r.MustRegister(maskMakerOps()...)
 	r.MustRegister(maskOps()...)
+	r.MustRegister(morphOps()...)
 	r.MustRegister(regionOps()...)
 	r.MustRegister(regionMeasureOp())
 	r.MustRegister(compositeOps()...)

@@ -131,11 +131,11 @@ func flatBackground(ctx context.Context, g, trend []float32, w, h, r int) ([]flo
 	}
 	p := 4*r + r/2 + 2
 	padded, pw, ph := oddPad(d, w, h, p)
-	o, err := Opening(ctx, padded, pw, ph, r)
+	o, err := squareOpening(ctx, padded, pw, ph, r)
 	if err != nil {
 		return nil, err
 	}
-	c, err := Closing(ctx, o, pw, ph, r)
+	c, err := squareClosing(ctx, o, pw, ph, r)
 	if err != nil {
 		return nil, err
 	}

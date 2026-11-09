@@ -16,7 +16,7 @@ func TestSquareMinMaxMatchesBruteForce(t *testing.T) {
 	}
 	for _, r := range []int{1, 3, 8, 20} {
 		for _, isMax := range []bool{false, true} {
-			got, err := SquareMinMax(context.Background(), p, w, h, r, isMax)
+			got, err := squareMinMax(context.Background(), p, w, h, r, isMax)
 			if err != nil {
 				t.Fatal(err)
 			}

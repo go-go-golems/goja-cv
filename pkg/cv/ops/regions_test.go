@@ -71,9 +71,9 @@ func TestComponentsAndRegionOps(t *testing.T) {
 			t.Fatalf("toMask coverage at %g: %g", sc, got)
 		}
 	}
-	grown := evalValue(t, e, call(t, e, "coverage", call(t, e, "toMask", comps.ID, map[string]any{"grow": 2}).ID), 1).(*graph.DataValue).Data.(float64)
+	grown := evalValue(t, e, call(t, e, "coverage", call(t, e, "dilate", call(t, e, "toMask", comps.ID).ID, 2).ID), 1).(*graph.DataValue).Data.(float64)
 	if grown <= 96.0/(64*48) {
-		t.Fatalf("toMask grow did not grow: %g", grown)
+		t.Fatalf("toMask().dilate(2) did not grow: %g", grown)
 	}
 }
 

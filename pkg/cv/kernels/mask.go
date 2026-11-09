@@ -366,6 +366,22 @@ func dt1d(f, d []float64, v []int, z []float64) {
 // px, between pixel centres) to the nearest pixel where in[i] is true; edtInf
 // (as a large number) if the set is empty.
 func DistanceToSet(ctx context.Context, in []bool, w, h int) ([]float32, error) {
+	d2, err := squaredDistanceToSet(ctx, in, w, h)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]float32, w*h)
+	for i, v := range d2 {
+		out[i] = float32(math.Sqrt(v))
+	}
+	return out, nil
+}
+
+// squaredDistanceToSet is the squared Euclidean distance from every pixel
+// to the nearest pixel where in[i] is true: an integer for a non-empty set,
+// edtInf for an empty one. The binary disk of erode and dilate compares it
+// with r² exactly.
+func squaredDistanceToSet(ctx context.Context, in []bool, w, h int) ([]float64, error) {
 	g := make([]float64, w*h)
 	for i, b := range in {
 		if b {
@@ -391,59 +407,16 @@ func DistanceToSet(ctx context.Context, in []bool, w, h int) ([]float32, error) 
 	if err != nil {
 		return nil, err
 	}
-	out := make([]float32, w*h)
+	// rows, in place
 	err = parallel.Rows(ctx, h, func(y0, y1 int) {
-		f, d := make([]float64, w), make([]float64, w)
+		f := make([]float64, w)
 		v, z := make([]int, w), make([]float64, w+1)
 		for y := y0; y < y1; y++ {
 			copy(f, g[y*w:(y+1)*w])
-			dt1d(f, d, v, z)
-			for x := 0; x < w; x++ {
-				out[y*w+x] = float32(math.Sqrt(d[x]))
-			}
+			dt1d(f, g[y*w:(y+1)*w], v, z)
 		}
 	})
-	return out, err
-}
-
-// Grow dilates a mask by r px: pixels within r of the selection (m ≥ 0.5)
-// are selected, with a one-pixel anti-aliased edge.
-func Grow(ctx context.Context, m *buffer.Buffer, r float64) (*buffer.Buffer, error) {
-	pl := m.Plane(0)
-	set := make([]bool, len(pl))
-	for i, v := range pl {
-		set[i] = v >= 0.5
-	}
-	d, err := DistanceToSet(ctx, set, m.W, m.H)
-	if err != nil {
-		return nil, err
-	}
-	out := buffer.NewLike(m)
-	po := out.Plane(0)
-	for i := range po {
-		po[i] = max(pl[i], clamp01f(float32(r)+1-d[i]))
-	}
-	return out, nil
-}
-
-// Shrink erodes a mask by r px: pixels closer than r to the unselected part
-// (m < 0.5) are removed, with a one-pixel anti-aliased edge.
-func Shrink(ctx context.Context, m *buffer.Buffer, r float64) (*buffer.Buffer, error) {
-	pl := m.Plane(0)
-	set := make([]bool, len(pl))
-	for i, v := range pl {
-		set[i] = v < 0.5
-	}
-	d, err := DistanceToSet(ctx, set, m.W, m.H)
-	if err != nil {
-		return nil, err
-	}
-	out := buffer.NewLike(m)
-	po := out.Plane(0)
-	for i := range po {
-		po[i] = min(pl[i], clamp01f(d[i]-float32(r)))
-	}
-	return out, nil
+	return g, err
 }
 
 // BoxMean is the mean of p over a (2r+1)² window clipped to the image,

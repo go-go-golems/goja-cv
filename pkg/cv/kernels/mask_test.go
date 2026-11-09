@@ -49,54 +49,6 @@ func disk(w, h int, cx, cy, r float64) *buffer.Buffer {
 	return b
 }
 
-func iou(a, b *buffer.Buffer) float64 {
-	var inter, union float64
-	for i := range a.Pix {
-		x, y := a.Pix[i] >= 0.5, b.Pix[i] >= 0.5
-		if x && y {
-			inter++
-		}
-		if x || y {
-			union++
-		}
-	}
-	return inter / union
-}
-
-func TestGrowThenShrinkIsNearIdentityOnBlobs(t *testing.T) {
-	ctx := context.Background()
-	m := disk(80, 60, 30, 28, 9)
-	ell := disk(80, 60, 60, 30, 6)
-	for i := range m.Pix {
-		m.Pix[i] = max(m.Pix[i], ell.Pix[i])
-	}
-	for _, r := range []float64{1, 2.5, 4} {
-		g, err := Grow(ctx, m, r)
-		if err != nil {
-			t.Fatal(err)
-		}
-		s, err := Shrink(ctx, g, r)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if v := iou(m, s); v < 0.97 {
-			t.Fatalf("r=%g: IoU(grow∘shrink, m) = %.3f", r, v)
-		}
-		if v := iou(m, g); v > 0.9 {
-			t.Fatalf("r=%g: grow did not grow (IoU %.3f)", r, v)
-		}
-		// grow by r adds about the ring area 2πR·r for the disk
-		var area0, area1 float64
-		for i := range m.Pix {
-			area0 += float64(m.Pix[i])
-			area1 += float64(g.Pix[i])
-		}
-		if area1 <= area0 {
-			t.Fatalf("grow area %g <= %g", area1, area0)
-		}
-	}
-}
-
 func TestFeatherKeepsRangeAndMass(t *testing.T) {
 	m := disk(64, 64, 32, 32, 12)
 	f, err := Feather(context.Background(), m, 6)

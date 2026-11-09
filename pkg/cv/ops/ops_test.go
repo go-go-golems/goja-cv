@@ -151,8 +151,8 @@ var walkSamples = map[string]func(w walkNodes) []any{
 	"or":             func(w walkNodes) []any { return []any{nodeArg(w.mask2)} },
 	"minus":          func(w walkNodes) []any { return []any{nodeArg(w.mask2)} },
 	"feather":        func(walkNodes) []any { return []any{3} },
-	"grow":           func(walkNodes) []any { return []any{2} },
-	"shrink":         func(walkNodes) []any { return []any{2} },
+	"erode":          func(walkNodes) []any { return []any{2} },
+	"dilate":         func(walkNodes) []any { return []any{6, map[string]any{"line": 30}} },
 	"refine":         func(w walkNodes) []any { return []any{nodeArg(w.img), map[string]any{"radius": 4}} },
 	"overlay": func(w walkNodes) []any {
 		return []any{nodeArg(w.regions), map[string]any{"labels": "id", "color": []any{0.2, 0.9, 0.3}}}
@@ -163,7 +163,6 @@ var walkSamples = map[string]func(w walkNodes) []any{
 	"only":          func(walkNodes) []any { return []any{1} },
 	"sortBy":        func(walkNodes) []any { return []any{"area"} },
 	"top":           func(walkNodes) []any { return []any{3} },
-	"toMask":        func(walkNodes) []any { return []any{map[string]any{"grow": 1}} },
 	"within":        func(w walkNodes) []any { return []any{nodeArg(w.mask), nodeArg(w.edited)} },
 	"heal":          func(w walkNodes) []any { return []any{nodeArg(w.regions), map[string]any{"radius": 1}} },
 	"crop":          func(walkNodes) []any { return []any{[]any{5.0, 7.0, 21.0, 13.0}} },
@@ -341,7 +340,7 @@ func TestOptionSynonyms(t *testing.T) {
 		{"gaussian", img.ID, []any{map[string]any{"radius": 2.0}}, "sigma", "gaussian({ sigma: 2 })"},
 		{"gaussian", img.ID, []any{map[string]any{"r": 2.0}}, "sigma", ""},
 		{"feather", m.ID, []any{map[string]any{"r": 2.0}}, "radius", "feather({ radius: 2 })"},
-		{"grow", m.ID, []any{map[string]any{"sigma": 2.0}}, "radius", ""},
+		{"dilate", m.ID, []any{map[string]any{"sigma": 2.0}}, "radius", ""},
 		{"detect.specks", img.ID, []any{map[string]any{"threshold": 0.05}}, "minContrast", ""},
 		{"detect.specks", img.ID, []any{map[string]any{"maxSize": 50.0}}, "maxArea", ""},
 		{"overlay", img.ID, []any{graph.NodeArg{ID: m.ID}, map[string]any{"opacity": 0.3}}, "alpha", ""},

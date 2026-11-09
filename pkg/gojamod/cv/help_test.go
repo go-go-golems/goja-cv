@@ -57,3 +57,30 @@ func TestHelpNeverFailsAndResolvesEveryForm(t *testing.T) {
 		t.Fatalf("overview %v", h)
 	}
 }
+
+// Opening, closing and top-hat are compositions of erode and dilate, found
+// by cv.help as concept entries (GCV-005 D19); grow and shrink are gone.
+func TestHelpMorphologyConcepts(t *testing.T) {
+	reg := cvmod.DefaultRegistry()
+	for name, want := range map[string]string{
+		"opening": "x.erode(r).dilate(r)",
+		"closing": "x.dilate(r).erode(r)",
+		"tophat":  "x.sub(x.erode(r).dilate(r))",
+	} {
+		e, ok := cvmod.Help(reg, name)[name].(map[string]any)
+		if !ok || !strings.Contains(e["usage"].(string), want) {
+			t.Fatalf("help(%q) = %v, want usage with %q", name, e, want)
+		}
+	}
+	for _, op := range []string{"erode", "dilate"} {
+		e, ok := cvmod.Help(reg, op)[op].(map[string]any)
+		if !ok || !strings.Contains(e["doc"].(string), "disk") {
+			t.Fatalf("help(%q) = %v", op, e)
+		}
+	}
+	for _, old := range []string{"grow", "shrink"} {
+		if h := cvmod.Help(reg, old); h["found"] != false {
+			t.Fatalf("help(%q) = %v, want found: false", old, h)
+		}
+	}
+}

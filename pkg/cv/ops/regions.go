@@ -365,23 +365,15 @@ func regionOps() []graph.OpDef {
 		},
 		{
 			Name: "toMask", On: graph.KindRegions, Returns: graph.KindImage, Result: graph.DerivedEnc, Channels: graph.One,
-			Args: []graph.ArgSpec{{Name: "grow", Type: "number", Unit: graph.DocPx, Default: 0.0, Min: graph.F(0), Max: graph.F(500),
-				Doc: "dilate each region by this many doc px"}},
-			Run: func(ctx context.Context, ec *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
-				rv := regions(in[0])
-				m, err := rasterize(ctx, rv, ec.Scale)
+			Run: func(ctx context.Context, ec *graph.EvalCtx, in []graph.Value, _ graph.Args) (graph.Value, error) {
+				m, err := rasterize(ctx, regions(in[0]), ec.Scale)
 				if err != nil {
 					return nil, err
 				}
-				if g := a.Length("grow", ec.Scale); g > 0 {
-					if m, err = kernels.Grow(ctx, m, g); err != nil {
-						return nil, err
-					}
-				}
 				return graph.NewImage(m), nil
 			},
-			Doc: "The regions as a mask (a one-channel image) at the evaluation scale (exact area coverage), optionally grown.",
-			See: []string{"components", "grow"},
+			Doc: "The regions as a mask (a one-channel image) at the evaluation scale (exact area coverage); regions.toMask().dilate(2) grows it by 2 doc px.",
+			See: []string{"components", "dilate"},
 		},
 		{
 			Name: "filter", On: graph.KindRegions, Returns: graph.KindRegions,

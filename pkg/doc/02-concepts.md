@@ -74,7 +74,9 @@ computed from linear light, and a look shows encoded values; masks and derived i
 
 A **mask** is a soft field (a feathered sky): a one-channel image of weights, read as stored (never converted
 between spaces), on which every image op works; **regions** are identified things you count, rank and exclude
-(143 specks, drop id 31). Each converts into the other: `regions.toMask()`, `mask.components()`.
+(143 specks, drop id 31). Each converts into the other: `regions.toMask()`, `mask.components()`. Morphology
+works on any one-channel image: `x.dilate(r)` and `x.erode(r)` take a disk of radius r doc px or, with
+`{ line: angle }`, a line; opening, closing and top-hat are their compositions (`cv.help("tophat")`).
 
 ```js
 const sel = img.mask.luminance({ above: 0.45 }).minus(img.mask.box([0, 0, 40, 40])).feather(6)

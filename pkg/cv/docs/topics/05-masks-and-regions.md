@@ -14,7 +14,7 @@ return { bright: await bright.coverage(), centre: await centre.coverage() }
 
 ## Combining and refining
 
-Set algebra: `a.and(b)`, `a.or(b)`, `a.minus(b)`, `a.not()`. Morphology in doc px: `grow(radius)`, `shrink(radius)`, `feather(radius)`; `refine(img)` snaps soft edges to image edges. `coverage()` is the selected fraction (the mask's mean); `img.stats({ mask })` measures the image inside the mask. These ops need a one-channel receiver, and an argument that takes a mask (`within`, `blend`, `stats`, `heal`, `inpaint`, `overlay`) takes any one-channel image: a colour image there is `E_WRONG_KIND` with the fix `img.toGray()`. A mask is a weight, never converted between spaces: `img.as("linear").within(m, …)` uses the same weights as `img.within(m, …)`.
+Set algebra: `a.and(b)`, `a.or(b)`, `a.minus(b)`, `a.not()`. Morphology in doc px: `m.dilate(r)` grows the selection by r, `m.erode(r)` shrinks it (both take a disk: the pixels within r; see below), `feather(radius)` softens the edge; `refine(img)` snaps soft edges to image edges. `coverage()` is the selected fraction (the mask's mean); `img.stats({ mask })` measures the image inside the mask. These ops need a one-channel receiver, and an argument that takes a mask (`within`, `blend`, `stats`, `heal`, `inpaint`, `overlay`) takes any one-channel image: a colour image there is `E_WRONG_KIND` with the fix `img.toGray()`. A mask is a weight, never converted between spaces: `img.as("linear").within(m, …)` uses the same weights as `img.within(m, …)`.
 
 ```js
 const sel = img.mask.luminance({ above: 0.45 })
@@ -22,6 +22,16 @@ const sel = img.mask.luminance({ above: 0.45 })
   .minus(img.mask.box([0, 0, 40, 40]))
   .feather(6)
 return { coverage: await sel.coverage(), look: img.overlay(sel, { color: "lime" }).look("selection") }
+```
+
+## Erosion and dilation
+
+`x.erode(r)` and `x.dilate(r)` work on any one-channel image (a mask, a grey image, a view): the minimum or maximum over a disk of radius r doc px (the offsets at distance ≤ r; r ≤ 64), or with `{ line: angle }` over a line of radius r at that angle (degrees; any length). Opening is `x.erode(r).dilate(r)`, closing `x.dilate(r).erode(r)`, a white top-hat `x.sub(x.erode(r).dilate(r))`: bright structures smaller than the disk at full height, a saturated speck filled (`cv.help("tophat")`). `grow(r)` reached r + 0.5: `m.dilate(r + 0.5)` gives its set.
+
+```js
+const L = img.as("linear").toGray()
+const top = L.sub(L.erode(12).dilate(12))
+return { top: (await top.stats()).p99, grown: await img.mask.luminance({ above: 0.6 }).dilate(3).coverage() }
 ```
 
 ## Regions
@@ -47,7 +57,7 @@ Region ids are stable for the same image and options (detection runs at `analysi
 
 ```js
 const specks = img.detect.specks().where({ score: { gte: 0.5 } })
-const m = specks.toMask({ grow: 2 })                                   // Regions → mask
+const m = specks.toMask().dilate(2)                                    // Regions → mask, grown by 2 px
 const blobs = img.mask.luminance({ above: 0.7 }).components({ minArea: 4 })   // mask → Regions
 return { masked: await m.coverage(), blobs: await blobs.count() }
 ```
