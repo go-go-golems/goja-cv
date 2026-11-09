@@ -22,6 +22,9 @@ func Label(n *Node) string {
 			return "param(" + n.Args.String("name") + ")"
 		}
 	}
+	if n.Op.On == KindValue && n.Op.Name == "field" {
+		return "." + n.Args.String("name")
+	}
 	return n.Op.Name
 }
 
@@ -38,6 +41,9 @@ func Describe(b *Builder, n *Node, scale float64, params map[string]any) string 
 			v, _ := json.Marshal(params[name])
 			return fmt.Sprintf("param %s = %s", name, v)
 		}
+	}
+	if n.Op.On == KindValue && n.Op.Name == "field" {
+		return "." + n.Args.String("name")
 	}
 	var parts []string
 	for i := range n.Op.Args {

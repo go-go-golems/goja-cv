@@ -719,3 +719,7 @@ func substitute(v any, ins []Value) (any, error) {
 	}
 	return v, nil
 }
+
+// Normalize converts exported JavaScript values (int64, float32, typed
+// slices, nested maps) into the canonical value space used by args and data.
+func Normalize(v any) any { return normalize(v) }
