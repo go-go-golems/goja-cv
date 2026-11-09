@@ -11,17 +11,23 @@ Intent: long-term
 Owners: []
 RelatedFiles: []
 ExternalSources: []
-Summary: ""
-LastUpdated: 2026-11-09T14:23:00.197273-05:00
-WhatFor: ""
-WhenToUse: ""
+Summary: "goja-cv changes from the feedback of 39 annotator agents, on top of API v2 (GCV-004): task libraries (cv.load, cv.scripts, --prelude as a load), readable results (compact tables, mem function docs, UNUSED_NODE attribution, item labels), and analysis primitives (peaks; erode/dilate/opening/closing replacing mask grow/shrink)."
+LastUpdated: 2026-11-09T20:30:00-05:00
+WhatFor: "Entry point of the GCV-005 ticket."
+WhenToUse: "Start here; the guide is design-doc/01."
 ---
 
 # Agent ergonomics and analysis primitives: script libraries, compact results, peaks, morphology
 
 ## Overview
 
-<!-- Provide a brief overview of the ticket, its goals, and current status -->
+GCV-005 turns the feedback of 39 Claude Sonnet annotator agents (DUST-002 `reference/11`, 374 evals) into goja-cv
+changes on top of GCV-004 (API v2). Part A makes task libraries a first-class part of a session and makes results
+readable; Part B adds the analysis primitives agents improvised (`peaks`, morphology). The design and implementation
+guide is `design-doc/01-design-and-implementation-guide.md` (revision 1); the coordinator's analysis is
+`reference/01-…`; the diaries are `reference/02-…` (coordination) and `reference/03-…` (design writer).
+
+Status: guide written, awaiting the review read; implementation follows GCV-004.
 
 ## Key Links
 

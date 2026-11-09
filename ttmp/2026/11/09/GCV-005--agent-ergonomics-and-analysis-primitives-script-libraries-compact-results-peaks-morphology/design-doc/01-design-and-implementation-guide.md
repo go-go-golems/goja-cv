@@ -71,7 +71,7 @@ WhenToUse: "Read before touching cv.load, preludes, the result renderer, the con
 
 | date | revision | what changed |
 |---|---|---|
-| 2026-11-09 | 1 | First version, written on `task/gcv-005-agent-ergonomics-and-primitives` (stacked on `task/gcv-004-api-v2` at `10938ce`, GCV-004 Phases 0b, 0c and 1 implemented) from the evidence of DUST-002 `reference/11`, the 374 extracted agent evals, the 34 agent diaries and the coordinator's disposition in `reference/01-analysis-annotator-agent-feedback.md`. |
+| 2026-11-09 | 1 | First version, written on `task/gcv-005-agent-ergonomics-and-primitives` (stacked on `task/gcv-004-api-v2` at `10938ce`, GCV-004 Phases 0b, 0c and 1 implemented) from the evidence of DUST-002 `reference/11`, the 374 extracted agent evals, the 39 agent diaries and the coordinator's disposition in `reference/01-analysis-annotator-agent-feedback.md`. |
 
 ## How to read this guide
 
@@ -133,8 +133,8 @@ GCV-005 makes goja-cv good at being that substrate. It has two independent halve
 **Part B: analysis primitives.**
 
 7. `x.peaks({ radius, snr, polarity })` returns the local maxima of the core/ring step, the quantity `measure`
-   reports, as a Regions node of disks: flat items `{ id, x, y, w, h, cx, cy, r, coreMean, ringMean, step, spread,
-   snr, ringCoverage }` with sub-pixel centres. The snr is measured against the spread of the spot's own ring, so a
+   reports, as a Regions node of disks: flat items `{ id, x, y, w, h, cx, cy, area, aspect, r, coreMean, ringMean,
+   step, spread, snr, ringCoverage }` with sub-pixel centres. The snr is measured against the spread of the spot's own ring, so a
    faint speck in a dark, quiet area stands out as much as a bright one in a busy area. A list of radii finds spots
    of several sizes and keeps, where two overlap, the one with the higher snr; a saturated blob is then one peak at
    its own size instead of a ring of small ones. Peaks feed `sheet`, `measure`, `overlay` and `crop` directly.
@@ -759,9 +759,9 @@ context:
 # after: the first eval after the library was loaded
 context:
   mem: T (string)
-  functions: mem.best(node, x, y, opts), mem.faint(opts), mem.hot(level = 0.4, max = 80), mem.probe(x, y), mem.sheet(points, size = 40, label = "sheet"), mem.tile(id, ox, oy), mem.views(), mem.zoom(x, y, half = 24)
+  functions: mem.best(node, x, y, opts), mem.faint({ level = 0.06, snrMin = 1.4, areaMin = 5, areaMax = 80, aspectMax = 3, …), mem.hot(level = 0.4, max = 80), mem.probe(x, y), mem.sheet(points, size = 40, label = "sheet"), mem.tile(id, ox, oy), mem.views(), mem.zoom(x, y, half = 24)
   new functions:
-    mem.faint(opts): compact faint dots the hot list misses, ranked by snr: { candidates, kept, rows }
+    mem.faint({ level = 0.06, snrMin = 1.4, areaMin = 5, areaMax = 80, aspectMax = 3, …): compact faint dots the hot list misses, ranked by snr: { candidates, kept, rows }
     mem.hot(level = 0.4, max = 80): bright blobs of the speck view, probed and sorted by sp
     mem.probe(x, y): the best point within 2 px: { x, y, snr, sp, step, chroma, cover }
     …
@@ -769,7 +769,7 @@ context:
 context:
   images: img = cfca85b41cd6f78f_2048_0.tif [2048,0,1024,1024] (16-bit TIFF, linear)
   mem: T (string), box (array[4]), hotRows (array[53]), img (#1 Image)
-  functions: mem.best(node, x, y, opts), mem.faint(opts), mem.hot(level = 0.4, max = 80), …
+  functions: mem.best(node, x, y, opts), mem.faint({ level = 0.06, snrMin = 1.4, areaMin = 5, areaMax = 80, aspectMax = 3, …), mem.hot(level = 0.4, max = 80), …
 ```
 
 Rules:
@@ -811,8 +811,9 @@ Rules:
 - An array of at least two flat records (§4.3) renders as a table, at any depth of the result. Columns are the union
   of the records' keys in first-seen order; a missing, `null` or `undefined` value is `-`.
 - Numbers use the renderer's format (integers exactly, others with five significant digits); strings are written as
-  they are unless they are empty or contain whitespace, `-` or `|`, which are written JSON-quoted; booleans as `true`
-  and `false`. Columns are left-aligned and separated by two spaces.
+  they are unless they are empty, are exactly `-` or contain whitespace, which are written JSON-quoted; strings longer
+  than 60 characters are cut with `…`; booleans as `true` and `false`. Columns are left-aligned and separated by two
+  spaces.
 - A table shows as many rows as fit in the result's table budget, two thirds of the result cap (6,000 characters of
   9,000), shared by all tables of one result in render order, and at least five. When rows are left out, the last
   line says which rows are shown, how to get the next page and how to get all of them.
@@ -925,9 +926,11 @@ Rules:
   0.8 (`DUST-002/scripts/87-cv-measure-auc.py`, with the helpers' ring); labelled dust has a median of 1.7.
 - `polarity` is `"bright"` (default: maxima of the step), `"dark"` (minima) or `"both"`.
 - The result is a Regions node of disks (GCV-004's `Disk` shape): its awaited items have, in this order,
-  `id, x, y, w, h, cx, cy, r, coreMean, ringMean, step, spread, snr, ringCoverage`. `cx, cy` is the sub-pixel centre;
-  `r` the radius it was found at; `x, y, w, h` the disk's box; the other fields are `measure`'s core/ring fields for a
-  core of radius r and a ring [1.5 r, 2.5 r] on the gray plane peaks searched. Items are sorted by |snr|, highest
+  `id, x, y, w, h, cx, cy, area, aspect, r, coreMean, ringMean, step, spread, snr, ringCoverage`: GCV-003's geometry
+  fields, which every region has (`graph.GeometryFields`, `pkg/cv/graph/schema.go:32-43`), then `r` and `measure`'s
+  core/ring fields. `cx, cy` is the sub-pixel centre; `x, y, w, h` the disk's box; `area` the disk's area (π r²) and
+  `aspect` 1; `r` the radius it was found at; the core/ring fields are measured with a core of radius r and a ring
+  [1.5 r, 2.5 r] on the gray plane peaks searched. Items are sorted by |snr|, highest
   first, and `id` is the rank (1 is the strongest).
 - Peaks never overlap: when the cores of two peaks overlap (their distance is less than the sum of their radii), only
   the one with the higher |snr| is kept. With one radius this makes peaks at least 2 r apart; with several, a large
@@ -1194,9 +1197,9 @@ string-keyed values are all primitives? If so it calls `r.table(obj)`, which ret
 today, with the note "… N more (await cv.save("x.json", <the array>) for all)".
 
 The renderer gains one field, `tableLeft int`, the characters left for tables in this result, initialized from the
-session's `MaxResultChars` × 2 / 3. Tables consume it in render order. The values are read with `obj.Get(key)` on plain
-objects only; getters are not run, because a plain object exported as `map[string]any` has none that matter, and the
-check rejects anything else.
+session's `MaxResultChars` × 2 / 3. Tables consume it in render order. Values are read through property descriptors,
+as `renderer.property` already does (`yaml.go:210-223`): an element with an accessor property is not a flat record, so
+the array renders as before and no getter runs.
 
 Functions render through `DescribeFunction`: `str("mem.probe(x, y): the best point within 2 px: …")` when the
 function's name is known from the key path, else its own `name` property.
@@ -1223,14 +1226,17 @@ entry:
 
 - `id`: the element's `id` as the array has it (linked elements always have one; a literal element without one gets
   its 1-based position, as GCV-004 says). The resulting region's `ID` is this value, so a renumbered linked item is
-  drawn and reported with its new id. Ids are data (GCV-004 D6); the link is the position.
+  drawn and reported with its new id. Ids are data (GCV-004 D6); the link is the position. An `id` that is not a
+  number is `E_ARG_TYPE` "items[3].id is "h17", not a number" with the fix `{ ...r, label: "h17" }`: text belongs in
+  `label` (D11).
 - `label`: the element's `label` field when it is a string or a number (numbers are formatted as the renderer formats
   them). It is stored in the region's `Tags["label"]` (`Region.Tags` exists for detector tags such as `polarity`,
   `pkg/cv/ops/detect.go:38-40`), and the items node's schema gains an optional string field `label` when any entry has
   one.
 
 `sheet` and `overlay` draw `Tags["label"]` when present, else the id. For the sheet's plain-list path (points and
-boxes, `listItems`, `sheet.go:113-137`), the same rule reads `label` and `id` from each map, accepting string ids.
+boxes, `listItems`, `sheet.go:113-137`), the same rules read `label` and `id` from each map: a string `label` is
+drawn, a string `id` is the same `E_ARG_TYPE` (today it is silently replaced by the list index, line 118).
 The `labels` enum of the sheet becomes `id | none` with default `id`; the default no longer depends on the input.
 
 ### 7.8 The `peaks` op and kernel
@@ -1238,14 +1244,12 @@ The `labels` enum of the sheet becomes `id | none` with default `id`; the defaul
 **The op** (`pkg/cv/ops/peaks.go`):
 
 ```go
-var peakFields = []graph.FieldSpec{ // the flat item schema of a peak, in order
-    intField("id", "rank by |snr|, 1 = strongest"),
-    numField("x", graph.DocPx, "box of the disk: cx − r"), numField("y", graph.DocPx, "cy − r"),
-    numField("w", graph.DocPx, "2 r"), numField("h", graph.DocPx, "2 r"),
-    numField("cx", graph.DocPx, "sub-pixel centre x"), numField("cy", graph.DocPx, "sub-pixel centre y"),
-    numField("r", graph.DocPx, "the radius the peak was found at (core radius)"),
-    // then coreRingFields("off"): coreMean, ringMean, step, spread, snr, ringCoverage
-}
+// peakFields is the flat item schema of a peak, in order: the geometry every region has
+// (id, x, y, w, h, cx, cy, area, aspect; schema.go:32-43), the radius, then measure's core/ring fields
+// (coreMean, ringMean, step, spread, snr, ringCoverage) without channel steps.
+var peakFields = graph.WithFields(graph.GeometryFields,
+    append([]graph.FieldSpec{numField("r", graph.DocPx, "the radius the peak was found at (core radius)")},
+        coreRingFields("off")...)...)
 
 graph.OpDef{
     Name: "peaks", On: graph.KindImage, Returns: graph.KindRegions, Luma: true, // GCV-004: the luminance input
@@ -1258,7 +1262,7 @@ graph.OpDef{
     },
     AnalysisScale: func(graph.Args) float64 { return 1 },
     Halo:          func(a graph.Args) float64 { return 2.5*maxRadius(a) + 2 },
-    Fields:        fixedFields(append(peakFields, coreRingFields("off")...)),
+    Fields:        fixedFields(peakFields),
     Run:           runPeaks, // §10.6
     Doc: "Local maxima of the core/ring step (measure's step) at sub-pixel precision, as disks: …",
     See: []string{"measure", "sheet", "detect.specks", "opening"},
@@ -1682,4 +1686,786 @@ file locations (~60), `LOAD` (~30), context block functions and `DescribeFunctio
 lines, half of it in the two kernels. Tests add about 1,200. Treat these as ±30 %; the implementation diary records
 `git diff --stat` per phase.
 
-<!-- PART4 -->
+## 10. Pseudocode for the key flows
+
+### 10.1 `cv.load`
+
+```
+binding.load(path, args):                                   (owner goroutine, inside export())
+    path is not a string                      → E_ARG_TYPE  fix: await cv.load("dir/file.js")
+    path does not end in ".js"                → E_ARG_TYPE  "cv.load runs JavaScript files (.js)"
+    f, loc, err := eng.Workspace().Open(path)               // GCV-004 §10.5: workspace, then --read in order
+        outside every root                    → E_ACCESS (GCV-004's message, listing the roots)
+        missing                               → E_ARG_TYPE "no such file", listing the roots searched
+    text := read f (at most 1 MiB, else E_ARG_TYPE "too large for a script")
+    name := loc.Rel with "/" separators                       // "dust/helpers.js"
+    b.active := [l in b.active if l.Promise.State() == pending]
+    len(b.active) ≥ 32                        → E_TOO_MANY  "32 cv.load calls are running: a.js → b.js → …;
+                                                             does a file load itself?"
+    prg, err := goja.Compile(name, "(async function (args) {" + text + "\n})", false)
+    err is a syntax error                     → throw { code: "SyntaxError", message: name + ":" + L + ":" + C + ": " + msg,
+                                                        hint: "cv.load compiles the whole file before running it" }
+    fn := AssertFunction(vm.RunProgram(prg))
+    b.files[name] = split(text, "\n")                        // for where: lines; replaced by every load
+    if args is undefined: args = {}
+    v := fn(undefined, args)                                 // runs the body up to its first await
+    rec := loadRec{ name, b.site(), v.Export().(*goja.Promise) }
+    b.active += rec
+    if tracking: b.track.loads += rec                        // the eval's loads, for the LOAD warning
+    return v                                                 // the promise
+```
+
+The `site()` of a nested load is in the loading file (`dust/helpers.js:3`), so `LOAD` warnings for nested loads name
+the file line that started them.
+
+### 10.2 Locations of an error
+
+```
+readFailure(v):                                             (pkg/cvsession/native.go)
+    … name, code, message, hint, fix, path, valid as today …
+    frames := every match of `([^\s()]+):(\d+):(\d+)` in v.stack, in order   // innermost first
+    known(src) := src == "<eval>" || binding.files has src
+    loc := first frame with known(src)
+    if loc.src != "<eval>": calledFrom := first frame with src == "<eval>"
+    failure.Line/Column/Source := loc;  failure.CalledLine := calledFrom.line (0 if none)
+
+errorNode(f):
+    where := f.Source == "<eval>" ? "line " + agentLine(f.Line) + ": " + sourceLine
+                                  : f.Source + ":" + f.Line + ": " + trim(files[f.Source][f.Line − 1])
+    if f.CalledLine > 0: "called from" := "line " + agentLine(f.CalledLine) + ": " + sourceLine
+```
+
+### 10.3 The table renderer
+
+```
+renderer.array(arr, depth):
+    if tableOf(arr): return r.table(arr)
+    … as today; the more-note reads "… N more (await cv.save(\"x.json\", <the array>) for all)"
+
+tableOf(arr):
+    n := arr.length;  n ≥ 2
+    every element e: an object exported as map[string]any (not a node, look, provider, error, function, array),
+                     and every own enumerable string key k has a data property whose value is
+                     undefined, null, a boolean, a number or a string
+
+table(arr):
+    cols  := union of the elements' keys, in first-seen order
+    cell(v) := undefined | null | missing → "-"
+               number  → FormatNumber(v)                               // yaml.go:66
+               boolean → "true" | "false"
+               string  → s == "" || s == "-" || contains whitespace → strconv.Quote(s); else s
+                         longer than 60 characters → first 59 + "…"
+    rows  := cells of every element
+    width[j] := max(len(cols[j]), len(rows[i][j]) for i < min(n, 200))
+    line(cells) := join(cells[j] padded right to width[j], "  "), trailing spaces trimmed
+                   // yaml.v3 writes a literal block only when no line ends in a space
+    text  := line(cols);  used := len(text) + 1;  shown := 0
+    for i in 0..n−1:
+        l := line(rows[i])
+        if shown ≥ 5 and used + len(l) + 1 > r.tableLeft: break
+        text += "\n" + l;  used += len(l) + 1;  shown++
+    r.tableLeft −= used
+    if shown < n:
+        text += "\n… rows 1–" + shown + " of " + n + " shown. Next: .slice(" + shown + ", " + 2·shown +
+                ") of this array; all: await cv.save(\"rows.csv\", <the array>)"
+    return yaml.Node{ Kind: Scalar, Style: Literal, Tag: "!!str", Value: text }
+```
+
+`r.tableLeft` starts at `MaxResultChars * 2 / 3` (6,000 with the default cap) for each result. The minimum of five
+rows per table means that a result with many tables may still exceed the cap; then `capText`'s CUT note applies, as
+for any other text.
+
+### 10.4 A function's signature and doc line
+
+```
+DescribeFunction(vm, fn, name) → (sig, doc):                 (pkg/gojamod/cv, used by the renderer and the context block)
+    src := Function.prototype.toString.call(fn)
+    src contains "[native code]"      → (name + "()", "")
+    head := src without a leading "async "
+    params := head starts with "function" → the text between the first "(" and its matching ")"
+              head starts with "("        → the same
+              otherwise                    → the identifier before "=>"            // x => …
+    sig := name + "(" + collapse whitespace(params) + ")", cut at 80 characters with "…"
+    doc := scan src from the end of params, skipping '…', "…" and `…` literals:
+               the first "//" → the rest of that line, trimmed
+               the first "/*" → the first non-empty line inside, without leading "*" and spaces
+               none            → ""
+           cut at 120 characters with "…"
+```
+
+The context block uses the `mem` key as `name` (`mem.probe`); the renderer uses the key path when the function is a
+property (`mem.probe` for `return mem`, `probe` for `return { probe: mem.probe }`) and the function's own `name`
+property otherwise.
+
+### 10.5 `UNUSED_NODE`
+
+```
+unusedNodes(trace, returned):
+    roots := trace.Used ∪ returned ∪ collectNodes(mem) ∪ namedNodes()
+    used  := roots and all their inputs, transitively
+    feeds := inputs of unused nodes created by the eval
+    report c ∈ trace.Created when:
+        c.Site.Source == EvalSource                        // the eval's own code (new)
+        and c.ID ∉ used and c.ID ∉ feeds and not onPlaceholder(c.ID)
+
+collectNodes(v, seen):
+    NodeOf(v) → [id]
+    v is not an object, or is a function, look, provider, promise or proxy → []
+    seen[v] → [];  seen[v] = true
+    for k in own enumerable string keys of v:
+        d := getOwnPropertyDescriptor(v, k);  d has a getter → skip          // never run getters
+        collectNodes(d.value, seen)
+```
+
+### 10.6 Peaks
+
+```
+runPeaks(ctx, ec, a):                                         (pkg/cv/ops/peaks.go)
+    L := the luminance input at scale 1 (one plane; GCV-004 OpDef.Luma), frame F
+    radii := a.radius as a list, in buffer px (= doc px at scale 1)
+    ps := kernels.Peaks(ctx, L.Pix, L.W, L.H, { radii, a.snr, a.polarity })
+    rv := RegionsValue over F
+    for i, p in ps:
+        cx, cy := F.X + p.CX, F.Y + p.CY                       // doc px
+        region := Disk{ cx, cy, r: p.R }, ID = i + 1           // geometry fields from the shape: box, area π r², aspect 1
+        Measures: r := p.R;  coreMean, ringMean, step, spread, snr, ringCoverage := p.CoreRing
+    return rv
+
+kernels.Peaks(L, w, h, o):
+    all := []
+    for r in o.Radii:
+        S := stepMap(L, w, h, r)                               // §10.7
+        for s in signs(o.Polarity):                            // bright: +1; dark: −1; both: +1, −1
+            T := s · S
+            D := DiskMinMax(T, w, h, r, max)                   // non-maximum suppression within r
+            for each pixel (x, y) with T > 0 and T == D:
+                dx, dy := parabola(T, x, y)                    // §10.8
+                cx, cy := x + 0.5 + dx, y + 0.5 + dy
+                m := ProbePoint(L, cx, cy, { Core: r, R1: 1.5 r, R2: 2.5 r })     // exact, coverage-weighted
+                if m.Outside or s · m.Step ≤ 0 or s · m.SNR < o.MinSNR: continue
+                all += Peak{ cx, cy, r, m }
+    sort all by |snr| descending, then |step| descending, then cy, then cx      // deterministic
+    kept := [];  grid := buckets of side 2 · max(radii)
+    for p in all:
+        if no k in the 3 × 3 buckets around p with dist(p, k) < p.R + k.R: kept += p; add p to grid
+    return kept
+```
+
+### 10.7 The step map by chord sums
+
+The digital disk of radius ρ is the union of 2 ⌊ρ⌋ + 1 horizontal chords; the chord at row offset dy has half-width
+a(dy) = ⌊√(ρ² − dy²)⌋. With a prefix sum per row, each chord costs two lookups.
+
+```
+diskSums(p, w, h, ρ) → (sum, cnt):                            (float64 prefix sums; parallel over rows)
+    P[y][x + 1] := P[y][x] + p[y][x]
+    R := ⌊ρ⌋
+    for each pixel (x, y):
+        for dy in −R..R with 0 ≤ y + dy < h:
+            a := ⌊√(ρ² − dy²)⌋;  x0 := max(0, x − a);  x1 := min(w − 1, x + a)
+            sum += P[y + dy][x1 + 1] − P[y + dy][x0];  cnt += x1 − x0 + 1
+
+stepMap(L, w, h, r):
+    (sc, nc) := diskSums(L, r);  (s1, n1) := diskSums(L, 1.5 r);  (s2, n2) := diskSums(L, 2.5 r)
+    S := sc / nc − (s2 − s1) / (n2 − n1)                       // core mean − ring mean, in-image pixels only
+```
+
+The cost is about 2 · (r + 1.5 r + 2.5 r) = 10 r chord lookups per pixel: 30 million for a 1024² tile at r = 3, a few
+milliseconds per core. The map uses digital disks; the reported measures use the exact coverage-weighted disks of
+`ProbePoint` at the sub-pixel centre, so a peak reports what `measure` would report there.
+
+### 10.8 Sub-pixel refinement
+
+```
+parabola(T, x, y):
+    for each axis, with a, b, c the values at −1, 0, +1 along it (no refinement on the border: δ = 0):
+        den := a − 2b + c
+        δ := den < 0 ? (a − c) / (2 · den) : 0                  // the vertex of the parabola through the three
+        δ := clamp(δ, −0.5, 0.5)
+    return (δx, δy)
+```
+
+Fitting each axis separately is exact for a separable peak and within a few hundredths of a pixel for round ones;
+the test of §14.1 bounds the error on synthetic blobs.
+
+### 10.9 Disk erosion and dilation by chords
+
+```
+DiskMinMax(p, w, h, r, isMax):
+    if r < 0.5: return copy(p)
+    if r ≥ 8 and every value of p is 0 or 1: return binaryDisk(p, w, h, r, isMax)       // §10.11
+    R := ⌊r⌋;  better := isMax ? max : min;  pad := isMax ? −∞ : +∞
+    for each output row y (parallel):
+        out[y][*] := pad
+        for dy in −R..R with 0 ≤ y + dy < h:
+            a := ⌊√(r² − dy²)⌋
+            run := minMax1D(row y + dy, half-width a, isMax)     // morph.go:14, van Herk, 3 comparisons per sample
+            out[y][x] := better(out[y][x], run[x]) for every x
+    return out
+```
+
+The cost is (2R + 1) passes of `minMax1D` per output row: O(W · H · r). For r = 12 on a 1024² tile, 25 passes of about
+four operations per pixel, about 100 million operations, 20–40 ms on 8 cores. Opening and closing double it.
+
+### 10.10 Line erosion and dilation
+
+```
+lineOffsets(r, θ):                                             (θ in radians; y grows downwards)
+    u := (cos θ, −sin θ);  m := max(|u.x|, |u.y|)
+    R := round(r · m)                                          // segment of 2R + 1 pixels, Euclidean length ≈ 2r
+    return [ (round(i · u.x / m), round(i · u.y / m)) for i in −R..R ]      // round half away from zero: symmetric
+
+LineMinMax(p, w, h, r, θ, isMax):
+    offs := lineOffsets(r, θ)
+    for each pixel p: out[p] := better over o in offs with p + o inside the image of p[p + o]
+```
+
+The direct method costs 2R + 1 reads per pixel (21 for r = 10), which is cheaper than the disk. A van Herk pass along
+digital lines (Soille, Breen and Jones, 1996) would make it independent of r; it is an optimization to make only if a
+profile shows the need.
+
+### 10.11 The binary fast path
+
+```
+binaryDisk(p, w, h, r, isMax):
+    if isMax:                                   // dilation: within r of a 1
+        d := DistanceToSet(p == 1, w, h)       // mask.go:368, exact Euclidean, between pixel centres
+        out := d ≤ r ? 1 : 0
+    else:                                       // erosion: no 0 within r (pixels outside the image do not count)
+        d := DistanceToSet(p == 0, w, h)
+        out := d > r ? 1 : 0
+```
+
+A pixel q lies in the digital disk around p exactly when the distance between their centres is at most r, so both
+paths give the same pixels; a property test compares them for every r from 0.5 to 20 in steps of 0.25 on random binary
+planes.
+
+### 10.12 Two traces
+
+**`await img.as("linear").peaks({ radius: [2, 4], snr: 1.4 })` on an RGB density tile.**
+
+```
+cv.open(tile.tif)          open         enc linear  space encoded (= linear: linear-encoded)  channels 3
+as("linear")               (identity: linear-encoded)
+toGray(rec709)             toGray       channels 1                    (the luminance input, GCV-004 Luma)
+peaks                      Regions      AnalysisScale 1
+  r = 2: stepMap → NMS (DiskMinMax r 2) → ~25,000 candidates → ProbePoint each → 140 with snr ≥ 1.4
+  r = 4: stepMap → NMS (r 4)            → ~7,000 candidates  → 60
+  merge by |snr|, cores must not overlap → 170 peaks, ids 1…170
+awaited                    [{ id 1, x, y, w, h, cx 2278.43, cy 333.12, r 4, coreMean, ringMean, step, spread, snr 11.9, ringCoverage 1, [ITEM]: [n, 0] }, …]
+returned                   a table of 170 rows; about 70 fit in the 6,000-character budget, with the paging note
+```
+
+(The candidate and peak counts are illustrations of orders of magnitude, not measurements.)
+
+**`L.sub(L.opening(12))` on a saturated blob of radius 10.**
+
+```
+L = img.as("linear").toGray()                       one channel
+L.opening(12): erode (disk 12) → the blob vanishes (the disk does not fit), the background stays
+               dilate (disk 12) → the background is restored, without the blob
+L.sub(…)       the blob as a filled plateau on zero; background, gradients and anything wider than 25 px removed
+peaks r = 8    one peak at the plateau's centre, ring outside the blob → high snr
+```
+
+## 11. Errors and diagnostics
+
+| code | when | example and fix |
+|---|---|---|
+| `E_ARG_TYPE` | `cv.load` with a non-string path, a path not ending in `.js`, a missing file (listing the roots searched), a file over 1 MiB; an item whose `id` is not a number | `cv.load("helpers")` → fix `await cv.load("helpers.js")`; `{ cx, cy, id: "h17" }` → fix `{ cx, cy, label: "h17" }` |
+| `E_ACCESS` | `cv.load` of a path outside the workspace and the read directories (GCV-004's rule and message) | fix: add the directory with `--read DIR` |
+| `SyntaxError` | a loaded file does not compile; the message starts with `name:line:col` and `where` is the eval line of the `cv.load` | `dust/helpers.js:12:5: Unexpected token )` |
+| `E_TOO_MANY` | a 33rd load while 32 are running | "32 cv.load calls are running: a.js → b.js → a.js → …; does a file load itself?" |
+| `E_WRONG_KIND` | `erode`, `dilate`, `opening`, `closing` on a colour image (GCV-004's `OneChannel` check) | `img.erode(2)` → fix `img.toGray().erode(2)` |
+| `E_ARG_RANGE` | `peaks` radius outside [1, 64], `snr` < 0; a morphology radius outside [0, 500] | GCV-004's range errors |
+| `E_FIELD_EXISTS` | `measure` on peaks without a prefix (the peaks already have `step`, `snr`, …) | fix `{ prefix: "sp" }` |
+| `E_UNKNOWN_METHOD` | `m.grow(2)`, `m.shrink(2)` | edit distance only (no redirect, GCV-004 D12) |
+| `E_UNKNOWN_OPTION` | `cv.sheet(…, { labels: "index" })` is an enum error: "index" is not one of `id`, `none` | fix: `items.map((r, i) => ({ ...r, label: String(i) }))` in the docs, not in the error |
+
+Errors raised inside a loaded file carry `where: name:line: text` and, when an eval line led there, `called from:
+line N: text` (§7.3). Errors in a prelude read `prelude name:line: message`.
+
+New warning: `LOAD` (§7.4), with the line (or `file:line`) of the `cv.load` call and the fix
+`await cv.load("…")`. Changed: `UNUSED_NODE` is raised only for the eval's own code and names `look` instead of
+`show()`; every warning raised by a call in a loaded file carries `name:line`.
+
+## 12. Documentation to change
+
+Agents read the MCP instructions, the eval tool description, the context block, error fixes, and the comments of the
+libraries they load. People read the README and the guidebook (`goja-cv help`). Every ```js block in
+`pkg/cv/docs/topics` and `pkg/doc` runs in the docs tests (`pkg/cvsession/docs_test.go`), so each phase updates the
+blocks it breaks in the same commit.
+
+### 12.1 The MCP instructions
+
+The text below replaces `Instructions` (`reference.go:16-43`). It is GCV-004's v2 contract with GCV-005's additions,
+3,397 bytes; the lines GCV-005 adds or changes are the table clause and the context-block clause of the contract, the
+"Task libraries" section, "Never read a coordinate off a picture", the peaks and morphology lines, the sheet label
+clause and the speck-scale clause. Cuts relative to today's text: `P`, `show`, `{ space }`, `cv.json`/`cv.csv`, the query
+ops, the document-layer line, `cv.compare`, `mask.gradient`/`mask.color`/`mask.flood`, `annotate`, and the
+`cv.docs.list` sentence. If GCV-004's final text differs, keep its contract lines and add the GCV-005 lines; the test
+bound of 4,000 characters stays.
+
+```text
+cv is a lazy image-analysis API. You drive it with the eval tool.
+
+Eval contract
+- The code is the body of an async function: use await and end with return. The value comes back as YAML (max 9000 chars; a list of flat rows comes back as a table), then warnings (with your line) and a context block (images, mem, and the docs of new mem functions).
+- const/let do not survive between evals: keep values on mem.
+- Calls build lazy, immutable nodes. await gives data: a Value or Regions node is computed at full resolution (regions become an array of flat items { id, x, y, w, h, cx, cy, r, … }); await img gives the image's summary. Options are literal values: levels({ white: (await d.stats()).p99 }).
+- node.look(label | { zoom, ruler }) shows an image; every look is delivered, at most 4 per eval. Never read a coordinate off a picture: get it from data (peaks, items, measure).
+- Coordinates, lengths and boxes are doc px (original-image pixels).
+- Errors are YAML with code, message, where (your line, or file:line in a loaded file), hint and a literal fix: apply the fix.
+
+Task libraries
+- await cv.load("dir/file.js", args) runs a script file in the session (a task library that defines mem functions, or a saved pipeline); cv.scripts() lists the .js files you can load with their first comment line. Use a library's functions when a playbook names one; never paste a file into an eval.
+
+Images, spaces, files
+- img is the open image; cv.open(path, { name }) opens another (workspace first, then --read directories). Images open in file units; img.as("linear") converts; every op works in its receiver's space.
+- await cv.save("out/x.tif" | ".json" | ".csv", x) writes into the workspace.
+
+Most used calls
+- await img.stats({ box, mask }) → { meanL, p01, p99, … }; img.histogram().look()
+- img.levels({ black, white, auto }), img.exposure(ev), img.gaussian(sigma), img.toGray(), x.colormap("viridis")
+- Magnify: img.crop([x, y, w, h]).look({ zoom: 8, ruler: true })
+- Views: img.view("speck" | "speckDark" | "signed" | "detail" | "scene"); img.dog(1, 4); the speck view's scale is set over the whole image.
+- Find spots: await img.as("linear").peaks({ radius: 3, snr: 1.4 }) → items with sub-pixel cx, cy, r, step, snr (step against the local surroundings); radius: [2, 4, 8] for mixed sizes. img.detect.specks() → regions.
+- Many candidates in one picture: cv.sheet(items.slice(0, 15), { views: [img, img.view("speck")] }).look(); cells are labelled with each item's label or id.
+- Measure: await img.as("linear").measure(items) (step, spread, snr around each item, sized from r); img.profile(a, b, { width }) across a line; img.sample(points).
+- Filter, sort and page items with JavaScript: items.filter(r => r.snr >= 1.4 && r.aspect < 3).
+- Masks are one-channel images: img.mask.luminance({ above }), mask.box, mask.regions(items); m.and/or/minus/not, m.feather(r), m.components(), m.coverage().
+- Morphology on one-channel images: x.erode(r), x.dilate(r), x.opening(r), x.closing(r), { line: angle } for a line element. Top-hat: x.sub(x.opening(r)) keeps bright things smaller than r, filled.
+- img.overlay(items, { labels: "id" }).look() draws items; img.within(mask, i => i.exposure(-0.4)) edits inside a mask.
+
+More: cv.help(name) (one op or function), cv.docs.search("width of a line"), cv.docs.read("recipes"); resources cv://docs/<id>, cv://reference, cv://guide/<slug>.
+```
+
+If Part A lands before Part B, the peaks and morphology lines are added in Phase B3 (§13).
+
+### 12.2 Topics and pages
+
+| document | change | phase |
+|---|---|---|
+| `pkg/cv/docs/topics/14-task-libraries.md` (new) | §12.3: what a script file is, `args`, return, `mem`, doc lines, `cv.scripts`, `--prelude`, errors with `file:line`, `LOAD`, no cache, linting with `goja-cv run` | A1 |
+| `01-getting-started.md` | the eval contract: tables, `cv.load`, the context block's functions | A1, A2 |
+| `03-nodes-and-evaluation.md` | `UNUSED_NODE` covers the eval's own code | A2 |
+| `05-masks-and-regions.md` | `dilate`/`erode` replace `grow`/`shrink` (line 17), `mask.regions(items).dilate(2)` replaces `{ grow }`; labels; sheets of points | A3, B1 |
+| `06-looks.md` | sheet labels (`label` else `id`), points as sheet items | A3 |
+| `08-errors.md` | §11's rows | A1, B1 |
+| `09-recipes.md` | dust candidates with `peaks`; the speck step of peaks (`measure` with a prefix); the line-width recipe (§12.4); removing lines with line openings; a top-hat for saturated specks | B3 |
+| `11-views.md` | the speck scale note (§6.10); rings from flat tops | B3 |
+| `12-measuring.md` | `peaks` (fields = `measure`'s; snr against the ring); `profile` for widths | B3 |
+| `02-units-and-scales.md` | "a grow radius" → "a morphology radius" (line 7) | B1 |
+| `pkg/doc/03-cli.md` | `--prelude` is a `cv.load` at session start; the file must lie in `--root` or a `--read` directory (lines 73-75, 131) | A1 |
+| `pkg/doc/04-agents.md` | task libraries: why and how, with the DUST-002 study's numbers | A4 |
+| `pkg/doc/05-setup-claude-code.md`, `06-setup-codex.md`, `07-setup-pi.md` | a registration with `--read DIR --prelude DIR/lib.js` and a sentence on when to use it ("give agents a task-specific helper library") | A4 |
+| `pkg/doc/08-recipes.md` | the playbook pattern of §12.5 | A4 |
+| `pkg/doc/10-troubleshooting.md` | `LOAD`, a prelude outside the roots, `E_TOO_MANY` from loads | A4 |
+| `README.md` | the MCP section: `--prelude` and `cv.load` (line 81, 98) | A4 |
+| `pkg/cvsession/reference.go` | `Instructions` (§12.1), `EvalToolDescription` | A4 (and B3) |
+| help (`pkg/gojamod/cv/help.go`, `cvFuncs`) | entries `load`, `scripts`; concept entry `tophat` ("x.sub(x.opening(r)) · x.closing(r).sub(x)") | A1, B1 |
+| op docs | `peaks`, `erode`, `dilate`, `opening`, `closing`; the speck view's `Doc`; `sheet`'s `items` and `labels` docs | B1, B2, A3 |
+
+### 12.3 Recipe: writing a task library
+
+The new topic `14-task-libraries.md` teaches authors, with this model file:
+
+```js
+// dust/helpers.js: helpers for annotator agents on DUST-002 gold tiles (goja-cv v2).
+// Load: await cv.load("dust/helpers.js")  or  goja-cv mcp … --read DIR --prelude DIR/dust/helpers.js
+// The first comment inside each function is its doc line in the context block.
+
+mem.tile = (id, ox, oy) => { // open a tile at its origin: every coordinate is an absolute scan coordinate
+  mem.img = cv.open("cv_tiles/" + id + ".tif", { encoding: "linear", origin: [ox, oy], name: "img" })
+  mem.lin = mem.img.as("linear")
+  return mem.img
+}
+
+mem.spots = async ({ snr = 1, radius = [2, 4, 8] } = {}) => { // peaks with the speck view's step: sp = spStep
+  const pk = await mem.lin.peaks({ radius, snr })
+  return await mem.lin.view("speck").measure(pk, { prefix: "sp" })
+}
+
+mem.sheet = (items, size = 40) => // contact sheet of up to 15 items: tile | speck view, labelled by id
+  cv.sheet(items.slice(0, 15), { views: [mem.img, mem.img.view("speck")], size, zoom: 4, stretch: "cell" })
+
+return "dust helpers ready"
+```
+
+The rules the topic states: a script file is an eval body with `args`; keep state on `mem`, not in top-level
+`const`; put the doc line as the first comment inside each function; return a short string or an object; load
+siblings with root-relative paths; lint the file with `goja-cv run file.js` (there, `UNUSED_NODE` applies to it);
+`cv.load` runs the file every time.
+
+### 12.4 Recipe: the width of a thread
+
+Issue 10's answer, as a pipeline script and a docs recipe. `profile` (GCV-004: `{ from, to, step, width, rows }`,
+rows `{ t, cx, cy, meanL, … }`) samples across the thread; the width is the full width at half height above the
+baseline of the two ends.
+
+```js
+// dust/thread-width.js: the width of a bright thread across the segment a → b (doc px), full width at half height
+// args: { a: [x, y], b: [x, y], along: 3 }   (a and b on either side of the thread; along: px averaged along it)
+const p = await img.as("linear").profile(args.a, args.b, { step: 0.25, width: args.along ?? 3 })
+const v = p.rows.map(r => r.meanL), t = p.rows.map(r => r.t), n = v.length
+const base = (v[0] + v[n - 1]) / 2
+let k = 0
+for (let i = 1; i < n; i++) if (v[i] > v[k]) k = i
+const half = base + (v[k] - base) / 2
+const cross = d => {                                // where the profile falls below half, walking from the peak
+  let i = k
+  while (i + d >= 0 && i + d < n && v[i + d] > half) i += d
+  const j = i + d
+  if (j < 0 || j >= n) return null                  // it never does: the segment is too short
+  return t[i] + (t[j] - t[i]) * (v[i] - half) / (v[i] - v[j])
+}
+const lo = cross(-1), hi = cross(1)
+return { width: lo === null || hi === null ? null : hi - lo, height: v[k] - base, at: [p.rows[k].cx, p.rows[k].cy] }
+```
+
+### 12.5 Playbook pattern
+
+The guidebook's recipes page (`pkg/doc/08-recipes.md`) gains a short "playbook pattern" for people who write agent
+playbooks, drawn from the study:
+
+1. Register the server with the task library as a prelude, so agents never paste it.
+2. In the playbook, name the library's functions and what they return; agents use what the playbook names.
+3. Give agents coordinates as data: candidates from `peaks` or a library function, sheets of those items labelled by
+   id, and the instruction "never read a coordinate off a ruler; take it from the rows".
+4. For threads: pick two points either side of the thread from a zoom's data (or from peaks along it), and run
+   `await cv.load("dust/thread-width.js", { a, b })` at two or three places along it.
+5. Return rows, not strings: the result renders them as a table.
+
+## 13. Implementation phases
+
+Every phase ends green on `go build ./...`, `go vet ./...`, `go test ./... -count=1 -race`, `make lint`,
+`make logcopter-check` (run `make logcopter-generate` first when instrumented functions moved, were added or were
+deleted) and `make smoke`, and is one commit (or a few) followed by an implementation diary step with `git diff
+--stat`. GCV-004's gate script (`ttmp/2026/11/09/GCV-004--…/scripts/04-gate.sh`) runs the race tests with the
+real-data directories pointed at nothing; use it, and run the gated real-data tests separately. Write the listed
+tests first and watch them fail. Each phase updates the docs blocks and in-code strings it breaks.
+
+**Independence.** Part A and Part B touch disjoint code: Part A the session, the module's JS surface and two ops'
+labels; Part B kernels and new ops. Either can land first. Inside each part, the phases are ordered by dependency on
+GCV-004:
+
+| phase | content | needs from GCV-004 | needs from GCV-005 |
+|---|---|---|---|
+| A2 | results: tables, functions, context block, `UNUSED_NODE` attribution and walk | nothing beyond Phase 1 (lands any time) | — |
+| A1 | `cv.load`, `cv.scripts`, preludes as loads, file locations, `LOAD` | Phase 6 (`Workspace`), Phase 2 (look queue) | — |
+| A3 | labels and sheet points | Phase 5 (items, `items` op) | — |
+| A4 | Part A documentation sweep | Phase 8 (its instructions) or whatever text is current | A1–A3 |
+| B1 | morphology kernels and ops; `grow`/`shrink` deleted | Phase 4 (`OneChannel`, masks as images) | — |
+| B2 | `peaks` | Phase 3 (`Luma`), Phase 5 (`Region.Shape` `Disk`, linking, `measure` radii) | B1 (`DiskMinMax`) |
+| B3 | gold-gated tests, validation script, Part B docs | — | B1, B2 |
+| V | validation runs (§15) | GCV-004 complete | A1–A4, B1–B3 |
+
+Recommended order: A2 now (it is independent of GCV-004's remaining phases), then B1 after GCV-004 Phase 4, then A1
+and A3/B2 as GCV-004 Phases 5 and 6 land, then B3, A4 and V.
+
+**Phase A2 — readable results.**
+1. Tests: an array of two or more flat records renders as a table with the union of keys, `-` for missing and null,
+   quoted strings with spaces, aligned columns and no trailing spaces; arrays of non-flat or mixed elements render as
+   before; a table longer than the budget shows at least five rows and the paging note with the right numbers; two
+   tables share the budget; a table inside a nested object renders in place; `return mem.f` and `return mem` show
+   signatures and doc lines for the arrow, `function`, `async` and single-parameter forms and for a destructured
+   parameter; native functions show `name()`; the context block lists functions with signatures, and doc lines only
+   in the eval after they appear or are replaced; `UNUSED_NODE` is not raised for a node built in a function defined
+   in another source (simulate with `vm.RunScript("lib.js", …)` before the eval) and still raised for the eval's own
+   line; a node in the 60th element of an array on `mem` is not reported (the uncapped walk); a getter on `mem` is
+   not run by the walk.
+2. Implement: `renderer.table`, `tableOf`, `tableLeft`; `cvmod.DescribeFunction` and its use in `render` and
+   `contextBlock`; `fnSeen` in the session state; `collectNodes`; the `EvalSource` check in `unusedNodes`; the cut
+   notes name `cv.save`. Docs: `01`, `03`.
+
+**Phase A1 — task libraries.**
+1. Tests (in `pkg/gojamod/cv` with a test workspace, and in `pkg/cvsession`): `cv.load` of a file in the workspace,
+   in a read directory, shadowed by the workspace (the workspace's runs), outside every root (`E_ACCESS`), missing
+   (`E_ARG_TYPE` listing roots), without `.js`; `args` arrives by reference (a node and a linked item passed in are
+   the same objects); default `args` is `{}`; the return value; top-level `await`; `const` stays local; a second load
+   re-reads an edited file; a nested load; a self-loading file stops with `E_TOO_MANY` naming the chain; a syntax
+   error names `file:line:col`; a runtime error in a file gives `where: file:line: text` and `called from: line N`;
+   an error in a function defined by a file and called from the eval gives the same; a warning raised in a file
+   carries `file:line`; looks created in a file are delivered; an unawaited load that fails gives `LOAD … failed`;
+   an unawaited load still running gives `LOAD … had not finished`; an awaited load gives no `LOAD`; `cv.scripts()`
+   lists files with their doc lines, skips `.git` and `node_modules`, omits shadowed files, caps at 500;
+   `--prelude` inside a read directory works in `eval`, `run` and `mcp` (default and created sessions), outside every
+   root is a usage error naming `--read`, and a failing prelude reads `prelude name:line: message`; the xgoja provider
+   loads a file from its `root`.
+2. Implement: `cv.load` and `cv.scripts` in `prelude.js`; `binding.load`, `binding.scripts` (on `Workspace`),
+   `loadRec`, `files`, the eval trace's loads; `readFailure` frames and `errorNode`'s `called from`; `lineTag` for
+   file sites; the `LOAD` warning; `runPreludes` as `cv.load` evals and prelude validation; `whereLine`; help entries.
+   Delete §9 item 1. Docs: `14-task-libraries.md`, `01`, `08`, `pkg/doc/03-cli.md`.
+
+**Phase A3 — labels and points.**
+1. Tests: a sheet of `{ cx, cy, id }` points labels cells by id; a sheet of `[x, y]` points labels them 1, 2, …; a
+   `label` string wins over `id`, also for linked items relabelled by spread; a renumbered linked item is drawn with
+   its new id (sheet and overlay); `labels: "none"` draws none; `labels: "index"` is an enum error; overlay draws
+   `label` else `id`; the items node's schema has `label` when entries have one; a string `id` is `E_ARG_TYPE` with
+   the `label` fix, in a sheet's plain list and through the `items` op.
+2. Implement: entries of the `items` op carry `id` and `label` (§7.7); `Tags["label"]`; sheet `items|point[]` and
+   `labels: id | none`; overlay labels. Delete §9 item 4. Regenerate `sheet-2x2.png` (its two list items are labelled
+   1 and 2 instead of 0 and 1) and record it in the diary. Docs: `05`, `06`.
+
+**Phase A4 — Part A documentation sweep.** The documents of §12.2 marked A4; `Instructions` (§12.1, without the peaks
+and morphology lines if Part B has not landed) with its length test; `EvalToolDescription`; the docs tests pass.
+
+**Phase B1 — morphology.**
+1. Tests: `DiskMinMax` equals a brute-force min/max over the digital disk for r from 0.5 to 6 in steps of 0.25 on
+   random planes, including borders; the binary fast path equals the chord path for r from 8 to 20 on random binary
+   planes; `LineMinMax` equals a brute-force min/max over `lineOffsets` for angles 0, 22.5, …, 337.5 and r up to 15;
+   `lineOffsets` is symmetric and has 2R + 1 distinct offsets; opening is idempotent and anti-extensive, closing
+   idempotent and extensive, erosion and dilation are dual (`erode(x) = 1 − dilate(1 − x)` on [0, 1] data); on a mask,
+   `dilate(r)` selects the pixels `kernels.Grow(r)` selected at ≥ 0.5, and `erode(r)` those of `Shrink(r)` (run before
+   deleting them); a colour receiver is `E_WRONG_KIND` with the fix; `radius 0` returns the receiver; a 2 px dot
+   vanishes under `opening(2)` and stays under `opening(1)`; a 1 px wide line vanishes under `opening(3)` with a disk
+   and survives `opening(5, { line: angle of the line })`; `x.sub(x.opening(6))` of a flat disk of radius 4 on a ramp
+   is the disk at full height (the top-hat test).
+2. Implement: `DiskMinMax`, `LineMinMax`, `binaryDisk`, the renames of §9 item 8; `morphOp` and the four ops; delete
+   `grow`, `shrink`, `Grow`, `Shrink`, `mask.regions`' `grow`; help concept `tophat`. Update the tests that used
+   `grow` (`pkg/cv/ops/regions_test.go:74`) and every docs block. Golden looks that used `grow` (none on this branch;
+   check again on the merged base) move only at mask edges; record each. Docs: `02`, `05`, `08`.
+
+**Phase B2 — peaks.**
+1. Tests: synthetic Gaussian blobs (σ 1–3 px, amplitude 0.05–0.5) at random sub-pixel positions on a noisy flat
+   field: every blob found, centre error below 0.25 px (median) and 0.5 px (max) at snr ≥ 5; a blob next to a
+   brighter one keeps its own peak when their cores do not overlap; a peak's `snr`, `step` and `spread` equal
+   `img.measure([{ cx, cy, r }])` at the same centre and radius to 1e-9; a dark blob is found with `polarity: "dark"`
+   (negative step and snr) and not with `bright`; `both` finds both; a flat disk of radius 10 with `radius: [2, 4, 8]`
+   gives one peak at its centre with r = 8, and with `radius: 2` a ring of rim peaks; the same blob on a dark and on a
+   bright, noisier background has a higher snr on the dark one when its step is the same (the local-noise property);
+   items are sorted by |snr| with ids 1…n; the awaited array feeds `cv.sheet`, `overlay`, `measure` (with a prefix)
+   and `mask.regions`; `img.crop(b).peaks()` gives doc px coordinates inside b; peaks on a colour image equal peaks on
+   its `toGray()`; the result is identical at every look scale (AnalysisScale 1).
+2. Implement: `diskSums`, `stepMap`, `parabola`, `kernels.Peaks`, the `peaks` op with `Disk` regions; help; the op's
+   doc. Docs: `12`.
+
+**Phase B3 — real data, validation tooling and Part B documentation.**
+1. Gated tests (§14.4) and the gold-metrics script (§15.2) in this ticket's `scripts/`.
+2. Docs: `09`, `11`, `12`; the peaks and morphology lines of `Instructions` if A4 landed first.
+
+**Phase V — validation.** §15. Results go to the implementation diary; an "Implementation notes (deviations)" section
+is appended to this guide.
+
+## 14. Test strategy
+
+### 14.1 Unit and property tests
+
+- **Renderer.** Table detection and formatting, budget and paging note, function rendering (§13, A2). A golden text
+  file of a representative result (detector items, a measured list, a nested object with two tables) guards the
+  format.
+- **Locations.** Frames parsed from goja stacks for eval code, files, nested files and functions from files called
+  later; `where` and `called from`.
+- **Loading.** Path resolution through the workspace (reusing GCV-004's workspace fixtures), args, return values,
+  re-reading, nesting, the active-load limit, `LOAD`.
+- **Attribution.** `UNUSED_NODE` for eval code only; the uncapped `mem` walk.
+- **Kernels.** Brute-force equivalence for `DiskMinMax`, `LineMinMax`, `diskSums`; the binary fast path; morphology
+  laws (idempotence, duality, (anti-)extensivity); peaks' sub-pixel accuracy, equality with `measure`, the overlap
+  rule, polarity, the local-noise property.
+- **Registry.** GCV-004's registry walk (`TestRegistryWalk`) evaluates the new ops at three scales; GCV-004's channel
+  property test covers the morphology ops (one channel in, one channel out) and `peaks` (Regions).
+
+### 14.2 Documentation tests
+
+The new topic's blocks run in `pkg/cvsession/docs_test.go` with a temporary workspace that holds the model library of
+§12.3 and the thread-width script of §12.4, so `cv.load` blocks run. The instructions' length test stays at 4,000.
+
+### 14.3 Golden looks
+
+| phase | golden | why it moves |
+|---|---|---|
+| A3 | `sheet-2x2.png` | its two list items are labelled 1 and 2 (GCV-004's 1-based literal ids) instead of 0 and 1 |
+| B1 | any golden that uses `grow` or `shrink` on the merged base (none on this branch) | `dilate`/`erode` have no anti-aliased edge |
+
+Every other golden must stay exact.
+
+### 14.4 Gold-based tests (gated)
+
+The gated tests live beside `TestRealViewRanking` (`pkg/cv/ops/viewrank_test.go`) and use the same gates:
+`GOJACV_TILES` (default `~/dustdet/cv_tiles`) and `GOJACV_GOLD` (default `~/dustds/gold`, labels
+`{tile}.final.json` or `{tile}.p1.json`, points `{ x, y, r, type }` in absolute scan coordinates, tile origin in the
+tile id and its JSON). They skip when either is missing, and they never assume a number of gold points: the gold set
+grew from 142 to 198 points between GCV-003 and now, and the three existing real-data tests went stale for exactly
+that reason (GCV-004 deviation 1). Every assertion compares two methods on the same points in the same run, or bounds
+a quantity that does not depend on the count; every test logs its numbers so the diary can record them.
+
+| test | method | assertion |
+|---|---|---|
+| `TestRealPeaksPosition` | for each dust point with r ≤ 6: the nearest peak (`img.as("linear").peaks({ radius: [2, 4], snr: 0.5 })`) within r | median distance ≤ 1.5 px and below the median distance of the old probe-snapped hot-list centroid (the speck view at 0.3, components, best snr within 2 px), computed in the same test |
+| `TestRealPeaksCoverage` | fraction of dust points with a peak within max(r, 3) px, `radius: [2, 4, 8]`, `snr: 1` | ≥ the hot list's coverage at level 0.3 minus 2 points, on the same points |
+| `TestRealPeaksDarkAreas` | the dust points whose ring mean is below the tile's 25th luminance percentile | peaks' coverage on that subset ≥ the hot list's; skip the assertion (log only) with fewer than 5 such points |
+| `TestRealTopHatSaturated` | the dust points with r ≥ 6 or a core maximum within 2 % of the tile's maximum | coverage by components of `L.sub(L.opening(12))` thresholded at its own p99 ≥ coverage by the speck-view hot list at 0.3; skip with fewer than 5 points |
+| `TestRealLineOpening` | components of the speck view at 0.3 before and after removing line openings (8 directions, radius 10) | the number of components with aspect > 5 drops; gold coverage after ≥ 98 % of before |
+
+The thresholds (1.5 px, 2 points, 98 %) are design targets from the evidence (agents' guesses were 5–10 px off; the
+probe snapped within 2 px). If a target fails on the real data, the implementer records the numbers in the diary and
+the coordinator decides; the test is not loosened silently.
+
+### 14.5 Smoke
+
+`make smoke` gains one line: `goja-cv eval --root $(SMOKE_DIR) --prelude $(SMOKE_DIR)/lib.js -e 'return mem.f(41)'`
+with a two-line library, checking that a prelude is a load inside the workspace.
+
+## 15. Validation plan
+
+Two loops measure GCV-005: does an agent work better, and do the new primitives find dust better.
+
+### 15.1 Loop 1: an annotator agent and the pi harness
+
+**The agent rerun.** Rerun one annotator agent on a tile from the study with a rewritten playbook (DUST-002
+`reference/04`, rewritten by the coordinator for v2 and GCV-005: helpers loaded by `--prelude`, candidates from
+`peaks`, sheets of items, no ruler reading) and compare its evals with the original run, using script 91
+(`DUST-002/scripts/91-extract-agent-evals.py`) on the new transcript. Use `cfca85b41cd6f78f_2048_0` (the 28-of-32 tile)
+and `b54a23af8f1608f0_512_512` (the ring tile); a third, `216610367f9a7bfe_1536_3072`, for lines.
+
+| metric | before (from `various/agent-evals/`) | target after |
+|---|---|---|
+| helper pastes | 1 per agent (2,859–3,418 characters) | 0 |
+| median code characters per eval | 183 | not more |
+| evals per tile | 6–14 | not more |
+| results cut by the cap | 1 in 374, plus 3 agents slicing by hand | 0 cut, no hand slicing |
+| row lists returned as joined strings | in most `mem.hot` results | none |
+| `UNUSED_NODE` | 13 in 374 (12 false) | only for the agent's own lines |
+| coordinate guesses probed (loops over hand-typed `[x, y]` lists) | 25 agents | none, or each from data |
+| suggestions accepted by the person | per the DUST-002 review | not fewer |
+
+**The pi harness.** The CVJS-001 harness (`CVJS-001…/scripts/06-pi-cv-agent/run.sh`, GCV-004 §15) runs an agent
+without a playbook against question files. Add `questions-gcv-005.md` beside the others with three questions: "find
+the five strongest compact bright spots on the tile and give their coordinates" (expected: `peaks`, coordinates within
+1 px of the reference answer), "measure the width of the thread through (x, y)" (expected: `profile`, within 0.5 px of
+the reference), and "load the library `lib/tile.js` and report what it defines" (expected: `cv.load`, the context
+block). Two runs on the GCV-005 build; metrics from `07-pi-events-summary.py`: calls, errors, the expected call used,
+answers. The GCV-004 question files are rerun once to show nothing regressed.
+
+### 15.2 Loop 2: detection quality on gold
+
+A script in this ticket, `scripts/01-gold-metrics.sh` (a `goja-cv run` driver over every gold tile, writing CSV with
+`cv.save`, plus a short Python summary), computes on the current gold set:
+
+| metric | how | compared with |
+|---|---|---|
+| position error | distance from each dust point (r ≤ 6) to the nearest peak | the hot list's probe-snapped centroids; the agents' 5–10 px |
+| coverage | dust points with a peak within max(r, 3) px at snr 1, radii [2, 4, 8] | the hot list at 0.3 (91 % on 197 points in the colleague's test) |
+| candidates per tile | peaks at snr 1 and 1.4 | the hot list at 0.3 (median 71) |
+| saturated blobs | coverage of the r ≥ 6 or near-maximum subset: peaks with radii, top-hat components | the hot list |
+| dark-area dust | coverage of the dark subset | the hot list |
+| scene-line false positives | candidates on components with aspect > 5, before and after line openings | — |
+| snr thresholds | snr of gold points and of 4,000 random places with GCV-004's ring [1.5 r, 2.5 r] (script 87's method) | the playbook's numbers (random 90 % below 0.45, 99 % below 0.8; dust median 1.7) with the helpers' ring |
+
+The last row re-derives the thresholds the playbook and `peaks`' default `snr` rely on (D14). The coordinator
+updates the playbook from it.
+
+## 16. Migration note: the DUST-002 helpers
+
+`DUST-002/scripts/84-cv-helpers.js` belongs to the user's other repository; this ticket does not edit it. After GCV-004
+(whose own migration note, GCV-004 §16, covers `as("linear")`, arrays and `cv.open`'s `name`) and GCV-005, it can
+shrink as follows.
+
+| helper | after GCV-005 |
+|---|---|
+| the header comment and `return "helpers ready (v1)"` | keep a one-line first comment (the `cv.scripts` doc); put each function's doc as its first inner comment; load with `--prelude` or `await cv.load("…/84-cv-helpers.js")` |
+| `const r3 = …` used by closures | unchanged; it stays private to the file, which is now intended |
+| `mem.tile` | unchanged (`name: "img"`, GCV-004); add `mem.lin = mem.img.as("linear")` |
+| `mem.views` | unchanged; the `speckColor` warning disappears (attribution) |
+| `mem.best` | delete: `peaks` snaps by construction; for a hand-given point, `(await mem.lin.crop([x - 16, y - 16, 32, 32]).peaks({ snr: 0 }))[0]` is the strongest spot near it |
+| `mem.probe(x, y)` | `mem.lin.measure([{ cx: x, cy: y, r: 3 }])` for the numbers at a point; the speck step with `mem.lin.view("speck").measure(…, { prefix: "sp" })`; `chroma` gating is in `measure` (GCV-004) |
+| `mem.probeR(x, y, r)` | `mem.lin.measure([{ cx: x, cy: y, r }])` (GCV-004 sizes core and ring from r) |
+| `mem.spots(level)` | `mem.lin.peaks({ radius: [2, 4, 8], snr })` |
+| `mem.hot(level, max)` | peaks plus the speck step: `const pk = await mem.lin.peaks({ radius: [2, 4, 8], snr: 1 }); await mem.lin.view("speck").measure(pk, { prefix: "sp" })`, sorted by `spStep`; return the rows (a table), not strings; no 300-item cap, no edge clamp (peak centres lie inside the tile; `ringCoverage` flags the edge) |
+| `mem.hotByLevel` | unnecessary: one list sorted by snr or `spStep`; filter in JavaScript |
+| `mem.faint(opts)` | `mem.lin.peaks({ snr: 1.4 })`; the area and aspect bounds become the radius list; the "not near a hot spot" filter stays a JavaScript filter if two lists are still used |
+| `mem.sweep(q)` | `mem.img.crop(quarter).view("speck").look({ zoom: 2, ruler: 32 })` sets the quarter's own scale (§6.10); better, `mem.lin.crop(quarter).peaks()` gives the quarter's spots as data |
+| `mem.hotLook(level)` | `mem.img.view("scene").overlay(pk.slice(0, 40), { labels: "id", color: "lime" }).look()` |
+| `mem.sheet(points, size, label)` | `cv.sheet(rows.slice(0, 15), { views: [mem.img, mem.img.view("speck")], size, zoom: 4, stretch: "cell" })`: rows are items, labelled by id |
+| `mem.zoom(x, y, half)` | unchanged |
+| widths of threads | the thread-width script of §12.4 |
+
+The playbook (`DUST-002/reference/04`) changes the same way: step 1 loses the paste, step 2 becomes "get candidates
+as data" (`peaks` plus the speck step), step 4's warning about rulers becomes "take coordinates from the rows", and
+the probe numbers' thresholds are replaced by the ones §15.2 re-derives.
+
+## 17. Risks and open questions
+
+**Risks.**
+
+1. *Peaks' snr thresholds shift.* The playbook's numbers were measured with a 6–12 px ring for a 3 px core; peaks use
+   GCV-004's [1.5 r, 2.5 r]. The default `snr: 1` may keep more or fewer candidates than intended. Mitigation: §15.2
+   re-derives the numbers before the playbook is rewritten; the option is one literal.
+2. *Snr near scene edges.* A speck next to a bright edge has the edge in its ring and a low snr. Mitigation: rank by
+   the speck view's step (`spStep`) as the helpers ranked by `sp`; the gold test of dark areas and the coverage test
+   compare with the hot list.
+3. *Morphology cost on full scans.* A disk of radius 30 on a 53-megapixel scan is about 60 passes per row, several
+   seconds. Mitigation: the binary fast path for masks; crops before morphology on scans (the recipes say so); if
+   profiling shows the need, reuse each input row's running extremum for every output row that needs the same chord
+   width (§10.9 recomputes it), or decompose the disk into a few line elements, each van Herk along its direction.
+4. *Tables as text.* A result's table is a string, so a program that parses the YAML result for rows gets text.
+   Mitigation: programs use `cv.save` (GCV-004) or `--json` files; the CLI's `--json` output carries the same text
+   today. The renderer test pins the format.
+5. *Pasted code and earlier-eval closures.* All eval code shares the source name `<eval>`, so a function pasted in one
+   eval and called in a later one is still attributed to the current eval, and its error lines are still mapped
+   against the wrong text (§5.2). Mitigation: libraries are loaded, not pasted; the instructions say "never paste a
+   file into an eval". A complete fix would give each eval its own source name, which needs a change in go-go-goja's
+   replsession (it runs `vm.RunString`); it is left out.
+6. *goja behaviour.* The design relies on `Function.prototype.toString` returning source text and on `goja.Compile`
+   names appearing in stack frames. Tests in Phases A1 and A2 pin both, so a goja upgrade that changed them fails CI.
+7. *GCV-004 drift.* GCV-005 assumes GCV-004's final model (Appendix A). If GCV-004's implementation deviates (for
+   example in how the `items` op represents points), the affected phase follows the deviation and records it.
+
+**Open questions.**
+
+1. *Sheets of points.* GCV-004 §7.6 accepts centres without a radius only for `measure` and `sample`. GCV-005 adds
+   `sheet` (its main use is a sheet of points). How GCV-004's binder represents a list of points for these ops (a
+   plain list, or entries of the `items` op with no shape) should be settled with the GCV-004 implementer before
+   Phase A3; the sheet needs per entry a centre, an optional box, `id` and `label`.
+2. *Labels through the `items` op.* §7.7 extends GCV-004's entries with `id` and `label`. This changes GCV-004's
+   Phase 5 slightly; it could be done there (cheaper) or in A3 (independent). Recommendation: in GCV-004 Phase 5 if
+   it has not landed when this guide is reviewed.
+3. *Default `snr` of peaks.* 1 (the playbook's "stands out") or 1.4 (what `mem.faint` used). The guide chooses 1 and
+   lets §15.2 decide.
+4. *`cv.save` without `await`.* The `LOAD` warning has an obvious sibling for `cv.save` promises that fail unawaited.
+   It is not in GCV-005's scope; the coordinator may want it in GCV-004's Phase 6.
+
+## 18. References
+
+- Ticket: `reference/01-analysis-annotator-agent-feedback.md` (coordinator analysis and disposition),
+  `reference/02-diary-coordination.md`, `reference/03-diary-design-writer.md` (this guide's diary).
+- The base: GCV-004 guide (revision 3), its implementation diary `reference/06-diary-implementation.md` and gate
+  scripts `scripts/04-gate.sh`, `scripts/05-real-data.sh`.
+- Evidence: `DUST-002/reference/11-goja-cv-agent-feedback.md`; `DUST-002/various/agent-evals/` (`summary.md`,
+  `evals.jsonl`, per-agent `.js`); `DUST-002/various/agent-diaries/`; `DUST-002/scripts/84-cv-helpers.js`,
+  `91-extract-agent-evals.py`, `87-cv-measure-auc.py`, `88-cv-hot-recall.py`; `DUST-002/reference/04-goja-cv-dust-playbook.md`;
+  `DUST-002/reference/07-goja-cv-handover-issues.md` (old issue 18).
+- Background: the vault article "Deep Dive — goja-cv in Agent Hands — Feedback from 39 Annotator Agents"
+  (`go-go-parc/Projects/2026/11/09/`).
+- The v1 patch: PR #5, branch `task/v1-field-fixes` (sheet badge, `stepChroma` gate, `LOOKS`/`DATA` warnings).
+- Algorithms: M. van Herk, "A fast algorithm for local minimum and maximum filters on rectangular and octagonal
+  kernels" (1992), and J. Gil and M. Werman (1993), as implemented in `minMax1D`; P. Soille, E. Breen and R. Jones,
+  "Recursive implementation of erosions and dilations along discrete lines at arbitrary angles" (1996); P. Felzenszwalb
+  and D. Huttenlocher, "Distance transforms of sampled functions" (2012), as implemented in `dt1d`; T. Huang, G. Yang
+  and G. Tang, "A fast two-dimensional median filtering algorithm" (1979), for a future median.
+- Pi harness: `CVJS-001…/scripts/06-pi-cv-agent/run.sh` and its question files.
+
+## Appendix A. GCV-004 details this guide relies on
+
+| detail | GCV-004 | implemented on this branch (`10938ce`) | used by |
+|---|---|---|---|
+| literal options; `E_NOT_AWAITED` | §4.1, §7.7, Phase 1 | yes | all examples |
+| the panic boundary (`export`, `isGojaPanic`) | §7.11, Phase 0b | yes | `binding.load`, `binding.scripts` |
+| ordered `Record.MarshalJSON` | §7.9, Phase 0b | yes | `cv.save` of peaks |
+| `Args.Input/Inputs/Value`, loud accessors | §7.2, Phase 0c | yes | the new ops |
+| `levelsAt` (speck white point) | §7.4, Phase 1 | yes | §6.10's doc note |
+| `look()` queues every look; `LOOKS` warning | §7.7, Phase 2 | no | looks in loaded files |
+| awaited Value/Regions at scale 1 | D8, Phase 2 | no | peaks awaited at full resolution |
+| space on the image; `as`; `Follows` | §7.4, Phase 3 | no | morphology and peaks follow the receiver |
+| one luminance (`OpDef.Luma`) | §7.4, D20, Phase 3 | no | peaks on colour images |
+| channel count static; `OneChannel`; masks as one-channel images | §7.5, Phase 4 | no | morphology's receiver check; mask dilate/erode |
+| awaited regions as arrays with `[node, index]` links | §7.6, Phase 5 | no | peaks items, labels |
+| the `items` op; literal boxes and circles; `Region.Shape` `Disk` | §7.6, Phase 5 | no | peaks regions, labels (§7.7 extends the entries) |
+| `measure(items)` with radii from `r` or area; `prefix`; `E_FIELD_EXISTS` | §7.6, D17, Phase 5 | no | `measure` of peaks, `spStep` |
+| `mask.regions(items, { grow })` | §6.4, Phase 5 | no | deleted in B1 (its `grow`) |
+| `Workspace` (`--root`, `--read`, `os.Root`), `Workspace.Open`, `Location` | §7.8, Phase 6 | no | `cv.load`, `cv.scripts`, `--prelude` |
+| `--image`/`--prelude` as operator input inside a root | §7.8, Phase 6 | no | prelude validation |
+| `cv.save`; profile and histogram `rows` | §6.7, §7.9, Phase 6 | no | tables' paging note; the thread-width recipe |
+| xgoja `root` and `read` | §7.8, Phase 6 | no | `cv.load` in xgoja |
+| pruned names; edit distance only for removed names | §7.13, D12, Phase 7 | no | `grow`, `shrink`, `labels: "index"` |
+| the v2 instructions | §12, Phase 8 | no | §12.1 builds on them |
