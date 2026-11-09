@@ -200,3 +200,48 @@ Meanwhile the design writer finished the GCV-004 guide (`903846f` … `9c672d6`,
 
 ### Code review instructions
 - dust-scanning `52b44f1`; re-run the note's two JS blocks with `goja-cv eval --out DIR -e "…"`.
+
+## Step 5: Review read, open-question decisions, revision 2, reMarkable
+
+The reviewer's cold read found 37 issues (4 P1, 18 P2, 15 P3; 4 wrong citations among 100+ checked). I
+merged its open-question recommendations with mine, sent the writer one revision list, and uploaded revision 2
+(36 fixed, 1 partly, 0 declined) to reMarkable.
+
+### Prompt Context
+
+**User prompt (verbatim):** "what are pros/cons for the questions, and your suggestion (motivated)" and "what's the current status, and should we make a new ticket for these or are they integratable into our current work ?"
+
+**Assistant interpretation:** Decide the guide's open questions with reasons; keep them inside GCV-004; finish the review loop and the upload the user asked for in step 3.
+
+**Inferred user intent:** Settle the design and get the guide onto the reMarkable for reading.
+
+### What I did
+- Gave pros/cons and recommendations for Q1–Q6 and D3; said they belong to GCV-004 (its own §17), not a new ticket; proposed a small v1 patch on main for the colleague's bugs (user has not answered).
+- Reviewer (`780c2bf`, `243a9aa`): P1s F1 channel counts of two-input ops, F2 masks must never be space-converted, F3 item links must not use the editable `id`, F4 "never overwrite an opened image" compared names, not files (an in-root symlink replaced the source).
+- Merged decisions: gaussian/blend/within follow the image (receiver decides, masks never converted); exposure physical with a `levels({ auto })` hint; `measure` ring by default unless `stats`, radii from item `r` or √(area/π); `await img` returns statics; refuse arrays mixing two region sets (reviewer's position over mine); `--root` workspace + repeatable read-only `--read` (mine; reviewer's "mcp requires --root" and "no inline fallback").
+- Writer revision 2 (`004ffd7`, diary `fb6673c`): 2,716 lines, Appendix A disposition, D15–D21, phases 0a/0b/0c then 1–8, est. net −2,050 lines.
+- Uploaded guide + evidence + review findings as one bundle: `/ai/2026/11/09/GCV-004/GCV-004 API v2 design and implementation guide.pdf`; checked tasks 3 (review read) and 4 (upload).
+
+### Why
+- One revision round with the decisions settled avoids a third pass.
+
+### What worked
+- The reviewer verified claims by running code (the v1 channel-count result, the `os.Root` symlink overwrite), which turned two design assumptions into P1s.
+
+### What didn't work
+- N/A
+
+### What I learned
+- `os.Root` stops escapes but not in-root aliasing: a link inside the root to another file in the root is followed. "Don't overwrite X" needs file identity (`os.SameFile`), not paths.
+
+### What was tricky to build
+- Reconciling Q5/Q6 where the reviewer and I differed: took the simpler side (refuse mixed sets; no inline fallback) and kept `--read`, which neither the draft nor the review had, because the real setup needs it.
+
+### What warrants a second pair of eyes
+- New §17 Q3: the `stepChroma` gate at |snr| < 2 nulls it for about half the labelled dust (median snr 2.17). I recommend a lower gate or a noise-relative form; user decision pending.
+
+### What should be done in the future
+- User answers on §17 (4 questions) and the v1 patch; then implementation phase by phase with implementer diary and pi validation.
+
+### Code review instructions
+- Guide Appendix A (disposition) and §8 D15–D21; review `reference/04-review-read-findings.md`.
