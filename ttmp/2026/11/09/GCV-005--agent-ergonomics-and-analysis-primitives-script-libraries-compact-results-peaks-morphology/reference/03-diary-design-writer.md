@@ -159,3 +159,91 @@ that keeps goja-cv simple: one mechanism per need, data with every look.
 - Instructions draft: scratchpad `instructions.txt`, `wc -c` → 3,397.
 - `goja-cv eval -e 'const f = async (x, y = 2) => { // best value … }; … return { f: f.toString(), … }'` printed the
   sources with comments.
+
+## Step 2: Sections 10–18, Appendix A, tasks; consistency pass
+
+I wrote the rest of the guide (pseudocode for every new algorithm, errors, documentation with the full proposed MCP
+instructions, phases, tests, validation, the helper migration note, risks, references, and Appendix A listing which
+GCV-004 details are implemented), then did a consistency pass that changed two design details: peaks items carry the
+full region geometry (`area`, `aspect`), and string ids are an error with a `label` fix. `tasks.md`, `index.md` and the
+changelog were filled; `docmgr doctor` passed. The finished guide is `8d76e63` (2,471 lines).
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 1)
+
+**Assistant interpretation:** Finish the guide to the structure the brief lists, fill the ticket's tasks, verify, commit
+and report the decisions.
+
+**Inferred user intent:** A complete revision 1 ready for a review read and the reMarkable upload.
+
+### What I did
+
+- Wrote §10 (pseudocode: `cv.load`, failure locations, the table renderer, `DescribeFunction`, attribution and
+  `collectNodes`, peaks, the chord step map, sub-pixel fit, disk and line morphology, the binary fast path, two traces),
+  §11 (errors), §12 (documentation, the instructions text, the task-library and thread-width recipes, the playbook
+  pattern), §13 (phases A1–A4, B1–B3, V with a dependency table), §14 (tests, including five relative gold tests),
+  §15 (validation loops), §16 (helper migration), §17 (risks, open questions), §18 and Appendix A.
+- Checked identifiers used in the Go sketches: `numField`, `fixedFields`, `prefixed` exist in `pkg/cv/ops`; there is no
+  `intField`, so the sketch now builds the schema with `graph.WithFields(graph.GeometryFields, …)`.
+- Found that `graph.GeometryFields` (`pkg/cv/graph/schema.go:32-43`) is documented as present on every region; changed
+  the peaks schema to geometry + `r` + core/ring fields, in §1, §6.8, §7.8 and §10.6.
+- Checked which goldens move: `sheet-2x2` uses a list of two items (`pkg/cv/look/golden_test.go:129-132`), so its labels
+  change from 0/1 to 1/2 in A3; no golden uses `grow`; `regions_test.go:74` uses `toMask({ grow })`.
+- Checked every markdown table for unescaped pipes with a short Python script (no findings).
+- Corrected: the diary count (39, not 34), the table quoting rule, a risk that referred to an undefined "chord cache",
+  the getter-safety sentence (now via property descriptors, as `renderer.property` does), string ids (now `E_ARG_TYPE`
+  with the `label` fix, in §7.7, §11 and the A3 tests), the `mem.faint` signature example.
+- Filled `tasks.md` (guide, review read, reMarkable upload, phases A1–A4, B1–B3, V), `index.md`, `changelog.md`; ran
+  `docmgr doctor --ticket GCV-005`: all checks passed.
+
+### Why
+
+- Relative gold tests: the gold set changes (142 → 198 points) and GCV-004 deviation 1 shows three real-data tests went
+  stale on absolute numbers.
+- The phase table makes Part A and Part B independent and names what each needs from GCV-004, so either half can land
+  first and A2 can land now.
+
+### What worked
+
+- Writing the pseudocode surfaced the details the prose had glossed over: trailing spaces in YAML literal blocks (yaml.v3
+  falls back to quoted style), the tie-breaking order of peaks, the border handling of the sub-pixel fit.
+
+### What didn't work
+
+- `Write` on `tasks.md` failed with "File has not been read yet"; I read it and wrote again.
+
+### What I learned
+
+- `graph.GeometryFields` is the schema contract for regions; any new Regions op should start from it.
+- The sheet golden is the only golden GCV-005 moves (A3), because its list items have no ids.
+
+### What was tricky to build
+
+- **The table budget.** A per-table cap would let two tables exceed the 9,000-character cap and lose their paging notes
+  to the CUT note; a budget shared across tables (two thirds of the cap, at least five rows each) keeps notes intact in
+  the common case.
+- **Peaks' candidate count.** Every grain maximum is a candidate; non-maximum suppression with a disk of radius r (the
+  morphology kernel) bounds candidates to about one per π r² pixels before the exact measure runs.
+
+### What warrants a second pair of eyes
+
+- Open questions 1 and 2 (§17): how GCV-004's binder represents point lists for `sheet`, and whether the `items` op's
+  `id`/`label` extension goes into GCV-004 Phase 5.
+- The default `snr: 1` and the ring change (D14) before the playbook is rewritten.
+- The MCP instructions text (§12.1) assumes GCV-004's final v2 contract; compare with GCV-004's Phase 8 text when it
+  exists.
+
+### What should be done in the future
+
+- Review read, revision 2, reMarkable upload (tasks).
+
+### Code review instructions
+
+- Start at §6 (API) and §8 (decisions), then §13 (phases) and §14.4 (gold tests).
+- Verify: `docmgr doctor --ticket GCV-005`; the tables check (Python one-liner in Technical details).
+
+### Technical details
+
+- Table check: for each markdown table, count unescaped `|` per row and compare with the header row.
+- Guide length: 2,471 lines; sections 1–18 and Appendix A; decision records D1–D21.
