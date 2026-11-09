@@ -105,10 +105,10 @@ func (r *renderer) render(v goja.Value, depth int) *yaml.Node {
 		return str("[Function]")
 	}
 	t := obj.ExportType()
-	switch {
-	case t == promiseType:
+	switch t {
+	case promiseType:
 		return str("[Promise] (not awaited: add await)")
-	case t == timeType:
+	case timeType:
 		if tm, ok := obj.Export().(time.Time); ok {
 			return str(tm.UTC().Format(time.RFC3339))
 		}
@@ -274,14 +274,14 @@ func mapping(kv ...*yaml.Node) *yaml.Node {
 	return &yaml.Node{Kind: yaml.MappingNode, Content: kv}
 }
 
-// capText cuts text to at most max characters at a line boundary and appends
+// capText cuts text to at most maxLen characters at a line boundary and appends
 // the CUT note.
-func capText(text string, max int) string {
-	if len(text) <= max {
+func capText(text string, maxLen int) string {
+	if len(text) <= maxLen {
 		return text
 	}
-	note := fmt.Sprintf("# %s: the result is %d characters; only the first %d are shown. Return less: pick fields, slice arrays, or summarize.", graph.WCut, len(text), max)
-	limit := max - len(note) - 1
+	note := fmt.Sprintf("# %s: the result is %d characters; only the first %d are shown. Return less: pick fields, slice arrays, or summarize.", graph.WCut, len(text), maxLen)
+	limit := maxLen - len(note) - 1
 	if limit < 0 {
 		limit = 0
 	}

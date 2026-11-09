@@ -45,8 +45,8 @@ func medianOf(xs []float32) float64 {
 
 // MAD is the median absolute deviation from the median, scaled to σ for
 // normal data (×1.4826).
-func MAD(xs []float32) (med, sigma float64) {
-	med = medianOf(xs)
+func MAD(xs []float32) (float64, float64) {
+	med := medianOf(xs)
 	d := make([]float32, len(xs))
 	for i, x := range xs {
 		d[i] = float32(math.Abs(float64(x) - med))

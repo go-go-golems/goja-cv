@@ -160,8 +160,18 @@ func toAny(xs []string) []any {
 	return out
 }
 
+// jsNodeID reads a node id passed in from JS. Ids are positive; anything else
+// is "no node" (0), which every lookup rejects.
+func jsNodeID(v goja.Value) graph.NodeID {
+	i := v.ToInteger()
+	if i <= 0 {
+		return 0
+	}
+	return graph.NodeID(i)
+}
+
 func (b *binding) nodeArg(v goja.Value) *graph.Node {
-	id := graph.NodeID(v.ToInteger())
+	id := jsNodeID(v)
 	n, ok := b.eng.Node(id)
 	if !ok {
 		b.throw(graph.Errorf(graph.EInternal, "unknown node #%d", id))
@@ -171,7 +181,7 @@ func (b *binding) nodeArg(v goja.Value) *graph.Node {
 
 func handle(vm *goja.Runtime, n *graph.Node) goja.Value {
 	o := vm.NewObject()
-	_ = o.Set("id", int64(n.ID))
+	_ = o.Set("id", int64(n.ID)) // #nosec G115 -- ids come from a sequential counter, far below MaxInt64
 	_ = o.Set("kind", string(n.Kind))
 	return o
 }
@@ -221,7 +231,7 @@ func (b *binding) builders(goja.FunctionCall) goja.Value {
 
 // __placeholder(receiverId) → {id, kind}: the node a builder lambda receives.
 func (b *binding) placeholder(c goja.FunctionCall) goja.Value {
-	n, err := b.eng.Placeholder(graph.NodeID(c.Argument(0).ToInteger()))
+	n, err := b.eng.Placeholder(jsNodeID(c.Argument(0)))
 	if err != nil {
 		b.throw(err)
 	}
@@ -231,7 +241,7 @@ func (b *binding) placeholder(c goja.FunctionCall) goja.Value {
 // __call(op, receiverId, args[]) → {id, kind}
 func (b *binding) call(c goja.FunctionCall) goja.Value {
 	name := c.Argument(0).String()
-	recv := graph.NodeID(c.Argument(1).ToInteger())
+	recv := jsNodeID(c.Argument(1))
 	var raw []any
 	if a := c.Argument(2); !goja.IsUndefined(a) && !goja.IsNull(a) {
 		list, _ := fromJS(a.Export()).([]any)
@@ -357,7 +367,7 @@ func (b *binding) unknown(c goja.FunctionCall) goja.Value {
 	kind := graph.Kind(c.Argument(0).String())
 	prop := c.Argument(1).String()
 	var path []string
-	if id := graph.NodeID(c.Argument(2).ToInteger()); id != 0 {
+	if id := jsNodeID(c.Argument(2)); id != 0 {
 		path = b.eng.Path(id)
 	}
 	b.throw(b.eng.Registry().UnknownMethod(kind, prop, path))

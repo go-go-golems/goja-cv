@@ -32,6 +32,16 @@ The full guidebook ships inside the binary: `goja-cv help` (pages listed [below]
 
 ## Install
 
+Tagged releases publish `goja-cv` (Linux and macOS, amd64 and arm64) to the go-go-golems Homebrew tap and as
+`.deb`/`.rpm` packages:
+
+```bash
+brew tap go-go-golems/go-go-go
+brew install --cask goja-cv
+```
+
+From source (needs cgo, i.e. a C compiler: go-go-goja's session links tree-sitter and SQLite):
+
 ```bash
 go install github.com/go-go-golems/goja-cv/cmd/goja-cv@latest
 ```
@@ -204,11 +214,20 @@ topics, every example tested), and `cv.help(name)`.
 - `pkg/xgoja/providers/cv` — xgoja provider
 
 ```bash
-make test       # go test ./... -count=1
+make test       # go test ./... -count=1 (make test-race adds -race, as CI does)
+make lint       # pinned golangci-lint (.golangci-lint-version, installed to .bin/) and glazed-lint
+make smoke      # build dist/goja-cv and exercise help, ops and eval on a generated image
+make logcopter-generate   # regenerate the per-package loggers; make logcopter-check verifies them
 make vet
 make testdata   # regenerate the synthetic test images
 go run ./internal/testimage/gen -out /tmp/cv -planted   # the planted-fault dust scan used by tests and docs
+lefthook install          # pre-commit: lint + test; pre-push: also a snapshot goreleaser build
+make goreleaser           # local snapshot release for this platform (dist/)
 ```
+
+CI (`.github/workflows`) runs unit tests with `-race`, the smoke test, golangci-lint, govulncheck, gosec, CodeQL
+and secret scanning. Releases are cut by pushing a `v*` tag; `release.yaml` builds Linux and macOS natively and
+publishes through the shared go-go-golems publisher with Vault/OIDC credentials (no repository secrets).
 
 The tests run every code example of the agent topics and the guidebook in a real session, and parse every
 `goja-cv` command shown in the guide and this README. go-go-goja is pinned to a commit of

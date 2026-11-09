@@ -351,9 +351,7 @@ func isKindType(typ string) bool {
 		return false
 	}
 	for _, part := range strings.Split(typ, "|") {
-		switch Kind(part) {
-		case KindImage, KindMask, KindRegions:
-		default:
+		if k := Kind(part); k != KindImage && k != KindMask && k != KindRegions {
 			return false
 		}
 	}
@@ -735,7 +733,11 @@ func bind(op *OpDef, hasReceiver bool, raw []any, trusted map[string]any, kindOf
 		}
 		if s.Variadic {
 			var rest []any
-			for i < len(raw) && !(isOptionsObject(raw[i]) && i == len(raw)-1 && !typeAcceptsObject(strings.TrimSuffix(s.Type, "[]"))) {
+			// a trailing options object ends the variadic run unless the element type takes objects
+			trailingOptions := func(i int) bool {
+				return isOptionsObject(raw[i]) && i == len(raw)-1 && !typeAcceptsObject(strings.TrimSuffix(s.Type, "[]"))
+			}
+			for i < len(raw) && !trailingOptions(i) {
 				rest = append(rest, raw[i])
 				i++
 			}

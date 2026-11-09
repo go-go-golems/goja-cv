@@ -232,10 +232,10 @@ func (b *Builder) Substitute(root, from, to NodeID) (NodeID, error) {
 func hashNode(op *OpDef, args Args, inputs []*Node) [32]byte {
 	h := sha256.New()
 	key := op.Key()
-	_ = binary.Write(h, binary.LittleEndian, uint32(len(key)))
+	_ = binary.Write(h, binary.LittleEndian, uint32(len(key))) // #nosec G115 -- an op key is a short identifier
 	h.Write([]byte(key))
 	js := args.canonicalJSON()
-	_ = binary.Write(h, binary.LittleEndian, uint32(len(js)))
+	_ = binary.Write(h, binary.LittleEndian, uint32(len(js))) // #nosec G115 -- canonical args JSON is far below 4 GiB
 	h.Write(js)
 	for _, in := range inputs {
 		h.Write(in.Hash[:])

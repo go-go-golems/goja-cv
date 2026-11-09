@@ -1,0 +1,130 @@
+name: release
+
+# Before the first v* tag: add this repository's immutable GitHub ID and the
+# exact workflow ref (.github/workflows/release.yaml@refs/tags/v*) to
+# Terraform's release_publishers allowlist and apply the
+# release-goja-cv-builder and release-goja-cv-publisher Vault roles. Until
+# then a tag push fails at the Vault login step; nothing here reads repository
+# secrets.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  goreleaser-linux:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - run: git fetch --force --tags
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Install arm64 cross-compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+      - name: Read build-only GoReleaser credential
+        uses: hashicorp/vault-action@892a26828f195e65540a40b4768ae4571f51ebfc # v4.0.0
+        with:
+          url: https://vault.yolo.scapegoat.dev
+          method: jwt
+          path: github-actions
+          role: release-goja-cv-builder
+          jwtGithubAudience: https://vault.yolo.scapegoat.dev
+          secrets: |
+            kv/data/ci/release/shared/goreleaser-pro license_key | GORELEASER_KEY ;
+      - uses: goreleaser/goreleaser-action@v7
+        with:
+          distribution: goreleaser-pro
+          version: "~> v2"
+          args: release --clean --split
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GORELEASER_KEY: ${{ env.GORELEASER_KEY }}
+          GGOOS: linux
+      - uses: actions/upload-artifact@v4
+        with:
+          name: goja-cv-dist-linux
+          path: dist
+
+  goreleaser-darwin:
+    runs-on: macos-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - run: git fetch --force --tags
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Read build-only GoReleaser credential
+        uses: hashicorp/vault-action@892a26828f195e65540a40b4768ae4571f51ebfc # v4.0.0
+        with:
+          url: https://vault.yolo.scapegoat.dev
+          method: jwt
+          path: github-actions
+          role: release-goja-cv-builder
+          jwtGithubAudience: https://vault.yolo.scapegoat.dev
+          secrets: |
+            kv/data/ci/release/shared/goreleaser-pro license_key | GORELEASER_KEY ;
+      - uses: goreleaser/goreleaser-action@v7
+        with:
+          distribution: goreleaser-pro
+          version: "~> v2"
+          args: release --clean --split
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GORELEASER_KEY: ${{ env.GORELEASER_KEY }}
+          GGOOS: darwin
+      - uses: actions/upload-artifact@v4
+        with:
+          name: goja-cv-dist-darwin
+          path: dist
+
+  publish:
+    needs: [goreleaser-linux, goreleaser-darwin]
+    permissions:
+      contents: write
+      id-token: write
+    uses: go-go-golems/infra-tooling/.github/workflows/publish-goreleaser-release.yml@main
+    with:
+      linux_artifact: goja-cv-dist-linux
+      darwin_artifact: goja-cv-dist-darwin
+      credential_profile: homebrew-fury
+      vault_role: release-goja-cv-publisher
+
+  # Disabled template for publishing Glazed help docs to docs.yolo.scapegoat.dev.
+  # To enable it, provision the matching Terraform docsctl role,
+  # set the guard to a v* tag condition, and verify the export command.
+  publish-docs:
+    name: Publish docs
+    needs: [publish]
+    if: ${{ false && startsWith(github.ref, 'refs/tags/v') }}
+    permissions:
+      contents: read
+      id-token: write
+    uses: go-go-golems/infra-tooling/.github/workflows/publish-docsctl.yml@main
+    with:
+      package_name: goja-cv
+      package_version: ${{ github.ref_name }}
+      export_command: go run ./cmd/goja-cv help export --export-mode sqlite --output-path .docsctl/help.sqlite
+      sqlite_path: .docsctl/help.sqlite
+      docsctl_install_command: go install github.com/go-go-golems/glazed/cmd/docsctl@latest
+      vault_role: docsctl-goja-cv-publisher
+      vault_token_role: docsctl-goja-cv-publisher
+      registry_url: https://docs-registry.yolo.scapegoat.dev
+      verify_packages_url: https://docs.yolo.scapegoat.dev/api/packages
+      verify_publish: true

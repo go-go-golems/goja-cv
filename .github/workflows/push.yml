@@ -1,0 +1,59 @@
+name: golang-pipeline
+
+on:
+  push:
+    branches:
+      - 'main'
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - run: git fetch --force --tags
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      -
+        name: Verify logcopter package loggers
+        run: make logcopter-check
+      -
+        name: Generate assets
+        run: GOWORK=off go generate ./...
+      -
+        name: Verify generated files are up to date
+        run: git diff --exit-code
+      -
+        name: Vet
+        run: make vet
+      -
+        name: Run unit tests (race detector)
+        run: make test-race
+
+  smoke:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      -
+        name: Smoke test the goja-cv CLI
+        run: make smoke
+      -
+        name: Upload smoke output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: goja-cv-smoke
+          path: dist/smoke
+          if-no-files-found: ignore
