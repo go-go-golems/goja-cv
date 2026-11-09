@@ -290,3 +290,48 @@ auto-mode classifier refused my merge); the batch-1 implementer finished phases 
 
 ### Code review instructions
 - `git log 4c9a1ac..80547e1`; deviations 15–28 in the guide; `scripts/04-gate.sh`.
+
+## Step 7: Batch 2 (phases 5–8), pi validation, PR #6
+
+Batch 2 finished phases 5–8 and the pi validation and opened PR #6 (all CI green; not merged). I re-ran the gate,
+archived the pi runs, and corrected the colleague's measuring guidance with batch 2's gold finding.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 3; implementation continues the "Then implement" request)
+
+**Assistant interpretation:** Verify batch 2, publish its evidence, carry its findings to the people who use them.
+
+**Inferred user intent:** GCV-004 ready to merge; v1 users not misled by stale advice.
+
+### What I did
+- Batch 2 commits: Phase 5 `449aaed`, 6 `1c1acf3`, 7 `3b3e685`, 8 `0319ac9`, pi `a598037` (diary steps 8–12, deviations 29–50). PR #6: test, smoke, lint, GoSec, CodeQL, vuln, TruffleHog, dependency review all pass. My gate re-run on `a598037`: `gate=0`.
+- Also sent batch 2 the GCV-005-side items during its run (one `Items|point[]` binding with a Point shape; labels; ids may repeat; no `mask.regions` grow; `cv.save` promises on the pending list) — all landed as deviations.
+- Archived pi runs 19–30 (12 runs, before = main b42502b, after = v2) with the adapted harness, input builder, metrics and usage scripts in CVJS-001 `various/pi-runs/` (dust-scanning `60fff82`).
+- Updated DUST-002 `reference/08` (dust-scanning `8ee499d`): gold `r` is a fit radius; measure with core r/2 by default.
+
+### Why
+- The PR is the user's to merge; my part is verification and evidence.
+
+### What worked
+- Removed surface vanished from agent code without errors: `{ space }` 70 → 0, `cv.evaluate` 33 → 0, `show(` 99 → 0, `cv.json/csv` 20 → 0; median calls 31.5 → 29, 51 → 39, 45 → 42; no E_ACCESS after.
+- Net −867 non-test lines vs main (+4467 / −5334), with regions, saving, workspace and names all rewritten.
+
+### What didn't work
+- GCV-002 recall did not improve (17/20 vs 21/19 of 53): the agent's own ranking limits it.
+
+### What I learned
+- The "speck ranking dropped to median 75" mystery was neither labels nor code: DUST-002 `d54088c` re-exported the tiles with density as the code value and the tests opened them as sRGB; opened as linear: median rank 24, 78.2 % in top 50.
+- Gold `r` is the dustview fit radius (≈ 2× the speck): over 197 points core r/2 gives median snr 1.56, core r 0.86, fixed 3 px 1.17. On two large streak-like points core r was better (0.59 vs 0.52). The colleague's note had said core ≈ r (my advice from step 4 of the GCV-001 diary era) — corrected.
+
+### What was tricky to build
+- Tile re-exports change what "the same input" means: the pi inputs had to be rebuilt so historical expected answers still hold.
+
+### What warrants a second pair of eyes
+- D17's rule (core = item `r`) is right for Disk items whose `r` is the object radius; dustview gold stores a fit radius. Decision for the user: keep the rule and convert at the dataset boundary (r/2), or change the rule.
+
+### What should be done in the future
+- User merges #6. GCV-005 merges the final GCV-004 and continues (A1–A4, B2, B3, validation).
+
+### Code review instructions
+- PR #6; deviations 29–50 in the guide; `reference/06-diary-implementation.md` steps 8–12.
