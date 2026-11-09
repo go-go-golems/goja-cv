@@ -306,3 +306,29 @@ func TestOptionSynonyms(t *testing.T) {
 		}
 	}
 }
+
+// TestOpSynonymsDoNotShadowOps: a synonym must name an existing op, and
+// must not itself be an op on a kind where its target lives (it would
+// never be consulted, or worse, mean two things); method redirects must not
+// be methods.
+func TestOpSynonymsDoNotShadowOps(t *testing.T) {
+	reg := NewRegistry()
+	for s, target := range graph.Synonyms {
+		targets := reg.Find(target)
+		if len(targets) == 0 {
+			t.Errorf("synonym %q → %q: no such op", s, target)
+		}
+		for _, op := range targets {
+			if _, ok := reg.Lookup(op.On, s); ok {
+				t.Errorf("synonym %q is also an op on %s", s, op.On)
+			}
+		}
+	}
+	for name := range graph.MethodRedirects {
+		for _, k := range graph.Kinds {
+			if _, ok := reg.Lookup(k, name); ok {
+				t.Errorf("method redirect %q is an op on %s", name, k)
+			}
+		}
+	}
+}

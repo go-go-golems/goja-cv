@@ -54,6 +54,13 @@ return { masked: await m.coverage(), blobs: await blobs.count() }
 
 `img.overlay(regions | mask, { color, alpha, labels: "id" })` draws them over the image (colours: any CSS name such as `"lime"`, `"#ff8800"`, `"#f80"` or display `[r, g, b]` in [0, 1]) (`regions.overlay(img)` and `mask.overlay(img)` work too). A Regions node itself has no look: return `img.overlay(regions).look()`.
 
+An overlay is drawn at the look's scale: in a zoomed crop its outlines stay 1 image px wide and the ids readable, and regions found on the whole image can be drawn on a crop, before or after the crop.
+
+```js looks=1
+const specks = img.detect.specks()
+return img.overlay(specks, { labels: "id", color: "lime" }).crop([150, 20, 64, 64]).look({ zoom: 8, ruler: 8 })
+```
+
 ## Neutral or coloured?
 
 Dust on colour film is neutral: it raises all three channels alike, while colour grain and scene detail do not. `chroma()` is the per-pixel channel spread (0 for grey); a mask of low chroma keeps neutral areas.

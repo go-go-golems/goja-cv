@@ -8,7 +8,7 @@ import (
 )
 
 func TestListHasEveryTopicWithTitleAndSummary(t *testing.T) {
-	want := []string{"getting-started", "units-and-scales", "nodes-and-evaluation", "lambdas", "masks-and-regions", "looks", "params", "errors", "recipes", "encodings-and-spaces"}
+	want := []string{"getting-started", "units-and-scales", "nodes-and-evaluation", "lambdas", "masks-and-regions", "looks", "params", "errors", "recipes", "encodings-and-spaces", "views"}
 	list := List()
 	if len(list) != len(want) {
 		t.Fatalf("topics %v", IDs())
@@ -45,7 +45,7 @@ func TestReadTopicAndSection(t *testing.T) {
 func TestReadUnknownTopicAndSection(t *testing.T) {
 	_, err := Read("recipe", "")
 	e, ok := graph.AsError(err)
-	if !ok || e.Code != EUnknownTopic || e.Hint != `Did you mean "recipes"?` || e.Fix != `cv.docs.read("recipes")` || len(e.Valid) != 10 {
+	if !ok || e.Code != EUnknownTopic || e.Hint != `Did you mean "recipes"?` || e.Fix != `cv.docs.read("recipes")` || len(e.Valid) != 11 {
 		t.Fatalf("unknown topic: %+v", err)
 	}
 	_, err = Read("dust", "")

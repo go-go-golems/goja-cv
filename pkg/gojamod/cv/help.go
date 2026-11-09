@@ -313,6 +313,18 @@ func UnknownMember(reg *graph.Registry, obj, name string, members []string) *gra
 		return e
 	}
 	if obj == "cv" {
+		if r, ok := graph.MethodRedirects[name]; ok {
+			e.Hint, e.Fix = r.Hint, r.Fix
+			return e
+		}
+		if t, ok := graph.Synonyms[name]; ok && contains(members, t) { // cv.grid → cv.sheet
+			e.Hint = fmt.Sprintf("Did you mean %q?", t)
+			e.Fix = fmt.Sprintf("cv.%s(…)", t)
+			return e
+		}
+		if t, ok := graph.Synonyms[name]; ok && len(reg.Find(t)) > 0 {
+			name = t // a synonym of a node method: say where it lives
+		}
 		for _, op := range reg.Find(name) {
 			if op.On == graph.KindNone {
 				continue

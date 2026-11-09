@@ -22,7 +22,7 @@ return {
 On goja-cv's synthetic test scan the answer is (the look arrives as an image next to the text):
 
 ```yaml
-{meanL: 0.22726, p99: 0.45755, dust: 40, look: '[look 1: dust (256×192, 1 image px = 1.0 doc px)]'}
+{meanL: 0.22726, p99: 0.45755, dust: 40, look: '[look 1: dust — open(planted-256x192-16bit.tif) → overlay (256×192, 1 image px = 1.0 doc px)]'}
 
 context:
   images: img = planted-256x192-16bit.tif (256×192, 16-bit TIFF, srgb)
@@ -176,8 +176,9 @@ from six per task to two, every one corrected on the next call):
 - **Keep nodes, await only for data**: `const specks = img.detect.specks()` is a node; `await specks` is data
   (`{ count, items }`). Awaited data still accepts node methods, but `r.count` is a number.
 - **Use `mem`** for anything needed in a later call; `const`/`let` do not survive.
-- **Return looks** to see results (`node.look("label")`, `show(node)`, `cv.compare([a, b])`), and measure inside
-  regions with `img.stats({ box: [x, y, w, h] })` or `img.stats({ mask })`.
+- **Return looks** to see results (`node.look("label")`, `show(node)`, `cv.compare([a, b])`), zoom into crops with
+  rulers (`img.crop([x, y, 64, 64]).look({ zoom: 8, ruler: 8 })`), and measure inside regions with
+  `img.stats({ box: [x, y, w, h] })` or `img.stats({ mask })`.
 
 ## Embedding
 

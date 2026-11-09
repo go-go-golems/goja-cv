@@ -10,7 +10,8 @@
 // topic with the planted test scan as img (TestDocsCodeBlocksRun in
 // pkg/cvsession). Info-string markers: "js fragment" is not run, "js
 // error=E_CODE" must fail with that code, "js warns=CODE" must succeed with
-// that warning; plain "js" must succeed without warnings.
+// that warning, "js looks=N" must deliver N looks; plain "js" must succeed
+// without warnings.
 package docs
 
 import (

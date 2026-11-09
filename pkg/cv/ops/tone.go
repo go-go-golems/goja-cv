@@ -81,7 +81,7 @@ func toneOps() []graph.OpDef {
 				return graph.NewImage(out), nil
 			},
 			Doc: "Map the black and white input levels to 0 and 1 and bend the midtones with gamma, in the working space (linear by default). levels({ auto: true }) takes black and white from the image's own p01 and p99 (of its luminance), so after a crop it stretches the crop.",
-			See: []string{"stats", "curve", "contrast", "crop", "view"},
+			See: []string{"stats", "contrast", "crop", "view"},
 		},
 		{
 			Name: "contrast", On: graph.KindImage, Returns: graph.KindImage, Space: graph.SpaceRule{Default: buffer.SpaceEncoded},
