@@ -193,17 +193,43 @@ func (v *RegionsValue) Summary(limit int) map[string]any {
 	}
 }
 
-// Rasterize draws the regions into a 1-channel w×h mask covering the doc
-// (normally buffer.ScaledSize(Frame.W, Frame.H, scale)). Each source pixel adds
-// its exact area overlap with each target pixel, so a region keeps its doc
-// area at any scale and is soft-edged when the target is coarser than the
-// source. Values are clamped to [0, 1].
-func (v *RegionsValue) Rasterize(ctx context.Context, w, h int, scale float64) (*buffer.Buffer, error) {
-	out := buffer.New(w, h, 1, scale)
+// Raster is where a buffer lies in doc px: the doc position of its
+// top-left corner, its per-axis scale (buffer px per doc px) and its size.
+type Raster struct {
+	OX, OY float64
+	SX, SY float64
+	W, H   int
+}
+
+// RasterOf is the raster of an image value: its buffer origin, axis scales
+// and size.
+func RasterOf(v *ImageValue) Raster {
+	ox, oy := v.BufferOrigin()
+	sx, sy := AxisScales(v)
+	return Raster{OX: ox, OY: oy, SX: sx, SY: sy, W: v.Buf.W, H: v.Buf.H}
+}
+
+// FrameRaster is the raster of a frame evaluated at scale.
+func FrameRaster(f Frame, scale float64) Raster {
+	w, h := buffer.ScaledSize(f.W, f.H, scale)
+	return Raster{OX: float64(f.X), OY: float64(f.Y), SX: float64(w) / float64(max(1, f.W)), SY: float64(h) / float64(max(1, f.H)), W: w, H: h}
+}
+
+// Rasterize draws the regions into a 1-channel mask on target (any window
+// and scale: a render window at zoom 8, a crop, the regions' own frame at a
+// preview scale). Each source pixel adds its exact area overlap with each
+// target pixel, so a region keeps its doc area at any scale and is
+// soft-edged when the target is coarser than the source; pixels outside the
+// target are skipped. Values are clamped to [0, 1].
+func (v *RegionsValue) Rasterize(ctx context.Context, t Raster) (*buffer.Buffer, error) {
+	w, h := t.W, t.H
+	out := buffer.New(w, h, 1, t.SX)
 	pl := out.Plane(0)
 	sx, sy := v.axisScales()
-	rx, ry := float64(w)/float64(max(1, v.Frame.W))/sx, float64(h)/float64(max(1, v.Frame.H))/sy
-	same := w == v.W && h == v.H
+	same := w == v.W && h == v.H && t.OX == float64(v.Frame.X) && t.OY == float64(v.Frame.Y) && t.SX == sx && t.SY == sy
+	// source pixel x covers doc [Frame.X + x/sx, Frame.X + (x+1)/sx): in target px, (doc − OX)·SX
+	ax, bx := t.SX/sx, (float64(v.Frame.X)-t.OX)*t.SX
+	ay, by := t.SY/sy, (float64(v.Frame.Y)-t.OY)*t.SY
 	for k, r := range v.Items {
 		if k%64 == 0 {
 			if err := ctx.Err(); err != nil {
@@ -216,16 +242,19 @@ func (v *RegionsValue) Rasterize(ctx context.Context, w, h int, scale float64) (
 				pl[int(p)] = 1
 				continue
 			}
-			x0, x1 := float64(x)*rx, float64(x+1)*rx
-			y0, y1 := float64(y)*ry, float64(y+1)*ry
-			for ty := int(math.Floor(y0)); ty < int(math.Ceil(y1)) && ty < h; ty++ {
+			x0, x1 := float64(x)*ax+bx, float64(x+1)*ax+bx
+			y0, y1 := float64(y)*ay+by, float64(y+1)*ay+by
+			if x1 <= 0 || y1 <= 0 || x0 >= float64(w) || y0 >= float64(h) {
+				continue
+			}
+			for ty := max(0, int(math.Floor(y0))); ty < int(math.Ceil(y1)) && ty < h; ty++ {
 				oy := math.Min(y1, float64(ty+1)) - math.Max(y0, float64(ty))
-				if ty < 0 || oy <= 0 {
+				if oy <= 0 {
 					continue
 				}
-				for tx := int(math.Floor(x0)); tx < int(math.Ceil(x1)) && tx < w; tx++ {
+				for tx := max(0, int(math.Floor(x0))); tx < int(math.Ceil(x1)) && tx < w; tx++ {
 					ox := math.Min(x1, float64(tx+1)) - math.Max(x0, float64(tx))
-					if tx < 0 || ox <= 0 {
+					if ox <= 0 {
 						continue
 					}
 					pl[ty*w+tx] += float32(ox * oy)

@@ -8,28 +8,52 @@ import (
 	"github.com/go-go-golems/goja-cv/pkg/cv/buffer"
 	"github.com/go-go-golems/goja-cv/pkg/cv/graph"
 	"github.com/go-go-golems/goja-cv/pkg/cv/kernels"
+	"github.com/go-go-golems/goja-cv/pkg/cv/text"
 )
 
 func overlayArgs() []graph.ArgSpec {
 	return []graph.ArgSpec{
 		{Name: "color", Type: "any", Default: "red", Doc: "colour name or display [r, g, b] in [0, 1] (encoded values)"},
 		{Name: "alpha", Type: "number", Default: 0.5, Min: graph.F(0), Max: graph.F(1), Doc: "opacity of the fill (outlines are drawn opaque)"},
-		{Name: "labels", Type: "enum:none,id", Default: "none", Doc: `"id" draws each region's id next to its box (digits only)`},
+		{Name: "labels", Type: "enum:none,id", Default: "none", Doc: `"id" draws each region's id next to its box`},
 	}
+}
+
+// Overlays are decorations (GCV-002 §7.8): in a render above scale 1 they
+// receive the image rendered in the window and draw at the render scale, so
+// outlines are 1 image px (2 px on looks of at least 1024 px) and ids are
+// readable at any zoom. Regions and masks may cover a larger frame than the
+// image (regions found on the whole image, drawn on a crop).
+
+// containsFrame returns E_FRAME unless outer contains inner.
+func containsFrame(op string, outer, inner graph.Frame) error {
+	if inner.X >= outer.X && inner.Y >= outer.Y && inner.X+inner.W <= outer.X+outer.W && inner.Y+inner.H <= outer.Y+outer.H {
+		return nil
+	}
+	return graph.SameFrame(op, outer, inner)
+}
+
+// decorationWidth is the line width of outlines on an image of w × h px.
+func decorationWidth(w, h int) int {
+	if max(w, h) >= 1024 {
+		return 2
+	}
+	return 1
 }
 
 // drawRegions draws regions onto img for looking: their pixels tinted at
 // alpha·0.6, a box outline around each (at least 5 px, 2 px margin) and
-// optionally the id above the box.
+// optionally the id above the box (font size 2).
 func drawRegions(ctx context.Context, img *graph.ImageValue, rv *graph.RegionsValue, a graph.Args) (graph.Value, error) {
-	if err := graph.SameFrame("overlay", rv.Frame, img.Frame); err != nil {
+	if err := containsFrame("overlay", rv.Frame, img.Frame); err != nil {
 		return nil, err
 	}
 	col, err := parseColor(a.Raw("color"), "overlay.color")
 	if err != nil {
 		return nil, err
 	}
-	m, err := rv.Rasterize(ctx, img.Buf.W, img.Buf.H, img.Buf.Scale)
+	t := graph.RasterOf(img)
+	m, err := rv.Rasterize(ctx, t)
 	if err != nil {
 		return nil, err
 	}
@@ -37,10 +61,8 @@ func drawRegions(ctx context.Context, img *graph.ImageValue, rv *graph.RegionsVa
 	if err != nil {
 		return nil, err
 	}
-	sx, sy := graph.AxisScales(img)
-	short := min(out.W, out.H)
-	lw := max(1, int(math.Round(float64(short)/800)))
-	k := max(1, int(math.Round(float64(short)/400)))
+	lw := decorationWidth(out.W, out.H)
+	const px = 2
 	labels := a.String("labels") == "id"
 	for i, r := range rv.Items {
 		if i%256 == 0 {
@@ -48,11 +70,13 @@ func drawRegions(ctx context.Context, img *graph.ImageValue, rv *graph.RegionsVa
 				return nil, err
 			}
 		}
-		bx, by := r.Box[0]-float64(img.Frame.X), r.Box[1]-float64(img.Frame.Y) // absolute → buffer origin
-		x0 := int(math.Floor(bx*sx)) - 2
-		y0 := int(math.Floor(by*sy)) - 2
-		x1 := int(math.Ceil((bx+r.Box[2])*sx)) + 1
-		y1 := int(math.Ceil((by+r.Box[3])*sy)) + 1
+		x0 := int(math.Floor((r.Box[0]-t.OX)*t.SX)) - 2
+		y0 := int(math.Floor((r.Box[1]-t.OY)*t.SY)) - 2
+		x1 := int(math.Ceil((r.Box[0]+r.Box[2]-t.OX)*t.SX)) + 1
+		y1 := int(math.Ceil((r.Box[1]+r.Box[3]-t.OY)*t.SY)) + 1
+		if x1 < -lw || y1 < -lw || x0 >= out.W+lw || y0 >= out.H+lw-text.Height(px) {
+			continue // outside the window
+		}
 		if x1-x0 < 4 {
 			c := (x0 + x1) / 2
 			x0, x1 = c-2, c+2
@@ -63,11 +87,11 @@ func drawRegions(ctx context.Context, img *graph.ImageValue, rv *graph.RegionsVa
 		}
 		kernels.DrawRect(out, x0, y0, x1, y1, lw, col, 1)
 		if labels {
-			ty := y0 - lw - 5*k - 1
+			ty := y0 - lw - text.Height(px) - 1
 			if ty < 0 {
 				ty = y1 + lw + 1
 			}
-			kernels.DrawDigits(out, x0, ty, strconv.Itoa(r.ID), k, col)
+			kernels.DrawText(out, x0, ty, strconv.Itoa(r.ID), px, col)
 		}
 	}
 	return graph.NewImage(out), nil
@@ -80,11 +104,15 @@ const compareGap = 4
 // compare: sRGB_encode(0.02), a dark grey.
 const compareBackground = 0.1517
 
-func imageInputs(inputs []*graph.Node) []*graph.Node {
-	var out []*graph.Node
-	for _, n := range inputs {
-		if n.Kind == graph.KindImage {
-			out = append(out, n)
+// listInputs is the nodes a bound list argument refers to, in list order and
+// with repetitions: the binder lifts each distinct node once, so inputs alone
+// would lose cv.compare([img, img])'s second entry.
+func listInputs(a graph.Args, name string, inputs []*graph.Node) []*graph.Node {
+	list, _ := a.Raw(name).([]any)
+	out := make([]*graph.Node, 0, len(list))
+	for _, v := range list {
+		if ref, ok := v.(graph.InputRef); ok && ref.Index < len(inputs) {
+			out = append(out, inputs[ref.Index])
 		}
 	}
 	return out
@@ -93,7 +121,7 @@ func imageInputs(inputs []*graph.Node) []*graph.Node {
 func presentOps() []graph.OpDef {
 	return []graph.OpDef{
 		{
-			Name: "overlay", On: graph.KindImage, Inputs: []graph.Kind{"Regions|Mask"}, Returns: graph.KindImage, Space: graph.SpaceRule{Default: buffer.SpaceEncoded},
+			Name: "overlay", On: graph.KindImage, Inputs: []graph.Kind{"Regions|Mask"}, Returns: graph.KindImage, Space: graph.SpaceRule{Default: buffer.SpaceEncoded}, Class: graph.Decoration,
 			Args:     overlayArgs(),
 			Validate: validateColor("color"),
 			Run: func(ctx context.Context, _ *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
@@ -103,36 +131,40 @@ func presentOps() []graph.OpDef {
 				}
 				return tint(ctx, img, mask(in[1]), a)
 			},
-			Doc: "The image with regions (tinted pixels, box outlines, optional ids) or a mask (tint) drawn over it, for looking.",
-			See: []string{"compare", "detect.specks"},
+			DocFrame: func(_ graph.Args, inputs []*graph.Node) graph.Frame { return inputs[0].Frame },
+			Doc:      "The image with regions (tinted pixels, box outlines, optional ids) or a mask (tint) drawn over it, for looking. A decoration: in a zoomed look outlines stay 1 image px and ids readable, before or after a crop; regions found on the whole image can be drawn on a crop.",
+			See:      []string{"compare", "detect.specks"},
 		},
 		{
-			Name: "overlay", On: graph.KindRegions, Inputs: []graph.Kind{graph.KindImage}, Returns: graph.KindImage, Space: graph.SpaceRule{Default: buffer.SpaceEncoded},
+			Name: "overlay", On: graph.KindRegions, Inputs: []graph.Kind{graph.KindImage}, Returns: graph.KindImage, Space: graph.SpaceRule{Default: buffer.SpaceEncoded}, Class: graph.Decoration,
 			Args:     overlayArgs(),
 			Validate: validateColor("color"),
 			Run: func(ctx context.Context, _ *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
 				return drawRegions(ctx, image(in[1]), regions(in[0]), a)
 			},
-			Doc: "regions.overlay(img, opts) is img.overlay(regions, opts).",
+			DocFrame: func(_ graph.Args, inputs []*graph.Node) graph.Frame { return inputs[1].Frame },
+			Doc:      "regions.overlay(img, opts) is img.overlay(regions, opts).",
 		},
 		{
-			Name: "compare", On: graph.KindImage, Returns: graph.KindImage, Space: graph.SpaceRule{Default: buffer.SpaceEncoded},
+			Name: "compare", On: graph.KindNone, Returns: graph.KindImage, Result: graph.DisplayEnc,
+			Space: graph.SpaceRule{Default: buffer.SpaceEncoded, Fixed: true}, // a layout of what looks show
 			Args: []graph.ArgSpec{
-				{Name: "others", Type: "Image[]", Positional: true, Default: []any{}, Doc: "the images to compare with this one"},
-				{Name: "mode", Type: "enum:side,split,diff", Default: "side", Doc: "side by side, vertical strips of each, or the amplified difference of two"},
-				{Name: "gain", Type: "number", Default: 4.0, Min: graph.F(1), Max: graph.F(100), Doc: "diff: amplification of the difference in the working space (encoded by default)"},
+				{Name: "images", Type: "Image[]", Positional: true, Doc: "the images to compare: [before, after, …]"},
+				{Name: "mode", Type: "enum:side,split", Default: "side", Doc: "side by side (top-aligned, 4 doc px apart) or split into vertical strips (same frame)",
+					Redirects: map[string]graph.Redirect{"diff": {
+						Hint: "compare lays images out; a difference is an image of its own: subtract (signed, zero = grey with .mul(4).add(0.5)).",
+						Fix:  "a.sub(b).mul(4).add(0.5)"}}},
 			},
 			Validate: func(a graph.Args) error {
-				n := len(a.Raw("others").([]any)) + 1
-				if a.String("mode") == "diff" && n != 2 {
-					return graph.Errorf(graph.EArgType, "compare({ mode: \"diff\" }) needs exactly two images, got %d.", n).
-						WithFix(`cv.compare([before, after], { mode: "diff" })`)
+				if n := len(a.Raw("images").([]any)); n == 0 {
+					return graph.Errorf(graph.EArgType, "cv.compare needs at least one image.").WithFix(`cv.compare([img, edited], { mode: "side" })`)
 				}
 				return nil
 			},
 			DocFrame: func(a graph.Args, inputs []*graph.Node) graph.Frame {
-				ims := imageInputs(inputs)
+				ims := listInputs(a, "images", inputs)
 				f := ims[0].Frame
+				f.Picture = true
 				if a.String("mode") != "side" {
 					return f
 				}
@@ -146,25 +178,13 @@ func presentOps() []graph.OpDef {
 				}
 				return f
 			},
-			Run: func(ctx context.Context, ec *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
-				ims := []*graph.ImageValue{image(in[0])}
-				for _, v := range a.Nodes("others") {
-					ims = append(ims, image(v))
+			Run: func(_ context.Context, ec *graph.EvalCtx, _ []graph.Value, a graph.Args) (graph.Value, error) {
+				var ims []*graph.ImageValue
+				for _, v := range a.Nodes("images") {
+					im := image(v)
+					ims = append(ims, &graph.ImageValue{Buf: kernels.ToRGB(im.Buf), Frame: im.Frame})
 				}
-				for i := range ims {
-					ims[i] = &graph.ImageValue{Buf: kernels.ToRGB(ims[i].Buf), Frame: ims[i].Frame}
-				}
-				switch a.String("mode") {
-				case "diff":
-					if err := sameFrame("compare", ims[0], ims[1]); err != nil {
-						return nil, err
-					}
-					out, err := kernels.AbsDiff(ctx, ims[0].Buf, ims[1].Buf, float32(a.Number("gain")))
-					if err != nil {
-						return nil, err
-					}
-					return graph.NewImage(out), nil
-				case "split":
+				if a.String("mode") == "split" {
 					out := ims[0].Buf.Clone()
 					n := len(ims)
 					for k := 1; k < n; k++ {
@@ -195,8 +215,8 @@ func presentOps() []graph.OpDef {
 				}
 				return graph.NewImage(out), nil
 			},
-			Doc: `Compare images for looking: cv.compare([a, b, …], { mode }) — "side" by side (top-aligned, 4 doc px apart), "split" into vertical strips (same size), or "diff" (|a − b| × gain in the working space, encoded by default, two images).`,
-			See: []string{"overlay"},
+			Doc: `Compare images for looking: cv.compare([a, b, …], { mode }) — "side" by side (top-aligned, 4 doc px apart) or "split" into vertical strips (same frame). The result is a picture (its pixels are not doc px). For a difference, subtract: a.sub(b).`,
+			See: []string{"sub", "overlay", "sheet"},
 		},
 	}
 }

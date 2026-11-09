@@ -182,7 +182,7 @@ func TestRasterizeKeepsAreaAtAnyScale(t *testing.T) {
 	area := rv.Items[0].Area
 	for _, sc := range []float64{1, 0.5, 0.37, 0.25, 0.1} {
 		w, h := buffer.ScaledSize(100, 60, sc)
-		m, err := rv.Rasterize(context.Background(), w, h, sc)
+		m, err := rv.Rasterize(context.Background(), FrameRaster(rv.Frame, sc))
 		if err != nil {
 			t.Fatal(err)
 		}

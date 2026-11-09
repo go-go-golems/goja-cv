@@ -20,6 +20,26 @@ type ImageValue struct {
 	Frame Frame
 	Enc   buffer.Encoding // the node's encoding (EncNone for masks)
 	kind  Kind
+	// origin is the doc-px position of the buffer's top-left corner when it
+	// is not the frame's origin (a crop evaluated below scale 1 is cut on
+	// buffer pixels).
+	origin *[2]float64
+}
+
+// BufferOrigin is the doc-px position of the top-left corner of buffer
+// pixel (0, 0): the frame origin, or where a crop below scale 1 was cut.
+func (v *ImageValue) BufferOrigin() (float64, float64) {
+	if v.origin != nil {
+		return v.origin[0], v.origin[1]
+	}
+	return float64(v.Frame.X), float64(v.Frame.Y)
+}
+
+// WithOrigin returns v with its buffer's top-left corner at doc px (x, y).
+func (v *ImageValue) WithOrigin(x, y float64) *ImageValue {
+	out := *v
+	out.origin = &[2]float64{x, y}
+	return &out
 }
 
 var _ Value = &ImageValue{}
@@ -64,6 +84,9 @@ func (v *ImageValue) Summary() map[string]any {
 	m := map[string]any{
 		"kind": string(v.Kind()), "w": v.Buf.W, "h": v.Buf.H,
 		"scale": v.Buf.Scale, "frame": v.Frame.Data(),
+	}
+	if v.Frame.Picture {
+		m["picture"] = true
 	}
 	if v.IsMask() {
 		m["coverage"] = v.Coverage()

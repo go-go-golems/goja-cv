@@ -21,18 +21,11 @@ type cvFunc struct {
 	see        []string
 }
 
-// cvFuncs are the module functions and session globals that are not ops.
+// cvFuncs are help entries for what is neither an op nor a registered
+// function: cv properties, session globals and concepts.
 var cvFuncs = map[string]cvFunc{
-	"evaluate": {"cv.evaluate(node, { scale })", "Evaluate a node at an explicit scale: a number in (0, 1], \"preview\" (the default of await), \"look\" or \"full\" (1.0). Returns what await returns.", []string{"look", "stats"}},
-	"describe": {"cv.describe(node)", "A node's id, kind, op, call, doc size and graph path, without evaluating it.", []string{"explain"}},
-	"docs":     {"cv.docs.list() · cv.docs.search(text, { limit }) · cv.docs.read(id, { section })", "The guides: list the topics, search their sections, read a topic or one section as Markdown.", []string{"help"}},
-	"help":     {"cv.help() · cv.help(name)", "The op reference: no argument lists ops per kind; a name describes an op, a kind (\"Mask\"), Kind.method (\"Mask.coverage\") or a cv function. Never throws; unknown names return { found: false, didYouMean }.", []string{"docs"}},
-	"isNode":   {"cv.isNode(x)", "true if x is a cv node (lazy), false for plain data.", nil},
-	"warnings": {"cv.warnings({ clear })", "RANGE warnings collected while building nodes (they also appear under warnings: in every result).", nil},
 	"version":  {"cv.version", "The cv module version.", nil},
 	"kinds":    {"cv.kinds", "The node kinds: Image, Mask, Regions, Value, Param.", nil},
-	"look":     {"node.look(label) · node.look({ label, maxSide })", "An image of the node to return in the result (Image, Mask, histogram). Numbered, with the scale in its caption.", []string{"show", "compare", "overlay"}},
-	"show":     {"show(node, opts) · show(look)", "Create a look, queue it and return it; queued looks are delivered even if the eval throws later.", []string{"look"}},
 	"mem":      {"mem.name = value", "A plain object that persists between evals (const/let do not).", nil},
 	"img":      {"img · img = cv.open(path)", "The open image (an Image node); assigning a cv.open node rebinds it. More images: cv.open(path, { as: \"ref\" }).", []string{"open", "names"}},
 	"encoding": {"cv.open(path, { encoding: \"srgb\" | \"linear\" }) · (await img).encoding · img.encode(\"srgb\")", "How a file's values relate to the quantity: srgb (photographs) or linear (float TIFF, DNG, .npy, density data). Decoders report it; cv.open's option overrides it. Read cv.docs.read(\"encodings-and-spaces\").", []string{"open", "encode", "space"}},
@@ -52,7 +45,6 @@ var helpRedirects = map[string][2]string{
 	"Mask.stats":    {"stats", "Measure inside a mask with img.stats({ mask: m })."},
 	"Regions.stats": {"stats", "Measure inside regions with img.stats({ mask: regions.toMask() })."},
 	"mask.mean":     {"stats", "img.stats({ mask: m }).meanL is the mean inside a mask."},
-	"crop":          {"stats", "There is no crop; measure a box with img.stats({ box: [x, y, w, h] }) and look at it with img.mask.box(box).overlay(img).look()."},
 	"metadata":      {"open", "Await the image for its metadata: (await img) has file, format, bitDepth, sample, fileChannels, encoding, frame and notes."},
 	"meta":          {"open", "Await the image for its metadata: (await img) has file, format, bitDepth, sample, fileChannels, encoding, frame and notes."},
 	"info":          {"open", "Await the image for its metadata: (await img) has file, format, bitDepth, sample, fileChannels, encoding, frame and notes."},
@@ -65,7 +57,7 @@ func Help(reg *graph.Registry, name string) map[string]any {
 		h, _ := reg.Help("")
 		h["params"] = "P.slider(name, { min, max, value, step, label, unit }), P.toggle(name, { value }), P.choice(name, { options, value })"
 		h["sources"] = toAny([]string{"cv.open(path, { encoding, box, origin, as })"})
-		h["functions"] = toAny([]string{"cv.evaluate", "cv.compare", "cv.describe", "cv.docs", "cv.isNode", "show", "mem", "node.look"})
+		h["functions"] = toAny(functionNames(reg))
 		h["docs"] = "Guides: cv.docs.list(), cv.docs.search(text), cv.docs.read(id, { section }). Start with cv.docs.read(\"getting-started\")."
 		h["topics"] = toAny(docs.IDs())
 		h["usage"] = "cv.help(name) takes an op (\"levels\"), a kind (\"Mask\"), Kind.method (\"Mask.coverage\") or a cv function (\"evaluate\"). Calls build lazy nodes; await a node to compute it."
@@ -91,8 +83,11 @@ func Help(reg *graph.Registry, name string) map[string]any {
 			if op, ok := reg.Lookup(k, method); ok {
 				return opHelp(reg, op.Name, k)
 			}
-			if f, ok := cvFuncs[method]; ok && method == "look" {
-				return funcHelp(method, f)
+			for _, f := range reg.FuncsOn(k) {
+				if f.Name == method {
+					h, _ := reg.FuncHelp(method)
+					return h
+				}
 			}
 			e := reg.UnknownMethod(k, method, nil)
 			hint := e.Message
@@ -106,6 +101,9 @@ func Help(reg *graph.Registry, name string) map[string]any {
 			return out
 		}
 	}
+	if h, ok := reg.FuncHelp(name); ok {
+		return h
+	}
 	if f, ok := cvFuncs[name]; ok {
 		return funcHelp(name, f)
 	}
@@ -113,6 +111,20 @@ func Help(reg *graph.Registry, name string) map[string]any {
 		return opHelp(reg, name, "")
 	}
 	return notFound(reg, name, suggest(reg, name, ""), "")
+}
+
+// functionNames lists the module ops and registered functions as they are
+// called: cv.compare, cv.evaluate, …, show, node.look.
+func functionNames(reg *graph.Registry) []string {
+	var out []string
+	for _, n := range reg.ModuleOps() {
+		out = append(out, "cv."+n)
+	}
+	for _, f := range reg.Funcs() {
+		out = append(out, f.CallName())
+	}
+	sort.Strings(out)
+	return out
 }
 
 func kindNamed(s string) (graph.Kind, bool) {
@@ -133,8 +145,8 @@ func kindHelp(reg *graph.Registry, k graph.Kind) map[string]any {
 		}
 		methods[m] = oneLine(op.Doc)
 	}
-	if k == graph.KindImage || k == graph.KindMask {
-		methods["look"] = "An image of the node for the result: node.look(label)."
+	for _, f := range reg.FuncsOn(k) {
+		methods[f.Name] = oneLine(f.Doc)
 	}
 	return map[string]any{"kind": string(k), "methods": methods, "usage": fmt.Sprintf("cv.help(\"%s.<method>\") or cv.help(\"<method>\") describes one.", k)}
 }
@@ -235,6 +247,9 @@ func suggest(reg *graph.Registry, name string, k graph.Kind) []string {
 	for f := range cvFuncs {
 		cands = append(cands, f)
 	}
+	for _, f := range reg.Funcs() {
+		cands = append(cands, f.Name)
+	}
 	for _, kk := range graph.Kinds {
 		cands = append(cands, string(kk))
 	}
@@ -298,6 +313,18 @@ func UnknownMember(reg *graph.Registry, obj, name string, members []string) *gra
 		return e
 	}
 	if obj == "cv" {
+		if r, ok := graph.MethodRedirects[name]; ok {
+			e.Hint, e.Fix = r.Hint, r.Fix
+			return e
+		}
+		if t, ok := graph.Synonyms[name]; ok && contains(members, t) { // cv.grid → cv.sheet
+			e.Hint = fmt.Sprintf("Did you mean %q?", t)
+			e.Fix = fmt.Sprintf("cv.%s(…)", t)
+			return e
+		}
+		if t, ok := graph.Synonyms[name]; ok && len(reg.Find(t)) > 0 {
+			name = t // a synonym of a node method: say where it lives
+		}
 		for _, op := range reg.Find(name) {
 			if op.On == graph.KindNone {
 				continue

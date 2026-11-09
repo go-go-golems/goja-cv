@@ -30,8 +30,10 @@ with measurements instead of guesses.
   morphology; regions from masks; declarative `where` filters.
 - **Edit.** `exposure` (in linear space), `levels`, `contrast`, `gaussian`, `blend`, `within(mask, …)`, `heal`
   (patch-based dust removal), `inpaint`.
-- **Look.** `node.look("label")` returns an image the agent sees, with its number burned in and its scale in the
-  caption; `cv.compare` puts images side by side; `overlay` draws regions and masks.
+- **Look.** `node.look("label")` returns an image the agent sees, with its number burned in and its op chain and
+  scale in the caption; `look({ zoom, ruler })` magnifies a crop with absolute coordinates; `img.view("speck")`
+  and `highpass`/`dog` make small things stand out; `cv.sheet` lays many crops out in one image;
+  `cv.compare` puts images side by side; `overlay` and `annotate` draw regions, masks and marks.
 - **Explain itself.** `cv.help(name)` and `cv.docs` (guides searchable from inside eval), errors with a literal
   `fix:`, warnings for lazy nodes that were never used.
 

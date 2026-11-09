@@ -30,6 +30,8 @@ const (
 	EFormat           = "E_FORMAT"      // a file feature goja-cv does not read
 	WUnusedNode       = "UNUSED_NODE"
 	WRange            = "RANGE"
+	WCropFirst        = "CROP_FIRST"       // a filter with a halo after a crop sees only the window
+	WDecorationFirst  = "DECORATION_FIRST" // a pixel op after a decoration sees the drawn marks
 	WCut              = "CUT"
 	pathFailureMarker = "✗ "
 )

@@ -52,6 +52,7 @@ type goldenCase struct {
 	name  string
 	class goldenClass
 	build func(t *testing.T, e *graph.Engine, img graph.NodeID) graph.NodeID
+	opts  Options
 }
 
 func goldenCases() []goldenCase {
@@ -64,50 +65,75 @@ func goldenCases() []goldenCase {
 		return call(t, e, "mask.luminance", img, map[string]any{"above": 0.5}).ID
 	}
 	return []goldenCase{
-		{"source", classStrict, func(_ *testing.T, _ *graph.Engine, img graph.NodeID) graph.NodeID { return img }},
-		{"exposure", classStrict, c("exposure", 0.5)},
-		{"gaussian", classStrict, c("gaussian", 2.0)},
-		{"contrast", classStrict, c("contrast", 0.3)},
+		{"source", classStrict, func(_ *testing.T, _ *graph.Engine, img graph.NodeID) graph.NodeID { return img }, Options{}},
+		{"exposure", classStrict, c("exposure", 0.5), Options{}},
+		{"gaussian", classStrict, c("gaussian", 2.0), Options{}},
+		{"contrast", classStrict, c("contrast", 0.3), Options{}},
 		{"levels-stats", classLevels, func(t *testing.T, e *graph.Engine, img graph.NodeID) graph.NodeID {
 			s := call(t, e, "stats", img)
 			p01 := call(t, e, "field", s.ID, "p01")
 			p99 := call(t, e, "field", s.ID, "p99")
 			return call(t, e, "levels", img, map[string]any{"black": graph.NodeArg{ID: p01.ID}, "white": graph.NodeArg{ID: p99.ID}}).ID
-		}},
-		{"levels-gamma", classLevels, c("levels", map[string]any{"black": 0.02, "white": 0.6, "gamma": 1.4})},
-		{"togray", classStrict, c("toGray")},
-		{"mask-luminance", classMask, lum},
-		{"mask-color", classMask, c("mask.color", map[string]any{"hue": 30.0, "tol": 40.0, "minSat": 0.05})},
-		{"mask-box", classMask, c("mask.box", []any{40.0, 30.0, 100.5, 80.25})},
-		{"mask-ellipse", classMask, c("mask.ellipse", []any{40.0, 30.0, 100.0, 80.0})},
-		{"mask-gradient-edge", classMask, c("mask.gradient", map[string]any{"from": "top", "to": 0.6})},
-		{"mask-gradient-points", classMask, c("mask.gradient", map[string]any{"from": []any{0.0, 0.0}, "to": []any{200.0, 150.0}})},
-		{"mask-flood", classMask, c("mask.flood", []any{128.0, 96.0}, map[string]any{"tol": 0.08})},
+		}, Options{}},
+		{"levels-gamma", classLevels, c("levels", map[string]any{"black": 0.02, "white": 0.6, "gamma": 1.4}), Options{}},
+		{"togray", classStrict, c("toGray"), Options{}},
+		{"mask-luminance", classMask, lum, Options{}},
+		{"mask-color", classMask, c("mask.color", map[string]any{"hue": 30.0, "tol": 40.0, "minSat": 0.05}), Options{}},
+		{"mask-box", classMask, c("mask.box", []any{40.0, 30.0, 100.5, 80.25}), Options{}},
+		{"mask-ellipse", classMask, c("mask.ellipse", []any{40.0, 30.0, 100.0, 80.0}), Options{}},
+		{"mask-gradient-edge", classMask, c("mask.gradient", map[string]any{"from": "top", "to": 0.6}), Options{}},
+		{"mask-gradient-points", classMask, c("mask.gradient", map[string]any{"from": []any{0.0, 0.0}, "to": []any{200.0, 150.0}}), Options{}},
+		{"mask-flood", classMask, c("mask.flood", []any{128.0, 96.0}, map[string]any{"tol": 0.08}), Options{}},
 		{"mask-feather", classMask, func(t *testing.T, e *graph.Engine, img graph.NodeID) graph.NodeID {
 			return call(t, e, "feather", lum(t, e, img), 6.0).ID
-		}},
+		}, Options{}},
 		{"mask-refine", classMask, func(t *testing.T, e *graph.Engine, img graph.NodeID) graph.NodeID {
 			return call(t, e, "refine", lum(t, e, img), graph.NodeArg{ID: img}).ID
-		}},
+		}, Options{}},
 		{"mask-overlay", classOverlay, func(t *testing.T, e *graph.Engine, img graph.NodeID) graph.NodeID {
 			return call(t, e, "overlay", lum(t, e, img), graph.NodeArg{ID: img}).ID
-		}},
+		}, Options{}},
 		{"specks-overlay", classSpecks, func(t *testing.T, e *graph.Engine, img graph.NodeID) graph.NodeID {
 			sp := call(t, e, "detect.specks", img)
 			return call(t, e, "overlay", img, graph.NodeArg{ID: sp.ID}, map[string]any{"labels": "id"}).ID
-		}},
-		{"histogram", classChart, c("histogram")},
-		{"histogram-r", classChart, c("histogram", map[string]any{"channel": "r"})},
-		{"compare-side", classStrict, compareCase("side")},
-		{"compare-split", classStrict, compareCase("split")},
-		{"compare-diff", classStrict, compareCase("diff")},
+		}, Options{}},
+		{"histogram", classChart, c("histogram"), Options{}},
+		{"histogram-r", classChart, c("histogram", map[string]any{"channel": "r"}), Options{}},
+		{"compare-side", classStrict, compareCase("side"), Options{}},
+		{"compare-split", classStrict, compareCase("split"), Options{}},
+		// GCV-002: a 32 × 32 crop at zoom 8 with rulers every 4 doc px and a grid every 8
+		{"ruler-crop-zoom8", classStrict, c("crop", []any{100.0, 40.0, 32.0, 32.0}), Options{Zoom: 8, Ruler: 4, Grid: 8}},
+		{"grid-gray-crop-zoom4", classStrict, func(t *testing.T, e *graph.Engine, img graph.NodeID) graph.NodeID {
+			return call(t, e, "crop", call(t, e, "toGray", img).ID, []any{180.0, 20.0, 48.0, 40.0}).ID
+		}, Options{Zoom: 4, Grid: 4}},
+		// GCV-002 Phase 6: decorations at zoom and a sheet
+		{"overlay-crop-zoom8", classStrict, func(t *testing.T, e *graph.Engine, img graph.NodeID) graph.NodeID {
+			sp := call(t, e, "detect.specks", img)
+			c := call(t, e, "crop", img, []any{180.0, 20.0, 48.0, 40.0})
+			return call(t, e, "overlay", c.ID, graph.NodeArg{ID: sp.ID}, map[string]any{"labels": "id"}).ID
+		}, Options{Zoom: 8}},
+		{"annotate-crop-zoom4", classStrict, func(t *testing.T, e *graph.Engine, img graph.NodeID) graph.NodeID {
+			a := call(t, e, "annotate", img, []any{
+				map[string]any{"circle": []any{200.5, 46.5, 6.0}, "color": "lime", "label": "star"},
+				map[string]any{"point": []any{160.0, 30.0}},
+				map[string]any{"box": []any{170.0, 60.0, 12.0, 10.0}, "color": "#ff8800"},
+				map[string]any{"polyline": []any{[]any{152.0, 75.0}, []any{165.0, 70.0}, []any{180.0, 80.0}}, "color": "cyan"},
+				map[string]any{"text": "hair?", "at": []any{185.0, 25.0}},
+			}, map[string]any{"width": 1.0})
+			return call(t, e, "crop", a.ID, []any{150.0, 20.0, 64.0, 64.0}).ID
+		}, Options{Zoom: 4}},
+		{"sheet-2x2", classStrict, func(t *testing.T, e *graph.Engine, img graph.NodeID) graph.NodeID {
+			v := call(t, e, "view", img, "speck")
+			return call(t, e, "sheet", 0, []any{[]any{200.5, 46.5}, []any{40.0, 150.0, 30.0, 12.0}},
+				map[string]any{"views": []any{graph.NodeArg{ID: img}, graph.NodeArg{ID: v.ID}}, "size": 24.0, "zoom": 4.0}).ID
+		}, Options{}},
 	}
 }
 
 func compareCase(mode string) func(*testing.T, *graph.Engine, graph.NodeID) graph.NodeID {
 	return func(t *testing.T, e *graph.Engine, img graph.NodeID) graph.NodeID {
 		other := call(t, e, "exposure", img, 0.3)
-		return call(t, e, "compare", img, []any{graph.NodeArg{ID: other.ID}}, map[string]any{"mode": mode}).ID
+		return call(t, e, "compare", 0, []any{graph.NodeArg{ID: img}, graph.NodeArg{ID: other.ID}}, map[string]any{"mode": mode}).ID
 	}
 }
 
@@ -202,7 +228,7 @@ func TestGoldenLooks(t *testing.T) {
 	for _, gc := range goldenCases() {
 		t.Run(gc.name, func(t *testing.T) {
 			id := gc.build(t, e, img.ID)
-			l, err := New(e, id, Options{})
+			l, err := New(e, id, gc.opts)
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -54,7 +54,14 @@ func (b *Builder) internOp(name string, recv *Node, raw ...any) (*Node, []Warnin
 	if !ok {
 		return nil, nil, Errorf(EInternal, "no %s op is registered for %s", name, A(string(recv.Kind)))
 	}
-	return b.Intern(op, recv.ID, raw, nil)
+	r, err := b.call(op, recv.ID, raw, nil, true)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(r.Nodes) != 1 {
+		return nil, nil, Errorf(EInternal, "%s returns %d nodes", name, len(r.Nodes))
+	}
+	return r.Nodes[0], r.Warnings, nil
 }
 
 // resolveSpace stores the op's working space in args (so the hash and the
@@ -95,7 +102,7 @@ func (b *Builder) resolveSpace(op *OpDef, args Args, inputs []*Node) ([]*Node, [
 		out[i] = c
 		ws = append(ws, w...)
 	}
-	if s == buffer.SpaceEncoded {
+	if s == buffer.SpaceEncoded && op.Result != DisplayEnc { // a layout of display values (compare) mixes encodings on purpose
 		if w, ok := b.encodingWarning(op, inputs); ok {
 			ws = append(ws, w)
 		}
@@ -127,7 +134,7 @@ func (b *Builder) encodingWarning(op *OpDef, inputs []*Node) (Warning, bool) {
 		parts[i] = fmt.Sprintf("%s (%s)", byEnc[e], e)
 	}
 	return Warning{Code: WEncoding, Message: fmt.Sprintf("%s mixes %s in encoded space; their encoded scales differ. fix: %s({ space: \"linear\" })",
-		op.Name, strings.Join(parts, " and "), op.Name)}, true
+		op.Name, strings.Join(parts, " and "), callName(op))}, true
 }
 
 // sourceLabel names the image a node was computed from: the label of the

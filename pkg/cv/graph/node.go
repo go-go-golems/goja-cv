@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
+	"reflect"
 	"sync"
 
 	"github.com/go-go-golems/goja-cv/pkg/cv/buffer"
@@ -91,6 +92,13 @@ type CallResult struct {
 
 // Call is Intern for any op, including macros that return several nodes.
 func (b *Builder) Call(op *OpDef, receiver NodeID, raw []any, trusted map[string]any) (CallResult, error) {
+	return b.call(op, receiver, raw, trusted, false)
+}
+
+// call interns a call; nested calls (a macro's expansion, inserted
+// conversions) raise no order warnings of their own: the call the agent
+// wrote does.
+func (b *Builder) call(op *OpDef, receiver NodeID, raw []any, trusted map[string]any, nested bool) (CallResult, error) {
 	var recv *Node
 	if receiver != 0 {
 		var ok bool
@@ -107,7 +115,7 @@ func (b *Builder) Call(op *OpDef, receiver NodeID, raw []any, trusted map[string
 	if err != nil {
 		return CallResult{}, err
 	}
-	bd, err := bind(op, recv != nil, raw, trusted, b.kindOf)
+	bd, err := bind(op, callName(op), recv != nil, raw, trusted, b.kindOf)
 	if err != nil {
 		return CallResult{}, err
 	}
@@ -134,18 +142,25 @@ func (b *Builder) Call(op *OpDef, receiver NodeID, raw []any, trusted map[string
 		}
 	}
 	if recv != nil {
+		if err := checkPicture(op, args, recv); err != nil {
+			return CallResult{}, err
+		}
 		if err := checkInFrame(op, args, recv.Frame); err != nil {
 			return CallResult{}, err
 		}
 	}
+	warnings := bd.warnings
+	if !nested && recv != nil {
+		warnings = append(warnings, b.orderWarnings(op, args, recv)...)
+	}
 	if op.Expand != nil {
-		return b.expand(op, args, recv, inputs, nExplicit, bd.warnings)
+		return b.expand(op, args, recv, inputs, nExplicit, warnings)
 	}
 	inputs, ws, err := b.resolveSpace(op, args, inputs)
 	if err != nil {
 		return CallResult{}, err
 	}
-	ws = append(bd.warnings, ws...)
+	ws = append(warnings, ws...)
 	if op.Warn != nil {
 		ws = append(ws, op.Warn(b, args, inputs)...)
 	}
@@ -171,6 +186,31 @@ func (b *Builder) internNode(op *OpDef, args Args, inputs []*Node, nExplicit int
 	n.Enc, n.Space = nodeStatics(op, args, inputs)
 	b.byKey[h], b.nodes[n.ID] = n, n
 	return n
+}
+
+// checkPicture refuses crops and doc-px arguments on a picture (a sheet, a
+// side-by-side compare): its pixels are not doc px.
+func checkPicture(op *OpDef, args Args, recv *Node) error {
+	if !recv.Frame.Picture {
+		return nil
+	}
+	what := ""
+	if op.Class == GeometricOp {
+		what = op.Name
+	}
+	for i := range op.Args {
+		s := &op.Args[i]
+		if what == "" && !s.Hidden && (s.Unit == DocPx || s.Unit == DocPx2) && args.Has(s.Name) {
+			if s.Default == nil || !reflect.DeepEqual(args.vals[s.Name], normalize(s.Default)) {
+				what = op.Name + "." + s.Name
+			}
+		}
+	}
+	if what == "" {
+		return nil
+	}
+	return Errorf(EWrongKind, "%s: %s is a picture of crops or images; its pixels are not doc px.", what, Label(recv)).
+		WithHint("Use the coordinates of the items or images it shows: crop, measure and annotate those, then lay them out.")
 }
 
 // checkInFrame refuses literal boxes that miss frame and points outside it,

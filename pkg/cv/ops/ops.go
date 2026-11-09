@@ -8,6 +8,10 @@ func Register(r *graph.Registry) {
 	r.MustRegister(sourceOps()...)
 	r.MustRegister(spaceOps()...)
 	r.MustRegister(toneOps()...)
+	r.MustRegister(geometryOps()...)
+	r.MustRegister(arithImageOps()...)
+	r.MustRegister(filterViewOps()...)
+	r.MustRegister(viewOp())
 	r.MustRegister(channelOps()...)
 	r.MustRegister(filterOps()...)
 	r.MustRegister(measureOps()...)
@@ -19,7 +23,10 @@ func Register(r *graph.Registry) {
 	r.MustRegister(detectOps()...)
 	r.MustRegister(healOps()...)
 	r.MustRegister(presentOps()...)
+	r.MustRegister(annotateOp())
+	r.MustRegister(sheetOp())
 	r.MustRegister(metaOps()...)
+	r.MustRegisterFunc(funcDefs()...)
 }
 
 // NewRegistry returns a registry with every op registered.

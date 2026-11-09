@@ -19,7 +19,7 @@ const SourceOp = "testsource"
 // Like open, the node holds linear values: enc says what they mean.
 func RegisterSource(reg *graph.Registry) {
 	reg.MustRegister(graph.OpDef{
-		Name: SourceOp, On: graph.KindNone, Returns: graph.KindImage,
+		Name: SourceOp, On: graph.KindNone, Returns: graph.KindImage, Bespoke: true,
 		Args: []graph.ArgSpec{
 			{Name: "enc", Type: "enum:srgb,linear", Hidden: true, Default: "srgb"},
 			{Name: "frame", Type: "number[]", Hidden: true},

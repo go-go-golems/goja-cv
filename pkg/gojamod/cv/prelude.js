@@ -12,7 +12,9 @@
 (function (native) {
   "use strict";
 
-  const METHODS = native.__registry(); // { Image: ["contrast", "exposure", "mask.luminance", ...], ... }
+  const METHODS = native.__registry(); // { Image: ["contrast", "exposure", "mask.luminance", ...], ..., cv: ["compare", ...] }
+  const MODULE_OPS = METHODS.cv; // module ops: cv.<name>(…) builds a node with no receiver
+  delete METHODS.cv;
   const tables = Object.create(null);
   for (const kind of Object.keys(METHODS)) {
     const t = Object.create(null);
@@ -117,7 +119,7 @@
   }
 
   function callOp(t, op, args) {
-    const h = native.__call(op, t.__id, args.map(marshal));
+    const h = native.__call(op, t ? t.__id : 0, args.map(marshal));
     return Array.isArray(h) ? h.map(nodeFor) : nodeFor(h); // a macro may build several nodes (split)
   }
 
@@ -333,15 +335,6 @@
       const scale = opts && opts.scale !== undefined ? opts.scale : null;
       return native.__evaluate(node.__id, scale).then((v) => link(v, node));
     },
-    // compare([a, b, …], { mode: "side" | "split" | "diff" }) → Image
-    compare(list, opts) {
-      if (!Array.isArray(list) || list.length === 0 || !list.every(isNode)) {
-        throw cvError("E_ARG_TYPE", "cv.compare needs a non-empty list of Image nodes.", 'cv.compare([img, edited], { mode: "side" })');
-      }
-      const args = [list.slice(1)];
-      if (opts !== undefined) args.push(opts);
-      return callOp(list[0], "compare", args);
-    },
     describe(node) {
       return native.__describe(requireNode(node, "cv.describe").__id);
     },
@@ -351,5 +344,10 @@
       return native.__warnings(!!(opts && opts.clear));
     },
   };
+  for (const name of MODULE_OPS) {
+    cv[name] = function () {
+      return callOp(null, name, Array.prototype.slice.call(arguments));
+    };
+  }
   return cv;
 })

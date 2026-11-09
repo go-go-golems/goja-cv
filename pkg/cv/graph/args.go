@@ -134,7 +134,7 @@ func (a Args) XY(name string, v *ImageValue) []float64 {
 		return nil
 	}
 	sx, sy := AxisScales(v)
-	ox, oy := float64(v.Frame.X), float64(v.Frame.Y)
+	ox, oy := v.BufferOrigin()
 	for i := range l {
 		if i%2 == 0 {
 			if i < 2 {
@@ -149,6 +149,18 @@ func (a Args) XY(name string, v *ImageValue) []float64 {
 		}
 	}
 	return l
+}
+
+// Box reads a literal "box" argument in doc px, [x, y, w, h] (for frames
+// and display; kernels use XY).
+func (a Args) Box(name string) [4]float64 {
+	if s := a.mustSpec(name); s.Unit != DocPx {
+		panic(fmt.Sprintf("cv: %s.%s is not a doc-px box", a.op.Name, name))
+	}
+	l := a.Lengths(name, 1)
+	var out [4]float64
+	copy(out[:], l)
+	return out
 }
 
 // AxisScales are the effective buffer-px-per-doc-px scales of an image
@@ -422,6 +434,9 @@ func (b *binder) check(s *ArgSpec, typ string, v any, where string) (any, error)
 			return nil, Errorf(EArgType, "%s must be a literal value, not a node.", where).
 				WithHint("This argument decides how the node is evaluated; it cannot depend on a measurement or a param.")
 		}
+		if isUnionType(typ) {
+			return b.checkUnion(s, typ, v, where)
+		}
 		return b.lift(na.ID, where, typ)
 	}
 	if isKindType(typ) {
@@ -486,10 +501,19 @@ func (b *binder) check(s *ArgSpec, typ string, v any, where string) (any, error)
 			}
 		}
 		e := Errorf(EArgType, "%s = %q is not one of %s.", where, str, quoteList(allowed)).WithValid(allowed)
-		if sug, ok := s.ValueSynonyms[str]; ok {
+		if r, ok := s.Redirects[str]; ok {
+			e.Hint, e.Fix = r.Hint, r.Fix
+		} else if sug, ok := s.ValueSynonyms[str]; ok {
 			e.Hint = fmt.Sprintf("Did you mean %q?", sug)
 		} else if sug := closest(str, allowed); sug != "" {
 			e.Hint = fmt.Sprintf("Did you mean %q?", sug)
+		}
+		if len(s.ValueDocs) > 0 {
+			var docs []string
+			for _, a := range allowed {
+				docs = append(docs, a+": "+s.ValueDocs[a])
+			}
+			e.Hint = strings.TrimSpace(e.Hint + " " + strings.Join(docs, "; ") + ".")
 		}
 		return nil, e
 	case strings.HasSuffix(typ, "[]"):
@@ -538,7 +562,16 @@ func isUnionType(typ string) bool {
 // lists and objects against the others.
 func (b *binder) checkUnion(s *ArgSpec, typ string, v any, where string) (any, error) {
 	alts := strings.Split(typ, "|")
-	if _, isNode := v.(NodeArg); isNode {
+	if na, isNode := v.(NodeArg); isNode {
+		if b != nil { // a node of a kind alternative ("Image|number") is an input of that kind
+			if k, ok := b.kindOf(na.ID); ok {
+				for _, alt := range alts {
+					if isKindType(alt) && accepts(Kind(alt), k) {
+						return b.check(s, alt, v, where)
+					}
+				}
+			}
+		}
 		return b.check(s, "number", v, where) // a lifted Value: checked again after substitution
 	}
 	pick := func(match func(alt string) bool) (string, bool) {
@@ -556,8 +589,14 @@ func (b *binder) checkUnion(s *ArgSpec, typ string, v any, where string) (any, e
 		alt, ok = pick(func(a string) bool { return a == "string" || strings.HasPrefix(a, "enum:") })
 	case float64:
 		alt, ok = pick(func(a string) bool { return a == "number" })
+	case bool:
+		alt, ok = pick(func(a string) bool { return a == "bool" })
+	case []any:
+		alt, ok = pick(func(a string) bool { return strings.HasSuffix(a, "[]") || a == "box" || a == "point" })
 	default:
-		alt, ok = pick(func(a string) bool { return a != "number" && a != "string" && !strings.HasPrefix(a, "enum:") })
+		alt, ok = pick(func(a string) bool {
+			return a != "number" && a != "string" && a != "bool" && !strings.HasSuffix(a, "[]") && !strings.HasPrefix(a, "enum:")
+		})
 	}
 	if !ok {
 		names := make([]string, len(alts))
@@ -744,6 +783,10 @@ func checkKeys(specs []ArgSpec, m map[string]any, what string, fix func(sug stri
 	for _, k := range sortedKeys(m) {
 		if !known[k] {
 			e := Errorf(EUnknownOption, "%s has no option %q. Valid options: %s.", what, k, strings.Join(valid, ", ")).WithValid(valid)
+			if r, ok := optionRedirect(specs, k); ok {
+				e.Hint, e.Fix = r.Hint, r.Fix
+				return e
+			}
 			sug, semantic := optionSynonym(k, known), true
 			if sug == "" {
 				sug, semantic = closest(k, valid), false
@@ -770,12 +813,14 @@ var OptionSynonyms = map[string][]string{
 	"min": {"above", "minArea", "minContrast"}, "minimum": {"above", "minArea"}, "lower": {"above"}, "from": {"above"},
 	"max": {"below", "maxArea"}, "maximum": {"below", "maxArea"}, "upper": {"below"}, "to": {"below"},
 	"threshold": {"above", "minContrast", "threshold"}, "thresh": {"above", "minContrast", "threshold"}, "cutoff": {"above", "minContrast"},
-	"radius": {"r", "radius"}, "sigma": {"r"}, "size": {"r", "maxArea"}, "blur": {"r"}, "kernel": {"r"}, "width": {"r"},
+	"r": {"sigma", "radius"}, "radius": {"sigma"}, "sigma": {"radius"}, "std": {"sigma"}, "stddev": {"sigma"}, "sd": {"sigma"},
+	"size": {"sigma", "radius", "maxArea", "maxSide"}, "blur": {"sigma"}, "kernel": {"sigma", "radius"}, "width": {"sigma", "radius"},
+	"distance": {"radius"}, "dist": {"radius"},
 	"maxSize": {"maxArea"}, "minSize": {"minArea"}, "area": {"maxArea", "minArea"}, "contrast": {"minContrast"},
 	"opacity": {"alpha", "opacity"}, "alpha": {"opacity", "alpha"}, "strength": {"amount", "opacity", "alpha"}, "intensity": {"amount", "opacity"},
 	"colour": {"color"}, "label": {"labels", "label"}, "showIds": {"labels"}, "ids": {"labels"},
 	"tolerance": {"tol"}, "soft": {"softness"}, "feather": {"softness"}, "smooth": {"softness"},
-	"scale": {"analysisScale"}, "type": {"polarity", "mode", "method"}, "kind": {"polarity", "mode"},
+	"scale": {"analysisScale", "zoom"}, "type": {"polarity", "mode", "method"}, "kind": {"polarity", "mode"},
 	"low": {"black", "below"}, "lo": {"black", "below"}, "blackPoint": {"black"}, "shadows": {"black", "below"},
 	"high": {"white", "above"}, "hi": {"white", "above"}, "whitePoint": {"white"}, "highlights": {"white", "above"},
 	"midtones": {"gamma"}, "mid": {"gamma"}, "quantiles": {"percentiles"}, "percentile": {"percentiles"},
@@ -783,6 +828,23 @@ var OptionSynonyms = map[string][]string{
 	"window": {"box"}, "crop": {"box"}, "colorSpace": {"encoding"}, "colorspace": {"encoding"}, "transfer": {"encoding"},
 	"gamma": {"encoding"}, "workingSpace": {"space"}, "working_space": {"space"}, "offset": {"origin"},
 	"amount": {"amount", "ev", "opacity"}, "stops": {"ev"}, "exposure": {"ev"},
+	"long": {"maxSide"}, "longSide": {"maxSide"}, "maxsize": {"maxSide"}, "max_side": {"maxSide"}, "width_px": {"maxSide"},
+	"caption": {"label"}, "title": {"label"}, "text": {"label"},
+	"magnify": {"zoom"}, "magnification": {"zoom"}, "upscale": {"zoom"}, "factor": {"zoom"}, "zoomFactor": {"zoom"},
+	"ticks": {"ruler"}, "axes": {"ruler"}, "axis": {"ruler"}, "coords": {"ruler"}, "coordinates": {"ruler"}, "rulers": {"ruler"}, "scaleBar": {"ruler"},
+	"lossless": {"format"}, "png": {"format"}, "jpeg": {"format"}, "quality": {"format"}, "compression": {"format"}, "mime": {"format"},
+	"gridlines": {"grid"}, "gridLines": {"grid"}, "lines": {"grid"},
+	"interpolation": {"interp"}, "resample": {"interp"}, "resampling": {"interp"}, "upsample": {"interp"},
+}
+
+// optionRedirect finds the redirect of an unknown option name among specs.
+func optionRedirect(specs []ArgSpec, k string) (Redirect, bool) {
+	for i := range specs {
+		if r, ok := specs[i].Redirects[k]; ok {
+			return r, true
+		}
+	}
+	return Redirect{}, false
 }
 
 func optionSynonym(k string, known map[string]bool) string {
@@ -868,9 +930,8 @@ type bound struct {
 // positional args in declaration order, then an optional trailing options
 // object whose keys may name any non-hidden argument. trusted values (set by
 // Go, e.g. hidden source stamps) are bound without the unknown-key check.
-func bind(op *OpDef, hasReceiver bool, raw []any, trusted map[string]any, kindOf func(NodeID) (Kind, bool)) (*bound, error) {
+func bind(op *OpDef, call string, hasReceiver bool, raw []any, trusted map[string]any, kindOf func(NodeID) (Kind, bool)) (*bound, error) {
 	raw = normalize(trimUndefined(raw)).([]any)
-	call := callName(op)
 	res := &bound{}
 	i := 0
 	for j, decl := range op.Inputs {
@@ -935,7 +996,7 @@ func bind(op *OpDef, hasReceiver bool, raw []any, trusted map[string]any, kindOf
 		opts, ok := raw[i].(map[string]any)
 		if !ok || i != len(raw)-1 {
 			return nil, Errorf(EArgType, "%s takes at most %d positional argument(s); got %d.", call, len(op.Inputs)+len(positional), len(raw)).
-				WithHint(signatureHint(op))
+				WithHint(signatureHint(op, call))
 		}
 		fix := func(sug string) string {
 			if call == "cv.open" {
@@ -973,7 +1034,7 @@ func bind(op *OpDef, hasReceiver bool, raw []any, trusted map[string]any, kindOf
 			case s.Variadic:
 				out[s.Name] = []any{}
 			case !s.Optional:
-				return nil, Errorf(EArgType, "%s is missing its %s argument.", call, s.Name).WithHint(signatureHint(op))
+				return nil, Errorf(EArgType, "%s is missing its %s argument.", call, s.Name).WithHint(signatureHint(op, call))
 			}
 			continue
 		}
@@ -995,12 +1056,17 @@ func withEnumFix(err error, call string, s *ArgSpec) error {
 		return err
 	}
 	v := ce.Valid[0]
-	if strings.HasPrefix(ce.Hint, "Did you mean ") {
-		v = strings.Trim(strings.TrimSuffix(strings.TrimPrefix(ce.Hint, "Did you mean "), "?"), `"`)
+	if rest, ok := strings.CutPrefix(ce.Hint, `Did you mean "`); ok {
+		if i := strings.Index(rest, `"`); i > 0 {
+			v = rest[:i]
+		}
 	}
-	if call == "cv.open" {
+	switch {
+	case call == "cv.open":
 		ce.Fix = fmt.Sprintf("cv.open(path, { %s: %q })", s.Name, v)
-	} else {
+	case s.Positional && !strings.Contains(s.Type, "|"):
+		ce.Fix = fmt.Sprintf("%s(%q)", call, v)
+	default:
 		ce.Fix = fmt.Sprintf("%s({ %s: %q })", call, s.Name, v)
 	}
 	return ce
@@ -1025,14 +1091,14 @@ func trimUndefined(raw []any) []any {
 }
 
 func callName(op *OpDef) string {
-	if op.On == KindNone && op.Name == "open" {
-		return "cv.open"
+	if op.On == KindNone && (op.Name == "open" || !op.Bespoke) {
+		return "cv." + op.Name
 	}
 	return op.Name
 }
 
-// signatureHint renders "exposure(ev)" style usage.
-func signatureHint(op *OpDef) string {
+// signatureHint renders "exposure(ev)" style usage of op called as call.
+func signatureHint(op *OpDef, call string) string {
 	var pos, opt []string
 	for _, in := range op.Inputs {
 		pos = append(pos, strings.ToLower(string(in)))
@@ -1054,7 +1120,7 @@ func signatureHint(op *OpDef) string {
 	if len(opt) > 0 {
 		pos = append(pos, "{ "+strings.Join(opt, ", ")+" }")
 	}
-	return "Usage: " + op.Name + "(" + strings.Join(pos, ", ") + ")"
+	return "Usage: " + call + "(" + strings.Join(pos, ", ") + ")"
 }
 
 // isSpaceOption reports whether a is the space option Register added.

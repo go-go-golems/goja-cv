@@ -93,7 +93,7 @@ func TestSpaceDefaults(t *testing.T) {
 		"toGray": buffer.SpaceLinear, "stats": buffer.SpaceLinear, "levels": buffer.SpaceLinear,
 		"contrast": buffer.SpaceEncoded, "histogram": buffer.SpaceEncoded, "mask.luminance": buffer.SpaceEncoded,
 		"mask.color": buffer.SpaceEncoded, "mask.flood": buffer.SpaceEncoded, "detect.specks": buffer.SpaceEncoded,
-		"check.dust": buffer.SpaceEncoded, "overlay": buffer.SpaceEncoded, "compare": buffer.SpaceEncoded,
+		"check.dust": buffer.SpaceEncoded, "overlay": buffer.SpaceEncoded, "add": buffer.SpaceEncoded, "sub": buffer.SpaceEncoded,
 		"mask.box": buffer.SpaceNone, "mask.gradient": buffer.SpaceNone,
 	} {
 		op, ok := reg.Lookup(graph.KindImage, name)
@@ -110,6 +110,9 @@ func TestSpaceDefaults(t *testing.T) {
 		if hasOption != (want != buffer.SpaceNone) {
 			t.Errorf("%s: space option %v", name, hasOption)
 		}
+	}
+	if op, ok := reg.Lookup(graph.KindNone, "compare"); !ok || op.Space.Default != buffer.SpaceEncoded {
+		t.Errorf("cv.compare: %v", op)
 	}
 	if op, ok := reg.Lookup(graph.KindMask, "refine"); !ok || op.Space.Default != buffer.SpaceEncoded {
 		t.Error("refine defaults to encoded")
@@ -321,19 +324,20 @@ func TestCompareConvertsEachInput(t *testing.T) {
 	e := spaceEngine(t)
 	img := src(t, e, "srgb", 0.2, 0.3, 0.4)
 	c, _ := mustCall(t, e, "contrast", img, 0.2) // encoded
-	cmp, _ := mustCall(t, e, "compare", img, []any{graph.NodeArg{ID: c.ID}})
+	images := []any{graph.NodeArg{ID: img.ID}, graph.NodeArg{ID: c.ID}}
+	cr, err := e.Call("compare", 0, []any{images})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmp := cr.Node()
 	if a := node(t, e, cmp.Inputs[0]); a.Op.Name != graph.ConvertOp || a.Inputs[0] != img.ID {
-		t.Fatalf("compare receiver %s", graph.Label(a))
+		t.Fatalf("compare images[0] %s", graph.Label(a))
 	}
 	if cmp.Inputs[1] != c.ID {
-		t.Fatalf("compare others[0] %s", graph.Label(node(t, e, cmp.Inputs[1])))
+		t.Fatalf("compare images[1] %s", graph.Label(node(t, e, cmp.Inputs[1])))
 	}
-	lin, _ := mustCall(t, e, "compare", img, []any{graph.NodeArg{ID: c.ID}}, map[string]any{"space": "linear"})
-	if lin.Inputs[0] != img.ID {
-		t.Fatal("linear compare converted img")
-	}
-	if b := node(t, e, lin.Inputs[1]); b.Op.Name != graph.ConvertOp || b.Inputs[0] != c.ID || b.Args.String("to") != "linear" {
-		t.Fatalf("linear compare others[0] %s", graph.Label(b))
+	if _, err := e.Call("compare", 0, []any{images, map[string]any{"space": "linear"}}); err == nil {
+		t.Fatal("compare took a space: it lays out what looks show")
 	}
 }
 

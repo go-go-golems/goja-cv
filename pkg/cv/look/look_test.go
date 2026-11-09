@@ -15,6 +15,7 @@ import (
 	"github.com/go-go-golems/goja-cv/pkg/cv/buffer"
 	"github.com/go-go-golems/goja-cv/pkg/cv/graph"
 	"github.com/go-go-golems/goja-cv/pkg/cv/ops"
+	"github.com/go-go-golems/goja-cv/pkg/cv/text"
 )
 
 var testTIFF = filepath.Join("..", "..", "..", "testdata", "gradient-64x48-16bit.tif")
@@ -66,12 +67,12 @@ func TestLookCaptionScaleAndSize(t *testing.T) {
 	if w, h := l.Size(); w != 1568 || h != 784 {
 		t.Fatalf("size %d×%d, want 1568×784", w, h)
 	}
-	if got, want := l.Caption(), "look: before (1568×784, 1 image px = 2.04 doc px)"; got != want {
+	if got, want := l.Caption(), "look: before — open(flat.png) (1568×784, 1 image px = 2.04 doc px)"; got != want {
 		t.Fatalf("caption %q, want %q", got, want)
 	}
 	l.AssignNumber(3)
 	l.AssignNumber(9) // first number wins
-	if got, want := l.ResultPlaceholder(), "look 3: before (1568×784, 1 image px = 2.04 doc px)"; got != want {
+	if got, want := l.ResultPlaceholder(), "look 3: before — open(flat.png) (1568×784, 1 image px = 2.04 doc px)"; got != want {
 		t.Fatalf("placeholder %q, want %q", got, want)
 	}
 
@@ -86,10 +87,10 @@ func TestLookCaptionScaleAndSize(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(items) != 1 || items[0].MIMEType != "image/jpeg" {
+	if len(items) != 1 || items[0].MIMEType != "image/png" { // a small look (≤ 512 × 512) is lossless
 		t.Fatalf("items %+v", items)
 	}
-	m, err := jpeg.Decode(bytes.NewReader(items[0].Data))
+	m, err := png.Decode(bytes.NewReader(items[0].Data))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,13 +127,13 @@ func TestLookBurnsNumberIntoGrayPNG(t *testing.T) {
 		t.Fatalf("decoded %T", m)
 	}
 	// Read the digit back from the font grid.
-	s := GlyphScale(64, 48)
-	box := NumberBox(7, 64, 48)
-	for row := 0; row < glyphH; row++ {
-		for col := 0; col < glyphW; col++ {
+	s := text.NumberScale(64, 48)
+	box := text.NumberBox(7, 64, 48)
+	for row := 0; row < text.Height(1); row++ {
+		for col := 0; col < text.Width("7", 1); col++ {
 			x, y := s+col*s+s/2, s+row*s+s/2
 			on := g.GrayAt(x, y).Y == 255
-			if want := GlyphPixel(7, col, row); on != want {
+			if want := text.Pixel('7', col, row); on != want {
 				t.Fatalf("glyph pixel (%d,%d) at (%d,%d) = %v, want %v", col, row, x, y, on, want)
 			}
 			if !on && g.GrayAt(x, y).Y != 0 {
@@ -158,7 +159,7 @@ func TestLookBurnsNumberIntoGrayPNG(t *testing.T) {
 }
 
 func TestLookColourIsJPEGWithNumber(t *testing.T) {
-	e, img := newEngine(t, writeFlat(t, 320, 200, 0.5))
+	e, img := newEngine(t, writeFlat(t, 640, 400, 0.5))
 	l, _ := New(e, img.ID, Options{})
 	l.AssignNumber(12)
 	data, mime, err := l.Render(context.Background())
@@ -170,15 +171,15 @@ func TestLookColourIsJPEGWithNumber(t *testing.T) {
 		t.Fatal(err)
 	}
 	lum := func(x, y int) uint8 { return color.GrayModel.Convert(m.At(x, y)).(color.Gray).Y }
-	s := GlyphScale(320, 200)
+	s := text.NumberScale(640, 400)
 	if v := lum(s/2, s/2); v > 40 {
 		t.Fatalf("box corner luminance %d, want dark", v)
 	}
-	// "1": the middle column of the first digit is lit in every row.
-	if v := lum(s+2*s+s/2, s+3*s+s/2); v < 200 {
+	// "1": the stem of the first digit (font column 1) is lit in the middle row.
+	if v := lum(s+1*s+s/2, s+3*s+s/2); v < 200 {
 		t.Fatalf("digit pixel luminance %d, want bright", v)
 	}
-	if v := lum(300, 180); v < 150 || v > 230 {
+	if v := lum(600, 380); v < 150 || v > 230 {
 		t.Fatalf("background luminance %d, want the flat grey", v)
 	}
 }
@@ -195,7 +196,7 @@ func TestLookKindsAndChart(t *testing.T) {
 		t.Fatal(err)
 	}
 	l.AssignNumber(1)
-	if got := l.Caption(); got != "look 1: hist (512×204 chart)" {
+	if got := l.Caption(); got != "look 1: hist — open(gradient-64x48-16bit.tif) → histogram (512×204 chart)" {
 		t.Fatalf("caption %q", got)
 	}
 	data, mime, err := l.Render(context.Background())
@@ -216,5 +217,82 @@ func TestLookMarshalsWithoutBytes(t *testing.T) {
 	}
 	if string(js) != "{}" {
 		t.Fatalf("json %s, want {}", js)
+	}
+}
+
+func TestLookZoomRendersBlocks(t *testing.T) {
+	ctx := context.Background()
+	e, img := newEngine(t, testTIFF)
+	gray := call(t, e, "toGray", img.ID)
+	l, err := New(e, gray.ID, Options{Zoom: 4, Label: "gray 4×"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w, h := l.Size(); w != 256 || h != 192 {
+		t.Fatalf("size %d×%d, want 256×192", w, h)
+	}
+	if got, want := l.Caption(), "look: gray 4× — open(gradient-64x48-16bit.tif) → toGray (256×192, 1 image px = 0.25 doc px, doc x 0–64, y 0–48)"; got != want {
+		t.Fatalf("caption %q, want %q", got, want)
+	}
+	m, err := l.image(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	shown, _ := e.Display(gray.ID)
+	v, err := e.Evaluate(ctx, shown, graph.EvalOptions{Scale: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref, _ := buffer.Quantize(ctx, v.(*graph.ImageValue).Buf, 8)
+	g, rg := m.(*image.Gray), ref.(*image.Gray)
+	for y := 0; y < 192; y++ {
+		for x := 0; x < 256; x++ {
+			if g.GrayAt(x, y) != rg.GrayAt(x/4, y/4) {
+				t.Fatalf("pixel (%d, %d) = %v, want the scale-1 pixel (%d, %d) = %v", x, y, g.GrayAt(x, y), x/4, y/4, rg.GrayAt(x/4, y/4))
+			}
+		}
+	}
+}
+
+func TestLookZoomLimits(t *testing.T) {
+	e, img := newEngine(t, writeFlat(t, 400, 300, 0.3))
+	_, err := New(e, img.ID, Options{Zoom: 8})
+	ce, ok := graph.AsError(err)
+	if !ok || ce.Code != graph.EArgRange || ce.Fix != "node.crop([x, y, 196, 196]).look({ zoom: 8 })   // or node.look({ zoom: 3.92 })" {
+		t.Fatalf("zoom 8 of 400×300: %+v", err)
+	}
+	if _, err := New(e, img.ID, Options{Zoom: 3.92}); err != nil {
+		t.Fatalf("zoom 3.92: %v", err)
+	}
+	hist := call(t, e, "histogram", img.ID)
+	if _, err := New(e, hist.ID, Options{Zoom: 2}); err == nil || !strings.Contains(err.Error(), "charts have no doc px") {
+		t.Fatalf("chart zoom: %v", err)
+	}
+}
+
+func TestLookFormatRule(t *testing.T) {
+	ctx := context.Background()
+	e, img := newEngine(t, writeFlat(t, 800, 600, 0.4))
+	small := call(t, e, "crop", img.ID, []any{0.0, 0.0, 400.0, 300.0})
+	for _, tc := range []struct {
+		name string
+		id   graph.NodeID
+		opt  Options
+		want string
+	}{
+		{"large colour", img.ID, Options{}, "image/jpeg"},
+		{"forced png", img.ID, Options{Format: "png"}, "image/png"},
+		{"small colour", small.ID, Options{}, "image/png"},
+		{"small, forced jpeg", small.ID, Options{Format: "jpeg"}, "image/jpeg"},
+		{"zoomed colour", call(t, e, "crop", img.ID, []any{0.0, 0.0, 300.0, 200.0}).ID, Options{Zoom: 2}, "image/png"},
+		{"gray", call(t, e, "toGray", img.ID).ID, Options{Format: "jpeg"}, "image/png"},
+	} {
+		l, err := New(e, tc.id, tc.opt)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, mime, err := l.Render(ctx); err != nil || mime != tc.want {
+			t.Fatalf("%s: %s %v, want %s", tc.name, mime, err, tc.want)
+		}
 	}
 }

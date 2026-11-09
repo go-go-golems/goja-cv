@@ -146,7 +146,7 @@ func TestSessionC(t *testing.T) {
 		t.Fatalf("meanL %v → %v → %v", before, after, after2)
 	}
 	ex := fmt.Sprint(got["explain"])
-	if !strings.Contains(ex, "within()") || !strings.Contains(ex, "feather(r: 20 px") || !strings.Contains(ex, "exposure(ev: #") {
+	if !strings.Contains(ex, "within()") || !strings.Contains(ex, "feather(radius: 20 px") || !strings.Contains(ex, "exposure(ev: #") {
 		t.Fatalf("explain %s", ex)
 	}
 	t.Logf("sky coverage %.4f (0.5: %.4f); meanL %.4f → %.4f → %.4f", cov, covHalf, before, after, after2)

@@ -73,7 +73,7 @@ func (r *Registry) Help(name string) (map[string]any, error) {
 	entry := map[string]any{
 		"on":      on,
 		"returns": string(op.Returns),
-		"usage":   strings.TrimPrefix(signatureHint(op), "Usage: "),
+		"usage":   strings.TrimPrefix(signatureHint(op, op.Name), "Usage: "),
 		"doc":     op.Doc,
 	}
 	if d := op.Space.Default; d != buffer.SpaceNone {
@@ -100,6 +100,30 @@ func (r *Registry) Help(name string) (map[string]any, error) {
 		entry["see"] = toAnyList(op.See)
 	}
 	return map[string]any{op.Name: entry}, nil
+}
+
+// FuncHelp renders function name as help data: { name: { on, usage, doc,
+// args, see } }; ok is false when no such function is registered.
+func (r *Registry) FuncHelp(name string) (map[string]any, bool) {
+	f, ok := r.Func(name)
+	if !ok {
+		return nil, false
+	}
+	on := "cv"
+	switch {
+	case len(f.On) > 0:
+		on = strings.Join(f.On, ", ")
+	case f.Global:
+		on = "global"
+	}
+	entry := map[string]any{"on": on, "usage": f.UsageLine(), "doc": f.Doc}
+	if args := describeArgs(f.Args); len(args) > 0 {
+		entry["args"] = args
+	}
+	if len(f.See) > 0 {
+		entry["see"] = toAnyList(f.See)
+	}
+	return map[string]any{f.Name: entry}, true
 }
 
 func toAnyList(xs []string) []any {
@@ -184,6 +208,13 @@ func DescribeArgSpec(s *ArgSpec) string {
 	out := strings.Join(parts, ", ")
 	if s.Doc != "" {
 		out += ". " + s.Doc
+	}
+	if len(s.ValueDocs) > 0 && strings.HasPrefix(s.Type, "enum:") {
+		var docs []string
+		for _, v := range strings.Split(strings.TrimPrefix(s.Type, "enum:"), ",") {
+			docs = append(docs, v+": "+s.ValueDocs[v])
+		}
+		out += ". " + strings.Join(docs, "; ")
 	}
 	return out
 }

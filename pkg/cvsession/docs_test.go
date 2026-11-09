@@ -119,7 +119,8 @@ func TestGuideCodeBlocksRun(t *testing.T) {
 
 // runCodeBlocks evaluates the ```js blocks of md in order in one session:
 // "js" must succeed without warnings, "js warns=CODE" with that warning,
-// "js error=CODE" must fail with that code, "js fragment" is skipped.
+// "js error=CODE" must fail with that code, "js looks=N" must deliver N
+// looks, "js fragment" is skipped.
 func runCodeBlocks(t *testing.T, img, name, md string) int {
 	t.Helper()
 	app, sid := newApp(t, cvsession.Options{Image: img, BaseDir: filepath.Dir(img)})
@@ -144,7 +145,7 @@ func runCodeBlocks(t *testing.T, img, name, md string) int {
 				t.Fatalf("%s: status %s %s:\n%s", where, exec.Status, exec.Error, out)
 			}
 			if i := strings.Index(b.info, "warns="); i >= 0 {
-				if code := b.info[i+len("warns="):]; !strings.Contains(out, code+" line") {
+				if code := strings.Fields(b.info[i+len("warns="):])[0]; !strings.Contains(out, code+" line") {
 					t.Fatalf("%s: want warning %s:\n%s", where, code, out)
 				}
 			} else if strings.Contains(out, "warnings:") {
@@ -154,6 +155,12 @@ func runCodeBlocks(t *testing.T, img, name, md string) int {
 		for _, ref := range exec.Content {
 			if ref.Dropped != "" {
 				t.Fatalf("%s: look dropped: %s", where, ref.Dropped)
+			}
+		}
+		if i := strings.Index(b.info, "looks="); i >= 0 {
+			want, _ := strconv.Atoi(strings.Fields(b.info[i+len("looks="):])[0])
+			if len(exec.Content) != want {
+				t.Fatalf("%s: %d looks, want %d:\n%s", where, len(exec.Content), want, out)
 			}
 		}
 	}

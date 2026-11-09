@@ -48,7 +48,8 @@ thrown away produces an `UNUSED_NODE` warning, and comparing a node with `<` is 
 ## Doc px and scales
 
 Lengths, boxes and points are in **doc px** (pixels of the original image) at every scale; areas in doc px².
-`await` evaluates at a preview scale (long side about 1600 px), looks at a look scale (at most 1568 px); the
+`await` evaluates at a preview scale (long side about 1600 px), looks at a look scale (at most 1568 px) or, with
+`look({ zoom })`, magnify a crop above full size (filters are computed at full size, then upsampled); the
 engine rescales radii and boxes so a preview and a full-size result agree. Region detection runs at a fixed
 `analysisScale`, so region ids and boxes are the same everywhere. Coordinates are absolute in the image's
 **frame** (a window read with `cv.open(path, { box })` keeps the scan's coordinates).
@@ -90,8 +91,11 @@ runs in Go and follows params.
 
 A look is an image the agent receives: `node.look("label")` inside the returned value, or `show(node)`, which
 also survives a later `throw`. Looks are numbered (the number is burned into the corner) and the caption gives
-the scale, `look 2: after (1568×1045, 1 image px = 4.0 doc px)`, so coordinates read off a look convert to doc
-px. At most four images arrive per eval.
+what the image is and its scale, `look 2: after — open(scan.tif) → levels (1568×1045, 1 image px = 4.0 doc px)`,
+so coordinates read off a look convert to doc px. To judge small things, crop and zoom with coordinate rulers,
+`img.crop([x, y, 64, 64]).look({ zoom: 8, ruler: 8 })`, use a view that makes them stand out
+(`img.view("speck")`), and put many candidates in one contact sheet (`cv.sheet(regions, { views })`). At most
+four images arrive per eval.
 
 ## Params
 

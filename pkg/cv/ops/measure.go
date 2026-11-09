@@ -107,7 +107,7 @@ func selectionWeights(ctx context.Context, v graph.Value, src *graph.ImageValue)
 			return nil, err
 		}
 		var err error
-		if m, err = x.Rasterize(ctx, src.Buf.W, src.Buf.H, src.Buf.Scale); err != nil {
+		if m, err = x.Rasterize(ctx, graph.RasterOf(src)); err != nil {
 			return nil, err
 		}
 	case *graph.ImageValue:

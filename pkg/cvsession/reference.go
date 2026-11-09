@@ -28,10 +28,13 @@ Globals: img (the open image; img = cv.open(path) rebinds it; await img gives it
 Most used calls
 - Numbers are in the op's space: linear (exposure, blur, blend, stats, levels) or encoded (what looks show: thresholds, contrast, histogram, specks); pass { space } to change it; cv.docs.read("encodings-and-spaces").
 - await img.stats() → { meanL, p01, p99, clipLow, clipHigh, … }; img.stats({ box: [x, y, w, h] }) or img.stats({ mask }) measures only there (+ area, coverage); img.histogram().look()
-- img.exposure(ev), img.levels({ black, white, gamma }) (black/white in stats' space), img.contrast(a), img.gaussian(r), img.toGray(), img.chroma(), node.colormap("viridis")
-- node.look("label") or node.look({ label, maxSide }) inside the returned value attaches an image; show(node, opts) queues one that survives a later throw. Captions give the scale: 1 image px = S doc px.
-- cv.compare([a, b], { mode: "side" | "split" | "diff" }) to see before/after.
-- Masks: img.mask.luminance({ above, below }), mask.box([x, y, w, h]), mask.gradient({ from: "top", to: 0.5 }), mask.color, mask.flood; a.and(b), a.or(b), a.minus(b), a.not(), m.feather(r), m.grow(r), m.coverage().
+- img.exposure(ev), img.levels({ black, white, gamma }) (black/white in stats' space), img.contrast(a), img.gaussian(sigma), img.toGray(), img.chroma(), node.colormap("viridis")
+- node.look("label") or node.look({ label, maxSide }) inside the returned value attaches an image; show(node, opts) queues one that survives a later throw. Captions give the op chain and the scale: 1 image px = S doc px.
+- Magnify with coordinates: img.crop([x, y, w, h]).look({ zoom: 8, ruler: 8 }) (crop last; rulers read absolute doc px).
+- Views that make small things stand out: img.view("speck" | "speckDark" | "signed" | "detail" | "neutral" | "scene"), img.highpass(sigma), img.dog(1, 4); cv.docs.read("views").
+- Many candidates in one image: cv.sheet(regions.sortBy("area").top(36), { views: [img, img.view("speck")] }).look(); mark points with img.annotate([{ circle: [x, y, r] }]).
+- cv.compare([a, b], { mode: "side" | "split" }) to see before/after; a.sub(b) is their signed difference (.mul(4).add(0.5) shows zero as grey).
+- Masks: img.mask.luminance({ above, below }), mask.box([x, y, w, h]), mask.gradient({ from: "top", to: 0.5 }), mask.color, mask.flood; a.and(b), a.or(b), a.minus(b), a.not(), m.feather(radius), m.grow(radius), m.coverage().
 - img.within(mask, i => i.exposure(-0.4)) edits inside a mask (the function runs once, at build time).
 - Dust: img.detect.specks() → Regions; .where({ score: { gte: 0.5 } }), .sortBy("area").top(n), .without([id]), .count(); img.overlay(regions, { labels: "id" }).look(); img.heal(regions, { radius }); await img.check.dust().
 - Params: P.slider(name, { min, max, value }) can be used anywhere a number goes.
@@ -59,7 +62,7 @@ func Reference(reg *graph.Registry) string {
 		}
 		sort.Slice(ops, func(i, j int) bool { return ops[i].Name < ops[j].Name })
 		if k == graph.KindNone {
-			sb.WriteString("## Sources (cv.open, P)\n\n")
+			sb.WriteString("## Module ops and sources (cv.open, cv.compare, P)\n\n")
 		} else {
 			fmt.Fprintf(&sb, "## %s methods\n\n", k)
 		}
@@ -68,14 +71,36 @@ func Reference(reg *graph.Registry) string {
 		}
 		sb.WriteString("\n")
 	}
-	sb.WriteString("## Every node\n\n")
-	sb.WriteString("- `look(label | { label, maxSide })` → look (an image you return; Image, Mask, histogram)\n")
-	sb.WriteString("- `explain()` → Value: the graph under the node, without computing pixels\n\n")
+	sb.WriteString("## Functions\n\n")
+	for _, f := range reg.Funcs() {
+		sb.WriteString(funcLine(f))
+	}
+	sb.WriteString("\n")
 	sb.WriteString("## Globals\n\n")
 	sb.WriteString("- `cv.open(path, { encoding, box, origin, as })` → Image source; `cv.help(name?)`; `cv.evaluate(node, { scale })` (number, \"preview\", \"look\", \"full\")\n")
 	sb.WriteString("- `P.slider(name, { min, max, value, step, label, unit })`, `P.toggle(name, { value })`, `P.choice(name, { options, value })`\n")
 	sb.WriteString("- `show(node, opts)` / `show(look)`; `mem` (persists); `img` (the open image)\n")
 	return sb.String()
+}
+
+func funcLine(f *graph.FuncDef) string {
+	line := "- `" + f.UsageLine() + "`"
+	if len(f.On) > 0 {
+		line += " (on " + strings.Join(f.On, ", ") + ")"
+	}
+	if doc := f.Doc; doc != "" {
+		if i := strings.Index(doc, ". "); i > 0 {
+			doc = doc[:i+1]
+		}
+		line += " — " + doc
+	}
+	line += "\n"
+	for i := range f.Args {
+		if s := &f.Args[i]; !s.Hidden {
+			line += "  - " + s.Name + ": " + graph.DescribeArgSpec(s) + "\n"
+		}
+	}
+	return line
 }
 
 func opLine(op *graph.OpDef) string {

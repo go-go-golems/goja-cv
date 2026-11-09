@@ -302,13 +302,13 @@ func combineOp(name, doc string, f func(x, y float32) float32) graph.OpDef {
 func lengthMaskOp(name, doc string, k func(ctx context.Context, m *buffer.Buffer, r float64) (*buffer.Buffer, error)) graph.OpDef {
 	return graph.OpDef{
 		Name: name, On: graph.KindMask, Returns: graph.KindMask,
-		Args: []graph.ArgSpec{{Name: "r", Type: "number", Unit: graph.DocPx, Positional: true, Min: graph.F(0), Max: graph.F(2000),
+		Args: []graph.ArgSpec{{Name: "radius", Type: "number", Unit: graph.DocPx, Positional: true, Min: graph.F(0), Max: graph.F(2000),
 			Usual: [2]float64{0, 200}, Doc: "distance in doc px"}},
-		Identity: func(a graph.Args) bool { return a.DocLength("r") == 0 },
-		Halo:     func(a graph.Args) float64 { return 2 * a.DocLength("r") },
+		Identity: func(a graph.Args) bool { return a.DocLength("radius") == 0 },
+		Halo:     func(a graph.Args) float64 { return 2 * a.DocLength("radius") },
 		Run: func(ctx context.Context, _ *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
 			m := mask(in[0])
-			out, err := k(ctx, m.Buf, a.Length("r", m.Buf.Scale))
+			out, err := k(ctx, m.Buf, a.Length("radius", m.Buf.Scale))
 			if err != nil {
 				return nil, err
 			}
@@ -337,23 +337,23 @@ func maskOps() []graph.OpDef {
 			Doc: "The inverse selection: 1 − m.",
 			See: []string{"minus"},
 		},
-		lengthMaskOp("feather", "Soften the mask edge: a Gaussian blur of standard deviation r/2 (doc px), so the ramp is about r wide on each side.", kernels.Feather),
-		lengthMaskOp("grow", "Dilate the selection (m ≥ 0.5) by r doc px using an exact Euclidean distance transform.", kernels.Grow),
-		lengthMaskOp("shrink", "Erode the selection (m ≥ 0.5) by r doc px using an exact Euclidean distance transform.", kernels.Shrink),
+		lengthMaskOp("feather", "Soften the mask edge: a Gaussian blur of standard deviation radius/2 (doc px), so the ramp is about radius wide on each side.", kernels.Feather),
+		lengthMaskOp("grow", "Dilate the selection (m ≥ 0.5) by radius doc px using an exact Euclidean distance transform.", kernels.Grow),
+		lengthMaskOp("shrink", "Erode the selection (m ≥ 0.5) by radius doc px using an exact Euclidean distance transform.", kernels.Shrink),
 		{
 			Name: "refine", On: graph.KindMask, Inputs: []graph.Kind{graph.KindImage}, Returns: graph.KindMask, Space: graph.SpaceRule{Default: buffer.SpaceEncoded},
 			Args: []graph.ArgSpec{
-				{Name: "r", Type: "number", Unit: graph.DocPx, Default: 8.0, Min: graph.F(0.5), Max: graph.F(500), Doc: "window radius in doc px"},
+				{Name: "radius", Type: "number", Unit: graph.DocPx, Default: 8.0, Min: graph.F(0.5), Max: graph.F(500), Doc: "window radius in doc px"},
 				{Name: "eps", Type: "number", Default: 1e-3, Min: graph.F(1e-8), Max: graph.F(1), Doc: "regularization: larger smooths more, smaller follows edges more"},
 			},
-			Halo: func(a graph.Args) float64 { return 2 * a.DocLength("r") },
+			Halo: func(a graph.Args) float64 { return 2 * a.DocLength("radius") },
 			Run: func(ctx context.Context, _ *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
 				m, img := mask(in[0]), image(in[1])
 				if err := sameFrame("refine", m, img); err != nil {
 					return nil, err
 				}
 				guide := img.Buf.Luminance() // one channel: the builder feeds luminance in the working space
-				r := max(1, int(math.Round(a.Length("r", m.Buf.Scale))))
+				r := max(1, int(math.Round(a.Length("radius", m.Buf.Scale))))
 				q, err := kernels.GuidedFilter(ctx, guide, m.Buf.Plane(0), m.Buf.W, m.Buf.H, r, a.Number("eps"))
 				if err != nil {
 					return nil, err
@@ -374,7 +374,8 @@ func maskOps() []graph.OpDef {
 			Doc: "The fraction of the image the mask selects (its mean), in [0, 1].",
 		},
 		{
-			Name: "overlay", On: graph.KindMask, Inputs: []graph.Kind{graph.KindImage}, Returns: graph.KindImage, Space: graph.SpaceRule{Default: buffer.SpaceEncoded},
+			Name: "overlay", On: graph.KindMask, Inputs: []graph.Kind{graph.KindImage}, Returns: graph.KindImage, Space: graph.SpaceRule{Default: buffer.SpaceEncoded}, Class: graph.Decoration,
+			DocFrame: func(_ graph.Args, inputs []*graph.Node) graph.Frame { return inputs[1].Frame },
 			Args: []graph.ArgSpec{
 				{Name: "color", Type: "any", Default: "red", Doc: "colour name or display [r, g, b] in [0, 1] (encoded values)"},
 				{Name: "alpha", Type: "number", Default: 0.5, Min: graph.F(0), Max: graph.F(1)},
@@ -391,8 +392,16 @@ func maskOps() []graph.OpDef {
 }
 
 func tint(ctx context.Context, img, m *graph.ImageValue, a graph.Args) (graph.Value, error) {
-	if err := sameFrame("overlay", m, img); err != nil {
+	if err := containsFrame("overlay", m.Frame, img.Frame); err != nil {
 		return nil, err
+	}
+	if m.Frame != img.Frame { // a mask of the whole image on a crop: cut it like the image
+		sx, _ := graph.AxisScales(img)
+		cut, err := cropValue(m, img.Frame, sx)
+		if err != nil {
+			return nil, err
+		}
+		m = cut.(*graph.ImageValue)
 	}
 	col, err := parseColor(a.Raw("color"), "overlay.color")
 	if err != nil {

@@ -96,7 +96,7 @@ var placeholderEnc = &graph.ResultEnc{
 func sourceOps() []graph.OpDef {
 	return []graph.OpDef{
 		{
-			Name: "open", On: graph.KindNone, Returns: graph.KindImage, Result: sourceEnc,
+			Name: "open", On: graph.KindNone, Returns: graph.KindImage, Result: sourceEnc, Bespoke: true,
 			Args: []graph.ArgSpec{
 				{Name: "path", Type: "string", Positional: true, Doc: "image file: " + buffer.SupportedFormats},
 				{Name: "encoding", Type: "enum:srgb,linear", Static: true, Optional: true, ValueSynonyms: graph.EncodingValueSynonyms,
@@ -138,7 +138,7 @@ func sourceOps() []graph.OpDef {
 			See: []string{"stats", "explain"},
 		},
 		{
-			Name: "param", On: graph.KindNone, Returns: graph.KindParam,
+			Name: "param", On: graph.KindNone, Returns: graph.KindParam, Bespoke: true,
 			Args: []graph.ArgSpec{{Name: "name", Type: "string", Positional: true}},
 			Run: func(_ context.Context, ec *graph.EvalCtx, _ []graph.Value, a graph.Args) (graph.Value, error) {
 				v, ok := ec.Params[a.String("name")]
@@ -150,7 +150,7 @@ func sourceOps() []graph.OpDef {
 			Doc: "A named value a person can move (declare with P.slider / P.toggle / P.choice).",
 		},
 		{
-			Name: graph.PlaceholderOp, On: graph.KindNone, Returns: graph.KindImage, Result: placeholderEnc,
+			Name: graph.PlaceholderOp, On: graph.KindNone, Returns: graph.KindImage, Result: placeholderEnc, Bespoke: true,
 			Args: []graph.ArgSpec{
 				{Name: "for", Type: "number", Hidden: true},
 				{Name: "frame", Type: "number[]", Hidden: true, Doc: "the receiver's frame [x, y, w, h]"},

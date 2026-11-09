@@ -98,7 +98,7 @@ func TestPreviewScaleEvaluatesSmallerBuffers(t *testing.T) {
 		t.Fatalf("buffer %v", b)
 	}
 	lines := e.Explain(g.ID, 0.5)
-	if len(lines) != 2 || !strings.HasPrefix(lines[0], "#2 gaussian(r: 4 px → 2 at scale 0.5)  Image 32×24  cached") ||
+	if len(lines) != 2 || !strings.HasPrefix(lines[0], "#2 gaussian(sigma: 4 px → 2 at scale 0.5)  Image 32×24  cached") ||
 		!strings.HasPrefix(lines[1], "  #1 source gradient-64x48-16bit.tif") {
 		t.Fatalf("explain %q", lines)
 	}
@@ -134,20 +134,28 @@ var walkSamples = map[string]func(w walkNodes) []any{
 	"feather":        func(walkNodes) []any { return []any{3} },
 	"grow":           func(walkNodes) []any { return []any{2} },
 	"shrink":         func(walkNodes) []any { return []any{2} },
-	"refine":         func(w walkNodes) []any { return []any{nodeArg(w.img), map[string]any{"r": 4}} },
+	"refine":         func(w walkNodes) []any { return []any{nodeArg(w.img), map[string]any{"radius": 4}} },
 	"overlay":        func(w walkNodes) []any { return []any{nodeArg(w.img)} },
 	"Image:overlay": func(w walkNodes) []any {
 		return []any{nodeArg(w.regions), map[string]any{"labels": "id", "color": []any{0.2, 0.9, 0.3}}}
 	},
-	"compare": func(w walkNodes) []any { return []any{[]any{nodeArg(w.edited)}} },
-	"where":   func(walkNodes) []any { return []any{map[string]any{"area": map[string]any{"gte": 2}}} },
-	"without": func(walkNodes) []any { return []any{[]any{1}} },
-	"only":    func(walkNodes) []any { return []any{1} },
-	"sortBy":  func(walkNodes) []any { return []any{"area"} },
-	"top":     func(walkNodes) []any { return []any{3} },
-	"toMask":  func(walkNodes) []any { return []any{map[string]any{"grow": 1}} },
-	"within":  func(w walkNodes) []any { return []any{nodeArg(w.mask), nodeArg(w.edited)} },
-	"heal":    func(w walkNodes) []any { return []any{nodeArg(w.regions), map[string]any{"radius": 1}} },
+	"compare":       func(w walkNodes) []any { return []any{[]any{nodeArg(w.edited)}} },
+	"where":         func(walkNodes) []any { return []any{map[string]any{"area": map[string]any{"gte": 2}}} },
+	"without":       func(walkNodes) []any { return []any{[]any{1}} },
+	"only":          func(walkNodes) []any { return []any{1} },
+	"sortBy":        func(walkNodes) []any { return []any{"area"} },
+	"top":           func(walkNodes) []any { return []any{3} },
+	"toMask":        func(walkNodes) []any { return []any{map[string]any{"grow": 1}} },
+	"within":        func(w walkNodes) []any { return []any{nodeArg(w.mask), nodeArg(w.edited)} },
+	"heal":          func(w walkNodes) []any { return []any{nodeArg(w.regions), map[string]any{"radius": 1}} },
+	"crop":          func(walkNodes) []any { return []any{[]any{5.0, 7.0, 21.0, 13.0}} },
+	"highpass":      func(walkNodes) []any { return []any{2.0} },
+	"dog":           func(walkNodes) []any { return []any{1.0, 4.0, map[string]any{"polarity": "bright"}} },
+	"localContrast": func(walkNodes) []any { return []any{3.0} },
+	"view":          func(walkNodes) []any { return []any{"speck"} },
+	"annotate": func(walkNodes) []any {
+		return []any{[]any{map[string]any{"circle": []any{20.0, 20.0, 5.0}, "label": "a"}, map[string]any{"box": []any{3.0, 4.0, 10.0, 8.0}}}}
+	},
 	"inpaint": func(w walkNodes) []any { return []any{nodeArg(w.mask2)} },
 	"blend": func(w walkNodes) []any {
 		return []any{nodeArg(w.edited), map[string]any{"mode": "screen", "mask": nodeArg(w.mask)}}
@@ -276,8 +284,10 @@ func TestOptionSynonyms(t *testing.T) {
 		{"mask.luminance", img.ID, []any{map[string]any{"min": 0.99}}, "above", "mask.luminance({ above: 0.99 })"},
 		{"mask.luminance", img.ID, []any{map[string]any{"max": 0.1}}, "below", "mask.luminance({ below: 0.1 })"},
 		{"mask.luminance", img.ID, []any{map[string]any{"threshold": 0.8}}, "above", ""},
-		{"gaussian", img.ID, []any{map[string]any{"radius": 2.0}}, "r", ""},
-		{"gaussian", img.ID, []any{map[string]any{"sigma": 2.0}}, "r", ""},
+		{"gaussian", img.ID, []any{map[string]any{"radius": 2.0}}, "sigma", "gaussian({ sigma: 2 })"},
+		{"gaussian", img.ID, []any{map[string]any{"r": 2.0}}, "sigma", ""},
+		{"feather", m.ID, []any{map[string]any{"r": 2.0}}, "radius", "feather({ radius: 2 })"},
+		{"grow", m.ID, []any{map[string]any{"sigma": 2.0}}, "radius", ""},
 		{"detect.specks", img.ID, []any{map[string]any{"threshold": 0.05}}, "minContrast", ""},
 		{"detect.specks", img.ID, []any{map[string]any{"maxSize": 50.0}}, "maxArea", ""},
 		{"overlay", img.ID, []any{graph.NodeArg{ID: m.ID}, map[string]any{"opacity": 0.3}}, "alpha", ""},
@@ -293,6 +303,32 @@ func TestOptionSynonyms(t *testing.T) {
 		}
 		if tc.fix != "" && ce.Fix != tc.fix {
 			t.Fatalf("%s %v: fix %q, want %q", tc.op, tc.raw, ce.Fix, tc.fix)
+		}
+	}
+}
+
+// TestOpSynonymsDoNotShadowOps: a synonym must name an existing op, and
+// must not itself be an op on a kind where its target lives (it would
+// never be consulted, or worse, mean two things); method redirects must not
+// be methods.
+func TestOpSynonymsDoNotShadowOps(t *testing.T) {
+	reg := NewRegistry()
+	for s, target := range graph.Synonyms {
+		targets := reg.Find(target)
+		if len(targets) == 0 {
+			t.Errorf("synonym %q → %q: no such op", s, target)
+		}
+		for _, op := range targets {
+			if _, ok := reg.Lookup(op.On, s); ok {
+				t.Errorf("synonym %q is also an op on %s", s, op.On)
+			}
+		}
+	}
+	for name := range graph.MethodRedirects {
+		for _, k := range graph.Kinds {
+			if _, ok := reg.Lookup(k, name); ok {
+				t.Errorf("method redirect %q is an op on %s", name, k)
+			}
 		}
 	}
 }

@@ -14,7 +14,7 @@ return { bright: await bright.coverage(), centre: await centre.coverage() }
 
 ## Combining and refining
 
-Set algebra: `a.and(b)`, `a.or(b)`, `a.minus(b)`, `a.not()`. Morphology in doc px: `grow(r)`, `shrink(r)`, `feather(r)`; `refine(img)` snaps soft edges to image edges. `coverage()` is the selected fraction; `img.stats({ mask })` measures the image inside the mask.
+Set algebra: `a.and(b)`, `a.or(b)`, `a.minus(b)`, `a.not()`. Morphology in doc px: `grow(radius)`, `shrink(radius)`, `feather(radius)`; `refine(img)` snaps soft edges to image edges. `coverage()` is the selected fraction; `img.stats({ mask })` measures the image inside the mask.
 
 ```js
 const sel = img.mask.luminance({ above: 0.45 })
@@ -53,6 +53,13 @@ return { masked: await m.coverage(), blobs: await blobs.count() }
 ## Looking at selections
 
 `img.overlay(regions | mask, { color, alpha, labels: "id" })` draws them over the image (colours: any CSS name such as `"lime"`, `"#ff8800"`, `"#f80"` or display `[r, g, b]` in [0, 1]) (`regions.overlay(img)` and `mask.overlay(img)` work too). A Regions node itself has no look: return `img.overlay(regions).look()`.
+
+An overlay is drawn at the look's scale: in a zoomed crop its outlines stay 1 image px wide and the ids readable, and regions found on the whole image can be drawn on a crop, before or after the crop.
+
+```js looks=1
+const specks = img.detect.specks()
+return img.overlay(specks, { labels: "id", color: "lime" }).crop([150, 20, 64, 64]).look({ zoom: 8, ruler: 8 })
+```
 
 ## Neutral or coloured?
 

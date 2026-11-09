@@ -32,7 +32,6 @@ var Synonyms = map[string]string{
 	"clone":         "heal",
 	"spotHeal":      "heal",
 	"autoLevels":    "levels",
-	"curves":        "curve",
 	"tone":          "levels",
 	"describe":      "explain",
 	"graph":         "explain",
@@ -48,6 +47,43 @@ var Synonyms = map[string]string{
 	"heatmap":       "colormap",
 	"reencode":      "encode",
 	"channels":      "split",
+	// GCV-002
+	"subtract":     "sub",
+	"difference":   "sub",
+	"diff":         "sub",
+	"multiply":     "mul",
+	"times":        "mul",
+	"hp":           "highpass",
+	"highPass":     "highpass",
+	"residual":     "highpass",
+	"DoG":          "dog",
+	"bandpass":     "dog",
+	"clahe":        "localContrast",
+	"localNorm":    "localContrast",
+	"normalize":    "levels",
+	"stretch":      "levels",
+	"window":       "crop",
+	"roi":          "crop",
+	"subimage":     "crop",
+	"marks":        "annotate",
+	"markers":      "annotate",
+	"draw":         "annotate",
+	"mark":         "annotate",
+	"contactSheet": "sheet",
+	"grid":         "sheet",
+	"mosaic":       "sheet",
+	"montage":      "sheet",
+	"preset":       "view",
+	"views":        "view",
+}
+
+// MethodRedirects are method names that are not ops but look options or
+// other calls: the error's hint and literal fix say what to write.
+var MethodRedirects = map[string]Redirect{
+	"zoom":    {Hint: "Zoom is a look option, not a node: crop the window, then look at it zoomed.", Fix: "node.crop([x, y, w, h]).look({ zoom: 8 })"},
+	"magnify": {Hint: "Zoom is a look option, not a node: crop the window, then look at it zoomed.", Fix: "node.crop([x, y, w, h]).look({ zoom: 8 })"},
+	"ruler":   {Hint: "Rulers are a look option.", Fix: "node.look({ ruler: true })"},
+	"compare": {Hint: "compare is a cv function that takes a list of images.", Fix: `cv.compare([a, b], { mode: "side" })`},
 }
 
 // levenshtein is the case-insensitive edit distance with adjacent
@@ -125,10 +161,19 @@ func (r *Registry) UnknownMethod(k Kind, name string, path []string) *Error {
 	}
 	e := Errorf(EUnknownMethod, "%s has no method %q.", k, name)
 	e.Path = path
+	if r, ok := MethodRedirects[name]; ok {
+		e.Hint, e.Fix = r.Hint, r.Fix
+		return e
+	}
 	if target, ok := Synonyms[name]; ok {
 		if contains(methods, target) {
 			e.Hint = fmt.Sprintf("Did you mean %q?", target)
 			e.Fix = fmt.Sprintf("%s.%s(…)", receiverVar(k), target)
+			return e
+		}
+		if op, ok := r.Lookup(KindNone, target); ok && !op.Bespoke {
+			e.Hint = fmt.Sprintf("Did you mean %q? It is a cv function.", target)
+			e.Fix = fmt.Sprintf("cv.%s(…)", target)
 			return e
 		}
 	}

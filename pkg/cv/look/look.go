@@ -19,14 +19,17 @@ import (
 	"image"
 	"image/draw"
 	"image/jpeg"
-	"image/png"
+	pngenc "image/png"
+	"math"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 
 	"github.com/go-go-golems/go-go-goja/pkg/resultcontent"
 	"github.com/go-go-golems/goja-cv/pkg/cv/buffer"
 	"github.com/go-go-golems/goja-cv/pkg/cv/graph"
+	"github.com/go-go-golems/goja-cv/pkg/cv/text"
 	"github.com/pkg/errors"
 )
 
@@ -39,21 +42,87 @@ const (
 
 // Options configure a look.
 type Options struct {
-	Label   string // shown in the caption; default: the node's label
-	MaxSide int    // long side in image px; 0 = the engine's look size (1568)
+	Label   string        // shown in the caption; default: the node's label
+	Zoom    float64       // render scale in [1, 16]; 0 = fit to MaxSide
+	Interp  buffer.Interp // upsampling when zoomed
+	MaxSide int           // long side in image px when fitting; 0 = the engine's look size (1568)
+	Ruler   float64       // tick spacing in doc px; -1 picks one; 0 = no ruler
+	Grid    float64       // grid spacing in doc px; 0 = no grid
+	Format  string        // "auto" (or ""), "png" or "jpeg"
 }
+
+// smallLook is the largest look side the auto format keeps lossless.
+const smallLook = 512
+
+// OptionsFrom reads the look options bound by graph.BindOptions against the
+// look function's ArgSpecs (ops.LookArgs).
+func OptionsFrom(a graph.Args) (Options, error) {
+	var o Options
+	if a.Has("label") {
+		o.Label = a.String("label")
+	}
+	if a.Has("zoom") {
+		o.Zoom = a.Number("zoom")
+	}
+	if a.Has("interp") {
+		o.Interp, _ = buffer.ParseInterp(a.String("interp"))
+	}
+	if a.Has("maxSide") {
+		f := a.Number("maxSide")
+		if f != float64(int(f)) {
+			return o, graph.Errorf(graph.EArgType, "look maxSide must be an integer number of image px; got %g.", f).
+				WithFix(fmt.Sprintf("node.look({ maxSide: %d })", int(f)))
+		}
+		o.MaxSide = int(f)
+	}
+	if a.Has("ruler") {
+		switch v := a.Raw("ruler").(type) {
+		case bool:
+			if v {
+				o.Ruler = -1
+			}
+		case float64:
+			if !(v > 0) {
+				return o, graph.Errorf(graph.EArgRange, "look ruler must be a tick spacing above 0 doc px, or true; got %g.", v).WithFix("node.look({ ruler: true })")
+			}
+			o.Ruler = v
+		}
+	}
+	if a.Has("grid") {
+		o.Grid = a.Raw("grid").(float64)
+	}
+	if a.Has("format") {
+		o.Format = a.String("format")
+	}
+	if o.Zoom != 0 && o.MaxSide != 0 {
+		return o, graph.Errorf(graph.EArgType, "look takes zoom or maxSide, not both: zoom sets the scale; maxSide fits it.").
+			WithFix(fmt.Sprintf("node.look({ zoom: %s })", fmtZoom(o.Zoom)))
+	}
+	return o, nil
+}
+
+func fmtZoom(z float64) string { return strconv.FormatFloat(z, 'g', 4, 64) }
 
 // Look is a lazily rendered image of one node.
 type Look struct {
-	eng   *graph.Engine
-	node  graph.NodeID
-	root  graph.NodeID // what is rendered: node, or convert(node → encoded)
-	kind  graph.Kind
-	label string
-	scale float64 // buffer px per doc px; 1 for charts
-	w, h  int     // rendered size
-	chart bool    // a Value node rendered as a chart
-	n     atomic.Int64
+	eng    *graph.Engine
+	node   graph.NodeID
+	root   graph.NodeID // what is rendered: node, or convert(node → encoded)
+	kind   graph.Kind
+	label  string // the agent's label ("" = none)
+	chain  string // the node's op chain (graph.Chain)
+	frame  graph.Frame
+	scale  float64 // render scale: image px per doc px; 1 for charts
+	interp buffer.Interp
+	ruler  float64
+	grid   float64
+	png    bool // encode as PNG (the format rule, decided at creation)
+	w, h   int  // rendered size
+	chart  bool // a Value node rendered as a chart
+	n      atomic.Int64
+
+	mu    sync.Mutex
+	warns []graph.Warning // evaluation-time warnings of the render
 }
 
 var (
@@ -77,11 +146,13 @@ func New(eng *graph.Engine, id graph.NodeID, opt Options) (*Look, error) {
 		}
 		maxLong = opt.MaxSide
 	}
-	l := &Look{eng: eng, node: id, kind: n.Kind, label: strings.TrimSpace(opt.Label)}
-	if l.label == "" {
-		l.label = graph.Label(n)
-	}
+	l := &Look{eng: eng, node: id, kind: n.Kind, label: strings.TrimSpace(opt.Label), interp: opt.Interp,
+		chain: eng.Chain(id), frame: n.Frame, ruler: opt.Ruler, grid: opt.Grid}
 	l.root = id
+	if n.Frame.Picture && (opt.Zoom != 0 || opt.Ruler != 0 || opt.Grid != 0) {
+		return nil, graph.Errorf(graph.EWrongKind, "%s is a picture (a sheet or a side-by-side compare): its pixels are not doc px, so it takes no zoom, ruler or grid.", graph.Label(n)).
+			WithHint("Zoom and rule the images it shows: crop them, or raise the sheet's zoom.").WithFix("node.look()")
+	}
 	switch n.Kind {
 	case graph.KindImage, graph.KindMask:
 		root, err := eng.Display(id)
@@ -90,12 +161,28 @@ func New(eng *graph.Engine, id graph.NodeID, opt Options) (*Look, error) {
 		}
 		l.root = root
 		l.scale = eng.ScaleForLong(id, maxLong)
+		if opt.Zoom != 0 {
+			l.scale = graph.QuantizeScale(opt.Zoom)
+		}
 		l.w, l.h = buffer.ScaledSize(n.Frame.W, n.Frame.H, l.scale)
+		if limit := eng.Options().LookLong; max(l.w, l.h) > limit {
+			return nil, zoomTooLarge(n, opt.Zoom, limit)
+		}
+		switch opt.Format {
+		case "png":
+			l.png = true
+		case "jpeg":
+		default: // auto: lossless where JPEG artefacts are the size of what is judged
+			l.png = n.Kind == graph.KindMask || l.scale > 1 || n.Op.Lossless || (l.w <= smallLook && l.h <= smallLook)
+		}
 	case graph.KindValue:
 		if n.Op.Name != "histogram" {
 			return nil, lookKindError(n)
 		}
-		l.chart, l.scale = true, 1
+		if opt.Zoom != 0 || opt.Ruler != 0 || opt.Grid != 0 {
+			return nil, graph.Errorf(graph.EArgType, "look of a chart takes no zoom, ruler or grid: charts have no doc px.").WithFix("node.look()")
+		}
+		l.chart, l.scale, l.png = true, 1, true
 		l.w, l.h = chartSize(maxLong)
 	case graph.KindRegions, graph.KindParam, graph.KindNone:
 		return nil, lookKindError(n)
@@ -103,6 +190,23 @@ func New(eng *graph.Engine, id graph.NodeID, opt Options) (*Look, error) {
 		return nil, lookKindError(n)
 	}
 	return l, nil
+}
+
+// zoomTooLarge is E_ARG_RANGE for a zoomed look above the size limit, with
+// both fixes: a smaller crop at the same zoom, or the same image at a lower
+// zoom.
+func zoomTooLarge(n *graph.Node, zoom float64, limit int) error {
+	side := int(float64(limit) / zoom)
+	long := max(n.Frame.W, n.Frame.H)
+	fix := fmt.Sprintf("node.crop([x, y, %d, %d]).look({ zoom: %s })", min(side, n.Frame.W), min(side, n.Frame.H), fmtZoom(zoom))
+	if z := float64(limit) / float64(long); z >= 1 {
+		fix += fmt.Sprintf("   // or node.look({ zoom: %s })", fmtZoom(math.Floor(z*100)/100))
+	} else {
+		fix += "   // or node.look() to fit the whole image"
+	}
+	return graph.Errorf(graph.EArgRange, "look({ zoom: %s }) of %s (%s doc px) would be %d px on its long side; looks are at most %d px.",
+		fmtZoom(zoom), graph.Label(n), n.Frame.Size(), int(math.Round(float64(long)*zoom)), limit).
+		WithHint("Zoom a crop: at zoom z a look shows at most " + strconv.Itoa(limit) + "/z doc px per side.").WithFix(fix)
 }
 
 func lookKindError(n *graph.Node) error {
@@ -123,8 +227,16 @@ func lookKindError(n *graph.Node) error {
 // Node is the node the look renders.
 func (l *Look) Node() graph.NodeID { return l.node }
 
-// Label is the look's label.
-func (l *Look) Label() string { return l.label }
+// Label is the look's label: the agent's, or the node's op name.
+func (l *Look) Label() string {
+	if l.label != "" {
+		return l.label
+	}
+	if n, ok := l.eng.Node(l.node); ok {
+		return graph.Label(n)
+	}
+	return ""
+}
 
 // Size is the rendered size in image px.
 func (l *Look) Size() (int, int) { return l.w, l.h }
@@ -142,10 +254,13 @@ func (l *Look) AssignNumber(n int) int {
 	return l.Number()
 }
 
-// DocPxPerImagePx formats 1/scale for captions: "4.0", "6.13".
+// DocPxPerImagePx formats 1/scale for captions: "4.0", "6.13", "0.125".
 func DocPxPerImagePx(scale float64) string {
 	if scale <= 0 {
 		return "?"
+	}
+	if scale > 1 {
+		return strconv.FormatFloat(1/scale, 'g', 3, 64)
 	}
 	s := strconv.FormatFloat(1/scale, 'f', 2, 64)
 	s = strings.TrimRight(s, "0")
@@ -155,17 +270,31 @@ func DocPxPerImagePx(scale float64) string {
 	return s
 }
 
-// Caption is "look N: label (W×H, 1 image px = S doc px)"; "look: …" before
-// a number is assigned. Charts say "chart" instead of the scale.
+// Caption says what the image is: "look N: label — op chain (W×H[ +
+// ruler], 1 image px = S doc px[, doc x a–b, y c–d])"; without a label the
+// chain alone. "look: …" before a number is assigned; charts say "chart"
+// instead of the scale. The doc range is given for crops, zooms and rulers.
 func (l *Look) Caption() string {
 	head := "look"
 	if n := l.Number(); n > 0 {
 		head = fmt.Sprintf("look %d", n)
 	}
-	if l.chart {
-		return fmt.Sprintf("%s: %s (%d×%d chart)", head, l.label, l.w, l.h)
+	what := l.chain
+	if l.label != "" && l.label != l.chain {
+		what = l.label + " — " + l.chain
 	}
-	return fmt.Sprintf("%s: %s (%d×%d, 1 image px = %s doc px)", head, l.label, l.w, l.h, DocPxPerImagePx(l.scale))
+	if l.chart {
+		return fmt.Sprintf("%s: %s (%d×%d chart)", head, what, l.w, l.h)
+	}
+	size := fmt.Sprintf("%d×%d", l.w, l.h)
+	if l.ruler != 0 {
+		size += " + ruler"
+	}
+	tail := ""
+	if f := l.frame; l.ruler != 0 || l.grid != 0 || l.scale > 1 || f.X != 0 || f.Y != 0 {
+		tail = fmt.Sprintf(", doc x %d–%d, y %d–%d", f.X, f.X+f.W, f.Y, f.Y+f.H)
+	}
+	return fmt.Sprintf("%s: %s (%s, 1 image px = %s doc px%s)", head, what, size, DocPxPerImagePx(l.scale), tail)
 }
 
 // ResultPlaceholder implements resultcontent.Describer.
@@ -181,7 +310,33 @@ func (l *Look) ResultContent(ctx context.Context) ([]resultcontent.Content, erro
 	if err != nil {
 		return nil, err
 	}
-	return []resultcontent.Content{{MIMEType: mime, Data: data, Caption: l.Caption()}}, nil
+	caption := l.Caption()
+	if ws := l.Warnings(); len(ws) > 0 {
+		parts := make([]string, len(ws))
+		for i, w := range ws {
+			parts[i] = w.Code + ": " + w.Message
+		}
+		caption += " — warnings: " + strings.Join(parts, "; ")
+	}
+	return []resultcontent.Content{{MIMEType: mime, Data: data, Caption: caption}}, nil
+}
+
+// Warnings are the evaluation-time warnings of the last render (SHEET_TRUNCATED).
+func (l *Look) Warnings() []graph.Warning {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return append([]graph.Warning(nil), l.warns...)
+}
+
+func (l *Look) warn(w graph.Warning) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	for _, x := range l.warns {
+		if x == w {
+			return
+		}
+	}
+	l.warns = append(l.warns, w)
 }
 
 // Render evaluates and encodes the look, returning the bytes and MIME type.
@@ -190,8 +345,8 @@ func (l *Look) Render(ctx context.Context) ([]byte, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
-	BurnNumber(m, l.Number())
-	return Encode(m, l.chart)
+	text.BurnNumber(m, l.Number())
+	return Encode(m, l.png)
 }
 
 // image evaluates the look's node and returns its 8-bit image, before the
@@ -199,7 +354,7 @@ func (l *Look) Render(ctx context.Context) ([]byte, string, error) {
 // images are rendered through convert(node → encoded) (no node when the
 // values already are encoded), masks and derived images as they are.
 func (l *Look) image(ctx context.Context) (draw.Image, error) {
-	v, err := l.eng.Evaluate(ctx, l.root, graph.EvalOptions{Scale: l.scale})
+	v, err := l.eng.Render(ctx, l.root, graph.RenderOptions{Scale: l.scale, Interp: l.interp, OnWarn: l.warn})
 	if err != nil {
 		return nil, err
 	}
@@ -213,6 +368,11 @@ func (l *Look) image(ctx context.Context) (draw.Image, error) {
 		if !ok {
 			return nil, errors.Errorf("look: unexpected image type %T", img)
 		}
+		if l.ruler != 0 || l.grid != 0 {
+			ox, oy := x.BufferOrigin()
+			sx, sy := graph.AxisScales(x)
+			dm = addRulers(dm, axis{origin: ox, scale: sx, n: x.Buf.W}, axis{origin: oy, scale: sy, n: x.Buf.H}, l.ruler, l.grid)
+		}
 		return dm, nil
 	case *graph.DataValue:
 		return renderChart(x.Data, l.w, l.h)
@@ -220,12 +380,12 @@ func (l *Look) image(ctx context.Context) (draw.Image, error) {
 	return nil, errors.Errorf("look: unexpected value %T", v)
 }
 
-// Encode writes m as JPEG q85, or PNG for single-channel images and when
-// forcePNG is set (charts).
-func Encode(m image.Image, forcePNG bool) ([]byte, string, error) {
+// Encode writes m as PNG (single-channel images, and when png is set by the
+// format rule) or JPEG q85.
+func Encode(m image.Image, png bool) ([]byte, string, error) {
 	var buf bytes.Buffer
-	if _, gray := m.(*image.Gray); gray || forcePNG {
-		if err := png.Encode(&buf, m); err != nil {
+	if _, gray := m.(*image.Gray); gray || png {
+		if err := pngenc.Encode(&buf, m); err != nil {
 			return nil, "", errors.Wrap(err, "look: encode png")
 		}
 		return buf.Bytes(), "image/png", nil

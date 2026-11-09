@@ -1,7 +1,7 @@
 ---
 Title: goja-cv recipes
 Slug: recipes
-Short: Check and fix exposure, find and heal dust, measure inside a box, edit inside a mask, compare
+Short: Check and fix exposure, find and heal dust, inspect defects up close, measure inside a box, edit inside a mask, compare
 Topics:
 - goja-cv
 - recipes
@@ -60,6 +60,22 @@ return {
 
 Specks scoring below 0.5 are soft, round features (stars, highlights) and are left alone. To keep one real
 detail, drop it by id: `img.heal(dust.without([31]))`.
+
+## Inspect small defects up close
+
+A view that keeps only what differs from its surroundings, a contact sheet of the candidates, and a zoomed crop
+with coordinate rulers (labels are absolute doc px):
+
+```js
+const speck = img.view("speck")
+const spots = speck.mask.luminance({ above: 0.5 }).components({ minArea: 4 }).sortBy("area").top(12)
+return {
+  sheet: cv.sheet(spots, { views: [img, speck], size: 32, zoom: 4 }).look("candidates"),
+  zoom: img.crop([176, 22, 48, 48]).levels({ auto: true }).look({ zoom: 8, ruler: 8, label: "star 8×" }),
+}
+```
+
+`cv.docs.read("views")` lists the presets; `cv.docs.read("looks")` the look options (zoom, ruler, grid, format).
 
 ## Measure inside a box or region
 

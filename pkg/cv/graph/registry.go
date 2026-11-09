@@ -173,13 +173,52 @@ type ArgSpec struct {
 	// ValueSynonyms map words agents use for an enum value to the value they
 	// mean (scoped to this argument), for the did-you-mean hint and fix.
 	ValueSynonyms map[string]string
-	Doc           string
+	// ValueDocs describe the values of an enum (view presets): help lists
+	// them and an unknown value's error names them.
+	ValueDocs map[string]string
+	// Redirects map an unknown option name (looked up over every spec of the
+	// call) or an unknown enum value of this argument to the call that does
+	// it now: look({ box }) → crop, blend({ mode: "difference" }) → sub.
+	Redirects map[string]Redirect
+	Doc       string
 }
+
+// Redirect is the hint and literal fix for a spelling the API does not have.
+type Redirect struct{ Hint, Fix string }
 
 func (s *ArgSpec) hasUsual() bool { return s.Usual != [2]float64{} }
 
 // F returns a pointer to v, for Min and Max.
 func F(v float64) *float64 { return &v }
+
+// OpClass says how an op behaves when a look asks for a render scale above
+// 1 (GCV-002 §3.4, Foundations §F5).
+type OpClass uint8
+
+const (
+	// PixelOp computes values from values (exposure, blur, arithmetic): it
+	// is never computed above scale 1; a render above 1 computes it at 1 and
+	// upsamples the window.
+	PixelOp OpClass = iota
+	// GeometricOp only selects pixels (crop): its value in a window is its
+	// receiver's value in that window, at any scale.
+	GeometricOp
+	// Decoration draws marks defined in doc px (overlay, annotate): it runs
+	// at the render scale on inputs rendered at that scale, so lines stay
+	// one image px wide.
+	Decoration
+)
+
+func (c OpClass) String() string {
+	switch c {
+	case GeometricOp:
+		return "geometric"
+	case Decoration:
+		return "decoration"
+	case PixelOp:
+	}
+	return "pixel"
+}
 
 // RunFunc computes an op. in holds the evaluated explicit inputs (the
 // receiver first, then OpDef.Inputs); node-valued arguments have already been
@@ -193,17 +232,24 @@ type OpDef struct {
 	Inputs   []Kind // extra node inputs beyond the receiver, passed positionally first
 	Args     []ArgSpec
 	Returns  Kind
+	Class    OpClass               // pixel (default), geometric or decoration (render above scale 1)
 	Space    SpaceRule             // working space (SpaceNone: the op does not read levels)
 	Result   *ResultEnc            // encoding and space of an Image result; nil = KeepEnc
 	Gray     func(args Args) []int // positions of the Image inputs read as luminance (fed toGray rec709 in linear space)
 	Internal bool                  // not callable from JavaScript, not listed in help (convert)
+	Lossless bool                  // looks of its result are PNG by default (format "auto"): contact sheets
+	// MaxItems is a static upper bound on the item count of a Regions
+	// result (top(n)); ok false when unknown (a lifted n). A sheet sizes
+	// itself by it.
+	MaxItems func(args Args) (n int, ok bool)
+	Bespoke  bool // a module op bound by hand (cv.open, P.slider, the builder placeholder): the prelude does not generate cv.<name>
 	// Expand makes the op a macro: a graph of other ops built at intern
 	// time (exactly one of Run and Expand is set). See ExpandFunc.
 	Expand ExpandFunc
 	// Warn adds build-time warnings for a call (toLab on camera RGB).
 	Warn     func(b *Builder, args Args, inputs []*Node) []Warning
 	Identity func(args Args) bool                  // neutral arguments: the receiver is returned unchanged
-	Halo     func(args Args) float64               // doc px of border a tile needs (for tiled export; unused in M1)
+	Halo     func(args Args) float64               // doc px of border around each output pixel the op reads
 	Global   bool                                  // needs the whole image (stats, histogram)
 	NoCache  bool                                  // never cached (explain reads cache state)
 	Lazy     bool                                  // inputs are not evaluated before Run (explain)
@@ -241,13 +287,14 @@ func (op *OpDef) spec(name string) *ArgSpec {
 
 // Registry is the single source of truth for every op the agent can call.
 type Registry struct {
-	mu  sync.RWMutex
-	ops map[string]*OpDef
+	mu    sync.RWMutex
+	ops   map[string]*OpDef
+	funcs map[string]*FuncDef
 }
 
 // NewRegistry returns an empty registry.
 func NewRegistry() *Registry {
-	return &Registry{ops: map[string]*OpDef{}}
+	return &Registry{ops: map[string]*OpDef{}, funcs: map[string]*FuncDef{}}
 }
 
 // Register validates def and adds it.
@@ -375,6 +422,19 @@ func (r *Registry) Methods(on Kind) []string {
 		out = append(out, n)
 	}
 	sort.Strings(out)
+	return out
+}
+
+// ModuleOps are the module ops the prelude exposes as cv.<name>: ops with
+// no receiver that are neither internal nor bound by hand (cv.compare,
+// cv.sheet).
+func (r *Registry) ModuleOps() []string {
+	var out []string
+	for _, op := range r.Ops() {
+		if op.On == KindNone && !op.Bespoke {
+			out = append(out, op.Name)
+		}
+	}
 	return out
 }
 

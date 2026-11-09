@@ -93,7 +93,7 @@ func TestMCPServerToolsResourcesPrompt(t *testing.T) {
 		t.Fatal(err)
 	}
 	ref := res.Contents[0].Text
-	for _, n := range []string{"## Image methods", "`exposure(ev)` → Image", "`levels(black, white, gamma)`", "`cv.open(path, { encoding, box, origin, as })`"} {
+	for _, n := range []string{"## Image methods", "`exposure(ev)` → Image", "`levels(black, white, gamma, auto)`", "`cv.open(path, { encoding, box, origin, as })`"} {
 		if !strings.Contains(ref, n) {
 			t.Fatalf("reference lacks %q:\n%s", n, ref)
 		}
@@ -105,11 +105,11 @@ func TestMCPServerToolsResourcesPrompt(t *testing.T) {
 
 	text, images, isErr := callEval(t, cs, `return { stats: await img.stats(), after: img.exposure(0.5).look("after") }`)
 	t.Logf("eval result:\n%s", text)
-	if isErr || len(images) != 1 || images[0].MIMEType != "image/jpeg" || len(images[0].Data) < 100 {
+	if isErr || len(images) != 1 || images[0].MIMEType != "image/png" || len(images[0].Data) < 100 {
 		t.Fatalf("isErr=%v images=%d\n%s", isErr, len(images), text)
 	}
-	mustContain(t, text, "after: '[look 1: after (64×48, 1 image px = 1.0 doc px)]'",
-		"content 1 look 1: after (64×48, 1 image px = 1.0 doc px): attached (image/jpeg")
+	mustContain(t, text, "after: '[look 1: after — open(gradient-64x48-16bit.tif) → exposure(0.5) (64×48, 1 image px = 1.0 doc px)]'",
+		"content 1 look 1: after — open(gradient-64x48-16bit.tif) → exposure(0.5) (64×48, 1 image px = 1.0 doc px): attached (image/png")
 
 	text, images, isErr = callEval(t, cs, "show(img, \"before\")\nreturn img.blur(2)")
 	if !isErr || len(images) != 1 {
@@ -161,8 +161,8 @@ return await fixed.stats().pick("meanL", "clipLow", "clipHigh")`)
 		t.Fatalf("correction: isErr=%v images=%d\n%s", isErr, len(images), text)
 	}
 	mustContain(t, text, "meanL: 0.50822", "clipLow:", "clipHigh:",
-		"shown:", "look 1: before / after (132×48, 1 image px = 1.0 doc px)", "look 2: histogram (512×204 chart)")
-	if images[0].MIMEType != "image/jpeg" || images[1].MIMEType != "image/png" {
+		"shown:", "look 1: before / after — compare([2 images]) (132×48, 1 image px = 1.0 doc px)", "look 2: open(gradient-64x48-16bit.tif) → levels → exposure(0.35) → histogram (512×204 chart)")
+	if images[0].MIMEType != "image/png" || images[1].MIMEType != "image/png" {
 		t.Fatalf("mimes %s %s", images[0].MIMEType, images[1].MIMEType)
 	}
 	mustNotContain(t, text, "UNUSED_NODE", "error")

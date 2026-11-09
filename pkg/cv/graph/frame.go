@@ -11,6 +11,10 @@ import (
 type Frame struct {
 	X, Y int // origin in doc px
 	W, H int // size in doc px
+	// Picture marks a layout (a contact sheet, a side-by-side compare): its
+	// pixels are image px of the picture it composes, not doc px, so
+	// coordinates, crops and rulers do not apply to it.
+	Picture bool
 }
 
 // Empty reports whether the frame has no area (pure data nodes).

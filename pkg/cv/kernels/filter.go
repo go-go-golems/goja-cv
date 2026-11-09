@@ -97,3 +97,32 @@ func Gaussian(ctx context.Context, in *buffer.Buffer, sigma float64) (*buffer.Bu
 	}
 	return out, nil
 }
+
+// LocalContrast is (a − G_σ(a)) / (s_σ + 1e-3) per channel, where s_σ is
+// the standard deviation of the values in a Gaussian window of σ (buffer
+// px): local z-scores, alike in dark and bright areas.
+func LocalContrast(ctx context.Context, in *buffer.Buffer, sigma float64) (*buffer.Buffer, error) {
+	mean, err := Gaussian(ctx, in, sigma)
+	if err != nil {
+		return nil, err
+	}
+	sq := buffer.NewLike(in)
+	for i, v := range in.Pix {
+		sq.Pix[i] = v * v
+	}
+	msq, err := Gaussian(ctx, sq, sigma)
+	if err != nil {
+		return nil, err
+	}
+	out := buffer.NewLike(in)
+	err = parallel.Rows(ctx, in.H, func(y0, y1 int) {
+		for c := 0; c < in.C; c++ {
+			a, m, q, o := in.Plane(c), mean.Plane(c), msq.Plane(c), out.Plane(c)
+			for i := y0 * in.W; i < y1*in.W; i++ {
+				v := float64(q[i]) - float64(m[i])*float64(m[i])
+				o[i] = float32((float64(a[i]) - float64(m[i])) / (math.Sqrt(math.Max(v, 0)) + 1e-3))
+			}
+		}
+	})
+	return out, err
+}

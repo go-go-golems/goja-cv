@@ -1,6 +1,6 @@
 # Recipes
 
-Worked evals for the common jobs: check and fix exposure, find and remove dust, measure inside a box or region, edit inside a mask, compare before and after. Each block runs as written.
+Worked evals for the common jobs: check and fix exposure, find and remove dust, measure inside a box or region, edit inside a mask, compare before and after, inspect candidates in a sheet and zoomed crops, mark points. Each block runs as written.
 
 ## Check exposure
 
@@ -79,11 +79,50 @@ return { mask: top.look("mask"), out: out.look("darker top") }
 
 ## Compare
 
-`cv.compare([a, b, …], { mode })`: `"side"` by side, `"split"` into strips, `"diff"` the amplified difference of two.
+`cv.compare([a, b, …], { mode })` lays images out: `"side"` by side or `"split"` into strips. A difference is an image of its own: `a.sub(b)` keeps the sign (positive where `a` is brighter); `.mul(4).add(0.5)` shows zero as mid-grey.
 
 ```js
 const blurred = img.gaussian(3)
-return { side: cv.compare([img, blurred]).look("side"), diff: cv.compare([img, blurred], { mode: "diff", gain: 8 }).look("diff") }
+return { side: cv.compare([img, blurred]).look("side"), diff: img.sub(blurred).mul(8).add(0.5).look("img − blurred, ×8, zero = grey") }
+```
+
+## Inspect candidates
+
+Make small bright things stand out, find them, look at all of them in one sheet, then zoom on the doubtful ones with coordinates.
+
+```js looks=2
+const speck = img.view("speck")
+const spots = speck.mask.luminance({ above: 0.5 }).components({ minArea: 4 })
+const top = spots.sortBy("area").top(12)
+const first = (await top).items[0]
+return {
+  sheet: cv.sheet(top, { views: [img, speck], size: 32, zoom: 4 }).look("candidates"),
+  zoom: speck.crop([Math.round(first.centroid[0]) - 16, Math.round(first.centroid[1]) - 16, 32, 32]).look({ zoom: 8, ruler: 4 }),
+}
+```
+
+## Compare two versions
+
+`a.sub(b)` is signed (positive where `a` is brighter); show it grey with zero at 0.5, or in the diverging colormap on one channel.
+
+```js looks=2
+const healed = img.heal(img.detect.specks().where({ score: { gte: 0.5 } }))
+const d = img.sub(healed)
+return { grey: d.mul(4).add(0.5).look("img − healed, ×4"), map: d.toGray("average").colormap("diverging").look("blue darker, red brighter") }
+```
+
+## Mark points
+
+Draw your own marks (absolute doc px) to show what you mean, then zoom.
+
+```js looks=1
+const marked = img.annotate([
+  { circle: [200.5, 46.5, 6], color: "lime", label: "star" },
+  { point: [160, 30] },
+  { box: [170, 60, 12, 10], color: "#ff8800" },
+  { text: "hair?", at: [185, 25] },
+])
+return marked.crop([150, 20, 64, 64]).look({ zoom: 4, ruler: 8 })
 ```
 
 ## Not yet

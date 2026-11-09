@@ -73,10 +73,10 @@ func TestCVWithMCPCommandSet(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := res.Content[0].(*mcpsdk.TextContent).Text
-	if res.IsError || !strings.Contains(text, "[content 1: look: after (64×48, 1 image px = 1.0 doc px)]") || len(res.Content) != 2 {
+	if res.IsError || !strings.Contains(text, "[content 1: look: after — open(gradient-64x48-16bit.tif) → exposure(0.5) (64×48, 1 image px = 1.0 doc px)]") || len(res.Content) != 2 {
 		t.Fatalf("isError=%v content=%d text=%q", res.IsError, len(res.Content), text)
 	}
-	if img, ok := res.Content[1].(*mcpsdk.ImageContent); !ok || img.MIMEType != "image/jpeg" {
+	if img, ok := res.Content[1].(*mcpsdk.ImageContent); !ok || img.MIMEType != "image/png" {
 		t.Fatalf("content[1] = %#v", res.Content[1])
 	}
 }
