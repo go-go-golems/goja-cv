@@ -102,7 +102,7 @@ func (b *Builder) resolveSpace(op *OpDef, args Args, inputs []*Node) ([]*Node, [
 		out[i] = c
 		ws = append(ws, w...)
 	}
-	if s == buffer.SpaceEncoded {
+	if s == buffer.SpaceEncoded && op.Result != DisplayEnc { // a layout of display values (compare) mixes encodings on purpose
 		if w, ok := b.encodingWarning(op, inputs); ok {
 			ws = append(ws, w)
 		}
@@ -134,7 +134,7 @@ func (b *Builder) encodingWarning(op *OpDef, inputs []*Node) (Warning, bool) {
 		parts[i] = fmt.Sprintf("%s (%s)", byEnc[e], e)
 	}
 	return Warning{Code: WEncoding, Message: fmt.Sprintf("%s mixes %s in encoded space; their encoded scales differ. fix: %s({ space: \"linear\" })",
-		op.Name, strings.Join(parts, " and "), op.Name)}, true
+		op.Name, strings.Join(parts, " and "), callName(op))}, true
 }
 
 // sourceLabel names the image a node was computed from: the label of the

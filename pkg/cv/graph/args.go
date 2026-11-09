@@ -434,6 +434,9 @@ func (b *binder) check(s *ArgSpec, typ string, v any, where string) (any, error)
 			return nil, Errorf(EArgType, "%s must be a literal value, not a node.", where).
 				WithHint("This argument decides how the node is evaluated; it cannot depend on a measurement or a param.")
 		}
+		if isUnionType(typ) {
+			return b.checkUnion(s, typ, v, where)
+		}
 		return b.lift(na.ID, where, typ)
 	}
 	if isKindType(typ) {
@@ -552,7 +555,16 @@ func isUnionType(typ string) bool {
 // lists and objects against the others.
 func (b *binder) checkUnion(s *ArgSpec, typ string, v any, where string) (any, error) {
 	alts := strings.Split(typ, "|")
-	if _, isNode := v.(NodeArg); isNode {
+	if na, isNode := v.(NodeArg); isNode {
+		if b != nil { // a node of a kind alternative ("Image|number") is an input of that kind
+			if k, ok := b.kindOf(na.ID); ok {
+				for _, alt := range alts {
+					if isKindType(alt) && accepts(Kind(alt), k) {
+						return b.check(s, alt, v, where)
+					}
+				}
+			}
+		}
 		return b.check(s, "number", v, where) // a lifted Value: checked again after substitution
 	}
 	pick := func(match func(alt string) bool) (string, bool) {
@@ -1058,8 +1070,8 @@ func trimUndefined(raw []any) []any {
 }
 
 func callName(op *OpDef) string {
-	if op.On == KindNone && op.Name == "open" {
-		return "cv.open"
+	if op.On == KindNone && (op.Name == "open" || !op.Bespoke) {
+		return "cv." + op.Name
 	}
 	return op.Name
 }

@@ -101,7 +101,6 @@ func goldenCases() []goldenCase {
 		{"histogram-r", classChart, c("histogram", map[string]any{"channel": "r"}), Options{}},
 		{"compare-side", classStrict, compareCase("side"), Options{}},
 		{"compare-split", classStrict, compareCase("split"), Options{}},
-		{"compare-diff", classStrict, compareCase("diff"), Options{}},
 		// GCV-002: a 32 × 32 crop at zoom 8 with rulers every 4 doc px and a grid every 8
 		{"ruler-crop-zoom8", classStrict, c("crop", []any{100.0, 40.0, 32.0, 32.0}), Options{Zoom: 8, Ruler: 4, Grid: 8}},
 		{"grid-gray-crop-zoom4", classStrict, func(t *testing.T, e *graph.Engine, img graph.NodeID) graph.NodeID {
@@ -113,7 +112,7 @@ func goldenCases() []goldenCase {
 func compareCase(mode string) func(*testing.T, *graph.Engine, graph.NodeID) graph.NodeID {
 	return func(t *testing.T, e *graph.Engine, img graph.NodeID) graph.NodeID {
 		other := call(t, e, "exposure", img, 0.3)
-		return call(t, e, "compare", img, []any{graph.NodeArg{ID: other.ID}}, map[string]any{"mode": mode}).ID
+		return call(t, e, "compare", 0, []any{graph.NodeArg{ID: img}, graph.NodeArg{ID: other.ID}}, map[string]any{"mode": mode}).ID
 	}
 }
 

@@ -21,14 +21,9 @@ type cvFunc struct {
 	see        []string
 }
 
-// cvFuncs are the module functions and session globals that are not ops.
+// cvFuncs are help entries for what is neither an op nor a registered
+// function: cv properties, session globals and concepts.
 var cvFuncs = map[string]cvFunc{
-	"evaluate": {"cv.evaluate(node, { scale })", "Evaluate a node at an explicit scale: a number in (0, 1], \"preview\" (the default of await), \"look\" or \"full\" (1.0). Returns what await returns.", []string{"look", "stats"}},
-	"describe": {"cv.describe(node)", "A node's id, kind, op, call, doc size and graph path, without evaluating it.", []string{"explain"}},
-	"docs":     {"cv.docs.list() · cv.docs.search(text, { limit }) · cv.docs.read(id, { section })", "The guides: list the topics, search their sections, read a topic or one section as Markdown.", []string{"help"}},
-	"help":     {"cv.help() · cv.help(name)", "The op reference: no argument lists ops per kind; a name describes an op, a kind (\"Mask\"), Kind.method (\"Mask.coverage\") or a cv function. Never throws; unknown names return { found: false, didYouMean }.", []string{"docs"}},
-	"isNode":   {"cv.isNode(x)", "true if x is a cv node (lazy), false for plain data.", nil},
-	"warnings": {"cv.warnings({ clear })", "RANGE warnings collected while building nodes (they also appear under warnings: in every result).", nil},
 	"version":  {"cv.version", "The cv module version.", nil},
 	"kinds":    {"cv.kinds", "The node kinds: Image, Mask, Regions, Value, Param.", nil},
 	"mem":      {"mem.name = value", "A plain object that persists between evals (const/let do not).", nil},
@@ -62,7 +57,7 @@ func Help(reg *graph.Registry, name string) map[string]any {
 		h, _ := reg.Help("")
 		h["params"] = "P.slider(name, { min, max, value, step, label, unit }), P.toggle(name, { value }), P.choice(name, { options, value })"
 		h["sources"] = toAny([]string{"cv.open(path, { encoding, box, origin, as })"})
-		h["functions"] = toAny([]string{"cv.evaluate", "cv.compare", "cv.describe", "cv.docs", "cv.isNode", "show", "mem", "node.look"})
+		h["functions"] = toAny(functionNames(reg))
 		h["docs"] = "Guides: cv.docs.list(), cv.docs.search(text), cv.docs.read(id, { section }). Start with cv.docs.read(\"getting-started\")."
 		h["topics"] = toAny(docs.IDs())
 		h["usage"] = "cv.help(name) takes an op (\"levels\"), a kind (\"Mask\"), Kind.method (\"Mask.coverage\") or a cv function (\"evaluate\"). Calls build lazy nodes; await a node to compute it."
@@ -116,6 +111,20 @@ func Help(reg *graph.Registry, name string) map[string]any {
 		return opHelp(reg, name, "")
 	}
 	return notFound(reg, name, suggest(reg, name, ""), "")
+}
+
+// functionNames lists the module ops and registered functions as they are
+// called: cv.compare, cv.evaluate, …, show, node.look.
+func functionNames(reg *graph.Registry) []string {
+	var out []string
+	for _, n := range reg.ModuleOps() {
+		out = append(out, "cv."+n)
+	}
+	for _, f := range reg.Funcs() {
+		out = append(out, f.CallName())
+	}
+	sort.Strings(out)
+	return out
 }
 
 func kindNamed(s string) (graph.Kind, bool) {

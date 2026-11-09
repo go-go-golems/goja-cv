@@ -204,12 +204,15 @@ func (b *binding) drainWarnings() []graph.Warning {
 	return out
 }
 
-// __registry() → { Image: ["contrast", "exposure", …, "mask.luminance"], … }
+// __registry() → { Image: ["contrast", "exposure", …, "mask.luminance"], …,
+// cv: ["compare", "sheet"] } (cv: the module ops the prelude exposes as
+// cv.<name>)
 func (b *binding) registry(goja.FunctionCall) goja.Value {
 	out := map[string]any{}
 	for _, k := range graph.Kinds {
 		out[string(k)] = toAny(b.eng.Registry().Methods(k))
 	}
+	out["cv"] = toAny(b.eng.Registry().ModuleOps())
 	return toJS(b.vm, out)
 }
 

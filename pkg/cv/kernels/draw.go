@@ -1,8 +1,6 @@
 package kernels
 
 import (
-	"context"
-
 	"github.com/go-go-golems/goja-cv/pkg/cv/buffer"
 	"github.com/go-go-golems/goja-cv/pkg/cv/text"
 )
@@ -60,27 +58,4 @@ func Paste(dst, src *buffer.Buffer, x, y int) {
 			}
 		}
 	}
-}
-
-// AbsDiff is |a − b|·gain per channel, clamped to [0, 1], for looking at
-// what changed.
-func AbsDiff(ctx context.Context, a, b *buffer.Buffer, gain float32) (*buffer.Buffer, error) {
-	a, b = matchChannels(a, b)
-	out := buffer.NewLike(a)
-	for c := 0; c < a.C; c++ {
-		pa, pb, po := a.Plane(c), b.Plane(c), out.Plane(c)
-		for i := range po {
-			if i%(1<<16) == 0 {
-				if err := ctx.Err(); err != nil {
-					return nil, err
-				}
-			}
-			d := pa[i] - pb[i]
-			if d < 0 {
-				d = -d
-			}
-			po[i] = clamp01f(d * gain)
-		}
-	}
-	return out, nil
 }

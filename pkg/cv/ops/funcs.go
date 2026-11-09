@@ -43,6 +43,34 @@ func funcDefs() []graph.FuncDef {
 			See: []string{"show", "compare", "overlay"},
 		},
 		{
+			Name: "evaluate", Bespoke: true, Usage: "cv.evaluate(node, { scale })",
+			Doc: "Evaluate a node at an explicit scale: a number in (0, 1], \"preview\" (the default of await), \"look\" or \"full\" (1.0). Returns what await returns.",
+			See: []string{"look", "stats"},
+		},
+		{
+			Name: "describe", Bespoke: true, Usage: "cv.describe(node)",
+			Doc: "A node's id, kind, op, call, frame and graph path, without evaluating it.",
+			See: []string{"explain"},
+		},
+		{
+			Name: "docs", Bespoke: true, Usage: "cv.docs.list() · cv.docs.search(text, { limit }) · cv.docs.read(id, { section })",
+			Doc: "The guides: list the topics, search their sections, read a topic or one section as Markdown.",
+			See: []string{"help"},
+		},
+		{
+			Name: "help", Bespoke: true, Usage: "cv.help() · cv.help(name)",
+			Doc: "The op reference: no argument lists ops per kind; a name describes an op, a kind (\"Mask\"), Kind.method (\"Mask.coverage\") or a cv function. Never throws; unknown names return { found: false, didYouMean }.",
+			See: []string{"docs"},
+		},
+		{
+			Name: "isNode", Bespoke: true, Usage: "cv.isNode(x)",
+			Doc: "true if x is a cv node (lazy), false for plain data.",
+		},
+		{
+			Name: "warnings", Bespoke: true, Usage: "cv.warnings({ clear })",
+			Doc: "Build-time warnings collected while building nodes (they also appear under warnings: in every result).",
+		},
+		{
 			Name: "show", Global: true, Args: LookArgs(), Bespoke: true,
 			Usage: "show(node, label | { label, zoom, interp, maxSide, ruler, grid }) · show(look)",
 			Doc:   "Create a look, queue it and return it; queued looks are delivered even if the eval throws later.",

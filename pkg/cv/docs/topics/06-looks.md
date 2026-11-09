@@ -41,7 +41,7 @@ A look shows **encoded** values: an sRGB photo looks as usual, a linear-encoded 
 - Image and Mask nodes (masks and gray images arrive as PNG, colour as JPEG); one-channel maps in false colour with `colormap("viridis")`;
 - `histogram()` Value nodes render as a bar chart;
 - Regions: draw them with `img.overlay(regions, { labels: "id" })`;
-- several images side by side: `cv.compare([a, b], { mode: "side" | "split" | "diff" })`.
+- several images side by side: `cv.compare([a, b], { mode: "side" | "split" })`; their difference: `a.sub(b)`.
 
 ```js
 const fixed = img.exposure(0.4)

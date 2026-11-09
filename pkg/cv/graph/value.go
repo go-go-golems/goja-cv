@@ -85,6 +85,9 @@ func (v *ImageValue) Summary() map[string]any {
 		"kind": string(v.Kind()), "w": v.Buf.W, "h": v.Buf.H,
 		"scale": v.Buf.Scale, "frame": v.Frame.Data(),
 	}
+	if v.Frame.Picture {
+		m["picture"] = true
+	}
 	if v.IsMask() {
 		m["coverage"] = v.Coverage()
 	} else {

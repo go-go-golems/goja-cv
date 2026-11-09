@@ -2,6 +2,7 @@ package ops
 
 import (
 	"math"
+	"strings"
 	"testing"
 
 	"github.com/go-go-golems/goja-cv/pkg/cv/graph"
@@ -90,7 +91,7 @@ func TestBlendModes(t *testing.T) {
 	}{
 		{"normal", func(_, b float32) float32 { return b }},
 		{"multiply", func(a, b float32) float32 { return a * b }},
-		{"difference", func(a, b float32) float32 { return float32(math.Abs(float64(a - b))) }},
+		{"screen", func(a, b float32) float32 { return 1 - (1-a)*(1-b) }},
 	} {
 		out := evalValue(t, e, call(t, e, "blend", img.ID, graph.NodeArg{ID: dark.ID}, map[string]any{"mode": tc.mode, "opacity": 0.5}), 1).(*graph.ImageValue).Buf
 		for _, i := range []int{0, 100, 1000, len(src.Pix) - 1} {
@@ -109,5 +110,13 @@ func TestBlendModes(t *testing.T) {
 	}
 	if b := call(t, e, "blend", img.ID, graph.NodeArg{ID: dark.ID}, map[string]any{"opacity": 0}); evalValue(t, e, b, 1).(*graph.ImageValue).Buf != src {
 		t.Fatal("blend at opacity 0 is not the identity")
+	}
+	// the removed modes redirect to arithmetic
+	for mode, fix := range map[string]string{"difference": "a.sub(b).abs()", "add": "a.add(b)", "lighten": "a.max(b)", "darken": "a.min(b)"} {
+		_, err := e.Call("blend", img.ID, []any{graph.NodeArg{ID: dark.ID}, map[string]any{"mode": mode, "opacity": 0.5}})
+		ce, ok := graph.AsError(err)
+		if !ok || ce.Code != graph.EArgType || ce.Fix != fix || !strings.Contains(ce.Hint, "{ opacity, mask }") {
+			t.Fatalf("blend mode %s: %+v", mode, err)
+		}
 	}
 }

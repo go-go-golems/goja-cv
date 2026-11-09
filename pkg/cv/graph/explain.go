@@ -75,6 +75,10 @@ func ShortCall(op *OpDef, args Args) string {
 		if s.Default != nil && reflect.DeepEqual(v, normalize(s.Default)) {
 			continue
 		}
+		if l, ok := v.([]any); ok && strings.HasSuffix(s.Type, "[]") && isKindType(strings.TrimSuffix(s.Type, "[]")) {
+			parts = append(parts, fmt.Sprintf("[%d %s]", len(l), strings.ToLower(strings.TrimSuffix(s.Type, "[]"))+"s"))
+			continue
+		}
 		parts = append(parts, shortValue(v))
 	}
 	if len(parts) == 0 {
@@ -126,7 +130,7 @@ func Short(n *Node) string {
 	switch {
 	case n.Op.On == KindNone && n.Op.Name == "open":
 		return "open(" + shortFile(filepath.Base(n.Args.String("path"))) + ")"
-	case n.Op.On == KindNone:
+	case n.Op.On == KindNone && n.Op.Bespoke:
 		return Label(n)
 	case n.Op.Name == "crop" && n.Op.Class == GeometricOp:
 		return fmt.Sprintf("crop[%d,%d,%d,%d]", n.Frame.X, n.Frame.Y, n.Frame.W, n.Frame.H)

@@ -117,23 +117,25 @@ func presentOps() []graph.OpDef {
 			Doc: "regions.overlay(img, opts) is img.overlay(regions, opts).",
 		},
 		{
-			Name: "compare", On: graph.KindImage, Returns: graph.KindImage, Space: graph.SpaceRule{Default: buffer.SpaceEncoded},
+			Name: "compare", On: graph.KindNone, Returns: graph.KindImage, Result: graph.DisplayEnc,
+			Space: graph.SpaceRule{Default: buffer.SpaceEncoded, Fixed: true}, // a layout of what looks show
 			Args: []graph.ArgSpec{
-				{Name: "others", Type: "Image[]", Positional: true, Default: []any{}, Doc: "the images to compare with this one"},
-				{Name: "mode", Type: "enum:side,split,diff", Default: "side", Doc: "side by side, vertical strips of each, or the amplified difference of two"},
-				{Name: "gain", Type: "number", Default: 4.0, Min: graph.F(1), Max: graph.F(100), Doc: "diff: amplification of the difference in the working space (encoded by default)"},
+				{Name: "images", Type: "Image[]", Positional: true, Doc: "the images to compare: [before, after, …]"},
+				{Name: "mode", Type: "enum:side,split", Default: "side", Doc: "side by side (top-aligned, 4 doc px apart) or split into vertical strips (same frame)",
+					Redirects: map[string]graph.Redirect{"diff": {
+						Hint: "compare lays images out; a difference is an image of its own: subtract (signed, zero = grey with .mul(4).add(0.5)).",
+						Fix:  "a.sub(b).mul(4).add(0.5)"}}},
 			},
 			Validate: func(a graph.Args) error {
-				n := len(a.Raw("others").([]any)) + 1
-				if a.String("mode") == "diff" && n != 2 {
-					return graph.Errorf(graph.EArgType, "compare({ mode: \"diff\" }) needs exactly two images, got %d.", n).
-						WithFix(`cv.compare([before, after], { mode: "diff" })`)
+				if n := len(a.Raw("images").([]any)); n == 0 {
+					return graph.Errorf(graph.EArgType, "cv.compare needs at least one image.").WithFix(`cv.compare([img, edited], { mode: "side" })`)
 				}
 				return nil
 			},
 			DocFrame: func(a graph.Args, inputs []*graph.Node) graph.Frame {
 				ims := imageInputs(inputs)
 				f := ims[0].Frame
+				f.Picture = true
 				if a.String("mode") != "side" {
 					return f
 				}
@@ -147,25 +149,13 @@ func presentOps() []graph.OpDef {
 				}
 				return f
 			},
-			Run: func(ctx context.Context, ec *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
-				ims := []*graph.ImageValue{image(in[0])}
-				for _, v := range a.Nodes("others") {
-					ims = append(ims, image(v))
+			Run: func(_ context.Context, ec *graph.EvalCtx, _ []graph.Value, a graph.Args) (graph.Value, error) {
+				var ims []*graph.ImageValue
+				for _, v := range a.Nodes("images") {
+					im := image(v)
+					ims = append(ims, &graph.ImageValue{Buf: kernels.ToRGB(im.Buf), Frame: im.Frame})
 				}
-				for i := range ims {
-					ims[i] = &graph.ImageValue{Buf: kernels.ToRGB(ims[i].Buf), Frame: ims[i].Frame}
-				}
-				switch a.String("mode") {
-				case "diff":
-					if err := sameFrame("compare", ims[0], ims[1]); err != nil {
-						return nil, err
-					}
-					out, err := kernels.AbsDiff(ctx, ims[0].Buf, ims[1].Buf, float32(a.Number("gain")))
-					if err != nil {
-						return nil, err
-					}
-					return graph.NewImage(out), nil
-				case "split":
+				if a.String("mode") == "split" {
 					out := ims[0].Buf.Clone()
 					n := len(ims)
 					for k := 1; k < n; k++ {
@@ -196,8 +186,8 @@ func presentOps() []graph.OpDef {
 				}
 				return graph.NewImage(out), nil
 			},
-			Doc: `Compare images for looking: cv.compare([a, b, …], { mode }) — "side" by side (top-aligned, 4 doc px apart), "split" into vertical strips (same size), or "diff" (|a − b| × gain in the working space, encoded by default, two images).`,
-			See: []string{"overlay"},
+			Doc: `Compare images for looking: cv.compare([a, b, …], { mode }) — "side" by side (top-aligned, 4 doc px apart) or "split" into vertical strips (same frame). The result is a picture (its pixels are not doc px). For a difference, subtract: a.sub(b).`,
+			See: []string{"sub", "overlay", "sheet"},
 		},
 	}
 }

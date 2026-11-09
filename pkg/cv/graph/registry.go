@@ -234,6 +234,7 @@ type OpDef struct {
 	Result   *ResultEnc            // encoding and space of an Image result; nil = KeepEnc
 	Gray     func(args Args) []int // positions of the Image inputs read as luminance (fed toGray rec709 in linear space)
 	Internal bool                  // not callable from JavaScript, not listed in help (convert)
+	Bespoke  bool                  // a module op bound by hand (cv.open, P.slider, the builder placeholder): the prelude does not generate cv.<name>
 	// Expand makes the op a macro: a graph of other ops built at intern
 	// time (exactly one of Run and Expand is set). See ExpandFunc.
 	Expand ExpandFunc
@@ -413,6 +414,19 @@ func (r *Registry) Methods(on Kind) []string {
 		out = append(out, n)
 	}
 	sort.Strings(out)
+	return out
+}
+
+// ModuleOps are the module ops the prelude exposes as cv.<name>: ops with
+// no receiver that are neither internal nor bound by hand (cv.compare,
+// cv.sheet).
+func (r *Registry) ModuleOps() []string {
+	var out []string
+	for _, op := range r.Ops() {
+		if op.On == KindNone && !op.Bespoke {
+			out = append(out, op.Name)
+		}
+	}
 	return out
 }
 

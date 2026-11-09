@@ -79,11 +79,11 @@ return { mask: top.look("mask"), out: out.look("darker top") }
 
 ## Compare
 
-`cv.compare([a, b, …], { mode })`: `"side"` by side, `"split"` into strips, `"diff"` the amplified difference of two.
+`cv.compare([a, b, …], { mode })` lays images out: `"side"` by side or `"split"` into strips. A difference is an image of its own: `a.sub(b)` keeps the sign (positive where `a` is brighter); `.mul(4).add(0.5)` shows zero as mid-grey.
 
 ```js
 const blurred = img.gaussian(3)
-return { side: cv.compare([img, blurred]).look("side"), diff: cv.compare([img, blurred], { mode: "diff", gain: 8 }).look("diff") }
+return { side: cv.compare([img, blurred]).look("side"), diff: img.sub(blurred).mul(8).add(0.5).look("img − blurred, ×8, zero = grey") }
 ```
 
 ## Not yet

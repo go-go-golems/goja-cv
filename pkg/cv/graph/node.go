@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
+	"reflect"
 	"sync"
 
 	"github.com/go-go-golems/goja-cv/pkg/cv/buffer"
@@ -141,6 +142,9 @@ func (b *Builder) call(op *OpDef, receiver NodeID, raw []any, trusted map[string
 		}
 	}
 	if recv != nil {
+		if err := checkPicture(op, args, recv); err != nil {
+			return CallResult{}, err
+		}
 		if err := checkInFrame(op, args, recv.Frame); err != nil {
 			return CallResult{}, err
 		}
@@ -182,6 +186,31 @@ func (b *Builder) internNode(op *OpDef, args Args, inputs []*Node, nExplicit int
 	n.Enc, n.Space = nodeStatics(op, args, inputs)
 	b.byKey[h], b.nodes[n.ID] = n, n
 	return n
+}
+
+// checkPicture refuses crops and doc-px arguments on a picture (a sheet, a
+// side-by-side compare): its pixels are not doc px.
+func checkPicture(op *OpDef, args Args, recv *Node) error {
+	if !recv.Frame.Picture {
+		return nil
+	}
+	what := ""
+	if op.Class == GeometricOp {
+		what = op.Name
+	}
+	for i := range op.Args {
+		s := &op.Args[i]
+		if what == "" && !s.Hidden && (s.Unit == DocPx || s.Unit == DocPx2) && args.Has(s.Name) {
+			if s.Default == nil || !reflect.DeepEqual(args.vals[s.Name], normalize(s.Default)) {
+				what = op.Name + "." + s.Name
+			}
+		}
+	}
+	if what == "" {
+		return nil
+	}
+	return Errorf(EWrongKind, "%s: %s is a picture of crops or images; its pixels are not doc px.", what, Label(recv)).
+		WithHint("Use the coordinates of the items or images it shows: crop, measure and annotate those, then lay them out.")
 }
 
 // checkInFrame refuses literal boxes that miss frame and points outside it,
