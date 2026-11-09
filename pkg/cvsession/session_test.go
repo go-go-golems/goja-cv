@@ -357,12 +357,12 @@ return {
 	if resp.Cell.Execution.Status != "ok" {
 		t.Fatalf("status %s:\n%s", resp.Cell.Execution.Status, out)
 	}
-	mustContain(t, out, "n: 41", "keys: [count, frame, items, kind, scale, truncated]", "json: [count, frame, items, kind, scale, truncated]",
+	mustContain(t, out, "n: 41", "keys: [count, frame, items, kind, scale]", "json: [count, frame, items, kind, scale]",
 		"dust: 40", "filtered: 40", "explain: true", "after: 0", "healedDirect: 0", "look 1: all", "isNode: false", "brighter: true")
 	mustNotContain(t, out, "where:", "UNUSED_NODE")
 	// returning awaited data renders exactly the data
-	out = text(eval(t, app, sid, `const r = await img.detect.specks(); return { count: r.count, truncated: r.truncated, w: r.frame[2] }`))
-	mustContain(t, out, "{count: 41, truncated: false, w: 256}")
+	out = text(eval(t, app, sid, `const r = await img.detect.specks(); return { count: r.count, items: r.items.length, w: r.frame[2] }`))
+	mustContain(t, out, "{count: 41, items: 41, w: 256}")
 	out = text(eval(t, app, sid, `const s = await img.stats(); return s`))
 	mustNotContain(t, out, "levels", "exposure", "pick:")
 	// plain objects that never came from a node still get a structured error with a fix
@@ -448,7 +448,7 @@ return n`: {"code: E_NOT_ARRAY", "for (const r of regions.items)"},
 	}
 	// the data itself is unchanged
 	out := text(eval(t, app, sid, `const r = await img.detect.specks(); return { n: r.count, items: r.items.length, keys: Object.keys(r).join(",") }`))
-	mustContain(t, out, "n: 41", "items: 41", "keys: 'count,frame,items,kind,scale,truncated'")
+	mustContain(t, out, "n: 41", "items: 41", "keys: 'count,frame,items,kind,scale'")
 }
 
 func TestRawTypeErrorsOnDataNameTheOp(t *testing.T) {

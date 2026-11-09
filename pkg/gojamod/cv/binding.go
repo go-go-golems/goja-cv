@@ -375,13 +375,22 @@ func (b *binding) evaluate(c goja.FunctionCall) goja.Value {
 				_ = reject(errorObject(vm, err))
 				return
 			}
-			_ = resolve(resultToJS(vm, v, n))
+			res, err := resultToJS(vm, v, n)
+			if err != nil {
+				ce, _ := graph.AsError(err)
+				if ce != nil && len(ce.Path) == 0 {
+					ce.Path = b.eng.Path(n.ID)
+				}
+				_ = reject(errorObject(vm, err))
+				return
+			}
+			_ = resolve(res)
 		})
 	}()
 	return vm.ToValue(promise)
 }
 
-func resultToJS(vm *goja.Runtime, v graph.Value, n *graph.Node) goja.Value {
+func resultToJS(vm *goja.Runtime, v graph.Value, n *graph.Node) (goja.Value, error) {
 	switch x := v.(type) {
 	case *graph.ImageValue:
 		s := x.Summary()
@@ -390,13 +399,17 @@ func resultToJS(vm *goja.Runtime, v graph.Value, n *graph.Node) goja.Value {
 				s[k] = val
 			}
 		}
-		return toJS(vm, s)
+		return toJS(vm, s), nil
 	case *graph.RegionsValue:
-		return toJS(vm, x.Summary(graph.SummaryLimit))
+		s, err := x.Summary()
+		if err != nil {
+			return nil, err
+		}
+		return toJS(vm, s), nil
 	case *graph.DataValue:
-		return toJS(vm, x.Data)
+		return toJS(vm, x.Data), nil
 	}
-	return goja.Undefined()
+	return goja.Undefined(), nil
 }
 
 // __describe(id) → {id, kind, op, call, label, frame, path}

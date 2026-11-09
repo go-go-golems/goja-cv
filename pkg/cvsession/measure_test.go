@@ -1,7 +1,13 @@
 package cvsession_test
 
 import (
+	"image"
+	"image/png"
+	"os"
+	"path/filepath"
 	"testing"
+
+	"github.com/go-go-golems/goja-cv/pkg/cvsession"
 )
 
 // GCV-003 tests of the JavaScript surface: flat region items, removed field
@@ -49,4 +55,36 @@ return {
   sheet: cv.sheet(items, { views: img, size: 32, zoom: 2 }).look("items"),
 }`))
 	mustContain(t, out, "only: 1 true", "without: -2", "inside: true", "crop: true", "flood: true", "marks: Image", "look 1: items")
+}
+
+// dotsPNG writes a w×h gray PNG with an isolated bright pixel at every
+// other pixel of every other row: (w/2)·(h/2) one-pixel regions.
+func dotsPNG(t *testing.T, w, h int) string {
+	t.Helper()
+	m := image.NewGray(image.Rect(0, 0, w, h))
+	for y := 0; y < h; y += 2 {
+		for x := 0; x < w; x += 2 {
+			m.Pix[y*w+x] = 255
+		}
+	}
+	p := filepath.Join(t.TempDir(), "dots.png")
+	f, err := os.Create(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = f.Close() }()
+	if err := png.Encode(f, m); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+func TestAwaitedRegionsHaveEveryItem(t *testing.T) {
+	img := dotsPNG(t, 150, 150)
+	app, sid := newApp(t, cvsession.Options{Image: img, BaseDir: filepath.Dir(img)})
+	out := mustOK(t, eval(t, app, sid, `
+const r = await img.mask.luminance({ above: 0.5 }).components()
+return { count: r.count, items: r.items.length, last: r.items[r.items.length - 1].id, all: r.items }`))
+	mustContain(t, out, "count: 5625", "items: 5625", "more (return cv.json(x) for all)")
+	mustNotContain(t, out, "truncated")
 }

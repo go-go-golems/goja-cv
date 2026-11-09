@@ -197,22 +197,29 @@ func (r *Region) Data(fields []FieldSpec) Record {
 	return rec
 }
 
-// SummaryLimit is the number of items an awaited Regions value includes.
-const SummaryLimit = 100
+// MaxRegionItems is a safety limit on the items of an awaited Regions value:
+// a pathological mask (every grain a region) would otherwise become a
+// multi-gigabyte JavaScript array.
+const MaxRegionItems = 100000
 
 // Summary is what JavaScript receives for an awaited Regions node: the count
-// and the first limit items in list order.
-func (v *RegionsValue) Summary(limit int) map[string]any {
-	n := min(limit, len(v.Items))
+// and every item in list order. More than MaxRegionItems items is
+// E_TOO_MANY.
+func (v *RegionsValue) Summary() (map[string]any, error) {
+	if len(v.Items) > MaxRegionItems {
+		return nil, Errorf(ETooMany, "%d regions; await at most %d.", len(v.Items), MaxRegionItems).
+			WithHint("Keep the regions you need before awaiting: rank and cut, or count them without awaiting the items.").
+			WithFix(`regions.sortBy("area").top(1000)   // or await regions.count()`)
+	}
 	fields := v.Schema()
-	items := make([]any, n)
-	for i := 0; i < n; i++ {
-		items[i] = v.Items[i].Data(fields)
+	items := make([]any, len(v.Items))
+	for i, r := range v.Items {
+		items[i] = r.Data(fields)
 	}
 	return map[string]any{
 		"kind": string(KindRegions), "count": float64(len(v.Items)), "items": items,
-		"truncated": len(v.Items) > n, "scale": v.Scale, "frame": v.Frame.Data(),
-	}
+		"scale": v.Scale, "frame": v.Frame.Data(),
+	}, nil
 }
 
 // Raster is where a buffer lies in doc px: the doc position of its

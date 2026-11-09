@@ -202,7 +202,23 @@ func TestRasterizeKeepsAreaAtAnyScale(t *testing.T) {
 	if d["area"] != 221.0 || d["aspect"].(float64) < 1 {
 		t.Fatalf("data %v", d)
 	}
-	if s := rv.Summary(10); s["count"] != 1.0 || s["truncated"] != false {
+	if s, err := rv.Summary(); err != nil || s["count"] != 1.0 || len(s["items"].([]any)) != 1 {
 		t.Fatalf("summary %v", s)
+	}
+}
+
+func TestAwaitingTooManyRegionsIsAnError(t *testing.T) {
+	rv := NewRegions(1, 1, 1, Frame{W: 1, H: 1})
+	rv.Items = make([]*Region, MaxRegionItems+1)
+	for i := range rv.Items {
+		rv.Items[i] = &Region{ID: i + 1}
+	}
+	_, err := rv.Summary()
+	if ce, ok := AsError(err); !ok || ce.Code != ETooMany || !strings.Contains(ce.Fix, "top(1000)") || !strings.Contains(ce.Message, "100001 regions") {
+		t.Fatalf("summary of %d regions: %v", len(rv.Items), err)
+	}
+	rv.Items = rv.Items[:MaxRegionItems]
+	if s, err := rv.Summary(); err != nil || len(s["items"].([]any)) != MaxRegionItems {
+		t.Fatalf("summary at the limit: %v", err)
 	}
 }

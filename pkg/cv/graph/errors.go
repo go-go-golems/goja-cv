@@ -28,6 +28,7 @@ const (
 	EPlaceholder      = "E_PLACEHOLDER" // a builder lambda's placeholder node was evaluated outside its builder
 	EFrame            = "E_FRAME"       // images combined by one op cover different frames
 	EFormat           = "E_FORMAT"      // a file feature goja-cv does not read
+	ETooMany          = "E_TOO_MANY"    // an awaited result would be too large for JavaScript
 	WUnusedNode       = "UNUSED_NODE"
 	WRange            = "RANGE"
 	WCropFirst        = "CROP_FIRST"       // a filter with a halo after a crop sees only the window
