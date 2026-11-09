@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/go-go-golems/goja-cv/pkg/cv/docs"
 	"github.com/go-go-golems/goja-cv/pkg/cvsession"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -162,4 +163,53 @@ return await fixed.stats().pick("meanL", "clipLow", "clipHigh")`)
 		t.Fatalf("mimes %s %s", images[0].MIMEType, images[1].MIMEType)
 	}
 	mustNotContain(t, text, "UNUSED_NODE", "error")
+}
+
+func TestMCPInstructionsAreCompactAndDocsAreResources(t *testing.T) {
+	cs := connect(t, cvsession.Options{Image: tiffPath})
+	ctx := context.Background()
+	ins := cs.InitializeResult().Instructions
+	if len(ins) > 4000 {
+		t.Fatalf("instructions are %d characters, want < 4000", len(ins))
+	}
+	for _, s := range []string{"body of an async function", "mem", "node.look(", "show(", "doc px", "fix",
+		"img.stats()", "img.levels(", "cv.compare(", "img.mask.luminance(", "img.within(", "img.detect.specks()", "img.heal(",
+		"P.slider(", "cv.docs.search(", "cv.docs.read(", "cv.help(op)", "cv://docs/<id>", "cv://reference", "not available yet"} {
+		if !strings.Contains(ins, s) {
+			t.Fatalf("instructions lack %q", s)
+		}
+	}
+	tools, err := cs.ListTools(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tool := range tools.Tools {
+		if tool.Name == "eval" && !strings.Contains(tool.Description, "cv.docs.search") {
+			t.Fatalf("eval description %q", tool.Description)
+		}
+	}
+	res, err := cs.ListResources(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	uris := map[string]bool{}
+	for _, r := range res.Resources {
+		uris[r.URI] = true
+	}
+	for _, id := range docs.IDs() {
+		if !uris[cvsession.DocsURIPrefix+id] {
+			t.Fatalf("missing resource for topic %s in %v", id, uris)
+		}
+	}
+	if !uris[cvsession.ReferenceURI] {
+		t.Fatal("missing cv://reference")
+	}
+	rr, err := cs.ReadResource(ctx, &mcp.ReadResourceParams{URI: "cv://docs/recipes"})
+	if err != nil || !strings.HasPrefix(rr.Contents[0].Text, "# Recipes") || rr.Contents[0].MIMEType != "text/markdown" {
+		t.Fatalf("read cv://docs/recipes: %v %+v", err, rr)
+	}
+	text, _, isErr := callEval(t, cs, `return cv.docs.read("getting-started", { section: "The globals" })`)
+	if isErr || !strings.Contains(text, "## The globals") {
+		t.Fatalf("docs via eval:\n%s", text)
+	}
 }

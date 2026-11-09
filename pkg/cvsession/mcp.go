@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/go-go-golems/go-go-goja/pkg/replmcp"
+	"github.com/go-go-golems/goja-cv/pkg/cv/docs"
 	cvmod "github.com/go-go-golems/goja-cv/pkg/gojamod/cv"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/pkg/errors"
@@ -13,6 +14,9 @@ import (
 
 // ReferenceURI is the MCP resource with the generated op reference.
 const ReferenceURI = "cv://reference"
+
+// DocsURIPrefix prefixes the MCP resources of the docs topics (cv://docs/<id>).
+const DocsURIPrefix = "cv://docs/"
 
 // MCPServer is goja-cv's MCP server: go-go-goja's replmcp server over a cv
 // App, with the cv eval tool, an open tool, the cv://reference resource and
@@ -96,10 +100,22 @@ func (s *MCPServer) register(server *mcp.Server) {
 			URI: ReferenceURI, MIMEType: "text/markdown", Text: Reference(cvmod.DefaultRegistry()),
 		}}}, nil
 	})
+	for _, t := range docs.Topics() {
+		uri, body := DocsURIPrefix+t.ID, t.Body
+		server.AddResource(&mcp.Resource{
+			URI:         uri,
+			Name:        "cv-docs-" + t.ID,
+			Title:       t.Title,
+			Description: t.Summary,
+			MIMEType:    "text/markdown",
+		}, func(context.Context, *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
+			return &mcp.ReadResourceResult{Contents: []*mcp.ResourceContents{{URI: uri, MIMEType: "text/markdown", Text: body}}}, nil
+		})
+	}
 	server.AddPrompt(&mcp.Prompt{
 		Name:        "cv-agent",
 		Title:       "cv agent instructions",
-		Description: "The eval rules (async body, return, mem, looks, lazy nodes) and the op reference.",
+		Description: "The eval rules and most used calls, followed by the full op reference.",
 	}, func(context.Context, *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
 		return &mcp.GetPromptResult{
 			Description: "cv agent instructions",

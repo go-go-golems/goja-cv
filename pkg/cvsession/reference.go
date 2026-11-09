@@ -8,21 +8,36 @@ import (
 	"github.com/go-go-golems/goja-cv/pkg/cv/graph"
 )
 
-// Instructions are the eval rules an agent would otherwise learn by failing.
-// They are the MCP server instructions and the head of the cv-agent prompt.
-const Instructions = `cv is a lazy image-analysis API driven through the eval tool. Rules:
-- The code is the body of an async function: use await, and return what you want to see. The last expression is NOT returned. Results come back as YAML (max 9000 characters); long arrays are cut.
-- Calls on nodes build lazy, immutable, hash-consed nodes: img.exposure(0.3) computes nothing. Nothing runs until you await a node, return or show a look, or use it in another node. A node built and discarded gets an UNUSED_NODE warning.
-- await a Value node to get data ((await img.stats()).meanL); awaiting an Image gives a summary { kind, w, h, scale }, never pixels.
-- Looks are images you return: node.look("label") or node.look({ label, maxSide }) inside the returned value (alone, in an object or array) attaches the image; show(node, opts) also queues it so it arrives even if the eval throws later. Each look is numbered (the number is burned into its top-left corner) and its caption gives the scale: "1 image px = S doc px"; multiply look coordinates by S for document coordinates.
-- Globals: cv (cv.help(), cv.help("name"), cv.open(path)), P (params: P.slider(name, { min, max, value })), img (the open image; img = cv.open(path) rebinds it), mem (a plain object that persists between evals), show. Top-level const/let do not survive between evals: keep values on mem.
-- Lengths are in document pixels (doc px) at every scale; levels black/white are linear-light levels like stats.
-- Errors come back as YAML with code, message, where (your line), hint and a literal fix: apply the fix.
-- The document layer (doc.apply, doc.propose, export) is not available yet; describe edits as looks.
-- Read cv://reference (or call cv.help()) for every op.`
+// Instructions are the MCP server instructions: the eval contract, the most
+// important calls, and where to read more (cv.docs from inside eval,
+// cv://docs/<id> and cv://reference as resources). Keep it under 4000
+// characters; the guides carry the detail.
+const Instructions = `cv is a lazy image-analysis API. You drive it with the eval tool.
+
+Eval contract
+- The code is the body of an async function: use await and end with return; the last expression is not returned. The value comes back as YAML (max 9000 chars), then warnings (RANGE, UNUSED_NODE with your line) and a context block (images, params, mem keys).
+- const/let do not survive between evals: keep values on mem (a plain object that persists).
+- Calls build lazy, immutable nodes; nothing runs until you await a node, return a look, or show() it. A node built and discarded gets UNUSED_NODE. Comparing a node with < or > is E_LAZY_COMPARE: await it first.
+- Lengths, boxes and points are in doc px (original-image pixels) at every scale; areas in doc px².
+- Errors are YAML with code, message, where (your line), path, hint and a literal fix: apply the fix.
+- The document layer (doc.apply, propose, undo, export) is not available yet: describe edits and show them as looks.
+
+Globals: img (the open image; img = cv.open(path) rebinds it), cv, P, mem, show.
+
+Most used calls
+- await img.stats() → { meanL, p01, p99, clipLow, clipHigh, … } (linear light); img.histogram().look()
+- img.exposure(ev), img.levels({ black, white, gamma }) (black/white are linear levels like stats), img.contrast(a), img.gaussian(r), img.toGray()
+- node.look("label") or node.look({ label, maxSide }) inside the returned value attaches an image; show(node, opts) queues one that survives a later throw. Captions give the scale: 1 image px = S doc px.
+- cv.compare([a, b], { mode: "side" | "split" | "diff" }) to see before/after.
+- Masks: img.mask.luminance({ above, below }), mask.box([x, y, w, h]), mask.gradient({ from: "top", to: 0.5 }), mask.color, mask.flood; a.and(b), a.or(b), a.minus(b), a.not(), m.feather(r), m.grow(r), m.coverage().
+- img.within(mask, i => i.exposure(-0.4)) edits inside a mask (the function runs once, at build time).
+- Dust: img.detect.specks() → Regions; .where({ score: { gte: 0.5 } }), .sortBy("area").top(n), .without([id]), .count(); img.overlay(regions, { labels: "id" }).look(); img.heal(regions, { radius }); await img.check.dust().
+- Params: P.slider(name, { min, max, value }) can be used anywhere a number goes.
+
+More: cv.docs.list() (topics), cv.docs.search("heal dust") (sections with snippets), cv.docs.read(id, { section }) (Markdown); start with cv.docs.read("getting-started") and cv.docs.read("recipes"). cv.help(op) describes one op (arguments, units, defaults). Resources: cv://docs/<id> and cv://reference (every op).`
 
 // EvalToolDescription is the description of the cv eval tool (Part 3 §17.4).
-const EvalToolDescription = "Run JavaScript against the cv image API in a persistent session. The code is the body of an async function: use await, and return what you want to see (rendered as YAML, max 9000 chars). node.look(\"label\") in the returned value, or show(node), attaches an image. Top-level const/let do not survive between calls; store values on mem. Call cv.help() or cv.help('name') for the reference."
+const EvalToolDescription = "Run JavaScript against the cv image API in a persistent session. The code is the body of an async function: use await, and return what you want to see (rendered as YAML, max 9000 chars). node.look(\"label\") in the returned value, or show(node), attaches an image. Top-level const/let do not survive between calls; store values on mem. Read the guides from inside eval: cv.docs.search(text), cv.docs.read(id); cv.help(op) describes one op."
 
 // Reference renders the op registry as Markdown: every op by receiver kind
 // with its usage, arguments and one line of documentation.
