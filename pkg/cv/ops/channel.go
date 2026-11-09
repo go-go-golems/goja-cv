@@ -27,11 +27,11 @@ func channelOf(a graph.Args) int {
 // encodeEnc: encode's result has the encoding it names; its values are the
 // same linear values.
 var encodeEnc = &graph.ResultEnc{
-	Enc: func(a graph.Args, _ []*graph.Node) buffer.Encoding {
+	Enc: func(a graph.Args) buffer.Encoding {
 		e, _ := buffer.ParseEncoding(a.String("to"))
 		return e
 	},
-	Space: func(graph.Args, buffer.Space, []*graph.Node) buffer.Space { return buffer.SpaceLinear },
+	Space: func(graph.Args, buffer.Space) buffer.Space { return buffer.SpaceLinear },
 }
 
 // SourceNotes returns the notes of the files a node was computed from.
@@ -63,7 +63,7 @@ func channelOps() []graph.OpDef {
 			Name: "channel", On: graph.KindImage, Returns: graph.KindImage,
 			Args: []graph.ArgSpec{{Name: "c", Type: "enum:r,g,b|number", Positional: true, Min: graph.F(0), Max: graph.F(2),
 				Doc: `the channel: "r", "g", "b" or 0, 1, 2`}},
-			Validate: func(a graph.Args, _ []*graph.Node) error {
+			Validate: func(a graph.Args) error {
 				if f, ok := a.Raw("c").(float64); ok && f != math.Trunc(f) {
 					return graph.Errorf(graph.EArgType, "channel(%g): the channel is 0, 1 or 2.", f).WithValid([]string{"r", "g", "b", "0", "1", "2"})
 				}
@@ -104,8 +104,8 @@ func channelOps() []graph.OpDef {
 			Name: "toLab", On: graph.KindImage, Returns: graph.KindImage,
 			Space:  graph.SpaceRule{Default: buffer.SpaceLinear, Fixed: true},
 			Result: graph.DerivedEnc,
-			Warn: func(b *graph.Builder, _ graph.Args, inputs []*graph.Node) []graph.Warning {
-				for _, note := range SourceNotes(b, inputs[0]) {
+			Warn: func(b *graph.Builder, a graph.Args) []graph.Warning {
+				for _, note := range SourceNotes(b, a.Receiver()) {
 					if strings.Contains(note, "camera RGB primaries") {
 						return []graph.Warning{{Code: WPrimaries, Message: "toLab: a*/b* are approximate: the DNG's colour matrices are not applied (camera RGB is treated as sRGB primaries)."}}
 					}

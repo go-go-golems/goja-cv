@@ -42,7 +42,7 @@ func toneOps() []graph.OpDef {
 						"box": {Hint: "levels has no box: crop the window, then stretch it by its own pixels.", Fix: "img.crop([x, y, w, h]).levels({ auto: true })"},
 					}},
 			},
-			Validate: func(a graph.Args, _ []*graph.Node) error {
+			Validate: func(a graph.Args) error {
 				if a.Has("auto") && (a.Has("black") || a.Has("white")) {
 					return graph.Errorf(graph.EArgType, "levels takes auto or black/white, not both: auto computes black and white.").
 						WithFix("img.levels({ auto: true })   // or img.levels({ black: 0.02, white: 0.6 })")

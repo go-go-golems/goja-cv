@@ -27,13 +27,13 @@ type Meta struct {
 func RegisterSource(reg *graph.Registry) {
 	reg.MustRegister(graph.OpDef{
 		Name: SourceOp, On: graph.KindNone, Returns: graph.KindImage, Bespoke: true,
-		DocFrame: func(a graph.Args, _ []*graph.Node) graph.Frame { return graph.Meta[Meta](a).Frame },
+		DocFrame: func(a graph.Args) graph.Frame { return graph.Meta[Meta](a).Frame },
 		Result: &graph.ResultEnc{
-			Enc: func(a graph.Args, _ []*graph.Node) buffer.Encoding {
+			Enc: func(a graph.Args) buffer.Encoding {
 				e, _ := buffer.ParseEncoding(graph.Meta[Meta](a).Enc)
 				return e
 			},
-			Space: func(graph.Args, buffer.Space, []*graph.Node) buffer.Space { return buffer.SpaceLinear },
+			Space: func(graph.Args, buffer.Space) buffer.Space { return buffer.SpaceLinear },
 		},
 		Run: func(_ context.Context, ec *graph.EvalCtx, _ []graph.Value, a graph.Args) (graph.Value, error) {
 			m := graph.Meta[Meta](a)

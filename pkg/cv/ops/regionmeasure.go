@@ -102,8 +102,8 @@ func newRegionFields(a graph.Args) []graph.FieldSpec {
 	return fs
 }
 
-func regionMeasureFields(a graph.Args, inputs []*graph.Node) []graph.FieldSpec {
-	return graph.WithFields(receiverFields(inputs), newRegionFields(a)...)
+func regionMeasureFields(a graph.Args) []graph.FieldSpec {
+	return graph.WithFields(receiverFields(a), newRegionFields(a)...)
 }
 
 // regionMeasureProduces maps the unprefixed fields regions.measure adds to
@@ -122,7 +122,7 @@ func regionMeasureProduces() map[string]string {
 	return out
 }
 
-func validateRegionMeasure(a graph.Args, inputs []*graph.Node) error {
+func validateRegionMeasure(a graph.Args) error {
 	for _, st := range statNames(a) {
 		if !contains(regionStats, st) {
 			e := graph.Errorf(graph.EArgType, "regions.measure.stats: %q is not one of %s.", st, strings.Join(regionStats, ", ")).WithValid(regionStats)
@@ -156,16 +156,14 @@ func validateRegionMeasure(a graph.Args, inputs []*graph.Node) error {
 			}
 		}
 	}
-	if len(inputs) >= 2 {
-		if err := graph.SameFrame("regions.measure", inputs[0].Frame, inputs[1].Frame); err != nil {
-			return err
-		}
+	if err := graph.SameFrame("regions.measure", a.Receiver().Frame, a.Input("image").Frame); err != nil {
+		return err
 	}
-	have := receiverFields(inputs)
+	have := receiverFields(a)
 	for _, f := range newRegionFields(a) {
 		if _, ok := graph.FindField(have, f.Name); ok {
 			prefix := "img"
-			if len(inputs) >= 2 && inputs[1].Kind == graph.KindMask {
+			if a.Input("image").Kind == graph.KindMask {
 				prefix = "mask"
 			}
 			return graph.Errorf(EFieldExists, "regions.measure would add %s, which these regions already have.", f.Name).
@@ -184,7 +182,7 @@ func defaultCore(area float64) float64 {
 
 func runRegionMeasure(ctx context.Context, _ *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
 	rv := regions(in[0])
-	src := image(in[1])
+	src := image(a.Value("image"))
 	if err := graph.SameFrame("regions.measure", rv.Frame, src.Frame); err != nil {
 		return nil, err
 	}
@@ -299,9 +297,10 @@ func regionWeights(rv *graph.RegionsValue, r *graph.Region, t graph.Raster, same
 
 func regionMeasureOp() graph.OpDef {
 	return graph.OpDef{
-		Name: "measure", On: graph.KindRegions, Inputs: []graph.Kind{"Image|Mask"}, Returns: graph.KindRegions,
+		Name: "measure", On: graph.KindRegions, Returns: graph.KindRegions,
 		Space: graph.SpaceRule{Default: buffer.SpaceLinear},
 		Args: []graph.ArgSpec{
+			{Name: "image", Type: "Image|Mask", Positional: true, Doc: "the image (or mask) to measure, in the regions' frame"},
 			{Name: "stats", Type: "string[]", Optional: true, Static: true,
 				Doc: "statistics over each region's own pixels, on the gray plane (fields meanL, maxL, …): " + strings.Join(regionStats, ", ")},
 			{Name: "channels", Type: "bool", Optional: true, Static: true,

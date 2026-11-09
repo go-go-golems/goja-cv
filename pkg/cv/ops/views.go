@@ -94,7 +94,7 @@ func filterViewOps() []graph.OpDef {
 				sigma("sigma2", "σ of the second blur, doc px (> sigma1): the size of the surroundings", nil),
 				polarityArg,
 			},
-			Validate: func(a graph.Args, _ []*graph.Node) error {
+			Validate: func(a graph.Args) error {
 				s1, ok1 := literal(a, "sigma1")
 				s2, ok2 := literal(a, "sigma2")
 				if ok1 && ok2 && !(s2 > s1) {

@@ -53,12 +53,11 @@ func viewCount(v any) int {
 
 // itemsBound is the static bound on the item count of the sheet's Regions
 // input (top(n)), or -1.
-func itemsBound(a graph.Args, inputs []*graph.Node) int {
-	ref, ok := a.Raw("items").(graph.InputRef)
-	if !ok || ref.Index >= len(inputs) {
+func itemsBound(a graph.Args) int {
+	if _, ok := a.Raw("items").(graph.InputRef); !ok {
 		return -1
 	}
-	n := inputs[ref.Index]
+	n := a.Input("items")
 	if n.Op.MaxItems == nil {
 		return -1
 	}
@@ -138,32 +137,6 @@ func listItems(v []any) ([]sheetItem, error) {
 	return out, nil
 }
 
-// nodeOf is the node a bound argument refers to (an InputRef of node n).
-func nodeOf(ec *graph.EvalCtx, v any) (graph.NodeID, bool) {
-	ref, ok := v.(graph.InputRef)
-	if !ok || ref.Index >= len(ec.Node.Inputs) {
-		return 0, false
-	}
-	return ec.Node.Inputs[ref.Index], true
-}
-
-func viewNodes(ec *graph.EvalCtx, v any) []graph.NodeID {
-	var out []graph.NodeID
-	switch x := v.(type) {
-	case []any:
-		for _, e := range x {
-			if id, ok := nodeOf(ec, e); ok {
-				out = append(out, id)
-			}
-		}
-	default:
-		if id, ok := nodeOf(ec, x); ok {
-			out = append(out, id)
-		}
-	}
-	return out
-}
-
 // cellLabel fits the label into a cell: font size 2, else 1, else the id
 // alone.
 func cellLabel(full, id string, cell int) (string, int) {
@@ -190,11 +163,7 @@ func fill(b *buffer.Buffer, x0, y0, w, h int, v float32) {
 }
 
 func runSheet(ctx context.Context, ec *graph.EvalCtx, _ []graph.Value, a graph.Args) (graph.Value, error) {
-	ins := make([]*graph.Node, len(ec.Node.Inputs))
-	for i := range ins {
-		ins[i] = ec.InputNode(i)
-	}
-	l, err := layoutSheet(a, itemsBound(a, ins))
+	l, err := layoutSheet(a, itemsBound(a))
 	if err != nil {
 		return nil, err
 	}
@@ -206,8 +175,7 @@ func runSheet(ctx context.Context, ec *graph.EvalCtx, _ []graph.Value, a graph.A
 			return nil, err
 		}
 	} else {
-		id, _ := nodeOf(ec, a.Raw("items"))
-		v, err := ec.Eval.Render(ctx, id, graph.RenderOptions{Scale: 1, OnWarn: warn})
+		v, err := ec.Eval.Render(ctx, a.Input("items").ID, graph.RenderOptions{Scale: 1, OnWarn: warn})
 		if err != nil {
 			return nil, err
 		}
@@ -224,7 +192,7 @@ func runSheet(ctx context.Context, ec *graph.EvalCtx, _ []graph.Value, a graph.A
 		ec.Warn(WSheetTruncated, fmt.Sprintf("%d items, %d shown (in list order).", len(items), l.cells), fmt.Sprintf(`regions.sortBy("contrast").top(%d)`, l.cells))
 		items = items[:l.cells]
 	}
-	views := viewNodes(ec, a.Raw("views"))
+	views := a.Inputs("views") // in list order, repetitions kept
 	f := ec.Node.Frame
 	out := buffer.New(f.W, f.H, 3, 1)
 	for i := range out.Pix {
@@ -238,10 +206,9 @@ func runSheet(ctx context.Context, ec *graph.EvalCtx, _ []graph.Value, a graph.A
 		win := graph.Frame{X: int(math.Round(it.cx - float64(side)/2)), Y: int(math.Round(it.cy - float64(side)/2)), W: side, H: side}
 		scale := float64(l.cell) / float64(side)
 		edge := false
-		for k, vid := range views {
+		for k, vn := range views {
 			cx := gx + k*(l.cell+sheetInnerGap)
 			fill(out, cx, gy, l.cell, l.cell, sheetEdgeGrey)
-			vn, _ := ec.Eval.Node(vid)
 			inter := graph.Intersect(win, vn.Frame)
 			if inter != win {
 				edge = true
@@ -249,7 +216,7 @@ func runSheet(ctx context.Context, ec *graph.EvalCtx, _ []graph.Value, a graph.A
 			if inter.Empty() {
 				continue
 			}
-			v, err := ec.Eval.Render(ctx, vid, graph.RenderOptions{Scale: scale, Window: &win, OnWarn: warn})
+			v, err := ec.Eval.Render(ctx, vn.ID, graph.RenderOptions{Scale: scale, Window: &win, OnWarn: warn})
 			if err != nil {
 				return nil, err
 			}
@@ -305,7 +272,7 @@ func sheetOp() graph.OpDef {
 			{Name: "labels", Type: "enum:id,index,none", Optional: true, Doc: "cell label: the region id (default for Regions), the list index (default for lists) or none; with the centre in doc px"},
 			{Name: "stretch", Type: "enum:none,cell", Default: "none", Doc: "cell: stretch each cell by its own p01/p99 (levels({ auto: true }) per cell)"},
 		},
-		Validate: func(a graph.Args, _ []*graph.Node) error {
+		Validate: func(a graph.Args) error {
 			if !a.Has("views") {
 				return graph.Errorf(graph.EArgType, "cv.sheet needs views: the image (or images) each cell shows.").
 					WithFix(`cv.sheet(regions, { views: img.view("speck") })`)
@@ -318,8 +285,8 @@ func sheetOp() graph.OpDef {
 			_, err := layoutSheet(a, -1)
 			return err
 		},
-		DocFrame: func(a graph.Args, inputs []*graph.Node) graph.Frame {
-			l, err := layoutSheet(a, itemsBound(a, inputs))
+		DocFrame: func(a graph.Args) graph.Frame {
+			l, err := layoutSheet(a, itemsBound(a))
 			if err != nil {
 				return graph.Frame{Picture: true}
 			}

@@ -54,7 +54,7 @@ func runStats(ctx context.Context, ec *graph.EvalCtx, in []graph.Value, a graph.
 	ps := a.Numbers("percentiles")
 	src := image(in[0])
 	var w []float32
-	if v := a.Node("mask"); v != nil {
+	if v := a.Value("mask"); v != nil {
 		m, err := selectionWeights(ctx, v, src)
 		if err != nil {
 			return nil, err

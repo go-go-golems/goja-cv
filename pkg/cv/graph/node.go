@@ -16,18 +16,21 @@ type NodeID uint64
 
 // Node is an immutable, hash-consed graph node.
 type Node struct {
-	ID        NodeID
-	Op        *OpDef
-	Inputs    []NodeID // receiver (if any), explicit inputs, then lifted args
-	NExplicit int      // number of leading inputs passed to Run as in[]
-	Args      Args     // canonical, defaults filled, lifted args as InputRef
-	Kind      Kind
-	Hash      [32]byte        // sha256(op key, canonical args, input hashes)
-	Frame     Frame           // the rectangle the result covers in doc px (empty for pure data)
-	Enc       buffer.Encoding // Image: its encoding; Value: the encoding of the image it measured; else EncNone
-	Space     buffer.Space    // Image: the space of its values; Value: of its level-valued numbers; else SpaceNone
-	Fields    []FieldSpec     // Regions: the fields of its items; Value: of its rows or object (schema.go)
+	ID     NodeID
+	Op     *OpDef
+	Inputs []NodeID // the receiver (if any), then one input per node argument (InputRef order)
+	Args   Args     // canonical, defaults filled, node arguments as InputRefs; carries the input nodes
+	Kind   Kind
+	Hash   [32]byte        // sha256(op key, canonical args, metadata, input hashes)
+	Frame  Frame           // the rectangle the result covers in doc px (empty for pure data)
+	Enc    buffer.Encoding // Image: its encoding; Value: the encoding of the image it measured; else EncNone
+	Space  buffer.Space    // Image: the space of its values; Value: of its level-valued numbers; else SpaceNone
+	Fields []FieldSpec     // Regions: the fields of its items; Value: of its rows or object (schema.go)
 }
+
+// HasReceiver reports whether the node's first input is the receiver its op
+// was called on (source and module ops have none).
+func (n *Node) HasReceiver() bool { return n.Op.On != KindNone && len(n.Inputs) > 0 }
 
 // Builder interns nodes: structurally identical calls return the same node.
 // It looks up the ops it inserts itself (toGray, convert) in reg.
@@ -137,8 +140,6 @@ func (b *Builder) call(op *OpDef, receiver NodeID, raw []any, meta any, nested b
 		all = append(all, recv.ID)
 	}
 	all = append(all, bd.inputs...)
-	nExplicit := len(all)
-	all = append(all, bd.lifted...)
 
 	inputs := make([]*Node, len(all))
 	for i, id := range all {
@@ -148,9 +149,9 @@ func (b *Builder) call(op *OpDef, receiver NodeID, raw []any, meta any, nested b
 		}
 		inputs[i] = in
 	}
-	args := Args{op: op, vals: bd.args, meta: meta}
+	args := Args{op: op, vals: bd.args, meta: meta, ins: inputs}
 	if op.Validate != nil {
-		if err := op.Validate(args, inputs); err != nil {
+		if err := op.Validate(args); err != nil {
 			return CallResult{}, b.reg.producerHint(err)
 		}
 	}
@@ -167,22 +168,24 @@ func (b *Builder) call(op *OpDef, receiver NodeID, raw []any, meta any, nested b
 		warnings = append(warnings, b.orderWarnings(op, args, recv)...)
 	}
 	if op.Expand != nil {
-		return b.expand(op, args, recv, inputs, nExplicit, warnings)
+		return b.expand(op, args, recv, warnings)
 	}
-	inputs, ws, err := b.resolveSpace(op, args, inputs)
+	inputs, ws, err := b.resolveSpace(op, args)
 	if err != nil {
 		return CallResult{}, err
 	}
+	args.ins = inputs
 	ws = append(warnings, ws...)
 	if op.Warn != nil {
-		ws = append(ws, op.Warn(b, args, inputs)...)
+		ws = append(ws, op.Warn(b, args)...)
 	}
-	return CallResult{Nodes: []*Node{b.internNode(op, args, inputs, nExplicit)}, Warnings: ws}, nil
+	return CallResult{Nodes: []*Node{b.internNode(op, args, inputs)}, Warnings: ws}, nil
 }
 
 // internNode returns the node for (op, canonical args, inputs), creating it
-// if it does not exist yet.
-func (b *Builder) internNode(op *OpDef, args Args, inputs []*Node, nExplicit int) *Node {
+// if it does not exist yet. The node's Args carry inputs.
+func (b *Builder) internNode(op *OpDef, args Args, inputs []*Node) *Node {
+	args.ins, args.vs = inputs, nil
 	h := hashNode(op, args, inputs)
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -194,10 +197,10 @@ func (b *Builder) internNode(op *OpDef, args Args, inputs []*Node, nExplicit int
 		ids[i] = in.ID
 	}
 	b.next++
-	n := &Node{ID: b.next, Op: op, Inputs: ids, NExplicit: nExplicit, Args: args, Kind: op.Returns, Hash: h}
-	n.Frame = nodeFrame(op, args, inputs)
-	n.Enc, n.Space = nodeStatics(op, args, inputs)
-	n.Fields = nodeFields(op, args, inputs)
+	n := &Node{ID: b.next, Op: op, Inputs: ids, Args: args, Kind: op.Returns, Hash: h}
+	n.Frame = nodeFrame(op, args)
+	n.Enc, n.Space = nodeStatics(op, args)
+	n.Fields = nodeFields(op, args)
 	b.byKey[h], b.nodes[n.ID] = n, n
 	return n
 }
@@ -284,14 +287,14 @@ func argFix(op *OpDef, s *ArgSpec, value string) string {
 // nodeFrame is the frame of a node: op.DocFrame, or the first input with a
 // non-empty frame. It depends only on the hash inputs, so a hash hit has the
 // frame a new node would get.
-func nodeFrame(op *OpDef, args Args, inputs []*Node) Frame {
-	if op.Expand != nil && len(inputs) > 0 { // a macro node: its expansion's output
-		return inputs[len(inputs)-1].Frame
+func nodeFrame(op *OpDef, args Args) Frame {
+	if out := macroOutput(op, args); out != nil { // a macro node: its expansion's output
+		return out.Frame
 	}
 	if op.DocFrame != nil {
-		return op.DocFrame(args, inputs)
+		return op.DocFrame(args)
 	}
-	for _, in := range inputs {
+	for _, in := range args.ins {
 		if !in.Frame.Empty() {
 			return in.Frame
 		}
@@ -374,7 +377,7 @@ func (b *Builder) Substitute(root, from, to NodeID) (NodeID, error) {
 		}
 		out := n
 		if changed {
-			out = b.internNode(n.Op, n.Args, ins, n.NExplicit)
+			out = b.internNode(n.Op, n.Args, ins)
 		}
 		memo[id] = out
 		return out, nil
@@ -408,4 +411,13 @@ func hashNode(op *OpDef, args Args, inputs []*Node) [32]byte {
 	var out [32]byte
 	copy(out[:], h.Sum(nil))
 	return out
+}
+
+// macroOutput is a macro node's last input, its expansion's output (nil for
+// other nodes).
+func macroOutput(op *OpDef, args Args) *Node {
+	if op.Expand == nil || len(args.ins) == 0 {
+		return nil
+	}
+	return args.ins[len(args.ins)-1]
 }

@@ -104,45 +104,33 @@ const compareGap = 4
 // compare: sRGB_encode(0.02), a dark grey.
 const compareBackground = 0.1517
 
-// listInputs is the nodes a bound list argument refers to, in list order and
-// with repetitions: the binder lifts each distinct node once, so inputs alone
-// would lose cv.compare([img, img])'s second entry.
-func listInputs(a graph.Args, name string, inputs []*graph.Node) []*graph.Node {
-	list, _ := a.Raw(name).([]any)
-	out := make([]*graph.Node, 0, len(list))
-	for _, v := range list {
-		if ref, ok := v.(graph.InputRef); ok && ref.Index < len(inputs) {
-			out = append(out, inputs[ref.Index])
-		}
-	}
-	return out
-}
-
 func presentOps() []graph.OpDef {
 	return []graph.OpDef{
 		{
-			Name: "overlay", On: graph.KindImage, Inputs: []graph.Kind{"Regions|Mask"}, Returns: graph.KindImage, Space: graph.SpaceRule{Default: buffer.SpaceEncoded}, Class: graph.Decoration,
-			Args:     overlayArgs(),
+			Name: "overlay", On: graph.KindImage, Returns: graph.KindImage, Space: graph.SpaceRule{Default: buffer.SpaceEncoded}, Class: graph.Decoration,
+			Args: append([]graph.ArgSpec{{Name: "target", Type: "Regions|Mask", Positional: true,
+				Doc: "what to draw: regions (outlines, tint, ids) or a mask (tint)"}}, overlayArgs()...),
 			Validate: validateColor("color"),
 			Run: func(ctx context.Context, _ *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
 				img := image(in[0])
-				if rv, ok := in[1].(*graph.RegionsValue); ok {
+				target := a.Value("target")
+				if rv, ok := target.(*graph.RegionsValue); ok {
 					return drawRegions(ctx, img, rv, a)
 				}
-				return tint(ctx, img, mask(in[1]), a)
+				return tint(ctx, img, mask(target), a)
 			},
-			DocFrame: func(_ graph.Args, inputs []*graph.Node) graph.Frame { return inputs[0].Frame },
+			DocFrame: func(a graph.Args) graph.Frame { return a.Receiver().Frame },
 			Doc:      "The image with regions (tinted pixels, box outlines, optional ids) or a mask (tint) drawn over it, for looking. A decoration: in a zoomed look outlines stay 1 image px and ids readable, before or after a crop; regions found on the whole image can be drawn on a crop.",
 			See:      []string{"compare", "detect.specks"},
 		},
 		{
-			Name: "overlay", On: graph.KindRegions, Inputs: []graph.Kind{graph.KindImage}, Returns: graph.KindImage, Space: graph.SpaceRule{Default: buffer.SpaceEncoded}, Class: graph.Decoration,
-			Args:     overlayArgs(),
+			Name: "overlay", On: graph.KindRegions, Returns: graph.KindImage, Space: graph.SpaceRule{Default: buffer.SpaceEncoded}, Class: graph.Decoration,
+			Args:     append([]graph.ArgSpec{{Name: "image", Type: "Image", Positional: true, Doc: "the image to draw the regions on"}}, overlayArgs()...),
 			Validate: validateColor("color"),
 			Run: func(ctx context.Context, _ *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
-				return drawRegions(ctx, image(in[1]), regions(in[0]), a)
+				return drawRegions(ctx, image(a.Value("image")), regions(in[0]), a)
 			},
-			DocFrame: func(_ graph.Args, inputs []*graph.Node) graph.Frame { return inputs[1].Frame },
+			DocFrame: func(a graph.Args) graph.Frame { return a.Input("image").Frame },
 			Doc:      "regions.overlay(img, opts) is img.overlay(regions, opts).",
 		},
 		{
@@ -155,14 +143,14 @@ func presentOps() []graph.OpDef {
 						Hint: "compare lays images out; a difference is an image of its own: subtract (signed, zero = grey with .mul(4).add(0.5)).",
 						Fix:  "a.sub(b).mul(4).add(0.5)"}}},
 			},
-			Validate: func(a graph.Args, _ []*graph.Node) error {
+			Validate: func(a graph.Args) error {
 				if n := len(a.Raw("images").([]any)); n == 0 {
 					return graph.Errorf(graph.EArgType, "cv.compare needs at least one image.").WithFix(`cv.compare([img, edited], { mode: "side" })`)
 				}
 				return nil
 			},
-			DocFrame: func(a graph.Args, inputs []*graph.Node) graph.Frame {
-				ims := listInputs(a, "images", inputs)
+			DocFrame: func(a graph.Args) graph.Frame {
+				ims := a.Inputs("images")
 				f := ims[0].Frame
 				f.Picture = true
 				if a.String("mode") != "side" {
@@ -180,7 +168,7 @@ func presentOps() []graph.OpDef {
 			},
 			Run: func(_ context.Context, ec *graph.EvalCtx, _ []graph.Value, a graph.Args) (graph.Value, error) {
 				var ims []*graph.ImageValue
-				for _, v := range a.Nodes("images") {
+				for _, v := range a.Values("images") {
 					im := image(v)
 					ims = append(ims, &graph.ImageValue{Buf: kernels.ToRGB(im.Buf), Frame: im.Frame})
 				}

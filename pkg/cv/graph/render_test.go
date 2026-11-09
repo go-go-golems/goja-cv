@@ -53,12 +53,12 @@ func renderEngine(t *testing.T, s *seen) (*graph.Engine, *graph.Node) {
 			},
 		},
 		graph.OpDef{
-			Name: "testlevel", On: graph.KindImage, Inputs: []graph.Kind{graph.KindRegions}, Returns: graph.KindImage, Class: graph.Decoration,
-			Args: []graph.ArgSpec{{Name: "level", Type: "number", Positional: true}},
+			Name: "testlevel", On: graph.KindImage, Returns: graph.KindImage, Class: graph.Decoration,
+			Args: []graph.ArgSpec{{Name: "regions", Type: "Regions", Positional: true}, {Name: "level", Type: "number", Positional: true}},
 			Run: func(_ context.Context, _ *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
 				s.mu.Lock()
 				s.level = a.Number("level")
-				s.regions = in[1].(*graph.RegionsValue).Scale
+				s.regions = a.Value("regions").(*graph.RegionsValue).Scale
 				s.mu.Unlock()
 				return in[0], nil
 			},

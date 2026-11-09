@@ -214,11 +214,11 @@ func (rr *renderRun) decorate(ctx context.Context, n *Node, win Frame) (Value, e
 	if err != nil {
 		return nil, rr.e.wrapWithPath(err, n)
 	}
-	if n.Op.Identity != nil && n.NExplicit > 0 && n.Op.Identity(args) {
+	if n.Op.Identity != nil && n.HasReceiver() && n.Op.Identity(args) {
 		return ins[0], nil
 	}
 	ec := &EvalCtx{Eval: rr.e, Node: n, Scale: rr.s, Params: rr.one.params, Window: win}
-	out, err := safeRun(ctx, n.Op, ec, ins[:n.NExplicit], args)
+	out, err := safeRun(ctx, n.Op, ec, receiverValue(n, ins), args)
 	if err != nil {
 		return nil, rr.e.wrapWithPath(err, n)
 	}

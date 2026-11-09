@@ -24,7 +24,7 @@ func testRegistry(t *testing.T) (*Registry, *atomic.Int64) {
 				{Name: "w", Type: "number", Default: 40.0},
 				{Name: "h", Type: "number", Default: 20.0},
 			},
-			DocFrame: func(a Args, _ []*Node) Frame { return Frame{W: a.Int("w"), H: a.Int("h")} },
+			DocFrame: func(a Args) Frame { return Frame{W: a.Int("w"), H: a.Int("h")} },
 			Run: func(_ context.Context, ec *EvalCtx, _ []Value, a Args) (Value, error) {
 				w, h := buffer.ScaledSize(a.Int("w"), a.Int("h"), ec.Scale)
 				b := buffer.New(w, h, 1, ec.Scale)
@@ -52,7 +52,7 @@ func testRegistry(t *testing.T) (*Registry, *atomic.Int64) {
 				}
 				return &DataValue{Data: a.Length("r", in[0].(*ImageValue).Buf.Scale)}, nil
 			}},
-		OpDef{Name: "sum", On: KindImage, Returns: KindValue, Fields: func(Args, []*Node) []FieldSpec {
+		OpDef{Name: "sum", On: KindImage, Returns: KindValue, Fields: func(Args) []FieldSpec {
 			return []FieldSpec{{Name: "sum", Type: "number"}, {Name: "mean", Type: "number"}}
 		},
 			Args: []ArgSpec{{Name: "delay", Type: "number", Default: 0.0}},
@@ -68,11 +68,11 @@ func testRegistry(t *testing.T) (*Registry, *atomic.Int64) {
 				}
 				return &DataValue{Data: map[string]any{"sum": s, "mean": s / float64(len(b.Pix))}}, nil
 			}},
-		OpDef{Name: "mix", On: KindImage, Inputs: []Kind{KindImage}, Returns: KindImage,
-			Args: []ArgSpec{{Name: "opts", Type: "object", Default: map[string]any{}, Positional: true,
+		OpDef{Name: "mix", On: KindImage, Returns: KindImage,
+			Args: []ArgSpec{{Name: "other", Type: "Image", Positional: true}, {Name: "opts", Type: "object", Default: map[string]any{}, Positional: true,
 				Options: []ArgSpec{{Name: "w", Type: "number", Default: 0.5}}}},
 			Run: func(_ context.Context, _ *EvalCtx, in []Value, a Args) (Value, error) {
-				x, y := in[0].(*ImageValue), in[1].(*ImageValue)
+				x, y := in[0].(*ImageValue), a.Value("other").(*ImageValue)
 				wt := float32(a.Object("opts")["w"].(float64))
 				out := buffer.NewLike(x.Buf)
 				for i := range out.Pix {
@@ -235,7 +235,7 @@ func TestLiftingIncludingOptionObjects(t *testing.T) {
 	src := mustCall(t, e, "fill", 0, 0.5)
 	mean := mustCall(t, e, "field", mustCall(t, e, "sum", src.ID).ID, "mean")
 	scaled := mustCall(t, e, "scale", src.ID, NodeArg{mean.ID}) // 0.5 * 0.5
-	if len(scaled.Inputs) != 2 || scaled.Inputs[1] != mean.ID || scaled.NExplicit != 1 {
+	if len(scaled.Inputs) != 2 || scaled.Inputs[1] != mean.ID || !scaled.HasReceiver() {
 		t.Fatalf("lifted inputs: %+v", scaled.Inputs)
 	}
 	got := evalNum(t, e, mustCall(t, e, "field", mustCall(t, e, "sum", scaled.ID).ID, "mean").ID)
@@ -244,7 +244,7 @@ func TestLiftingIncludingOptionObjects(t *testing.T) {
 	}
 	other := mustCall(t, e, "fill", 0, 1.0)
 	mixed := mustCall(t, e, "mix", src.ID, NodeArg{other.ID}, map[string]any{"w": NodeArg{mean.ID}}) // 0.5*0.5+0.5*1
-	if len(mixed.Inputs) != 3 || mixed.NExplicit != 2 {
+	if len(mixed.Inputs) != 3 || !mixed.HasReceiver() {
 		t.Fatalf("mix inputs %v", mixed.Inputs)
 	}
 	got = evalNum(t, e, mustCall(t, e, "field", mustCall(t, e, "sum", mixed.ID).ID, "mean").ID)

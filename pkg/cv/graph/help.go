@@ -87,13 +87,6 @@ func (r *Registry) Help(name string) (map[string]any, error) {
 	if args := describeArgs(op.Args); len(args) > 0 {
 		entry["args"] = args
 	}
-	if len(op.Inputs) > 0 {
-		var ins []any
-		for _, k := range op.Inputs {
-			ins = append(ins, string(k))
-		}
-		entry["inputs"] = ins
-	}
 	if fs := op.DocFields(); len(fs) > 0 {
 		entry["fields"] = toAnyList(FieldNames(fs))
 	}

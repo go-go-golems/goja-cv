@@ -15,8 +15,8 @@ func strField(name, doc string) graph.FieldSpec {
 }
 
 // fixedFields is an OpDef.Fields that does not depend on the call.
-func fixedFields(fs []graph.FieldSpec) func(graph.Args, []*graph.Node) []graph.FieldSpec {
-	return func(graph.Args, []*graph.Node) []graph.FieldSpec { return fs }
+func fixedFields(fs []graph.FieldSpec) func(graph.Args) []graph.FieldSpec {
+	return func(graph.Args) []graph.FieldSpec { return fs }
 }
 
 // geometryFields is the schema of components: geometry only.
@@ -58,7 +58,7 @@ var statsSelectionFields = []graph.FieldSpec{
 }
 
 // statsFields: area and coverage only with a mask or a box.
-func statsFields(a graph.Args, _ []*graph.Node) []graph.FieldSpec {
+func statsFields(a graph.Args) []graph.FieldSpec {
 	if a.Has("mask") || a.Has("box") {
 		return graph.WithFields(statsBaseFields, statsSelectionFields...)
 	}

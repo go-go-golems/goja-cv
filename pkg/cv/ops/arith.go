@@ -2,6 +2,7 @@ package ops
 
 import (
 	"context"
+	"fmt"
 	"math"
 
 	"github.com/go-go-golems/goja-cv/pkg/cv/buffer"
@@ -32,16 +33,17 @@ func arithImageOp(name, doc string, unit graph.Unit, result *graph.ResultEnc, ne
 			var out *buffer.Buffer
 			var err error
 			switch o := a.Raw("b").(type) {
-			case *graph.ImageValue:
-				if err := sameFrame(name, x, o); err != nil {
+			case graph.InputRef:
+				y := image(a.Value("b"))
+				if err := sameFrame(name, x, y); err != nil {
 					return nil, err
 				}
-				out, err = kernels.Binary(ctx, x.Buf, o.Buf, f)
+				out, err = kernels.Binary(ctx, x.Buf, y.Buf, f)
 			case float64:
 				k := float32(o)
 				out, err = kernels.Unary(ctx, x.Buf, func(v float32) float32 { return f(v, k) })
 			default:
-				return nil, graph.Errorf(graph.EArgType, "%s needs an image or a number, got %T.", name, o)
+				panic(fmt.Sprintf("cv: %s.b is %T", name, o))
 			}
 			if err != nil {
 				return nil, err

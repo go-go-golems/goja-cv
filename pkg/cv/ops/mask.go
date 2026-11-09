@@ -98,8 +98,8 @@ func parseColor(v any, where string) ([3]float32, error) {
 	return [3]float32{float32(p[0]), float32(p[1]), float32(p[2])}, nil
 }
 
-func validateColor(arg string) func(graph.Args, []*graph.Node) error {
-	return func(a graph.Args, _ []*graph.Node) error {
+func validateColor(arg string) func(graph.Args) error {
+	return func(a graph.Args) error {
 		v := a.Raw(arg)
 		if _, ok := v.(graph.InputRef); ok || v == nil {
 			return nil
@@ -113,7 +113,7 @@ var edges = []string{"top", "bottom", "left", "right"}
 
 func isRef(v any) bool { _, ok := v.(graph.InputRef); return ok }
 
-func validateGradient(a graph.Args, _ []*graph.Node) error {
+func validateGradient(a graph.Args) error {
 	from, to := a.Raw("from"), a.Raw("to")
 	switch f := from.(type) {
 	case string:
@@ -148,7 +148,7 @@ func maskMakerOps() []graph.OpDef {
 				{Name: "below", Type: "number", Unit: graph.Level, Optional: true, Min: graph.F(-1), Max: graph.F(2), Doc: "select luminance below this level"},
 				{Name: "softness", Type: "number", Default: 0.05, Min: graph.F(0), Max: graph.F(1), Doc: "width of the smooth ramp around each threshold"},
 			},
-			Validate: func(a graph.Args, _ []*graph.Node) error {
+			Validate: func(a graph.Args) error {
 				if !a.Has("above") && !a.Has("below") {
 					return graph.Errorf(graph.EArgType, "mask.luminance needs above, below or both.").
 						WithHint("Thresholds are luminance levels in [0, 1] of the working space (encoded by default, the scale of histogram()): above selects highlights, below shadows.").
@@ -282,9 +282,10 @@ func maskMakerOps() []graph.OpDef {
 
 func combineOp(name, doc string, f func(x, y float32) float32) graph.OpDef {
 	return graph.OpDef{
-		Name: name, On: graph.KindMask, Inputs: []graph.Kind{graph.KindMask}, Returns: graph.KindMask,
-		Run: func(ctx context.Context, _ *graph.EvalCtx, in []graph.Value, _ graph.Args) (graph.Value, error) {
-			a, b := mask(in[0]), mask(in[1])
+		Name: name, On: graph.KindMask, Returns: graph.KindMask,
+		Args: []graph.ArgSpec{{Name: "other", Type: "Mask", Positional: true, Doc: "the other mask (same frame)"}},
+		Run: func(ctx context.Context, _ *graph.EvalCtx, in []graph.Value, args graph.Args) (graph.Value, error) {
+			a, b := mask(in[0]), mask(args.Value("other"))
 			if err := sameFrame(name, a, b); err != nil {
 				return nil, err
 			}
@@ -341,14 +342,15 @@ func maskOps() []graph.OpDef {
 		lengthMaskOp("grow", "Dilate the selection (m ≥ 0.5) by radius doc px using an exact Euclidean distance transform.", kernels.Grow),
 		lengthMaskOp("shrink", "Erode the selection (m ≥ 0.5) by radius doc px using an exact Euclidean distance transform.", kernels.Shrink),
 		{
-			Name: "refine", On: graph.KindMask, Inputs: []graph.Kind{graph.KindImage}, Returns: graph.KindMask, Space: graph.SpaceRule{Default: buffer.SpaceEncoded},
+			Name: "refine", On: graph.KindMask, Returns: graph.KindMask, Space: graph.SpaceRule{Default: buffer.SpaceEncoded},
 			Args: []graph.ArgSpec{
+				{Name: "guide", Type: "Image", Positional: true, Doc: "the image whose edges the mask snaps to (its luminance)"},
 				{Name: "radius", Type: "number", Unit: graph.DocPx, Default: 8.0, Min: graph.F(0.5), Max: graph.F(500), Doc: "window radius in doc px"},
 				{Name: "eps", Type: "number", Default: 1e-3, Min: graph.F(1e-8), Max: graph.F(1), Doc: "regularization: larger smooths more, smaller follows edges more"},
 			},
 			Halo: func(a graph.Args) float64 { return 2 * a.DocLength("radius") },
 			Run: func(ctx context.Context, _ *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
-				m, img := mask(in[0]), image(in[1])
+				m, img := mask(in[0]), image(a.Value("guide"))
 				if err := sameFrame("refine", m, img); err != nil {
 					return nil, err
 				}
@@ -374,15 +376,16 @@ func maskOps() []graph.OpDef {
 			Doc: "The fraction of the image the mask selects (its mean), in [0, 1].",
 		},
 		{
-			Name: "overlay", On: graph.KindMask, Inputs: []graph.Kind{graph.KindImage}, Returns: graph.KindImage, Space: graph.SpaceRule{Default: buffer.SpaceEncoded}, Class: graph.Decoration,
-			DocFrame: func(_ graph.Args, inputs []*graph.Node) graph.Frame { return inputs[1].Frame },
+			Name: "overlay", On: graph.KindMask, Returns: graph.KindImage, Space: graph.SpaceRule{Default: buffer.SpaceEncoded}, Class: graph.Decoration,
+			DocFrame: func(a graph.Args) graph.Frame { return a.Input("image").Frame },
 			Args: []graph.ArgSpec{
+				{Name: "image", Type: "Image", Positional: true, Doc: "the image to tint the mask over"},
 				{Name: "color", Type: "any", Default: "red", Doc: "colour name or display [r, g, b] in [0, 1] (encoded values)"},
 				{Name: "alpha", Type: "number", Default: 0.5, Min: graph.F(0), Max: graph.F(1)},
 			},
 			Validate: validateColor("color"),
 			Run: func(ctx context.Context, _ *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
-				m, img := mask(in[0]), image(in[1])
+				m, img := mask(in[0]), image(a.Value("image"))
 				return tint(ctx, img, m, a)
 			},
 			Doc: "The image with the mask tinted over it, for looking at a selection.",

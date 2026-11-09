@@ -32,9 +32,9 @@ func panicRuntime(t *testing.T) *engine.Runtime {
 	var nilSlice []int
 	reg.MustRegister(
 		graph.OpDef{Name: "test.panicValidate", On: graph.KindImage, Returns: graph.KindValue, Run: run,
-			Validate: func(graph.Args, []*graph.Node) error { panic("validate exploded") }},
+			Validate: func(graph.Args) error { panic("validate exploded") }},
 		graph.OpDef{Name: "test.panicFrame", On: graph.KindImage, Returns: graph.KindImage, Run: run,
-			DocFrame: func(graph.Args, []*graph.Node) graph.Frame { return graph.Frame{W: nilSlice[3]} }},
+			DocFrame: func(graph.Args) graph.Frame { return graph.Frame{W: nilSlice[3]} }},
 		graph.OpDef{Name: "test.panicRun", On: graph.KindImage, Returns: graph.KindValue,
 			Run: func(context.Context, *graph.EvalCtx, []graph.Value, graph.Args) (graph.Value, error) {
 				return &graph.DataValue{Data: float64(nilSlice[1])}, nil

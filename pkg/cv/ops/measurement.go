@@ -42,10 +42,9 @@ func pointsArg(doc string) graph.ArgSpec {
 
 // validatePoints refuses Regions given as points, with the Regions op as
 // the fix.
-func validatePoints(op, fix string) func(graph.Args, []*graph.Node) error {
-	return func(a graph.Args, inputs []*graph.Node) error {
-		ref, ok := a.Raw("points").(graph.InputRef)
-		if !ok || ref.Index >= len(inputs) || inputs[ref.Index].Kind != graph.KindRegions {
+func validatePoints(op, fix string) func(graph.Args) error {
+	return func(a graph.Args) error {
+		if _, ok := a.Raw("points").(graph.InputRef); !ok || a.Input("points").Kind != graph.KindRegions {
 			return nil
 		}
 		return graph.Errorf(graph.EWrongKind, "%s takes points; regions are measured by regions.measure, which keeps their ids.", op).
@@ -176,7 +175,7 @@ var pointFields = []graph.FieldSpec{numField("cx", graph.DocPx, "point x"), numF
 
 var outsideField = graph.FieldSpec{Name: "outside", Type: "bool", Optional: true, Doc: "true for a point outside the frame (its values are null)"}
 
-func sampleFields(graph.Args, []*graph.Node) []graph.FieldSpec {
+func sampleFields(graph.Args) []graph.FieldSpec {
 	fs := graph.WithFields(pointFields, numField("meanL", graph.Level, "mean of the gray plane"))
 	for _, c := range []string{"R", "G", "B"} {
 		f := numField("mean"+c, graph.Level, "mean of channel "+c+" (colour images)")
@@ -186,11 +185,11 @@ func sampleFields(graph.Args, []*graph.Node) []graph.FieldSpec {
 	return append(fs, numField("area", graph.DocPx2, "covered weight: the pixel's area for radius 0"), outsideField)
 }
 
-func measureFields(a graph.Args, _ []*graph.Node) []graph.FieldSpec {
+func measureFields(a graph.Args) []graph.FieldSpec {
 	return append(graph.WithFields(pointFields, coreRingFields(channelsMode(a))...), outsideField)
 }
 
-func profileFields(graph.Args, []*graph.Node) []graph.FieldSpec {
+func profileFields(graph.Args) []graph.FieldSpec {
 	list := func(n, doc string) graph.FieldSpec { return graph.FieldSpec{Name: n, Type: "number[]", Doc: doc} }
 	fs := []graph.FieldSpec{
 		{Name: "from", Type: "point", Unit: graph.DocPx, Doc: "start point [x, y] (doc px)"}, {Name: "to", Type: "point", Unit: graph.DocPx, Doc: "end point [x, y] (doc px)"},
@@ -235,7 +234,7 @@ func runSample(ctx context.Context, ec *graph.EvalCtx, in []graph.Value, a graph
 	for i, s := range res {
 		if s.Outside {
 			outside = append(outside, i)
-			rows[i] = nullRow(sampleFields(a, nil), pts[i][0], pts[i][1])
+			rows[i] = nullRow(sampleFields(a), pts[i][0], pts[i][1])
 			continue
 		}
 		row := map[string]any{"cx": pts[i][0], "cy": pts[i][1], "meanL": s.Gray, "area": s.Weight / (sx * sy)}
@@ -265,7 +264,7 @@ func runMeasure(ctx context.Context, ec *graph.EvalCtx, in []graph.Value, a grap
 		return nil, graph.Errorf(graph.EArgRange, "measure: %v", err)
 	}
 	mode := channelsMode(a)
-	fields := measureFields(a, nil)
+	fields := measureFields(a)
 	rows := make([]any, len(res))
 	var outside []int
 	for i, r := range res {
@@ -456,8 +455,8 @@ func measurementOps() []graph.OpDef {
 				grayArg, analysisScaleArg,
 			},
 			AnalysisScale: analysisScale,
-			Validate: func(a graph.Args, inputs []*graph.Node) error {
-				if err := validatePoints("measure", "regions.measure(img, { ring: true })")(a, inputs); err != nil {
+			Validate: func(a graph.Args) error {
+				if err := validatePoints("measure", "regions.measure(img, { ring: true })")(a); err != nil {
 					return err
 				}
 				core := a.Raw("coreRadius").(float64)
@@ -482,7 +481,7 @@ func measurementOps() []graph.OpDef {
 				grayArg, analysisScaleArg,
 			},
 			AnalysisScale: analysisScale,
-			Validate: func(a graph.Args, _ []*graph.Node) error {
+			Validate: func(a graph.Args) error {
 				from, ok1 := literalPoint(a.Raw("from"))
 				to, ok2 := literalPoint(a.Raw("to"))
 				step, ok3 := a.Raw("step").(float64)

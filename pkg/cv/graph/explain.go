@@ -167,7 +167,7 @@ func (e *Evaluator) Chain(id NodeID) string {
 		if !n.Op.Internal && !insertedGray(n, next) {
 			rev = append(rev, Short(n))
 		}
-		if n.NExplicit == 0 || len(n.Inputs) == 0 {
+		if !n.HasReceiver() {
 			break
 		}
 		if !n.Op.Internal {

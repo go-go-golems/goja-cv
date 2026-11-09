@@ -32,6 +32,11 @@ func TestSheetLayout(t *testing.T) {
 	if f := two.Frame; f.W != 3*514+2*6 || f.H != 6*256+5*6 {
 		t.Fatalf("two-view sheet frame %s", f)
 	}
+	// a repeated view is two views (node arguments are not deduplicated)
+	same := sheetCall(t, e, graph.NodeArg{ID: specks.ID}, map[string]any{"views": []any{graph.NodeArg{ID: img.ID}, graph.NodeArg{ID: img.ID}}})
+	if f := same.Frame; f.W != 3*514+2*6 || len(same.Args.Inputs("views")) != 2 {
+		t.Fatalf("[img, img] sheet frame %s", f)
+	}
 	_, err := e.Call("sheet", 0, []any{graph.NodeArg{ID: specks.ID}, map[string]any{"views": graph.NodeArg{ID: img.ID}, "max": 40.0}})
 	if ce, ok := graph.AsError(err); !ok || ce.Code != graph.EArgRange || ce.Fix != "cv.sheet(items, { views, max: 36 })" {
 		t.Fatalf("max 40: %+v", err)

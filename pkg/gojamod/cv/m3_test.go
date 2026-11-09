@@ -72,7 +72,7 @@ func TestWithinBuilderFromJS(t *testing.T) {
 		t.Fatalf("param inside within did not apply: %v", got)
 	}
 	lines := fmt.Sprint(got["explain"])
-	if !strings.Contains(lines, "within()") || !strings.Contains(lines, "exposure(ev: #") || strings.Contains(lines, "placeholder") {
+	if !strings.Contains(lines, "within(mask: #") || !strings.Contains(lines, "exposure(ev: #") || strings.Contains(lines, "placeholder") {
 		t.Fatalf("explain: %s", lines)
 	}
 	mustFail(t, rt, "E_ARG_TYPE", `return img.within(img.mask.box([0, 0, 4, 4]), i => 3)`)

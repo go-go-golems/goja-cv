@@ -93,36 +93,26 @@ func (op *OpDef) DefaultSpace(args Args) buffer.Space {
 // op's resolved working space (SpaceNone for ops without one). The three
 // named rules cover every op but sources, convert and encode.
 type ResultEnc struct {
-	Enc   func(args Args, inputs []*Node) buffer.Encoding
-	Space func(args Args, s buffer.Space, inputs []*Node) buffer.Space
-}
-
-// firstImage is the first Image input (receiver, then Inputs, then
-// kind-typed arguments), or nil.
-func firstImage(inputs []*Node) *Node {
-	for _, in := range inputs {
-		if in.Kind == KindImage {
-			return in
-		}
-	}
-	return nil
+	Enc   func(a Args) buffer.Encoding
+	Space func(a Args, s buffer.Space) buffer.Space
 }
 
 var (
-	// KeepEnc: the encoding of the first Image input; the space is the op's
-	// working space, or the first Image input's for ops without one.
+	// KeepEnc: the encoding of the receiver (or, for an op called on
+	// regions or a mask, of its image argument); the space is the op's
+	// working space, or that image's for ops without one.
 	KeepEnc = &ResultEnc{
-		Enc: func(_ Args, inputs []*Node) buffer.Encoding {
-			if in := firstImage(inputs); in != nil {
+		Enc: func(a Args) buffer.Encoding {
+			if in := a.imageSource(); in != nil {
 				return in.Enc
 			}
 			return buffer.EncNone
 		},
-		Space: func(_ Args, s buffer.Space, inputs []*Node) buffer.Space {
+		Space: func(a Args, s buffer.Space) buffer.Space {
 			if s != buffer.SpaceNone {
 				return s
 			}
-			if in := firstImage(inputs); in != nil {
+			if in := a.imageSource(); in != nil {
 				return in.Space
 			}
 			return buffer.SpaceLinear
@@ -132,13 +122,13 @@ var (
 	// values are reinterpreted as linear-encoded: their stored value is their
 	// value, so what is measured is what is seen.
 	DerivedEnc = &ResultEnc{
-		Enc:   func(Args, []*Node) buffer.Encoding { return buffer.EncLinear },
-		Space: func(Args, buffer.Space, []*Node) buffer.Space { return buffer.SpaceLinear },
+		Enc:   func(Args) buffer.Encoding { return buffer.EncLinear },
+		Space: func(Args, buffer.Space) buffer.Space { return buffer.SpaceLinear },
 	}
 	// DisplayEnc: display colours (colormap), sRGB-encoded values.
 	DisplayEnc = &ResultEnc{
-		Enc:   func(Args, []*Node) buffer.Encoding { return buffer.EncSRGB },
-		Space: func(Args, buffer.Space, []*Node) buffer.Space { return buffer.SpaceEncoded },
+		Enc:   func(Args) buffer.Encoding { return buffer.EncSRGB },
+		Space: func(Args, buffer.Space) buffer.Space { return buffer.SpaceEncoded },
 	}
 )
 
@@ -166,10 +156,10 @@ var (
 // "box" ([x, y, w, h] or an object with x, y, w, h), "point" ([x, y] or an
 // object with cx, cy), "data" (a node or plain data, kept as given: the
 // argument of cv.json and cv.csv), unions such as "point|number", "object"
-// (with Options as the allowed keys), "any", and node kinds such as
-// "Mask", "Regions|Mask" or "Image[]": a kind-typed argument holds a node of
-// that kind (lifted into the node's inputs like a Value argument); Run reads
-// its evaluated value with Args.Node / Args.Nodes.
+// (with Options as the allowed keys), "any", and node types such as
+// "Mask", "Regions|Mask" or "Image[]": a node argument is its own input of
+// the node (one per list element, repetitions kept); build-time code reads
+// it with Args.Input / Args.Inputs, Run with Args.Value / Args.Values.
 type ArgSpec struct {
 	Name       string
 	Type       string
@@ -244,16 +234,14 @@ const (
 	ChartLines
 )
 
-// RunFunc computes an op. in holds the evaluated explicit inputs (the
-// receiver first, then OpDef.Inputs); node-valued arguments have already been
-// evaluated and substituted into args.
+// RunFunc computes an op. in holds the evaluated receiver (empty for source
+// and module ops); node arguments are read with Args.Value and Args.Values.
 type RunFunc func(ctx context.Context, ec *EvalCtx, in []Value, args Args) (Value, error)
 
 // OpDef describes one registered op.
 type OpDef struct {
 	Name     string // "exposure", "mask.luminance": a dot puts the op in a namespace
 	On       Kind   // receiver kind; KindNone for source ops
-	Inputs   []Kind // extra node inputs beyond the receiver, passed positionally first
 	Args     []ArgSpec
 	Returns  Kind
 	Class    OpClass               // pixel (default), geometric or decoration (render above scale 1)
@@ -272,27 +260,28 @@ type OpDef struct {
 	// time (exactly one of Run and Expand is set). See ExpandFunc.
 	Expand ExpandFunc
 	// Warn adds build-time warnings for a call (toLab on camera RGB).
-	Warn     func(b *Builder, args Args, inputs []*Node) []Warning
-	Identity func(args Args) bool                  // neutral arguments: the receiver is returned unchanged
-	Halo     func(args Args) float64               // doc px of border around each output pixel the op reads
-	Global   bool                                  // needs the whole image (stats, histogram)
-	NoCache  bool                                  // never cached (explain reads cache state)
-	Lazy     bool                                  // inputs are not evaluated before Run (explain)
-	DocFrame func(args Args, inputs []*Node) Frame // the result's frame; nil: the first input with a non-empty frame
+	Warn     func(b *Builder, a Args) []Warning
+	Identity func(a Args) bool    // neutral arguments: the receiver is returned unchanged
+	Halo     func(a Args) float64 // doc px of border around each output pixel the op reads
+	Global   bool                 // needs the whole image (stats, histogram)
+	NoCache  bool                 // never cached (explain reads cache state)
+	Lazy     bool                 // inputs are not evaluated before Run (explain)
+	DocFrame func(a Args) Frame   // the result's frame; nil: the first input with a non-empty frame
 	// Fields is the schema of the result: the items of a Regions result, the
 	// rows or the object of a Value result (schema.go). It runs at intern
-	// time with the bound args (lifted values are InputRefs) and the input
-	// nodes, and may be called with nil inputs (help). nil: a Regions op on
-	// Regions keeps its receiver's fields; other results have none.
-	Fields func(args Args, inputs []*Node) []FieldSpec
+	// time with the bound args (lifted values are InputRefs; Args carries the
+	// input nodes), and is called with Args without inputs for help. nil: a
+	// Regions op on Regions keeps its receiver's fields; other results have
+	// none.
+	Fields func(a Args) []FieldSpec
 	// Produces maps the field names the op can add with some arguments to
 	// the call that adds them, for the hint of a filter on a field the
 	// receiver lacks ("snr comes from regions.measure(img, { ring: true })").
 	Produces map[string]string
-	// Validate checks bound args at build time (after defaults and types)
-	// with the input nodes (receiver first: their statics, such as Fields);
-	// lifted values are still InputRefs. Errors fail the call.
-	Validate func(args Args, inputs []*Node) error
+	// Validate checks bound args at build time (after defaults and types);
+	// the input nodes (their statics, such as Fields) are read through
+	// Args; lifted values are still InputRefs. Errors fail the call.
+	Validate func(a Args) error
 	// AnalysisScale, when set and > 0, is the scale at which the node's
 	// inputs are evaluated whatever the evaluation scale: the node's value is
 	// then the same at preview and export. Regions ops use it so that region

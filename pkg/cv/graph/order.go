@@ -45,7 +45,7 @@ func (b *Builder) inChain(n *Node, match func(*Node) bool) *Node {
 		if match(n) {
 			return n
 		}
-		if n.NExplicit == 0 || len(n.Inputs) == 0 {
+		if !n.HasReceiver() {
 			return nil
 		}
 		n, _ = b.Node(n.Inputs[0])

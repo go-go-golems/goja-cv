@@ -68,7 +68,8 @@ func (b *Builder) internOp(name string, recv *Node, raw ...any) (*Node, []Warnin
 // cache signature include it), replaces luminance inputs by toGray of linear
 // light, replaces Image inputs in another space by convert nodes, and returns
 // the new inputs with the SPACE and ENCODING warnings.
-func (b *Builder) resolveSpace(op *OpDef, args Args, inputs []*Node) ([]*Node, []Warning, error) {
+func (b *Builder) resolveSpace(op *OpDef, args Args) ([]*Node, []Warning, error) {
+	inputs := args.ins
 	s := OpSpace(op, args)
 	if op.Space.Default != buffer.SpaceNone && !op.Space.Fixed {
 		args.vals[SpaceArg] = s.String()
@@ -140,7 +141,7 @@ func (b *Builder) encodingWarning(op *OpDef, inputs []*Node) (Warning, bool) {
 // sourceLabel names the image a node was computed from: the label of the
 // source at the end of its receiver chain.
 func (b *Builder) sourceLabel(n *Node) string {
-	for n.NExplicit > 0 && len(n.Inputs) > 0 {
+	for n.HasReceiver() {
 		in, ok := b.Node(n.Inputs[0])
 		if !ok {
 			break
@@ -210,12 +211,11 @@ func inputRefs(v any) []InputRef {
 	return nil
 }
 
-// nodeStatics computes a node's encoding and space from (op, args, inputs)
-// alone, so a hash hit has exactly the statics a new node would get.
-func nodeStatics(op *OpDef, args Args, inputs []*Node) (buffer.Encoding, buffer.Space) {
-	if op.Expand != nil && len(inputs) > 0 { // a macro node: its expansion's output
-		last := inputs[len(inputs)-1]
-		return last.Enc, last.Space
+// nodeStatics computes a node's encoding and space from (op, args with its
+// inputs) alone, so a hash hit has exactly the statics a new node would get.
+func nodeStatics(op *OpDef, args Args) (buffer.Encoding, buffer.Space) {
+	if out := macroOutput(op, args); out != nil { // a macro node: its expansion's output
+		return out.Enc, out.Space
 	}
 	s := OpSpace(op, args)
 	switch op.Returns {
@@ -224,13 +224,13 @@ func nodeStatics(op *OpDef, args Args, inputs []*Node) (buffer.Encoding, buffer.
 		if r == nil {
 			r = KeepEnc
 		}
-		return r.Enc(args, inputs), r.Space(args, s, inputs)
+		return r.Enc(args), r.Space(args, s)
 	case KindValue:
-		if in := firstImage(inputs); in != nil {
+		if in := args.imageSource(); in != nil {
 			return in.Enc, s
 		}
-		if s == buffer.SpaceNone && len(inputs) > 0 && (inputs[0].Kind == KindValue || inputs[0].Kind == KindParam) {
-			return inputs[0].Enc, inputs[0].Space // field, pick, arithmetic: the receiver's
+		if s == buffer.SpaceNone && op.On != KindNone && len(args.ins) > 0 && (args.ins[0].Kind == KindValue || args.ins[0].Kind == KindParam) {
+			return args.ins[0].Enc, args.ins[0].Space // field, pick, arithmetic: the receiver's
 		}
 		return buffer.EncNone, s
 	case KindMask, KindRegions, KindParam, KindNone:

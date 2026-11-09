@@ -10,7 +10,7 @@ import (
 // convertEnc keeps the input's encoding; the result is in the space "to".
 var convertEnc = &graph.ResultEnc{
 	Enc: graph.KeepEnc.Enc,
-	Space: func(a graph.Args, _ buffer.Space, _ []*graph.Node) buffer.Space {
+	Space: func(a graph.Args, _ buffer.Space) buffer.Space {
 		s, _ := buffer.ParseSpace(a.String("to"))
 		return s
 	},
@@ -21,10 +21,10 @@ func spaceOps() []graph.OpDef {
 		{
 			Name: graph.ConvertOp, On: graph.KindImage, Returns: graph.KindImage, Internal: true, Result: convertEnc,
 			Args: []graph.ArgSpec{{Name: "to", Type: "enum:linear,encoded", Positional: true}},
-			Run: func(ctx context.Context, ec *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
+			Run: func(ctx context.Context, _ *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
 				src := image(in[0])
 				to, _ := buffer.ParseSpace(a.String("to"))
-				out, err := buffer.Convert(ctx, src.Buf, src.Enc, ec.InputNode(0).Space, to)
+				out, err := buffer.Convert(ctx, src.Buf, src.Enc, a.Receiver().Space, to)
 				if err != nil {
 					return nil, err
 				}

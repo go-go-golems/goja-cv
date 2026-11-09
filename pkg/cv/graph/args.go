@@ -37,12 +37,23 @@ func (r InputRef) MarshalJSON() ([]byte, error) {
 }
 
 // Args are an op's canonical arguments: defaults filled, numbers normalized
-// to float64, node-valued arguments recorded as InputRefs (before
-// evaluation) or substituted with their evaluated data (inside Run).
+// to float64, node arguments recorded as InputRefs to the node's own inputs
+// (one input per node argument, in list order, repetitions kept). Args also
+// carries the node's inputs (build time and evaluation) and their values
+// (evaluation of a non-lazy op), so op code reads node arguments through
+// Receiver, Input, Inputs, Value and Values and never indexes inputs itself.
+//
+// Every accessor checks the spec's type and the value's Go type and panics
+// when they disagree, and when an optional argument without a default is
+// read without Has: there is no zero-value path. A panic is a programming
+// error; the panic boundary reports it as E_INTERNAL and the registry
+// property test calls every build-time function so it is found in CI.
 type Args struct {
 	op   *OpDef
 	vals map[string]any
-	meta any // typed Go-side metadata of a source node (SourceMeta, PlaceholderMeta); nil otherwise
+	meta any     // typed Go-side metadata of a source node (SourceMeta, PlaceholderMeta); nil otherwise
+	ins  []*Node // the node's inputs: the receiver, then one per node argument
+	vs   []Value // their values (evaluation of a non-lazy op); nil at build time
 }
 
 // Meta returns the node's typed metadata (SourceMeta of cv.open,
@@ -64,10 +75,12 @@ func (a Args) opName() string {
 	return a.op.Name
 }
 
-// Has reports whether the argument is present.
+// Has reports whether the argument is present: the only way to ask whether
+// an optional argument without a default was given.
 func (a Args) Has(name string) bool { _, ok := a.vals[name]; return ok }
 
-// Raw returns the canonical value (nil if absent).
+// Raw returns the canonical value (nil if absent), for union-typed
+// arguments read with a type switch whose default branch panics.
 func (a Args) Raw(name string) any { return a.vals[name] }
 
 // Map returns a shallow copy of the canonical values.
@@ -90,10 +103,43 @@ func (a Args) mustSpec(name string) *ArgSpec {
 	return s
 }
 
-func (a Args) number(name string) float64 {
-	v, ok := a.vals[name].(float64)
+// present returns the value of a declared argument; it panics when an
+// optional argument without a default is absent (read it after Has).
+func (a Args) present(name string) (*ArgSpec, any) {
+	s := a.mustSpec(name)
+	v, ok := a.vals[name]
 	if !ok {
-		panic(fmt.Sprintf("cv: %s.%s is %T, not a resolved number", a.op.Name, name, a.vals[name]))
+		panic(fmt.Sprintf("cv: %s.%s is optional and absent; check Args.Has first", a.op.Name, name))
+	}
+	return s, v
+}
+
+// wrongType panics with the accessor's complaint.
+func (a Args) wrongType(name string, v any, want string) {
+	panic(fmt.Sprintf("cv: %s.%s is %T, not %s", a.op.Name, name, v, want))
+}
+
+// allows reports whether spec type typ (or an alternative of a union)
+// accepts values of kind want: "string", "bool", "number", "list", "object".
+func allows(typ, want string) bool {
+	for _, alt := range strings.Split(typ, "|") {
+		switch {
+		case alt == want, alt == "any":
+			return true
+		case want == "string" && strings.HasPrefix(alt, "enum:"):
+			return true
+		case want == "list" && (strings.HasSuffix(alt, "[]") || alt == "box" || alt == "point"):
+			return true
+		}
+	}
+	return false
+}
+
+func (a Args) number(name string) float64 {
+	_, x := a.present(name)
+	v, ok := x.(float64)
+	if !ok {
+		a.wrongType(name, x, "a resolved number")
 	}
 	return v
 }
@@ -116,13 +162,14 @@ func (a Args) Area(name string, scale float64) float64 {
 }
 
 // Lengths reads a list of DocPx numbers (a box [x, y, w, h], a point [x,
-// y]) converted to buffer px at scale. For an "any" argument it returns nil
-// when the value is not a list.
+// y]) converted to buffer px at scale. For a union-typed argument it returns
+// nil when the value is not a list.
 func (a Args) Lengths(name string, scale float64) []float64 {
 	if s := a.mustSpec(name); s.Unit != DocPx {
 		panic(fmt.Sprintf("cv: %s.%s is not a doc-px list", a.op.Name, name))
 	}
-	list, ok := a.vals[name].([]any)
+	_, x := a.present(name)
+	list, ok := x.([]any)
 	if !ok {
 		return nil
 	}
@@ -178,6 +225,9 @@ func (a Args) Box(name string) [4]float64 {
 		panic(fmt.Sprintf("cv: %s.%s is not a doc-px box", a.op.Name, name))
 	}
 	l := a.Lengths(name, 1)
+	if len(l) != 4 {
+		panic(fmt.Sprintf("cv: %s.%s is not a box [x, y, w, h]", a.op.Name, name))
+	}
 	var out [4]float64
 	copy(out[:], l)
 	return out
@@ -191,28 +241,100 @@ func AxisScales(v *ImageValue) (float64, float64) {
 
 // Func reads a "func" argument.
 func (a Args) Func(name string) FuncID {
-	a.mustSpec(name)
-	f, _ := a.vals[name].(FuncArg)
+	_, x := a.present(name)
+	f, ok := x.(FuncArg)
+	if !ok {
+		a.wrongType(name, x, "a function")
+	}
 	return f.ID
 }
 
-// Node reads a kind-typed argument: the evaluated value of the node passed
-// for it (nil if the argument is absent).
-func (a Args) Node(name string) Value {
-	a.mustSpec(name)
-	v, _ := a.vals[name].(Value)
-	return v
+// HasInputs reports whether the args carry their node's inputs: false only
+// when an op's schema is computed for help (DocFields), without a call.
+func (a Args) HasInputs() bool { return a.ins != nil }
+
+// Receiver is the node the op was called on. It panics for source and
+// module ops, which have none.
+func (a Args) Receiver() *Node {
+	if a.op == nil || a.op.On == KindNone || len(a.ins) == 0 {
+		panic(fmt.Sprintf("cv: %s has no receiver", a.opName()))
+	}
+	return a.ins[0]
 }
 
-// Nodes reads a list of kind-typed values ("Image[]").
-func (a Args) Nodes(name string) []Value {
+// ref reads the InputRef a node argument holds.
+func (a Args) ref(name string, v any) InputRef {
+	r, ok := v.(InputRef)
+	if !ok {
+		a.wrongType(name, v, "a node argument")
+	}
+	if r.Index < 0 || r.Index >= len(a.ins) {
+		panic(fmt.Sprintf("cv: %s.%s refers to input %d of %d", a.op.Name, name, r.Index, len(a.ins)))
+	}
+	return r
+}
+
+func (a Args) refs(name string) []InputRef {
+	_, x := a.present(name)
+	list, ok := x.([]any)
+	if !ok {
+		return []InputRef{a.ref(name, x)} // a single node for a "T|T[]" argument
+	}
+	out := make([]InputRef, len(list))
+	for i, e := range list {
+		out[i] = a.ref(name, e)
+	}
+	return out
+}
+
+// Input is the node passed for a node argument (an Image, a Mask, Regions);
+// nil only when the argument is optional and absent.
+func (a Args) Input(name string) *Node {
 	a.mustSpec(name)
-	list, _ := a.vals[name].([]any)
-	out := make([]Value, 0, len(list))
-	for _, e := range list {
-		if v, ok := e.(Value); ok {
-			out = append(out, v)
-		}
+	x, ok := a.vals[name]
+	if !ok {
+		return nil
+	}
+	return a.ins[a.ref(name, x).Index]
+}
+
+// Inputs are the nodes of a node-list argument ("Image[]"), in list order
+// with repetitions kept; a single node for a "T|T[]" argument is a list of
+// one.
+func (a Args) Inputs(name string) []*Node {
+	rs := a.refs(name)
+	out := make([]*Node, len(rs))
+	for i, r := range rs {
+		out[i] = a.ins[r.Index]
+	}
+	return out
+}
+
+func (a Args) evaluated(name string) {
+	if a.vs == nil {
+		panic(fmt.Sprintf("cv: %s.%s read with Args.Value before evaluation (or in a lazy op)", a.opName(), name))
+	}
+}
+
+// Value is the evaluated value of a node argument; nil only when the
+// argument is optional and absent. It panics at build time and in a lazy op.
+func (a Args) Value(name string) Value {
+	a.mustSpec(name)
+	a.evaluated(name)
+	x, ok := a.vals[name]
+	if !ok {
+		return nil
+	}
+	return a.vs[a.ref(name, x).Index]
+}
+
+// Values are the evaluated values of a node-list argument, in list order.
+func (a Args) Values(name string) []Value {
+	a.evaluated(name)
+	rs := a.refs(name)
+	out := make([]Value, len(rs))
+	for i, r := range rs {
+		out[i] = a.vs[r.Index]
 	}
 	return out
 }
@@ -240,49 +362,101 @@ func (a Args) Int(name string) int { return int(math.Round(a.Number(name))) }
 
 // String reads a string or enum argument.
 func (a Args) String(name string) string {
-	a.mustSpec(name)
-	s, _ := a.vals[name].(string)
-	return s
+	s, x := a.present(name)
+	if !allows(s.Type, "string") {
+		panic(fmt.Sprintf("cv: %s.%s is declared %s, not a string", a.op.Name, name, s.Type))
+	}
+	str, ok := x.(string)
+	if !ok {
+		a.wrongType(name, x, "a string")
+	}
+	return str
 }
 
 // Bool reads a bool argument.
 func (a Args) Bool(name string) bool {
-	a.mustSpec(name)
-	b, _ := a.vals[name].(bool)
+	s, x := a.present(name)
+	if !allows(s.Type, "bool") {
+		panic(fmt.Sprintf("cv: %s.%s is declared %s, not a bool", a.op.Name, name, s.Type))
+	}
+	b, ok := x.(bool)
+	if !ok {
+		a.wrongType(name, x, "a bool")
+	}
 	return b
 }
 
 // Numbers reads a unitless "number[]" argument.
 func (a Args) Numbers(name string) []float64 {
-	if s := a.mustSpec(name); s.Unit == DocPx || s.Unit == DocPx2 {
+	s, x := a.present(name)
+	if s.Unit == DocPx || s.Unit == DocPx2 {
 		panic(fmt.Sprintf("cv: %s.%s is a doc-px list; read it with Args.Lengths", a.op.Name, name))
 	}
-	list, _ := a.vals[name].([]any)
-	out := make([]float64, 0, len(list))
-	for _, v := range list {
-		f, _ := v.(float64)
-		out = append(out, f)
+	list, ok := x.([]any)
+	if !ok {
+		a.wrongType(name, x, "a list of numbers")
+	}
+	out := make([]float64, len(list))
+	for i, v := range list {
+		f, ok := v.(float64)
+		if !ok {
+			a.wrongType(fmt.Sprintf("%s[%d]", name, i), v, "a number")
+		}
+		out[i] = f
 	}
 	return out
 }
 
 // Strings reads a "string[]" argument.
 func (a Args) Strings(name string) []string {
-	a.mustSpec(name)
-	list, _ := a.vals[name].([]any)
-	out := make([]string, 0, len(list))
-	for _, v := range list {
-		s, _ := v.(string)
-		out = append(out, s)
+	_, x := a.present(name)
+	list, ok := x.([]any)
+	if !ok {
+		a.wrongType(name, x, "a list of strings")
+	}
+	out := make([]string, len(list))
+	for i, v := range list {
+		str, ok := v.(string)
+		if !ok {
+			a.wrongType(fmt.Sprintf("%s[%d]", name, i), v, "a string")
+		}
+		out[i] = str
 	}
 	return out
 }
 
-// Object reads an "object" or "any" argument.
+// Object reads an "object" or "any" argument holding an object.
 func (a Args) Object(name string) map[string]any {
-	a.mustSpec(name)
-	m, _ := a.vals[name].(map[string]any)
+	_, x := a.present(name)
+	m, ok := x.(map[string]any)
+	if !ok {
+		a.wrongType(name, x, "an object")
+	}
 	return m
+}
+
+// imageSource is the image an Image result keeps the encoding of: the
+// receiver when it is an Image, else the first Image node argument in
+// declaration order (an overlay called on regions or a mask), or nil.
+func (a Args) imageSource() *Node {
+	if a.op != nil && a.op.On != KindNone && len(a.ins) > 0 && a.ins[0].Kind == KindImage {
+		return a.ins[0]
+	}
+	if a.op == nil {
+		return nil
+	}
+	for i := range a.op.Args {
+		s := &a.op.Args[i]
+		if !isKindType(s.Type) || !accepts(Kind(s.Type), KindImage) || !a.Has(s.Name) {
+			continue
+		}
+		for _, r := range a.refs(s.Name) {
+			if a.ins[r.Index].Kind == KindImage {
+				return a.ins[r.Index]
+			}
+		}
+	}
+	return nil
 }
 
 // canonicalJSON is the hashing form of the args.
@@ -367,9 +541,8 @@ func typeAcceptsObject(t string) bool { return t == "object" || t == "any" }
 type binder struct {
 	op       *OpDef
 	kindOf   func(NodeID) (Kind, bool)
-	base     int // index of the first lifted input in node.Inputs
-	lifted   []NodeID
-	liftIdx  map[NodeID]int
+	base     int      // index of the first node argument in node.Inputs (1 after a receiver)
+	inputs   []NodeID // one per node argument, in binding order, repetitions kept
 	warnings []Warning
 }
 
@@ -388,12 +561,8 @@ func (b *binder) lift(id NodeID, where string, want string) (any, error) {
 			WithHint("Only Value and Param nodes can stand in for plain values; measure the image first.").
 			WithFix(fmt.Sprintf("e.g. %s: img.stats().p01", lastSegment(where)))
 	}
-	if i, ok := b.liftIdx[id]; ok {
-		return InputRef{Index: b.base + i}, nil
-	}
-	b.liftIdx[id] = len(b.lifted)
-	b.lifted = append(b.lifted, id)
-	return InputRef{Index: b.base + len(b.lifted) - 1}, nil
+	b.inputs = append(b.inputs, id) // every node argument is its own input: [img, img] is two
+	return InputRef{Index: b.base + len(b.inputs) - 1}, nil
 }
 
 // isKindType reports whether typ names node kinds ("Mask", "Regions|Mask").
@@ -463,10 +632,19 @@ func (b *binder) check(s *ArgSpec, typ string, v any, where string) (any, error)
 		return b.lift(na.ID, where, typ)
 	}
 	if isKindType(typ) {
-		if val, ok := v.(Value); ok && b == nil && accepts(Kind(typ), val.Kind()) {
-			return val, nil
+		e := Errorf(EWrongKind, "%s needs %s node, got %s.", where, A(typ), describeRaw(v))
+		if _, isData := v.(map[string]any); isData {
+			e.Hint = "That is plain data, not a node. Keep the node in a variable and await it only to read data."
+			switch {
+			case accepts(Kind(typ), KindRegions):
+				e.Fix = fmt.Sprintf("const regions = img.detect.specks()   // a node; then %s(regions, …)", b.callName())
+			case accepts(Kind(typ), KindMask):
+				e.Fix = fmt.Sprintf("const m = img.mask.luminance({ above: 0.6 })   // a node; then %s(m, …)", b.callName())
+			default:
+				e.Fix = fmt.Sprintf("const other = img.exposure(0.3)   // a node; then %s(other, …)", b.callName())
+			}
 		}
-		return nil, Errorf(EWrongKind, "%s needs %s node, got %s.", where, A(typ), describeRaw(v))
+		return nil, e
 	}
 	if fa, ok := v.(FuncArg); ok {
 		if typ == "func" {
@@ -944,9 +1122,15 @@ func sortedKeys(m map[string]any) []string {
 // bound is the result of binding a call's raw arguments.
 type bound struct {
 	args     map[string]any
-	inputs   []NodeID // explicit node inputs (OpDef.Inputs), not the receiver
-	lifted   []NodeID
+	inputs   []NodeID // one per node argument, in binding order (not the receiver)
 	warnings []Warning
+}
+
+func (b *binder) callName() string {
+	if b == nil || b.op == nil {
+		return "op"
+	}
+	return callName(b.op)
 }
 
 // bind maps raw call arguments onto op: explicit node inputs first, then
@@ -956,34 +1140,6 @@ func bind(op *OpDef, call string, hasReceiver bool, raw []any, kindOf func(NodeI
 	raw = normalize(trimUndefined(raw)).([]any)
 	res := &bound{}
 	i := 0
-	for j, decl := range op.Inputs {
-		if i >= len(raw) {
-			return nil, Errorf(EArgType, "%s needs %s as argument %d.", call, A(string(decl)), j+1)
-		}
-		na, ok := raw[i].(NodeArg)
-		if !ok {
-			e := Errorf(EWrongKind, "%s needs %s node as argument %d, got %s.", call, A(string(decl)), j+1, describeRaw(raw[i]))
-			if _, isData := raw[i].(map[string]any); isData {
-				e.Hint = "That is plain data, not a node. Keep the node in a variable and await it only to read data."
-				switch {
-				case accepts(decl, KindRegions):
-					e.Fix = fmt.Sprintf("const regions = img.detect.specks()   // a node; then %s(regions, …)", op.Name)
-				case accepts(decl, KindMask):
-					e.Fix = fmt.Sprintf("const m = img.mask.luminance({ above: 0.6 })   // a node; then %s(m, …)", op.Name)
-				default:
-					e.Fix = fmt.Sprintf("const other = img.exposure(0.3)   // a node; then %s(other, …)", op.Name)
-				}
-			}
-			return nil, e
-		}
-		k, _ := kindOf(na.ID)
-		if !accepts(decl, k) {
-			return nil, Errorf(EWrongKind, "%s needs %s as argument %d, got %s.", call, A(string(decl)), j+1, A(string(k)))
-		}
-		res.inputs = append(res.inputs, na.ID)
-		i++
-	}
-
 	given := map[string]any{}
 	var positional []*ArgSpec
 	for k := range op.Args {
@@ -1008,7 +1164,8 @@ func bind(op *OpDef, call string, hasReceiver bool, raw []any, kindOf func(NodeI
 			given[s.Name] = rest
 			continue
 		}
-		if isOptionsObject(raw[i]) && !typeAcceptsObject(s.Type) && !isCoordinateObject(s.Type, raw[i]) {
+		requiredNode := isKindType(s.Type) && s.Default == nil && !s.Optional // an object there is data passed for a node
+		if isOptionsObject(raw[i]) && !typeAcceptsObject(s.Type) && !isCoordinateObject(s.Type, raw[i]) && !requiredNode {
 			break
 		}
 		given[s.Name] = raw[i]
@@ -1017,7 +1174,7 @@ func bind(op *OpDef, call string, hasReceiver bool, raw []any, kindOf func(NodeI
 	if i < len(raw) {
 		opts, ok := raw[i].(map[string]any)
 		if !ok || i != len(raw)-1 {
-			return nil, Errorf(EArgType, "%s takes at most %d positional argument(s); got %d.", call, len(op.Inputs)+len(positional), len(raw)).
+			return nil, Errorf(EArgType, "%s takes at most %d positional argument(s); got %d.", call, len(positional), len(raw)).
 				WithHint(signatureHint(op, call))
 		}
 		fix := func(sug string) string {
@@ -1037,10 +1194,9 @@ func bind(op *OpDef, call string, hasReceiver bool, raw []any, kindOf func(NodeI
 		}
 	}
 
-	b := &binder{op: op, kindOf: kindOf, liftIdx: map[NodeID]int{}}
-	b.base = len(op.Inputs)
+	b := &binder{op: op, kindOf: kindOf}
 	if hasReceiver {
-		b.base++
+		b.base = 1
 	}
 	out := map[string]any{}
 	for k := range op.Args {
@@ -1063,7 +1219,7 @@ func bind(op *OpDef, call string, hasReceiver bool, raw []any, kindOf func(NodeI
 		}
 		out[s.Name] = c
 	}
-	res.args, res.lifted, res.warnings = out, b.lifted, b.warnings
+	res.args, res.inputs, res.warnings = out, b.inputs, b.warnings
 	return res, nil
 }
 
@@ -1119,9 +1275,6 @@ func callName(op *OpDef) string {
 // signatureHint renders "exposure(ev)" style usage of op called as call.
 func signatureHint(op *OpDef, call string) string {
 	var pos, opt []string
-	for _, in := range op.Inputs {
-		pos = append(pos, strings.ToLower(string(in)))
-	}
 	for _, a := range op.Args {
 		if isSpaceOption(op, &a) {
 			continue // the working-space option is on every pixel op; help and errors explain it
@@ -1147,17 +1300,15 @@ func isSpaceOption(op *OpDef, a *ArgSpec) bool {
 	return a.Name == SpaceArg && op.Space.Default != buffer.SpaceNone && !op.Space.Fixed
 }
 
-// resolveArgs substitutes lifted inputs with their evaluated data and
-// re-checks types and hard limits.
+// resolveArgs gives a node's canonical args their evaluated inputs: lifted
+// Value nodes are substituted with their data (and re-checked: a lifted
+// number is checked when it is known); node arguments stay InputRefs that
+// Value and Values resolve.
 func resolveArgs(n *Node, ins []Value) (Args, error) {
-	sub := func(v any) (any, error) { return substitute(v, ins) }
 	out := make(map[string]any, len(n.Args.vals))
 	for k, v := range n.Args.vals {
-		r, err := sub(v)
-		if err != nil {
-			return Args{}, err
-		}
-		if s := n.Op.spec(k); s != nil && containsRef(v) {
+		r, changed := substitute(v, ins)
+		if s := n.Op.spec(k); s != nil && changed {
 			c, err := (*binder)(nil).check(s, s.Type, normalize(r), n.Op.Name+"."+k)
 			if err != nil {
 				return Args{}, err
@@ -1166,64 +1317,53 @@ func resolveArgs(n *Node, ins []Value) (Args, error) {
 		}
 		out[k] = r
 	}
-	return Args{op: n.Op, vals: out, meta: n.Args.meta}, nil
+	return Args{op: n.Op, vals: out, meta: n.Args.meta, ins: n.Args.ins, vs: ins}, nil
 }
 
-func containsRef(v any) bool {
-	switch x := v.(type) {
-	case InputRef:
-		return true
-	case []any:
-		for _, e := range x {
-			if containsRef(e) {
-				return true
-			}
-		}
-	case map[string]any:
-		for _, e := range x {
-			if containsRef(e) {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func substitute(v any, ins []Value) (any, error) {
+// substitute replaces InputRefs to data values (lifted Value nodes) by their
+// data; changed reports whether it replaced any.
+func substitute(v any, ins []Value) (any, bool) {
 	switch x := v.(type) {
 	case InputRef:
 		if d, ok := ins[x.Index].(*DataValue); ok {
-			return d.Data, nil
+			return d.Data, true
 		}
-		return ins[x.Index], nil // kind-typed argument: the evaluated node value
+		return x, false
 	case []any:
-		if !containsRef(x) {
-			return x, nil
-		}
-		out := make([]any, len(x))
+		var out []any
 		for i, e := range x {
-			r, err := substitute(e, ins)
-			if err != nil {
-				return nil, err
+			r, ch := substitute(e, ins)
+			if ch && out == nil {
+				out = append([]any(nil), x...)
 			}
-			out[i] = r
+			if out != nil {
+				out[i] = r
+			}
 		}
-		return out, nil
+		if out == nil {
+			return x, false
+		}
+		return out, true
 	case map[string]any:
-		if !containsRef(x) {
-			return x, nil
-		}
-		out := make(map[string]any, len(x))
+		var out map[string]any
 		for k, e := range x {
-			r, err := substitute(e, ins)
-			if err != nil {
-				return nil, err
+			r, ch := substitute(e, ins)
+			if ch && out == nil {
+				out = make(map[string]any, len(x))
+				for kk, ee := range x {
+					out[kk] = ee
+				}
 			}
-			out[k] = r
+			if out != nil {
+				out[k] = r
+			}
 		}
-		return out, nil
+		if out == nil {
+			return x, false
+		}
+		return out, true
 	}
-	return v, nil
+	return v, false
 }
 
 // Normalize converts exported JavaScript values (int64, float32, typed

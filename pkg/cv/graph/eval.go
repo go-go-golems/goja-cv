@@ -56,9 +56,6 @@ func (ec *EvalCtx) warnings() []Warning {
 	return append([]Warning(nil), ec.warns...)
 }
 
-// InputNode is the node of input i (its statics: frame, encoding, space).
-func (ec *EvalCtx) InputNode(i int) *Node { return ec.Eval.node(ec.Node.Inputs[i]) }
-
 // Callbacks runs JavaScript data lambdas for ops such as Regions.filter.
 // The binding implements it by scheduling onto the runtime owner goroutine;
 // evaluation never runs on that goroutine, so the call can be served.
@@ -376,11 +373,11 @@ func (r *evalRun) compute(ctx context.Context, n *Node, sig Signature) (Value, e
 			return nil, r.e.wrapWithPath(err, n)
 		}
 	}
-	if n.Op.Identity != nil && n.NExplicit > 0 && n.Op.Identity(args) {
+	if n.Op.Identity != nil && n.HasReceiver() && n.Op.Identity(args) {
 		return stamp(n, ins[0], ins), nil // neutral args: the receiver's value (a stamped copy); not cached twice
 	}
 	ec := &EvalCtx{Eval: r.e, Node: n, Scale: r.scale, Params: r.params, Window: n.Frame}
-	out, err := safeRun(ctx, n.Op, ec, ins[:n.NExplicit], args)
+	out, err := safeRun(ctx, n.Op, ec, receiverValue(n, ins), args)
 	if err != nil {
 		return nil, r.e.wrapWithPath(err, n)
 	}
@@ -486,7 +483,7 @@ func (e *Evaluator) Path(id NodeID) []string {
 	var rev []string
 	for n := e.node(id); n != nil; {
 		rev = append(rev, Label(n))
-		if n.NExplicit == 0 || len(n.Inputs) == 0 {
+		if !n.HasReceiver() {
 			break
 		}
 		n = e.node(n.Inputs[0])
@@ -496,4 +493,13 @@ func (e *Evaluator) Path(id NodeID) []string {
 		out[len(rev)-1-i] = l
 	}
 	return out
+}
+
+// receiverValue is the in slice Run receives: the receiver's value, or
+// nothing for source and module ops.
+func receiverValue(n *Node, ins []Value) []Value {
+	if !n.HasReceiver() || len(ins) == 0 {
+		return nil
+	}
+	return ins[:1]
 }

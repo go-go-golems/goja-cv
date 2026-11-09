@@ -39,13 +39,13 @@ var predOps = []string{"lt", "lte", "gt", "gte", "eq", "ne", "in"}
 // validatePredicate checks a where() predicate against the receiver's
 // fields: { field: { op: value } } or { field: value } (eq). Values may be
 // lifted nodes (InputRefs).
-func validatePredicate(a graph.Args, inputs []*graph.Node) error {
+func validatePredicate(a graph.Args) error {
 	pred, ok := a.Raw("pred").(map[string]any)
 	if !ok {
 		return graph.Errorf(graph.EArgType, "where needs a predicate object such as { area: { gte: 4 } }.").
 			WithFix("regions.where({ area: { gte: 4, lte: 120 } })")
 	}
-	fields := receiverFields(inputs)
+	fields := receiverFields(a)
 	for _, f := range sortedKeys(pred) {
 		if _, ok := graph.FindField(fields, f); !ok {
 			return graph.UnknownFieldError("where", f, fields, func(sug string) string { return fmt.Sprintf("where({ %s: … })", sug) })
@@ -129,12 +129,13 @@ func compare(op string, got, want any) (bool, error) {
 	return false, graph.Errorf(graph.EArgType, "unknown comparison %q", op)
 }
 
-// receiverFields is the schema of a Regions op's receiver.
-func receiverFields(inputs []*graph.Node) []graph.FieldSpec {
-	if len(inputs) == 0 {
+// receiverFields is the schema of a Regions op's receiver (the geometry
+// fields in help, which has no call).
+func receiverFields(a graph.Args) []graph.FieldSpec {
+	if !a.HasInputs() {
 		return graph.GeometryFields
 	}
-	return inputs[0].Fields
+	return a.Receiver().Fields
 }
 
 func matches(r *graph.Region, pred map[string]any) (bool, error) {
@@ -190,7 +191,7 @@ func idSet(v any) (map[int]bool, error) {
 	return out, nil
 }
 
-func validateIDs(a graph.Args, _ []*graph.Node) error {
+func validateIDs(a graph.Args) error {
 	v := a.Raw("ids")
 	if isRef(v) {
 		return nil
@@ -300,9 +301,9 @@ func regionOps() []graph.OpDef {
 				{Name: "key", Type: "string", Positional: true, Doc: "a region field (area, score, contrast, …)"},
 				{Name: "desc", Type: "bool", Default: true, Doc: "largest first"},
 			},
-			Validate: func(a graph.Args, inputs []*graph.Node) error {
+			Validate: func(a graph.Args) error {
 				k := a.String("key")
-				fields := receiverFields(inputs)
+				fields := receiverFields(a)
 				f, ok := graph.FindField(fields, k)
 				if !ok {
 					return graph.UnknownFieldError("sortBy", k, fields, func(sug string) string { return fmt.Sprintf("sortBy(%q)", sug) })

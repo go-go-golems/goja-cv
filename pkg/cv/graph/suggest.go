@@ -233,8 +233,8 @@ func crossKind(k Kind, name string, op *OpDef) (string, string) {
 		return fmt.Sprintf("%q is a cv function, not a method.", name), fmt.Sprintf("cv.%s(…)", name)
 	}
 	on, self := receiverVar(op.On), receiverVar(k)
-	for _, decl := range op.Inputs {
-		if accepts(decl, k) {
+	for _, s := range op.Args {
+		if s.Positional && isKindType(s.Type) && accepts(Kind(s.Type), k) {
 			return fmt.Sprintf("%q is %s method that takes %s: call it on the %s and pass this node.", name, A(string(op.On)), string(k), kindNoun(op.On)),
 				fmt.Sprintf("%s.%s(%s, …)", on, name, self)
 		}

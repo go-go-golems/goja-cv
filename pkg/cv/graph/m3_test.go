@@ -53,7 +53,7 @@ func m3Engine(t *testing.T) *Engine {
 			Run: func(_ context.Context, _ *EvalCtx, in []Value, a Args) (Value, error) {
 				src := in[0].(*ImageValue)
 				out := src.Buf.Clone()
-				if m, ok := a.Node("mask").(*ImageValue); ok {
+				if m, ok := a.Value("mask").(*ImageValue); ok {
 					for i, w := range m.Buf.Pix {
 						out.Pix[i] = out.Pix[i]*(1-w) + float32(a.Number("v"))*w
 					}
@@ -62,7 +62,7 @@ func m3Engine(t *testing.T) *Engine {
 			}},
 		OpDef{Name: "pred", On: KindImage, Returns: KindValue,
 			Args: []ArgSpec{{Name: "p", Type: "any", Positional: true}},
-			Validate: func(a Args, _ []*Node) error {
+			Validate: func(a Args) error {
 				if _, ok := a.Raw("p").(map[string]any); !ok {
 					return Errorf(EArgType, "pred needs an object")
 				}
@@ -83,7 +83,7 @@ func TestKindTypedArgsStaticLenValidate(t *testing.T) {
 		t.Fatal(m.Kind)
 	}
 	p := mustCall(t, e, "paint", src.ID, map[string]any{"mask": NodeArg{m.ID}})
-	if len(p.Inputs) != 2 || p.NExplicit != 1 {
+	if len(p.Inputs) != 2 || !p.HasReceiver() {
 		t.Fatalf("kind-typed arg not lifted: %v", p.Inputs)
 	}
 	v, err := e.Evaluate(context.Background(), p.ID, EvalOptions{Scale: 1})

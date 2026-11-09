@@ -152,19 +152,19 @@ func (op *OpDef) DocFields() []FieldSpec {
 	if op.Fields == nil {
 		return nil
 	}
-	return op.Fields(DefaultArgs(op), nil)
+	return op.Fields(DefaultArgs(op))
 }
 
 // nodeFields is the schema of a new node: a macro's is its expansion's,
 // op.Fields when set, else a Regions-to-Regions op keeps its receiver's.
-func nodeFields(op *OpDef, args Args, inputs []*Node) []FieldSpec {
+func nodeFields(op *OpDef, args Args) []FieldSpec {
 	switch {
-	case op.Expand != nil && len(inputs) > 0:
-		return inputs[len(inputs)-1].Fields
+	case macroOutput(op, args) != nil:
+		return macroOutput(op, args).Fields
 	case op.Fields != nil:
-		return op.Fields(args, inputs)
-	case op.Returns == KindRegions && len(inputs) > 0 && inputs[0].Kind == KindRegions:
-		return inputs[0].Fields
+		return op.Fields(args)
+	case op.Returns == KindRegions && op.On == KindRegions && len(args.ins) > 0:
+		return args.ins[0].Fields
 	}
 	return nil
 }
