@@ -19,3 +19,8 @@ dist/
 .env
 .envrc
 .history
+.bin/
+
+# built binary (go build ./cmd/goja-cv) and local artifacts
+/goja-cv
+.DS_Store
