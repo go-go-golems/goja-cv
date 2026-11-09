@@ -127,10 +127,7 @@ func presentOps() []graph.OpDef {
 			Space: graph.Display, // a layout of what looks show
 			Args: []graph.ArgSpec{
 				{Name: "images", Type: "Image[]", Positional: true, Doc: "the images to compare: [before, after, …]"},
-				{Name: "mode", Type: "enum:side,split", Default: "side", Doc: "side by side (top-aligned, 4 doc px apart) or split into vertical strips (same frame)",
-					Redirects: map[string]graph.Redirect{"diff": {
-						Hint: "compare lays images out; a difference is an image of its own: subtract (signed, zero = grey with .mul(4).add(0.5)).",
-						Fix:  "a.sub(b).mul(4).add(0.5)"}}},
+				{Name: "mode", Type: "enum:side,split", Default: "side", Doc: "side by side (top-aligned, 4 doc px apart) or split into vertical strips (same frame)"},
 			},
 			Validate: func(a graph.Args) error {
 				if n := len(a.Raw("images").([]any)); n == 0 {

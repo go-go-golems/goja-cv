@@ -187,7 +187,7 @@ func TestHelp(t *testing.T) {
 	}
 	// cv.help never throws (agents batch help calls): unknown names return
 	// { found: false, didYouMean }.
-	miss := mustRun(t, rt, `return cv.help("blur")`).(map[string]any)
+	miss := mustRun(t, rt, `return cv.help("gausian")`).(map[string]any)
 	if miss["found"] != false || miss["didYouMean"].([]any)[0] != "gaussian" {
 		t.Fatalf("help synonym: %+v", miss)
 	}
@@ -279,8 +279,8 @@ func TestPart2Section4Ops(t *testing.T) {
 func TestDiagnostics(t *testing.T) {
 	rt := newRuntime(t)
 	for _, tc := range []struct{ body, code, hint, fix string }{
-		{`return img.brightness(0.3)`, "E_UNKNOWN_METHOD", `Did you mean "exposure"?`, "img.exposure(…)"},
-		{`return img.blur(2)`, "E_UNKNOWN_METHOD", `Did you mean "gaussian"?`, "img.gaussian(…)"},
+		{`return img.gausian(2)`, "E_UNKNOWN_METHOD", `Did you mean "gaussian"?`, "img.gaussian(…)"},
+		{`return img.write("x.tif")`, "E_UNKNOWN_METHOD", "cv.save(path, x) writes a file", `await cv.save("x.tif", node)`},
 		{`return img.exposre(1)`, "E_UNKNOWN_METHOD", `Did you mean "exposure"?`, "img.exposure(…)"},
 		{`return img.meanL`, "E_UNKNOWN_METHOD", `"meanL" is a field of the Value returned by stats().`, ""},
 		{`if (img.stats().meanL > 0.5) return 1`, "E_NOT_AWAITED", "", "(await img.stats()).meanL"},
@@ -411,11 +411,11 @@ func TestSplitReturnsNodes(t *testing.T) {
 	}
 }
 
-// TestBareModuleRejectsAs: names exist only in eval sessions.
-func TestBareModuleRejectsAs(t *testing.T) {
+// TestBareModuleRejectsName: names exist only in eval sessions.
+func TestBareModuleRejectsName(t *testing.T) {
 	rt := newRuntime(t)
-	e := mustFail(t, rt, "E_UNKNOWN_OPTION", fmt.Sprintf(`return cv.open(%q, { as: "ref" })`, tiffPath))
+	e := mustFail(t, rt, "E_UNKNOWN_OPTION", fmt.Sprintf(`return cv.open(%q, { name: "ref" })`, tiffPath))
 	if !strings.Contains(e.Message, "names exist only in eval sessions") || !strings.HasPrefix(e.Fix, "const ref = cv.open(") {
-		t.Fatalf("as in a bare module: %+v", e)
+		t.Fatalf("name in a bare module: %+v", e)
 	}
 }

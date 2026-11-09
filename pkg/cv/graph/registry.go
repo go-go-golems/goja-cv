@@ -146,10 +146,6 @@ var (
 	}
 )
 
-// EncodingValueSynonyms are the value synonyms of encoding arguments.
-var EncodingValueSynonyms = map[string]string{"sRGB": "srgb", "SRGB": "srgb", "gamma": "srgb", "perceptual": "srgb",
-	"lin": "linear", "raw": "linear", "identity": "linear", "none": "linear"}
-
 // ArgSpec declares one argument of an op.
 //
 // Types: "number", "string", "bool", "enum:a,b,c", "number[]", "string[]",
@@ -175,15 +171,12 @@ type ArgSpec struct {
 	Usual      [2]float64 // soft range (zero value = none): violation is a RANGE warning
 	UsualHint  string     // appended to that RANGE warning: what to do instead
 	Options    []ArgSpec  // for "object": the allowed keys (unknown keys are E_UNKNOWN_OPTION)
-	// ValueSynonyms map words agents use for an enum value to the value they
-	// mean (scoped to this argument), for the did-you-mean hint and fix.
-	ValueSynonyms map[string]string
 	// ValueDocs describe the values of an enum (view presets): help lists
 	// them and an unknown value's error names them.
 	ValueDocs map[string]string
-	// Redirects map an unknown option name (looked up over every spec of the
-	// call) or an unknown enum value of this argument to the call that does
-	// it now: look({ box }) → crop, blend({ mode: "difference" }) → sub.
+	// Redirects map an unknown option name agents demonstrably typed (looked
+	// up over every spec of the call; GCV-004 §7.13) to the call that does it:
+	// look({ box }) → crop, mask.luminance({ min }) → above.
 	Redirects map[string]Redirect
 	Doc       string
 }

@@ -26,23 +26,20 @@ type cvFunc struct {
 var cvFuncs = map[string]cvFunc{
 	"version":  {"cv.version", "The cv module version.", nil},
 	"mem":      {"mem.name = value", "A plain object that persists between evals (const/let do not).", nil},
-	"img":      {"img · img = cv.open(path)", "The open image (an Image node); assigning a cv.open node rebinds it. More images: cv.open(path, { as: \"ref\" }).", []string{"open", "names"}},
+	"img":      {"img · img = cv.open(path)", "The open image (an Image node); assigning a cv.open node rebinds it. More images: cv.open(path, { name: \"ref\" }).", []string{"open", "names"}},
 	"encoding": {"cv.open(path, { encoding: \"srgb\" | \"linear\" }) · (await img).encoding · img.encode(\"srgb\")", "How a file's values relate to the quantity: srgb (photographs) or linear (float TIFF, DNG, .npy, density data). Decoders report it; cv.open's option overrides it. Read cv.docs.read(\"encodings-and-spaces\").", []string{"open", "encode", "space"}},
 	"space":    {"img.as(\"linear\" | \"encoded\") · (await img).space", "Which numbers an image's pixels hold: encoded (file units, what looks show; cv.open gives these) or linear (the encoding undone: light, or the quantity). An op works in its receiver's space and returns it: img.as(\"linear\").gaussian(2) blurs light. Physical ops (exposure, heal, inpaint, toLab, encode, toGray) compute in linear light and return the receiver's space; overlay, annotate, compare and sheet draw encoded. cv.explain(node) shows the conversions. Read cv.docs.read(\"encodings-and-spaces\").", []string{"as", "stats", "encoding"}},
 	"frame":    {"(await img).frame · cv.open(path, { box, origin })", "The rectangle an image covers in doc px, [x, y, w, h]; boxes, points and region geometry are absolute in it. Read cv.docs.read(\"units-and-scales\", { section: \"Frames\" }).", []string{"open"}},
 	"mask":     {"img.mask.luminance({ above }) · img.toGray() · img.mask.regions(items)", "A mask is a one-channel image of weights in [0, 1]: every image op works on it (m.stats(), m.crop(box), m.look()). The mask ops (and, or, minus, not, grow, shrink, feather, refine, coverage, components) need a one-channel receiver; an argument that takes a mask (within, blend, stats, heal, overlay) accepts any one-channel image and reads it as stored (never converted between spaces). Read cv.docs.read(\"masks-and-regions\").", []string{"within", "coverage", "components", "mask.regions"}},
 	"regions":  {"const sp = await img.detect.specks() · sp.filter(r => r.score >= 0.5) · img.overlay(sp)", "Regions (detect.specks, components, measure) are lazy nodes without methods: regions are arguments of image methods (overlay, heal, measure, mask.regions, stats({ mask }), cv.sheet). Awaited, they are a plain array of flat items { id, x, y, w, h, cx, cy, area, aspect, … }: filter, sort and slice it with JavaScript and pass the array back wherever regions go. Each item stays linked to its region's exact pixels (by its set and position, not by id: ids are data and may repeat; label is printed instead of the id); a map that builds new objects drops the link ({ ...r, note } keeps it). Literal items mix in: boxes { x, y, w, h } or [x, y, w, h] and circles { cx, cy, r }; measure, sample and cv.sheet also take points [x, y] or { cx, cy }. Read cv.docs.read(\"masks-and-regions\").", []string{"detect.specks", "measure", "overlay", "mask.regions"}},
-	"names":    {"cv.open(path, { as: \"ref\" })", "Several images per session: as binds a global that persists between evals (img is the first); the context block lists every name with file, frame and encoding. Read cv.docs.read(\"encodings-and-spaces\", { section: \"Frames and names\" }).", []string{"open", "img"}},
+	"names":    {"cv.open(path, { name: \"ref\" })", "Several images per session: name binds a global that persists between evals (img is the first); the context block lists every name with file, frame and encoding. Read cv.docs.read(\"encodings-and-spaces\", { section: \"Frames and names\" }).", []string{"open", "img"}},
 }
 
 // helpRedirects map names agents reach for to the call that does it.
 var helpRedirects = map[string][2]string{
-	"mask.stats":    {"stats", "A mask is an image: m.stats() measures the mask; img.stats({ mask: m }) measures the image inside it, img.stats({ box: [x, y, w, h] }) inside a box."},
-	"Regions.stats": {"stats", "Measure inside regions with img.stats({ mask: regions }), or each region with img.measure(regions, { stats: [\"mean\"] })."},
-	"mask.mean":     {"stats", "img.stats({ mask: m }).meanL is the mean inside a mask."},
-	"metadata":      {"open", "Await the image for its metadata: (await img) has file, format, bitDepth, sample, fileChannels, encoding, frame and notes."},
-	"meta":          {"open", "Await the image for its metadata: (await img) has file, format, bitDepth, sample, fileChannels, encoding, frame and notes."},
-	"info":          {"open", "Await the image for its metadata: (await img) has file, format, bitDepth, sample, fileChannels, encoding, frame and notes."},
+	"mask.stats": {"stats", "A mask is an image: m.stats() measures the mask; img.stats({ mask: m }) measures the image inside it, img.stats({ box: [x, y, w, h] }) inside a box."},
+	"meta":       {"open", "Await the image for its metadata: (await img) has file, format, bitDepth, sample, fileChannels, encoding, frame and notes."},
+	"info":       {"open", "Await the image for its metadata: (await img) has file, format, bitDepth, sample, fileChannels, encoding, frame and notes."},
 }
 
 // Help returns cv.help(name) data; it never fails.
@@ -50,7 +47,7 @@ func Help(reg *graph.Registry, name string) map[string]any {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		h, _ := reg.Help("")
-		h["sources"] = toAny([]string{"cv.open(path, { encoding, box, origin, as })"})
+		h["sources"] = toAny([]string{"cv.open(path, { encoding, box, origin, name })"})
 		h["functions"] = toAny(functionNames(reg))
 		h["docs"] = "Guides: cv.docs.list(), cv.docs.search(text), cv.docs.read(id, { section }). Start with cv.docs.read(\"getting-started\")."
 		h["topics"] = toAny(docs.IDs())
@@ -237,9 +234,9 @@ func oneLine(doc string) string {
 	return doc
 }
 
-// suggest ranks candidate names for an unknown help name: the synonym
-// table, the last dotted segment as an op, then edit distance over every
-// op, kind and cv function (preferring k's methods).
+// suggest ranks candidate names for an unknown help name: the last dotted
+// segment as an op, then edit distance over every op, kind and cv function
+// (preferring k's methods).
 func suggest(reg *graph.Registry, name string, k graph.Kind) []string {
 	var out []string
 	add := func(s string) {
@@ -256,18 +253,6 @@ func suggest(reg *graph.Registry, name string, k graph.Kind) []string {
 	last := name
 	if i := strings.LastIndex(name, "."); i >= 0 {
 		last = name[i+1:]
-	}
-	if t, ok := graph.Synonyms[last]; ok && len(reg.Find(t)) > 0 {
-		add(t)
-	} else {
-		syn := make([]string, 0, len(graph.Synonyms))
-		for s := range graph.Synonyms {
-			syn = append(syn, s)
-		}
-		sort.Strings(syn)
-		if s := graph.Closest(last, syn); s != "" && len(reg.Find(graph.Synonyms[s])) > 0 {
-			add(graph.Synonyms[s]) // "blurr" → blur → gaussian
-		}
 	}
 	if last != name && len(reg.Find(last)) > 0 {
 		add(last)
@@ -324,12 +309,8 @@ func remove(xs []string, x string) []string {
 // memberFixes are literal fixes for names agents call on cv that are not
 // functions there.
 var memberFixes = map[string]string{
-	"info":     "await img   // or cv.explain(img)",
-	"meta":     "await img   // or cv.explain(img)",
-	"metadata": "await img   // or cv.explain(img)",
-	"load":     `img = cv.open("scan.tif")`,
-	"read":     `img = cv.open("scan.tif")`,
-	"look":     "node.look(\"label\")",
+	"info": "await img   // or cv.explain(img)",
+	"meta": "await img   // or cv.explain(img)",
 }
 
 // UnknownMember is the structured error for obj.name when the cv module
@@ -356,14 +337,6 @@ func UnknownMember(reg *graph.Registry, obj, name string, members []string) *gra
 		if r, ok := graph.MethodRedirects[name]; ok {
 			e.Hint, e.Fix = r.Hint, r.Fix
 			return e
-		}
-		if t, ok := graph.Synonyms[name]; ok && contains(members, t) { // cv.grid → cv.sheet
-			e.Hint = fmt.Sprintf("Did you mean %q?", t)
-			e.Fix = fmt.Sprintf("cv.%s(…)", t)
-			return e
-		}
-		if t, ok := graph.Synonyms[name]; ok && len(reg.Find(t)) > 0 {
-			name = t // a synonym of a node method: say where it lives
 		}
 		for _, op := range reg.Find(name) {
 			if op.On == graph.KindNone {

@@ -21,7 +21,7 @@ return { meanL: s.meanL, p01: s.p01, p99: s.p99 }
 | name | what it is |
 |---|---|
 | `img` | the open image (an Image node); `img = cv.open("scan.tif")` rebinds it |
-| names | more images: `cv.open(path, { as: "ref" })` binds `ref` as a global that persists like `img`; the context block lists every name |
+| names | more images: `cv.open(path, { name: "ref" })` binds `ref` as a global that persists like `img`; the context block lists every name |
 | `cv` | the module: `cv.open(path, { encoding, box, origin, as })`, `cv.help(op)`, `cv.docs`, `cv.compare([...])`, `cv.explain(node)` |
 | `mem` | a plain object that persists between evals |
 

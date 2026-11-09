@@ -2,7 +2,6 @@ package ops
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	"github.com/go-go-golems/goja-cv/pkg/cv/buffer"
@@ -40,7 +39,7 @@ func compositeOps() []graph.OpDef {
 			Name: "blend", On: graph.KindImage, Returns: graph.KindImage, Channels: graph.MaxChannels,
 			Args: []graph.ArgSpec{
 				{Name: "b", Type: "Image", Positional: true, Doc: "the image to blend over this one (same frame)"},
-				{Name: "mode", Type: "enum:" + joinModes(), Default: "normal", Redirects: blendRedirects,
+				{Name: "mode", Type: "enum:" + joinModes(), Default: "normal",
 					Doc: "normal (the other image), multiply or screen; arithmetic has its own ops: add, sub, min, max"},
 				{Name: "opacity", Type: "number", Default: 1.0, Min: graph.F(0), Max: graph.F(1)},
 				{Name: "mask", Type: "Mask", Optional: true, Doc: "where to blend (default everywhere)"},
@@ -155,14 +154,3 @@ func healOps() []graph.OpDef {
 }
 
 func joinModes() string { return strings.Join(kernels.BlendModeNames, ",") }
-
-// blendRedirects are the removed blend modes: each is an arithmetic op.
-var blendRedirects = func() map[string]graph.Redirect {
-	opacity := " With opacity or a mask, blend the result: a.blend(a.%s(b), { opacity, mask })."
-	return map[string]graph.Redirect{
-		"difference": {Hint: "The difference of two images is an image: subtract (sub keeps the sign; abs drops it)." + fmt.Sprintf(opacity, "sub"), Fix: "a.sub(b).abs()"},
-		"add":        {Hint: "Adding is an op of its own." + fmt.Sprintf(opacity, "add"), Fix: "a.add(b)"},
-		"lighten":    {Hint: "lighten is the per-sample maximum." + fmt.Sprintf(opacity, "max"), Fix: "a.max(b)"},
-		"darken":     {Hint: "darken is the per-sample minimum." + fmt.Sprintf(opacity, "min"), Fix: "a.min(b)"},
-	}
-}()

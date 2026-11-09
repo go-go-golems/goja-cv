@@ -68,7 +68,7 @@ it, so a level measured on an image fits ops on that image; physical ops (`expos
 `sheet`) are encoded. The graph inserts cached conversion nodes (`cv.explain` shows them), luminance is always
 computed from linear light, and a look shows encoded values; masks and derived images
 (`chroma`, `toLab`) show their values directly. Several images can be open under names:
-`cv.open(path, { as: "ref" })`.
+`cv.open(path, { name: "ref" })`.
 
 ## Masks and regions
 

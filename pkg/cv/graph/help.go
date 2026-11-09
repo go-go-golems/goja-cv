@@ -49,9 +49,7 @@ func (r *Registry) Help(name string) (map[string]any, error) {
 			}
 		}
 		e := Errorf(EUnknownMethod, "There is no op named %q.", name)
-		if t, ok := Synonyms[name]; ok && seen[t] {
-			e.Hint, e.Fix = fmt.Sprintf("Did you mean %q?", t), fmt.Sprintf("cv.help(%q)", t)
-		} else if sug := closest(name, all); sug != "" {
+		if sug := closest(name, all); sug != "" {
 			e.Hint, e.Fix = fmt.Sprintf("Did you mean %q?", sug), fmt.Sprintf("cv.help(%q)", sug)
 		}
 		return nil, e

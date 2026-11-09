@@ -71,7 +71,7 @@ func TestOverlayAndCompare(t *testing.T) {
 		t.Fatal("split")
 	}
 	_, err := e.Call("compare", 0, []any{pair, map[string]any{"mode": "diff"}})
-	if ce, ok := graph.AsError(err); !ok || ce.Code != graph.EArgType || ce.Fix != "a.sub(b).mul(4).add(0.5)" {
+	if ce, ok := graph.AsError(err); !ok || ce.Code != graph.EArgType || ce.Fix != `cv.compare({ mode: "side" })` {
 		t.Fatalf("compare diff: %+v", err)
 	}
 	if _, err := e.Call("compare", 0, []any{[]any{graph.NodeArg{ID: call(t, e, "detect.specks", img.ID).ID}}}); err == nil {

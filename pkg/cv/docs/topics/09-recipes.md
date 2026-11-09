@@ -134,7 +134,7 @@ The document layer (history, `doc.apply`, `doc.propose`, undo, export, recipes o
 Linear data (float TIFF, `.npy`, a DNG raw scan, density stored as plain codes) opens with `encoding: "linear"` (implied for float TIFF, `.npy` and DNG); then linear and encoded spaces coincide and every number is in file units. A window of a large scan keeps the scan's coordinates.
 
 ```js
-const v = cv.open("planted-linear.tif", { encoding: "linear", as: "v" })
+const v = cv.open("planted-linear.tif", { encoding: "linear", name: "v" })
 const s = await v.stats()
 return { encoding: (await v).encoding, p01: s.p01, p99: s.p99, look: v.levels({ black: s.p01, white: s.p99 }).look("stretched") }
 ```

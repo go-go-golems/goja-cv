@@ -21,7 +21,7 @@ Eval contract
 - Lengths, boxes and points are in doc px (original-image pixels) at every scale; areas in doc px².
 - Errors are YAML with code, message, where (your line), path, hint and a literal fix: apply the fix.
 
-Globals: img (the open image; img = cv.open(path) rebinds it; await img gives its file, format, bitDepth, encoding, frame), cv, mem. cv.open(path, { encoding, box, origin, as }) reads the workspace and the read directories: encoding "linear" for linear data in integer files; box reads a window and keeps file coordinates; as: "ref" binds another global name.
+Globals: img (the open image; img = cv.open(path) rebinds it; await img gives its file, format, bitDepth, encoding, frame), cv, mem. cv.open(path, { encoding, box, origin, name }) reads the workspace and the read directories: encoding "linear" for linear data in integer files; box reads a window and keeps file coordinates; name: "ref" binds another global.
 
 Most used calls
 - Images open in file units (what looks show); an op works in its receiver's space, so a level measured on an image fits ops on it. img.as("linear") for light (density); exposure and heal compute in linear light; cv.docs.read("encodings-and-spaces").
@@ -61,7 +61,7 @@ func Reference(reg *graph.Registry) string {
 		}
 		sort.Slice(ops, func(i, j int) bool { return ops[i].Name < ops[j].Name })
 		if k == graph.KindNone {
-			sb.WriteString("## Module ops and sources (cv.open, cv.compare, P)\n\n")
+			sb.WriteString("## Module ops and sources (cv.open, cv.compare, cv.sheet)\n\n")
 		} else {
 			fmt.Fprintf(&sb, "## %s methods\n\n", k)
 		}
@@ -76,7 +76,7 @@ func Reference(reg *graph.Registry) string {
 	}
 	sb.WriteString("\n")
 	sb.WriteString("## Globals\n\n")
-	sb.WriteString("- `cv.open(path, { encoding, box, origin, as })` → Image source; `cv.help(name?)`; `cv.explain(node)` (synchronous, evaluates nothing)\n")
+	sb.WriteString("- `cv.open(path, { encoding, box, origin, name })` → Image source (the workspace, then the read directories); `await cv.save(path, x, { depth })` → the saved file; `cv.help(name?)`; `cv.explain(node)` (synchronous, evaluates nothing)\n")
 	sb.WriteString("- `mem` (persists); `img` (the open image); `await node` evaluates (data at scale 1; an Image is its summary)\n")
 	return sb.String()
 }

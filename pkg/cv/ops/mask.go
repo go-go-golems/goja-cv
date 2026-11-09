@@ -140,7 +140,8 @@ func maskMakerOps() []graph.OpDef {
 		{
 			Name: "mask.luminance", On: graph.KindImage, Returns: graph.KindImage, Result: graph.DerivedEnc, Channels: graph.One,
 			Args: []graph.ArgSpec{
-				{Name: "above", Type: "number", Unit: graph.Level, Optional: true, Min: graph.F(-1), Max: graph.F(2), Doc: "select luminance above this level (in the image's space: the scale of stats() and histogram())"},
+				{Name: "above", Type: "number", Unit: graph.Level, Optional: true, Min: graph.F(-1), Max: graph.F(2), Doc: "select luminance above this level (in the image's space: the scale of stats() and histogram())",
+					Redirects: map[string]graph.Redirect{"min": {Hint: "The lower threshold of mask.luminance is above (and the upper one below).", Fix: "img.mask.luminance({ above: 0.99 })"}}},
 				{Name: "below", Type: "number", Unit: graph.Level, Optional: true, Min: graph.F(-1), Max: graph.F(2), Doc: "select luminance below this level"},
 				{Name: "softness", Type: "number", Default: 0.05, Min: graph.F(0), Max: graph.F(1), Doc: "width of the smooth ramp around each threshold"},
 			},

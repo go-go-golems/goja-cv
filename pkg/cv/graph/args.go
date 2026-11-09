@@ -777,11 +777,7 @@ func (b *binder) check(s *ArgSpec, typ string, v any, where string) (any, error)
 			}
 		}
 		e := Errorf(EArgType, "%s = %q is not one of %s.", where, str, quoteList(allowed)).WithValid(allowed)
-		if r, ok := s.Redirects[str]; ok {
-			e.Hint, e.Fix = r.Hint, r.Fix
-		} else if sug, ok := s.ValueSynonyms[str]; ok {
-			e.Hint = fmt.Sprintf("Did you mean %q?", sug)
-		} else if sug := closest(str, allowed); sug != "" {
+		if sug := closest(str, allowed); sug != "" {
 			e.Hint = fmt.Sprintf("Did you mean %q?", sug)
 		}
 		if len(s.ValueDocs) > 0 {
@@ -1059,56 +1055,14 @@ func checkKeys(specs []ArgSpec, m map[string]any, what string, fix func(sug stri
 				e.Hint, e.Fix = r.Hint, r.Fix
 				return e
 			}
-			sug, semantic := optionSynonym(k, known), true
-			if sug == "" {
-				sug, semantic = closest(k, valid), false
-			}
-			if sug != "" {
+			if sug := closest(k, valid); sug != "" {
 				e.Hint = fmt.Sprintf("Did you mean %q?", sug)
-				for _, s := range specs {
-					if semantic && s.Name == sug && s.Doc != "" { // explain why a different word maps here
-						e.Hint += " (" + s.Doc + ")"
-					}
-				}
 				e.Fix = fix(sug)
 			}
 			return e
 		}
 	}
 	return nil
-}
-
-// OptionSynonyms maps option names agents reach for to the cv option names
-// they usually mean, in order of preference; the first one the op has wins
-// ({ min: 0.99 } on mask.luminance → above; { radius } on gaussian → r).
-var OptionSynonyms = map[string][]string{
-	"min": {"above", "minArea", "minContrast"}, "minimum": {"above", "minArea"}, "lower": {"above"}, "from": {"above"},
-	"max": {"below", "maxArea"}, "maximum": {"below", "maxArea"}, "upper": {"below"}, "to": {"below"},
-	"threshold": {"above", "minContrast", "threshold"}, "thresh": {"above", "minContrast", "threshold"}, "cutoff": {"above", "minContrast"},
-	"r": {"sigma", "radius", "coreRadius"}, "radius": {"sigma", "coreRadius"}, "sigma": {"radius"}, "core": {"coreRadius"}, "coreR": {"coreRadius"},
-	"annulus": {"ringRadii"}, "background": {"ringRadii"}, "ring": {"ringRadii"}, "rings": {"ringRadii"}, "ringRadius": {"ringRadii"},
-	"thickness": {"width"}, "fields": {"columns"}, "bits": {"depth"}, "bitDepth": {"depth"}, "std": {"sigma"}, "stddev": {"sigma"}, "sd": {"sigma"},
-	"size": {"sigma", "radius", "maxArea", "maxSide"}, "blur": {"sigma"}, "kernel": {"sigma", "radius"}, "width": {"sigma", "radius"},
-	"distance": {"radius"}, "dist": {"radius"},
-	"maxSize": {"maxArea"}, "minSize": {"minArea"}, "area": {"maxArea", "minArea"}, "contrast": {"minContrast"},
-	"opacity": {"alpha", "opacity"}, "alpha": {"opacity", "alpha"}, "strength": {"amount", "opacity", "alpha"}, "intensity": {"amount", "opacity"},
-	"colour": {"color"}, "label": {"labels", "label"}, "showIds": {"labels"}, "ids": {"labels"},
-	"tolerance": {"tol"}, "soft": {"softness"}, "feather": {"softness"}, "smooth": {"softness"},
-	"scale": {"analysisScale", "zoom"}, "type": {"polarity", "mode", "method"}, "kind": {"polarity", "mode"},
-	"low": {"black", "below"}, "lo": {"black", "below"}, "blackPoint": {"black"}, "shadows": {"black", "below"},
-	"high": {"white", "above"}, "hi": {"white", "above"}, "whitePoint": {"white"}, "highlights": {"white", "above"},
-	"midtones": {"gamma"}, "mid": {"gamma"}, "quantiles": {"percentiles"}, "percentile": {"percentiles"},
-	"region": {"mask", "box"}, "regions": {"mask"}, "selection": {"mask"}, "rect": {"box"}, "rectangle": {"box"}, "roi": {"box", "mask"},
-	"window": {"box"}, "crop": {"box"}, "colorSpace": {"encoding"}, "colorspace": {"encoding"}, "transfer": {"encoding"},
-	"gamma": {"encoding"}, "offset": {"origin"},
-	"amount": {"amount", "ev", "opacity"}, "stops": {"ev"}, "exposure": {"ev"},
-	"long": {"maxSide"}, "longSide": {"maxSide"}, "maxsize": {"maxSide"}, "max_side": {"maxSide"}, "width_px": {"maxSide"},
-	"caption": {"label"}, "title": {"label"}, "text": {"label"},
-	"magnify": {"zoom"}, "magnification": {"zoom"}, "upscale": {"zoom"}, "factor": {"zoom"}, "zoomFactor": {"zoom"},
-	"ticks": {"ruler"}, "axes": {"ruler"}, "axis": {"ruler"}, "coords": {"ruler"}, "coordinates": {"ruler"}, "rulers": {"ruler"}, "scaleBar": {"ruler"},
-	"lossless": {"format"}, "png": {"format"}, "jpeg": {"format"}, "quality": {"format"}, "compression": {"format"}, "mime": {"format"},
-	"gridlines": {"grid"}, "gridLines": {"grid"}, "lines": {"grid"},
-	"interpolation": {"interp"}, "resample": {"interp"}, "resampling": {"interp"}, "upsample": {"interp"},
 }
 
 // optionRedirect finds the redirect of an unknown option name among specs.
@@ -1119,15 +1073,6 @@ func optionRedirect(specs []ArgSpec, k string) (Redirect, bool) {
 		}
 	}
 	return Redirect{}, false
-}
-
-func optionSynonym(k string, known map[string]bool) string {
-	for _, c := range OptionSynonyms[k] {
-		if known[c] {
-			return c
-		}
-	}
-	return ""
 }
 
 func lenHint(n int) string {

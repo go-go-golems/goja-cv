@@ -41,9 +41,9 @@ func TestHelpNeverFailsAndResolvesEveryForm(t *testing.T) {
 	}
 	for name, want := range map[string]string{
 		"mask.stats":   "stats",
-		"blurr":        "gaussian",
+		"gausian":      "gaussian",
 		"Regions.heal": "heal",
-		"brightness":   "exposure",
+		"exposre":      "exposure",
 	} {
 		h := cvmod.Help(reg, name)
 		dym, _ := h["didYouMean"].([]any)

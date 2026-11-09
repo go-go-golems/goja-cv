@@ -129,9 +129,9 @@ func TestOpsAndHelp(t *testing.T) {
 	if code != exitOK || !strings.Contains(out, "exposure:\n  args:") {
 		t.Fatalf("help exposure: exit %d\n%s", code, out)
 	}
-	code, out, _ = runCLI(t, "help", "blur")
+	code, out, _ = runCLI(t, "help", "gausian")
 	if code != exitCVError || !strings.Contains(out, `hint: Did you mean "gaussian"?`) {
-		t.Fatalf("help blur: exit %d\n%s", code, out)
+		t.Fatalf("help gausian: exit %d\n%s", code, out)
 	}
 	code, out, _ = runCLI(t, "help", "eval")
 	if code != exitOK || !strings.Contains(out, "eval -e CODE") {

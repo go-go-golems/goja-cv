@@ -89,15 +89,15 @@ failing prelude exits 1 with `prelude FILE:LINE: …`. `--timeout-ms` raises the
 | 2 | a usage error: unknown command or flag, missing script, missing `--image` file or one outside the roots, a `--root` or `--read` that is not a directory, `mcp` without `--root` |
 
 ```bash
-goja-cv eval --image scan.tif -e 'return img.brightness(1)'
+goja-cv eval --image scan.tif -e 'return img.exposre(1)'
 ```
 
 ```yaml
 error:
   code: E_UNKNOWN_METHOD
-  message: Image has no method "brightness".
-  where: 'line 1: return img.brightness(1)'
-  path: open(scan.tif) → ✗ brightness
+  message: Image has no method "exposre".
+  where: 'line 1: return img.exposre(1)'
+  path: open(scan.tif) → ✗ exposre
   hint: Did you mean "exposure"?
   fix: img.exposure(…)
 ```

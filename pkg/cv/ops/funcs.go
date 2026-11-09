@@ -10,12 +10,13 @@ import "github.com/go-go-golems/goja-cv/pkg/cv/graph"
 // LookLong).
 const MaxLookSide = 1568
 
-// lookRedirects are the look options agents reach for that are content, not
-// raster parameters: they are nodes placed in the chain.
+// lookRedirects are the look options agents typed that are something else
+// (GCV-004 §7.13): a window is content (a crop in the chain), a scale is the
+// zoom.
 var lookRedirects = map[string]graph.Redirect{
-	"box":     {Hint: "A window is content: crop the node, then look at the crop.", Fix: "node.crop([x, y, w, h]).look()"},
-	"crop":    {Hint: "A window is content: crop the node, then look at the crop.", Fix: "node.crop([x, y, w, h]).look()"},
-	"stretch": {Hint: "A stretch is content: put levels({ auto: true }) in the chain where it should apply.", Fix: "node.levels({ auto: true }).look()"},
+	"box":   {Hint: "A window is content: crop the node, then look at the crop.", Fix: "node.crop([x, y, w, h]).look()"},
+	"crop":  {Hint: "A window is content: crop the node, then look at the crop.", Fix: "node.crop([x, y, w, h]).look()"},
+	"scale": {Hint: "A look's magnification is zoom (render px per doc px).", Fix: "node.look({ zoom: 8 })"},
 }
 
 // LookArgs are the options of node.look and show.
@@ -33,8 +34,7 @@ func LookArgs() []graph.ArgSpec {
 		{Name: "grid", Type: "number", Unit: graph.DocPx, Optional: true, Min: graph.F(0),
 			Doc: "faint lines every grid doc px over the image"},
 		{Name: "format", Type: "enum:auto,png,jpeg", Default: "auto",
-			Doc:           "auto: PNG for gray, zoomed, sheet and small (≤ 512 × 512) looks, JPEG (q85) otherwise; png is lossless (no ringing around specks)",
-			ValueSynonyms: map[string]string{"lossless": "png", "jpg": "jpeg", "lossy": "jpeg", "PNG": "png", "JPEG": "jpeg"}},
+			Doc: "auto: PNG for gray, zoomed, sheet and small (≤ 512 × 512) looks, JPEG (q85) otherwise; png is lossless (no ringing around specks)"},
 	}
 }
 

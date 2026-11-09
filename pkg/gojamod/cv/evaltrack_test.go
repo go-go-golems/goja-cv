@@ -41,18 +41,19 @@ func TestLookReturnsGoBackedProvider(t *testing.T) {
 	}
 }
 
-// Look options are bound like op options: synonyms, did-you-mean and
-// redirects with literal fixes (GCV-002 §7.7).
+// Look options are bound like op options: did-you-mean and the typed
+// redirects with literal fixes (GCV-002 §7.7, GCV-004 §7.13).
 func TestLookOptionsSynonymsAndRedirects(t *testing.T) {
 	rt := newRuntime(t)
 	for _, tc := range []struct{ body, code, hint, fix string }{
 		{`return img.look({ lable: "x" })`, graph.EUnknownOption, `Did you mean "label"?`, `node.look({ label: … })`},
-		{`return img.look({ size: 512 })`, graph.EUnknownOption, `Did you mean "maxSide"?`, `node.look({ maxSide: 512 })`},
+		{`return img.look({ maxside: 512 })`, graph.EUnknownOption, `Did you mean "maxSide"?`, `node.look({ maxSide: 512 })`},
 		{`return img.look({ box: [0, 0, 8, 8] })`, graph.EUnknownOption, "A window is content: crop the node, then look at the crop.", "node.crop([x, y, w, h]).look()"},
-		{`return img.look({ stretch: "auto" })`, graph.EUnknownOption, "A stretch is content: put levels({ auto: true }) in the chain where it should apply.", "node.levels({ auto: true }).look()"},
+		{`return img.look({ crop: [0, 0, 8, 8] })`, graph.EUnknownOption, "A window is content: crop the node, then look at the crop.", "node.crop([x, y, w, h]).look()"},
+		{`return img.look({ scale: 8 })`, graph.EUnknownOption, "A look's magnification is zoom", "node.look({ zoom: 8 })"},
+		{`return img.look({ stretch: "auto" })`, graph.EUnknownOption, "", ""},
 		{`return img.look({ maxSide: 100.5 })`, graph.EArgType, "", "node.look({ maxSide: 100 })"},
-		{`return img.look({ magnify: 8 })`, graph.EUnknownOption, `Did you mean "zoom"?`, `node.look({ zoom: 8 })`},
-		{`return img.look({ interpolation: "linear" })`, graph.EUnknownOption, `Did you mean "interp"?`, `node.look({ interp: … })`},
+		{`return img.look({ zom: 8 })`, graph.EUnknownOption, `Did you mean "zoom"?`, `node.look({ zoom: 8 })`},
 		{`return img.look({ zoom: 2, maxSide: 64 })`, graph.EArgType, "", "node.look({ zoom: 2 })"},
 		{`return img.look({ zoom: 32 })`, graph.EArgRange, "", ""},
 		{`return img.look({ interp: "cubic" })`, graph.EArgType, "", `node.look({ interp: "nearest" })`},

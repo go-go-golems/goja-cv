@@ -167,9 +167,9 @@ func TestOverlayAndAnnotateAtZoom(t *testing.T) {
 			t.Fatalf("annotate %v: %+v", bad, err)
 		}
 	}
-	_, err := e.Call("annotate", img.ID, []any{[]any{map[string]any{"line": []any{}}}})
+	_, err := e.Call("annotate", img.ID, []any{[]any{map[string]any{"polylin": []any{}}}})
 	if ce, _ := graph.AsError(err); ce == nil || ce.Hint != `Did you mean "polyline"?` {
-		t.Fatalf("line: %+v", err)
+		t.Fatalf("polylin: %+v", err)
 	}
 }
 

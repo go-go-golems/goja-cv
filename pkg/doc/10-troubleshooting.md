@@ -21,8 +21,8 @@ marks the failing call), `hint` and usually `fix` (literal code). Apply the fix 
 
 | code | usually means |
 |---|---|
-| E_UNKNOWN_METHOD / E_NAMESPACE | wrong method name or kind (`img.blur(2)` → `img.gaussian(2)`); see `fix` |
-| E_UNKNOWN_OPTION | option misspelt or named differently (`min` → `above`, `radius` → `sigma` on a blur) |
+| E_UNKNOWN_METHOD / E_NAMESPACE | wrong method name or kind (`img.gausian(2)` → `img.gaussian(2)`, `img.luminance` → `img.mask.luminance`); see `fix` |
+| E_UNKNOWN_OPTION | option misspelt or named differently (`min` → `above` on mask.luminance); `valid` lists the options |
 | E_ARG_TYPE / E_ARG_RANGE | wrong type or outside hard limits; `cv.help(op)` lists units and ranges |
 | E_WRONG_KIND | a colour image where a mask (one channel) is expected (fix `img.toGray()`), regions where a mask is expected (`img.mask.regions(regions)`), or plain data where a node was expected |
 | E_NOT_AWAITED | a field of, or a number from, an unawaited measurement or region set: `(await img.stats()).p99`; regions have no methods: `img.heal(regions)`, `(await regions).filter(…)` |

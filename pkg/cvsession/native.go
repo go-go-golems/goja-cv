@@ -30,7 +30,6 @@ func (n *native) object() *goja.Object {
 	set("bindName", n.bindName)
 	set("getName", n.getName)
 	set("setName", n.setName)
-	set("asKey", n.asKey)
 	set("fail", n.fail)
 	set("unknownMember", n.unknownMember)
 	return o

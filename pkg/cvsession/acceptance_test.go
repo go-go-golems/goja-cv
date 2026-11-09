@@ -298,18 +298,17 @@ func TestAcceptanceLossless(t *testing.T) {
 	}
 }
 
-// Names agents reach for: zoom as a method, cv.view, cv.grid, img.compare,
-// subtract.
+// Names agents typed (GCV-004 §7.13) and names of another kind: zoom and
+// export as methods, look({ box }), look({ scale }), cv.view, img.compare.
 func TestAcceptanceRedirects(t *testing.T) {
 	app, sid := acceptanceApp(t)
 	for code, want := range map[string]string{
-		`return img.zoom(8)`:                            "fix: 'node.crop([x, y, w, h]).look({ zoom: 8 })'",
-		`return cv.view("speck")`:                       "fix: img.view(…)",
-		`return cv.grid(img.detect.specks())`:           "fix: cv.sheet(…)",
-		`return img.subtract(img)`:                      "fix: img.sub(…)",
-		`return img.compare([img])`:                     `fix: 'cv.compare([a, b], { mode: "side" })'`,
-		`return img.look({ box: [0, 0, 8, 8] })`:        "fix: node.crop([x, y, w, h]).look()",
-		`return img.blend(img, { mode: "difference" })`: "fix: a.sub(b).abs()",
+		`return img.zoom(8)`:                     "fix: 'node.crop([x, y, w, h]).look({ zoom: 8 })'",
+		`return img.export("x.tif")`:             `fix: await cv.save("x.tif", node)`,
+		`return cv.view("speck")`:                "fix: img.view(…)",
+		`return img.compare([img])`:              "fix: cv.compare(…)",
+		`return img.look({ box: [0, 0, 8, 8] })`: "fix: node.crop([x, y, w, h]).look()",
+		`return img.look({ scale: 8 })`:          "fix: 'node.look({ zoom: 8 })'",
 	} {
 		mustContain(t, text(eval(t, app, sid, code)), want)
 	}

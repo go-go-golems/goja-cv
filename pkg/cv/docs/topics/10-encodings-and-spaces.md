@@ -12,7 +12,7 @@ An **encoding** says how the values a file stores relate to the quantity they me
 Decoders say what a file implies; `await img` shows it as `encoding`. Override it when you know better: a 16-bit TIFF that stores density v directly is `linear`, although the TIFF default is `srgb`.
 
 ```js
-const scan = cv.open("planted-linear.tif", { encoding: "linear", as: "scan" })
+const scan = cv.open("planted-linear.tif", { encoding: "linear", name: "scan" })
 const data = cv.open("planted.npy")    // .npy is linear
 return { img: (await img).encoding, scan: (await scan).encoding, npy: (await data).encoding }
 ```
@@ -77,9 +77,9 @@ return { neutral: { meanL, p99 }, look: c.colormap("viridis").look("chroma") }
 
 ## Frames and names
 
-An image's **frame** is the rectangle it covers in the coordinates of its file: a window read with `box` keeps the scan's coordinates, so boxes, points and region centroids are absolute. Several images can be open under **names**: `cv.open(path, { as: "ref" })` binds `ref` as a global that persists between evals, next to `img`; the context block lists every name with its file, frame and encoding. Images combined by one op must share a frame (`E_FRAME`).
+An image's **frame** is the rectangle it covers in the coordinates of its file: a window read with `box` keeps the scan's coordinates, so boxes, points and region centroids are absolute. Several images can be open under **names**: `cv.open(path, { name: "ref" })` binds `ref` as a global that persists between evals, next to `img`; the context block lists every name with its file, frame and encoding. Images combined by one op must share a frame (`E_FRAME`).
 
 ```js
-cv.open("planted.npy", { as: "ref", origin: [0, 0] })
+cv.open("planted.npy", { name: "ref", origin: [0, 0] })
 return { same: (await ref).frame, mean: (await img.as("linear").blend(ref, { opacity: 0.5 }).stats()).meanL }   // two encodings: blend light
 ```

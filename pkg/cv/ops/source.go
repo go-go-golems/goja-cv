@@ -118,7 +118,7 @@ func fileChannels(a graph.Args) int { return graph.Meta[graph.SourceMeta](a).Inf
 // openArgs are the arguments of cv.open (and of its linear view).
 var openArgs = []graph.ArgSpec{
 	{Name: "path", Type: "string", Positional: true, Doc: "image file: " + buffer.SupportedFormats},
-	{Name: "encoding", Type: "enum:srgb,linear", Optional: true, ValueSynonyms: graph.EncodingValueSynonyms,
+	{Name: "encoding", Type: "enum:srgb,linear", Optional: true,
 		Doc: "how to read the file's values: srgb (photographs) or linear (scientific data, raw scans, density maps); omit it to use what the file says"},
 	{Name: "box", Type: "box", Optional: true,
 		Doc: "read only this window [x, y, w, h] of the file (file px); the image keeps the file's coordinates"},

@@ -148,7 +148,7 @@ func TestOpenEncodingsWindowsAndOrigins(t *testing.T) {
 		!strings.Contains(ce.Message, `cv.open.encoding = "gamma" is not one of "srgb", "linear".`) || ce.Fix != `cv.open(path, { encoding: "srgb" })` {
 		t.Fatalf("bad encoding: %+v", ce)
 	}
-	if ce := openErr(t, e, dng, map[string]any{"as": "scan"}); ce.Code != graph.EUnknownOption {
+	if ce := openErr(t, e, dng, map[string]any{"name": "scan"}); ce.Code != graph.EUnknownOption {
 		t.Fatalf("as in the engine: %+v", ce)
 	}
 	cfa := filepath.Join(dir, "cfa.dng")

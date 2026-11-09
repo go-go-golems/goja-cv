@@ -153,11 +153,11 @@ func TestRangeWarningHasLine(t *testing.T) {
 
 func TestErrorYAMLHasCodeFixAndLine(t *testing.T) {
 	app, sid := newApp(t, cvsession.Options{Image: tiffPath})
-	resp := eval(t, app, sid, "const x = 1\nreturn img.brightness(0.3)")
+	resp := eval(t, app, sid, "const x = 1\nreturn img.exposre(0.3)")
 	out := text(resp)
 	t.Logf("result:\n%s", out)
-	mustContain(t, out, "error:\n  code: E_UNKNOWN_METHOD", "message: Image has no method \"brightness\".",
-		"where: 'line 2: return img.brightness(0.3)'", "path: open(gradient-64x48-16bit.tif) → ✗ brightness",
+	mustContain(t, out, "error:\n  code: E_UNKNOWN_METHOD", "message: Image has no method \"exposre\".",
+		"where: 'line 2: return img.exposre(0.3)'", "path: open(gradient-64x48-16bit.tif) → ✗ exposre",
 		"hint: Did you mean \"exposure\"?", "fix: img.exposure(…)")
 
 	out = text(eval(t, app, sid, "const a = 1\nreturn img.levels({ blak: 0.02 })"))

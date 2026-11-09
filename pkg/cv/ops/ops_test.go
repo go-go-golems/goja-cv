@@ -318,63 +318,62 @@ func TestStatsInsideBoxAndMask(t *testing.T) {
 	}
 }
 
-// TestOptionSynonyms: pi runs 3 and 4 both wrote mask.luminance({ min: 0.99 }).
-func TestOptionSynonyms(t *testing.T) {
+// TestTypedNames (GCV-004 §7.13): every wrong name agents demonstrably
+// typed gives its literal fix; any other wrong name gets edit distance over
+// the valid names or nothing, never a table entry.
+func TestTypedNames(t *testing.T) {
 	e, img := newEngine(t)
 	m := call(t, e, "mask.box", img.ID, []any{0.0, 0.0, 10.0, 10.0})
+	// options and enum values
 	for _, tc := range []struct {
 		op   string
 		recv graph.NodeID
 		raw  []any
-		sug  string
 		fix  string
 	}{
-		{"mask.luminance", img.ID, []any{map[string]any{"min": 0.99}}, "above", "mask.luminance({ above: 0.99 })"},
-		{"mask.luminance", img.ID, []any{map[string]any{"max": 0.1}}, "below", "mask.luminance({ below: 0.1 })"},
-		{"mask.luminance", img.ID, []any{map[string]any{"threshold": 0.8}}, "above", ""},
-		{"gaussian", img.ID, []any{map[string]any{"radius": 2.0}}, "sigma", "gaussian({ sigma: 2 })"},
-		{"gaussian", img.ID, []any{map[string]any{"r": 2.0}}, "sigma", ""},
-		{"feather", m.ID, []any{map[string]any{"r": 2.0}}, "radius", "feather({ radius: 2 })"},
-		{"grow", m.ID, []any{map[string]any{"sigma": 2.0}}, "radius", ""},
-		{"detect.specks", img.ID, []any{map[string]any{"threshold": 0.05}}, "minContrast", ""},
-		{"detect.specks", img.ID, []any{map[string]any{"maxSize": 50.0}}, "maxArea", ""},
-		{"overlay", img.ID, []any{graph.NodeArg{ID: m.ID}, map[string]any{"opacity": 0.3}}, "alpha", ""},
-		{"overlay", img.ID, []any{graph.NodeArg{ID: m.ID}, map[string]any{"colour": "red"}}, "color", ""},
-		{"levels", img.ID, []any{map[string]any{"low": 0.01}}, "black", ""},
-		{"mask.flood", img.ID, []any{[]any{1.0, 1.0}, map[string]any{"tolerance": 0.1}}, "tol", ""},
-		{"stats", img.ID, []any{map[string]any{"region": graph.NodeArg{ID: m.ID}}}, "mask", ""},
+		{"mask.luminance", img.ID, []any{map[string]any{"min": 0.99}}, "img.mask.luminance({ above: 0.99 })"},
+		{"components", m.ID, []any{map[string]any{"maxArea": 200.0}}, "(await m.components()).filter(r => r.area <= 200)"},
 	} {
 		_, err := e.Call(tc.op, tc.recv, tc.raw)
-		ce, ok := graph.AsError(err)
-		if !ok || ce.Code != graph.EUnknownOption || !strings.Contains(ce.Hint, `Did you mean "`+tc.sug+`"?`) {
-			t.Fatalf("%s %v: %+v, want did-you-mean %q", tc.op, tc.raw, err, tc.sug)
-		}
-		if tc.fix != "" && ce.Fix != tc.fix {
-			t.Fatalf("%s %v: fix %q, want %q", tc.op, tc.raw, ce.Fix, tc.fix)
+		if ce, ok := graph.AsError(err); !ok || ce.Code != graph.EUnknownOption || ce.Fix != tc.fix {
+			t.Fatalf("%s %v: %+v, want fix %q", tc.op, tc.raw, err, tc.fix)
 		}
 	}
-}
-
-// TestOpSynonymsDoNotShadowOps: a synonym must name an existing op, and
-// must not itself be an op on a kind where its target lives (it would
-// never be consulted, or worse, mean two things); method redirects must not
-// be methods.
-func TestOpSynonymsDoNotShadowOps(t *testing.T) {
-	reg := NewRegistry()
-	for s, target := range graph.Synonyms {
-		targets := reg.Find(target)
-		if len(targets) == 0 {
-			t.Errorf("synonym %q → %q: no such op", s, target)
-		}
-		for _, op := range targets {
-			if _, ok := reg.Lookup(op.On, s); ok {
-				t.Errorf("synonym %q is also an op on %s", s, op.On)
-			}
+	// method names
+	for name, fix := range map[string]string{
+		"export": `await cv.save("x.tif", node)`, "store": `await cv.save("x.tif", node)`, "write": `await cv.save("x.tif", node)`,
+		"save": `await cv.save("x.tif", node)`, "persist": `await cv.save("x.tif", node)`, "download": `await cv.save("x.tif", node)`,
+		"toFile": `await cv.save("x.tif", node)`, "writeTiff": `await cv.save("x.tif", node)`,
+		"zoom":     "node.crop([x, y, w, h]).look({ zoom: 8 })",
+		"resample": `node.crop([x, y, w, h]).look({ zoom: 4, interp: "linear" })`,
+		"meta":     "await img",
+	} {
+		if ce := e.Registry().UnknownMethod(graph.KindImage, name, nil); ce.Code != graph.EUnknownMethod || ce.Fix != fix {
+			t.Fatalf("img.%s: %+v, want fix %q", name, ce, fix)
 		}
 	}
+	// removed synonyms: edit distance or nothing
+	for name, want := range map[string]string{"brightness": "", "blur": "", "gausian": "gaussian", "exposre": "exposure"} {
+		ce := e.Registry().UnknownMethod(graph.KindImage, name, nil)
+		got := ""
+		if strings.HasPrefix(ce.Hint, "Did you mean ") {
+			got = strings.Trim(strings.TrimPrefix(ce.Hint, "Did you mean "), `"?`)
+		}
+		if got != want {
+			t.Fatalf("img.%s: suggestion %q (%+v), want %q", name, got, ce, want)
+		}
+	}
+	for opt, want := range map[string]string{"radius": "", "sigm": "sigma"} {
+		_, err := e.Call("gaussian", img.ID, []any{map[string]any{opt: 2.0}})
+		ce, _ := graph.AsError(err)
+		if ce == nil || ce.Code != graph.EUnknownOption || (want == "") != (ce.Fix == "") || (want != "" && !strings.Contains(ce.Hint, want)) {
+			t.Fatalf("gaussian({ %s }): %+v, want %q", opt, ce, want)
+		}
+	}
+	// a typed name is never also an op
 	for name := range graph.MethodRedirects {
-		for _, k := range reg.Receivers() {
-			if _, ok := reg.Lookup(k, name); ok {
+		for _, k := range e.Registry().Receivers() {
+			if _, ok := e.Registry().Lookup(k, name); ok {
 				t.Errorf("method redirect %q is an op on %s", name, k)
 			}
 		}
