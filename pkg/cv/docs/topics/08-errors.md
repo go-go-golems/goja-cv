@@ -51,6 +51,7 @@ return await img.mask.luminance({ min: 0.99 }).coverage()   // hint: Did you mea
 
 - `RANGE line N: …` an argument is outside its usual range (it still runs). The same warning from a loop is listed once with `(×N)`.
 - `UNUSED_NODE line N: …` a node was built and discarded (see `cv.docs.read("nodes-and-evaluation")`).
+- `LOOKS: …` / `DATA: …` more than 4 looks (or 4 data items) in one eval: the extra ones, named by label, were not delivered. Split the work over several calls, or return fewer (one `cv.sheet` of many crops, one table with every row).
 
 ```js warns=RANGE
 const loud = img.exposure(4)

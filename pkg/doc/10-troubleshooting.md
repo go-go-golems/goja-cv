@@ -60,5 +60,7 @@ in that session at once with "Start a new session". Use `create_session` or rest
 ## Results are cut or images missing
 
 - Results over 9000 characters end with `# CUT …`: return less (pick fields, slice arrays).
-- More than four looks in one eval: the extra ones are listed as dropped in the `content:` notes.
+- More than four looks in one eval: the extra ones are not delivered; they are marked `[not delivered: …]` and the
+  `LOOKS` warning names them by label. Split the work over several calls, or return fewer looks (one `cv.sheet`).
+  Data items beyond four get the same treatment with a `DATA` warning.
 - A look of a Value or Regions node is `E_WRONG_KIND`: use `img.overlay(regions).look()` or a histogram look.

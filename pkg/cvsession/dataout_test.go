@@ -90,10 +90,21 @@ return { s: [s.format, s.rows, s.path.endsWith("t/specks.csv")].join(" "), j: j.
 	// five looks and five data items: the fifth of each is not delivered
 	resp := eval(t, app, sid, `return [1, 2, 3, 4, 5].map(i => img.exposure(i / 10).look("l" + i)).concat([1, 2, 3, 4, 5].map(i => cv.json({ i }, { name: "d" + i })))`)
 	out = mustOK(t, resp)
-	mustContain(t, out, "[not delivered: look: l5", "more than 4 looks in one eval", "[not delivered: data d5.json", "more than 4 data items")
+	mustContain(t, out, "[not delivered: look: l5", "more than 4 looks in one eval", "[not delivered: data d5.json", "more than 4 data items",
+		`LOOKS: 1 look was not delivered (at most 4 per eval): "l5". Split the work over several calls, or return fewer looks`,
+		`DATA: 1 data item was not delivered (at most 4 per eval): "d5.json (1 keys)". Split the work over several calls, or return fewer data items`)
 	if len(resp.Content) != 8 {
 		t.Fatalf("%d content items, want 8", len(resp.Content))
 	}
+	// shown looks beyond the budget: marked in the shown list and named in LOOKS, also when the eval throws
+	out = mustOK(t, eval(t, app, sid, `for (const i of [1, 2, 3, 4, 5, 6]) show(img.exposure(i / 10), { label: "s" + i }); return 1`))
+	mustContain(t, out, "[not delivered: look: s5", "[not delivered: look: s6",
+		`LOOKS: 2 looks were not delivered (at most 4 per eval): "s5", "s6". Split the work over several calls, or return fewer looks`)
+	mustNotContain(t, out, "[look: s5", "DATA:")
+	out = text(eval(t, app, sid, `for (const i of [1, 2, 3, 4, 5]) show(img.exposure(i / 10), { label: "t" + i }); throw new Error("boom")`))
+	mustContain(t, out, "boom", "[not delivered: look: t5", `LOOKS: 1 look was not delivered (at most 4 per eval): "t5"`)
+	// within the budget: no warning
+	mustNotContain(t, mustOK(t, eval(t, app, sid, `return [1, 2, 3, 4].map(i => img.exposure(i / 10).look("ok" + i))`)), "LOOKS", "not delivered")
 	// over the byte limit: a note to save it
 	resp = eval(t, app, sid, `return cv.csv(img.measure(Array.from({ length: 200 }, (_, i) => [i + 0.5, 50.5])), { name: "big" })`)
 	mustOK(t, resp)

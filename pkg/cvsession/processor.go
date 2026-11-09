@@ -72,7 +72,7 @@ func (p *ResultProcessor) Process(_ context.Context, vm *goja.Runtime, value goj
 	if err != nil {
 		return replsession.ProcessedResult{}, err
 	}
-	providers, dropped := st.collect(extraction.Providers)
+	providers, dropped, budget := st.collect(extraction.Providers)
 
 	r := newRenderer(vm, st.eng)
 	r.providers = providerNumbers(providers)
@@ -85,9 +85,9 @@ func (p *ResultProcessor) Process(_ context.Context, vm *goja.Runtime, value goj
 	}
 	if len(st.shows) > 0 {
 		sb.WriteString("\n\n")
-		sb.WriteString(encodeYAML(mapping(str("shown"), lookList(st.shows))))
+		sb.WriteString(encodeYAML(mapping(str("shown"), lookList(st.shows, dropped))))
 	}
-	warnings := st.warnings(vm, trace, r.nodes, true)
+	warnings := append(st.warnings(vm, trace, r.nodes, true), budget...)
 	return replsession.ProcessedResult{Text: st.finish(vm, sb.String(), warnings), Providers: providers}, nil
 }
 
@@ -100,14 +100,14 @@ func (p *ResultProcessor) ProcessFailure(_ context.Context, vm *goja.Runtime, ev
 	}
 	st.watchdog.disarm(vm)
 	trace := cvmod.EndEval(vm)
-	providers, _ := st.collect(nil)
+	providers, dropped, budget := st.collect(nil)
 	var sb strings.Builder
 	sb.WriteString(encodeYAML(mapping(str("error"), st.errorNode(vm, evalErr, trace))))
 	if len(st.shows) > 0 {
 		sb.WriteString("\n\n")
-		sb.WriteString(encodeYAML(mapping(str("shown"), lookList(st.shows))))
+		sb.WriteString(encodeYAML(mapping(str("shown"), lookList(st.shows, dropped))))
 	}
-	warnings := st.warnings(vm, trace, nil, false)
+	warnings := append(st.warnings(vm, trace, nil, false), budget...)
 	return replsession.ProcessedResult{Text: st.finish(vm, sb.String(), warnings), Providers: providers}, nil
 }
 
@@ -119,9 +119,10 @@ type numbered interface {
 
 // collect appends the queued shows to the value's providers (once each),
 // keeps at most MaxLooks looks and MaxData data items (later ones are left
-// out and their placeholders say why), numbers every look and gives every
-// data item its content number and byte limit (owner).
-func (s *state) collect(fromValue []resultcontent.Provider) ([]resultcontent.Provider, map[resultcontent.Provider]string) {
+// out, their placeholders say why and the LOOKS and DATA warnings name
+// them), numbers every look and gives every data item its content number
+// and byte limit (owner).
+func (s *state) collect(fromValue []resultcontent.Provider) ([]resultcontent.Provider, map[resultcontent.Provider]string, []string) {
 	all := make([]resultcontent.Provider, 0, len(fromValue)+len(s.shows))
 	seen := map[*look.Look]bool{}
 	for _, p := range fromValue {
@@ -142,20 +143,32 @@ func (s *state) collect(fromValue []resultcontent.Provider) ([]resultcontent.Pro
 	out := make([]resultcontent.Provider, 0, len(all))
 	dropped := map[resultcontent.Provider]string{}
 	looks, data := 0, 0
+	var lostLooks, lostData []string
 	for _, p := range all {
-		switch p.(type) {
+		switch x := p.(type) {
 		case *look.Look:
 			if looks++; looks > s.opts.MaxLooks {
 				dropped[p] = fmt.Sprintf("more than %d looks in one eval; return fewer, or one cv.sheet of many crops", s.opts.MaxLooks)
+				lostLooks = append(lostLooks, strconv.Quote(x.Label()))
 				continue
 			}
 		case numbered:
 			if data++; data > s.opts.MaxData {
 				dropped[p] = fmt.Sprintf("more than %d data items in one eval; return one table with every row", s.opts.MaxData)
+				lostData = append(lostData, strconv.Quote(strings.TrimPrefix(resultcontent.Describe(p), "data ")))
 				continue
 			}
 		}
 		out = append(out, p)
+	}
+	var budget []string
+	if len(lostLooks) > 0 {
+		budget = append(budget, fmt.Sprintf("%s: %d %s not delivered (at most %d per eval): %s. Split the work over several calls, or return fewer looks (one cv.sheet of many crops).",
+			graph.WLooks, len(lostLooks), plural(len(lostLooks), "look was", "looks were"), s.opts.MaxLooks, strings.Join(lostLooks, ", ")))
+	}
+	if len(lostData) > 0 {
+		budget = append(budget, fmt.Sprintf("%s: %d %s not delivered (at most %d per eval): %s. Split the work over several calls, or return fewer data items (one table with every row).",
+			graph.WData, len(lostData), plural(len(lostData), "data item was", "data items were"), s.opts.MaxData, strings.Join(lostData, ", ")))
 	}
 	for i, p := range out {
 		switch x := p.(type) {
@@ -165,7 +178,14 @@ func (s *state) collect(fromValue []resultcontent.Provider) ([]resultcontent.Pro
 			x.SetNumber(i+1, s.opts.MaxDataBytes)
 		}
 	}
-	return out, dropped
+	return out, dropped, budget
+}
+
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
 }
 
 func providerNumbers(providers []resultcontent.Provider) map[resultcontent.Provider]int {
@@ -180,12 +200,23 @@ func providerNumbers(providers []resultcontent.Provider) map[resultcontent.Provi
 	return out
 }
 
-func lookList(ls []*look.Look) *yaml.Node {
+// lookList lists the shown looks; a look left out by the budget says so,
+// as it does in the returned value.
+func lookList(ls []*look.Look, dropped map[resultcontent.Provider]string) *yaml.Node {
 	n := &yaml.Node{Kind: yaml.SequenceNode}
 	for _, l := range ls {
+		if why, ok := dropped[l]; ok {
+			n.Content = append(n.Content, str(notDelivered(l, why)))
+			continue
+		}
 		n.Content = append(n.Content, str(l.String()))
 	}
 	return n
+}
+
+// notDelivered is the placeholder of a look left out by the budget.
+func notDelivered(l *look.Look, why string) string {
+	return "[not delivered: " + strings.TrimSuffix(strings.TrimPrefix(l.String(), "["), "]") + " — " + why + "]"
 }
 
 // finish appends warnings and the context block and applies the cap (owner).
