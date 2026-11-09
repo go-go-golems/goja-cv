@@ -567,14 +567,14 @@ func checkKeys(specs []ArgSpec, m map[string]any, what string, fix func(sug stri
 	for _, k := range sortedKeys(m) {
 		if !known[k] {
 			e := Errorf(EUnknownOption, "%s has no option %q. Valid options: %s.", what, k, strings.Join(valid, ", ")).WithValid(valid)
-			sug := optionSynonym(k, known)
+			sug, semantic := optionSynonym(k, known), true
 			if sug == "" {
-				sug = closest(k, valid)
+				sug, semantic = closest(k, valid), false
 			}
 			if sug != "" {
 				e.Hint = fmt.Sprintf("Did you mean %q?", sug)
 				for _, s := range specs {
-					if s.Name == sug && s.Doc != "" {
+					if semantic && s.Name == sug && s.Doc != "" { // explain why a different word maps here
 						e.Hint += " (" + s.Doc + ")"
 					}
 				}
