@@ -244,3 +244,50 @@ declining any. The design phase is closed. I started the GCV-001 implementer on 
 
 ### Code review instructions
 - Branch `task/gcv-001-image-model`; its PR when opened.
+
+## Step 6: GCV-001 verified; GCV-002 stacked on it
+
+The GCV-001 implementer finished: 8 phases, PR #2 (https://github.com/go-go-golems/goja-cv/pull/2), diary
+`reference/06-diary-implementation.md` (steps 1–9, every skill section present). I re-ran the checks on the
+branch myself and committed the pi harness changes and runs 07–10 in the dust-scanning repo (`a5ffac4`).
+I did not merge PR #2: merges are the user's call (they merged #1 by explicit request). GCV-002 branches
+from `task/gcv-001-image-model` and its PR targets that branch, so the stack merges in order.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 1)
+
+**Assistant interpretation:** Verify GCV-001, then keep going with GCV-002 without waiting.
+
+**Inferred user intent:** All three tickets implemented, each reviewable on its own.
+
+### What I did
+- Local re-check on `task/gcv-001-image-model` (355f1c4): `go build ./...`, `go vet ./...`, `go test ./... -count=1 -race` (all packages ok), `make lint` clean.
+- Read the hand-back: all 12 legacy items of guide §6 removed; 19 deviations appended to the guide; golden check before regenerating showed only the expected looks (levels, mask, overlay) moving.
+- Committed the harness `IMAGE`/`IMAGE_EXTRA`/`QUESTIONS` options and runs 07–10 in dust-scanning (`a5ffac4`).
+- Spawned the GCV-002 implementer on `task/gcv-002-inspection-views`, based on the GCV-001 branch, with the hand-back's open items for GCV-002.
+
+### Why
+- GCV-002 needs GCV-001's spaces, frames, macros and `Engine.Display`; stacking avoids waiting on a merge.
+
+### What worked
+- pi runs before/after GCV-001: 48/41 calls → 26/23 calls for the same questions; no error from a missing capability after.
+
+### What didn't work
+- CI "Dependency Review" fails on PR #2 (and #1) because the repository's Dependency graph setting is off — not caused by the code.
+
+### What I learned
+- The phase-by-phase brief with "check `go test`'s own exit status" held: no red pushes this time.
+
+### What was tricky to build
+- N/A
+
+### What warrants a second pair of eyes
+- Breaking display change: masks show their own values (0.5 → grey 128); `levels` remaps in linear space; `detect.specks` `meanL` in encoded space on sRGB input — downstream thresholds in DUST-002 helpers move.
+
+### What should be done in the future
+- User: enable Dependency graph (or drop the job); merge #2 then #3 in order.
+- GCV-003 after GCV-002; pi run on a real tile after GCV-002.
+
+### Code review instructions
+- PR #2 diff; start with `pkg/cv/buffer/encoding.go`, `pkg/cv/graph` (space rules, `internNode` conversions), the decoder registry, and the guide's "Implementation notes (deviations)".
