@@ -452,3 +452,130 @@ error:
 warnings:
   - 'UNHANDLED dust/late.js:3: a promise was rejected and never handled: late boom. fix: await the call that returned it'
 ```
+
+## Step 4: Phase A2 — compact tables and function docs
+
+A2 makes results readable without workarounds. An array of flat records (awaited regions, measurement rows, any list
+of `{ id, x, y, … }`) now renders as a table, one line per row, exempt from the 48-item and 2,000-character caps that
+cut the agents' row lists; the tables of one result share two thirds of the result cap and say how to page. Functions
+render as their signature and doc line (the comment that opens the body), and the context block lists `mem`'s
+functions and gives the doc line of each new or changed one, once.
+
+The `UNHANDLED` part of A2 was already in place after A1; A2 adds its tests for plain promises. `UNUSED_NODE`'s
+deletion is left for A4, as the coordinator's batch plan says.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 2)
+
+**Assistant interpretation:** implement guide §13 Phase A2 (§6.4, §6.5, §7.4–7.5, §10.3–10.4) except the
+`UNUSED_NODE` deletion, which the brief moves to A4.
+
+**Inferred user intent:** agents return rows and read them; library functions document themselves where agents look.
+
+**Commit (code):** b10ff2d — "GCV-005 A2: compact tables; function signatures and doc lines in results and the context block"
+
+### What I did
+
+- `pkg/cvsession/tables.go` (new): `renderer.table` (detection, cells, rune-aligned lines, shared budget, paging note),
+  `cells`, `cellText`, `renderer.function`.
+- `pkg/cvsession/yaml.go`: `render`, `array`, `object`, `property` carry the key path; `dataProperty` (descriptor
+  read, accessors never invoked); `keyPath`; `tableLeft` (set from `MaxResultChars` in `Process`).
+- `pkg/gojamod/cv/describe.go` (new): `FunctionSource` (the original `Function.prototype.toString`),
+  `DescribeFunction`, `FunctionDoc.Signature`, `CutRunes`; a small scanner for balanced parentheses that skips strings,
+  template literals and comments.
+- `pkg/cvsession/processor.go`: `contextBlock` reads `mem` through descriptors, splits functions from other keys,
+  writes `functions:` (signatures cut at 40) and `new functions:` (by `fnSeen`, untouched while a prelude runs);
+  `state.fnSeen`.
+- Tests: `pkg/gojamod/cv/describe_test.go` with `testdata/helpers-fixture.js`; `pkg/cvsession/tables_test.go`
+  (`TestTablesRenderFlatRecords`, `TestTablesAreExemptFromTheCaps`, `TestResultFormat` with
+  `testdata/representative.result` and `-update-results`, `TestFunctionDocsInTheContextBlock`,
+  `TestPreludeFunctionsAreNewInTheFirstEval`, `TestUnhandledRejections`); updated `TestDocsFromEval`,
+  `TestAwaitedRegionsHaveEveryItem`, `TestLongResultsAreCut` (their arrays are tables now).
+- Docs: `01-getting-started` (tables, the context block's functions), `13-data-out` (the table budget).
+- Deviations 21–25 in the guide.
+
+### Why
+
+- Tables are built as one YAML literal node, never through `primitive` or `budget`, which is what exempts them from the
+  caps (D9).
+- `FunctionSource` calls the original `Function.prototype.toString`, so a library that overrides `toString` on a
+  function cannot change what the context block shows.
+- The prelude flag (`state.prelude`, set by `runPreludes`) already existed for looks; the function state reuses it.
+
+### What worked
+
+- goja's `toString` returned exact sources for every form in the fixture, comments included.
+- yaml.v3 writes the tables as literal blocks as long as no line has trailing spaces (the lines are trimmed).
+
+### What didn't work
+
+- The first fixture had `mem.best`'s comment on the line after `{` with nothing before it; by D7 that is a doc line
+  (first token of the body), so the "mid-body comment" case needed a statement before the comment.
+- `goja` refused the fixture's `async *gen(a) {` ("Async generators are not supported yet").
+- My first expectations for the 40-rune cut and for the literal block's trailing newline were wrong
+  (`mem.loooooooooooooooong({ alpha = 1, be…`).
+- Lint: `ineffectual assignment to body`, `func hasWord is unused`, `QF1001: could apply De Morgan's law`.
+
+### What I learned
+
+- A function assigned to a member (`mem.probe = async (x) => …`) has an empty `name` in JavaScript; naming a returned
+  function needs the key path or a lookup in `mem`.
+- `toJS` sorts the keys of Go maps, so tables of Go-made records (help, docs search) have sorted columns, while
+  `graph.Record` and JavaScript objects keep their order.
+
+### What was tricky to build
+
+- **Detecting a table without running code.** A record must be read through property descriptors (no getters, no
+  proxy traps) and every cell must be a primitive; checking all 100,000 rows of an awaited region set through
+  descriptors would cost seconds, so only the header rows and the shown rows are read that way (deviation 21).
+- **Accessors versus methods named get/set.** `get count() {` is an accessor; `get(k) {` is a method. The parser treats
+  `get`/`set` as a keyword only when an identifier follows.
+
+### What warrants a second pair of eyes
+
+- `renderer.function` names a bare function by searching `mem` (one descriptor read per key); results with many
+  functions on a large `mem` pay that per function.
+- The "[Getter]" text is now also used for setter-only properties.
+
+### What should be done in the future
+
+- A4: the docs and recipes that return `rows.map(x => [...].join(" "))` should return the rows (tables); the
+  instructions say "a list of flat rows comes back as a table".
+- B2: add measured peaks to `testdata/representative.result` (§14.1).
+
+### Code review instructions
+
+- Start with `pkg/cvsession/tables.go`, then `pkg/gojamod/cv/describe.go`, then `contextBlock` in
+  `pkg/cvsession/processor.go`.
+- `go test ./pkg/cvsession -run 'TestTables|TestResultFormat|TestFunctionDocs|TestPreludeFunctions|TestUnhandled' -count=1`;
+  `go test ./pkg/gojamod/cv -run TestDescribeFunction`.
+- Gate: `gate=0`.
+
+### Technical details
+
+`git diff --stat 2d469fb b10ff2d`: 14 files, +887 / −34.
+
+A table over the budget:
+
+```yaml
+rows: |-
+  id   x      name         ok     n
+  0    0      "two words"  true   3
+  1    1.5    a            false  -
+  …
+  174  261    a            true   -
+  … rows 1–175 of 300 shown. Next: rows.slice(175, 350); all: await cv.save("rows.csv", rows)
+```
+
+The context block after a prelude, in the first agent eval:
+
+```yaml
+context:
+  mem: lin (#2 Image)
+  functions: mem.probe(x, y, r = 3), mem.sheet(items, size = 40), mem.spots(level = 0.3)
+  new functions: |-
+    mem.probe(x, y, r = 3): core/ring measure at (x, y): { cx, cy, step, spread, snr }
+    mem.sheet(items, size = 40): contact sheet of up to 15 items: image | speck view, captioned with their ids
+    mem.spots(level = 0.3): blobs of the speck view above level, measured on the linear image
+```

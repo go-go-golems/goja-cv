@@ -2463,3 +2463,24 @@ details and numbers.
 20. **The task-libraries topic** loads `dust/helpers.js` and `dust/thread-width.js` from `pkg/cvsession/testdata/scripts`,
     which the docs tests copy into the planted scan's read directory. The model library uses `measure` and the speck
     view, not `peaks`, until B2/B3 replace it with §12.3's.
+
+### Phase A2 (commit `b10ff2d`)
+
+21. **A table's columns and widths come from its first 200 rows** (§10.3 takes the widths from 200 rows and the
+    columns from all of them). Every row is checked to be a plain object, but only the rows read for the header and
+    the rows shown are read through their descriptors: a later row with a key the header lacks loses that cell, and a
+    shown row past the first 200 that is not flat ends the table with the paging note. A 100,000-row array renders in
+    about 0.3 s.
+22. **Functions in a result are named** by the last key of their path (`return { f: mem.f }` → `f(a, b = 3): …`), by
+    the `mem` key that holds them when returned bare (`return mem.probe` → `mem.probe(x, y): …`), else by their own
+    name, else `function`.
+23. **`new functions:` is a literal block**, one `signature: doc` line per function, not a mapping (keys such as
+    `mem.spots({ snr = 1 } = {})` would be quoted). A getter on `mem` is listed as `name (getter)` under `mem:` and
+    never run. The remembered state is replaced by the current functions at every agent eval, so a function deleted
+    and defined again is new again.
+24. **A2 deletes nothing from §9 items 2–3**: `UNUSED_NODE` goes in A4 (the coordinator's batch plan), and the cut
+    notes already named `cv.save` (GCV-004 Phase 6).
+25. **The DUST-002 helper fixture** (`pkg/gojamod/cv/testdata/helpers-fixture.js`) reproduces the helper file's
+    shapes (a doc comment on `mem.tile`, mid-body comments in `mem.best` and `mem.probe`, a `/*` block, an expression
+    body, method shorthand, accessors, a bound function) instead of copying the file: the dust-scanning repository was
+    off limits for this batch. goja does not parse async generator methods, so the fixture's generator is plain.
