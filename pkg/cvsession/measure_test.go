@@ -89,7 +89,7 @@ func TestAwaitedRegionsHaveEveryItem(t *testing.T) {
 	out := mustOK(t, eval(t, app, sid, `
 const r = await img.mask.luminance({ above: 0.5 }).components()
 return { count: r.length, last: r[r.length - 1].id, all: r }`))
-	mustContain(t, out, "count: 5625", `more (save all: await cv.save("x.json", x))`)
+	mustContain(t, out, "count: 5625", "all: |-", " shown. Next: all.slice(", `all: await cv.save("rows.csv", all)`)
 	mustNotContain(t, out, "truncated")
 }
 

@@ -75,13 +75,14 @@ func (p *ResultProcessor) Process(_ context.Context, vm *goja.Runtime, value goj
 	providers, dropped, lookWarnings := st.collect(vm, extraction.Providers, trace)
 
 	r := newRenderer(vm, st.eng)
+	r.tableLeft = st.opts.MaxResultChars * 2 / 3
 	r.providers = providerNumbers(providers)
 	r.dropped = dropped
 	var sb strings.Builder
 	if value == nil || goja.IsUndefined(value) {
 		sb.WriteString("# nothing returned: end the code with `return …` to see a value (the last expression is not returned).")
 	} else {
-		sb.WriteString(encodeYAML(r.render(value, 0)))
+		sb.WriteString(encodeYAML(r.render(value, 0, "")))
 	}
 	warnings := append(st.warnings(vm, trace, r.nodes, true), lookWarnings...)
 	return replsession.ProcessedResult{Text: st.finish(vm, sb.String(), warnings), Providers: providers}, nil
@@ -320,7 +321,7 @@ func (s *state) unusedNodes(vm *goja.Runtime, trace cvmod.EvalTrace, returned []
 	// nodes kept in mem or img count as used
 	if mem, ok := vm.GlobalObject().Get("mem").(*goja.Object); ok {
 		r := newRenderer(vm, s.eng)
-		r.render(mem, 0)
+		r.render(mem, 0, "")
 		roots = append(roots, r.nodes...)
 	}
 	roots = append(roots, s.namedNodes()...)
@@ -550,31 +551,78 @@ func jsHint(f *failure) string {
 	return ""
 }
 
-// contextBlock is rebuilt for every eval: named and unnamed images and the
-// keys of mem (owner).
+// contextBlock is rebuilt for every eval: named and unnamed images, the
+// keys of mem with a kind each, the functions on mem with short signatures,
+// and the signature and doc line of each function whose name is new or
+// whose source changed since the last agent eval (owner). mem is read
+// through property descriptors: getters are not run. A prelude's eval
+// neither reads nor updates what has been shown (its output is never seen).
 func (s *state) contextBlock(vm *goja.Runtime) *yaml.Node {
 	n := &yaml.Node{Kind: yaml.MappingNode}
-	add := func(k, v string) {
-		if v != "" {
-			n.Content = append(n.Content, str(k), str(v))
+	add := func(k string, v *yaml.Node) {
+		if v.Value != "" {
+			n.Content = append(n.Content, str(k), v)
 		}
 	}
-	add("images", s.imagesLine(vm))
+	add("images", str(s.imagesLine(vm)))
 
 	if mem, ok := vm.GlobalObject().Get("mem").(*goja.Object); ok {
+		r := newRenderer(vm, s.eng)
 		keys := mem.Keys()
 		sort.Strings(keys)
-		var items []string
+		var items, short, docs []string
+		seen := map[string]string{}
 		for _, k := range keys {
-			items = append(items, fmt.Sprintf("%s (%s)", k, memKind(mem.Get(k))))
+			v, data := r.dataProperty(mem, k)
+			if !data {
+				items = append(items, k+" (getter)")
+				continue
+			}
+			fn, isFn := v.(*goja.Object)
+			if isFn {
+				_, isFn = goja.AssertFunction(fn)
+			}
+			if !isFn {
+				items = append(items, fmt.Sprintf("%s (%s)", k, memKind(v)))
+				continue
+			}
+			src := cvmod.FunctionSource(vm, fn)
+			d, listed := cvmod.DescribeFunction(src)
+			if !listed {
+				items = append(items, k+" (getter)")
+				continue
+			}
+			name := "mem." + k
+			sig := d.Signature(name)
+			if d.Native {
+				sig = name + "()"
+			}
+			short = append(short, cvmod.CutRunes(sig, maxShortSignature))
+			seen[name] = src
+			if !s.prelude.Load() && s.fnSeen[name] != src {
+				if d.Doc != "" {
+					sig += ": " + d.Doc
+				}
+				docs = append(docs, sig)
+			}
 		}
-		add("mem", strings.Join(items, ", "))
+		add("mem", str(strings.Join(items, ", ")))
+		add("functions", str(strings.Join(short, ", ")))
+		if len(docs) > 0 {
+			add("new functions", &yaml.Node{Kind: yaml.ScalarNode, Style: yaml.LiteralStyle, Tag: "!!str", Value: strings.Join(docs, "\n")})
+		}
+		if !s.prelude.Load() {
+			s.fnSeen = seen
+		}
 	}
 	if len(n.Content) == 0 {
 		return nil
 	}
 	return n
 }
+
+// maxShortSignature cuts the signatures of the context block's functions line.
+const maxShortSignature = 40
 
 func memKind(v goja.Value) string {
 	if v == nil || goja.IsUndefined(v) {

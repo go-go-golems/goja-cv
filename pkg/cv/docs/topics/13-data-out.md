@@ -4,7 +4,7 @@ The YAML result is for you to read and is capped; files for programs and people 
 
 ## Text for you, files for programs
 
-The result of an eval comes back as YAML capped at about 9000 characters and 48 items per list. Return summaries there. A program that needs every row reads a file: `await cv.save("specks.csv", regions)` writes every item. Awaited Regions are an array of every item (up to 100000), so code may loop over them freely.
+The result of an eval comes back as YAML capped at about 9000 characters and 48 items per list; a list of flat rows is a table that may use two thirds of the result and says which rows it shows (`rows.slice(118, 236)` for the next page). Return summaries there. A program that needs every row reads a file: `await cv.save("specks.csv", regions)` writes every item. Awaited Regions are an array of every item (up to 100000), so code may loop over them freely.
 
 ```js
 const specks = img.detect.specks()

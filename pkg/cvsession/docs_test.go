@@ -177,7 +177,7 @@ func TestDocsFromEval(t *testing.T) {
 	out := text(eval(t, app, sid, `return cv.docs.list().map(t => t.id)`))
 	mustContain(t, out, "getting-started", "recipes")
 	out = text(eval(t, app, sid, `return cv.docs.search("heal dust", { limit: 2 })`))
-	mustContain(t, out, "id: recipes", "section: Remove dust", "snippet:", "score:")
+	mustContain(t, out, "id  ", "score", "snippet", "\n  recipes ", `"Remove dust"`)
 	out = text(eval(t, app, sid, `return cv.docs.read("recipes", { section: "Remove dust" })`))
 	mustContain(t, out, "## Remove dust", "img.detect.specks()")
 	mustNotContain(t, out, "## Edit inside a mask")

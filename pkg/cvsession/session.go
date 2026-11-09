@@ -351,8 +351,9 @@ type state struct {
 	lines    []string // agent code of the current eval
 	failure  *failure
 	lookSeq  int
-	names    *nameTable // named images (img first)
-	broken   bool       // the VM can no longer run promise jobs (see probePromises)
+	names    *nameTable        // named images (img first)
+	fnSeen   map[string]string // mem function ("mem.probe") → its source when an agent eval last showed the context block
+	broken   bool              // the VM can no longer run promise jobs (see probePromises)
 	watchdog *watchdog
 }
 

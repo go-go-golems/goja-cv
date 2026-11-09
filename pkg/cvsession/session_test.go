@@ -201,13 +201,13 @@ func TestRootsRestrictOpen(t *testing.T) {
 
 func TestLongResultsAreCut(t *testing.T) {
 	app, sid := newApp(t, cvsession.Options{Image: tiffPath})
-	out := text(eval(t, app, sid, `return { xs: Array.from({ length: 200 }, (_, i) => i), rows: Array.from({ length: 40 }, (_, i) => ({ i, s: "x".repeat(400) })) }`))
+	out := text(eval(t, app, sid, `return { xs: Array.from({ length: 200 }, (_, i) => i), rows: Array.from({ length: 40 }, (_, i) => [i, "x".repeat(400)]) }`))
 	if len(out) > 9000 {
 		t.Fatalf("len %d > 9000", len(out))
 	}
 	mustContain(t, out, "# … 152 more", "# CUT: the result is")
 	out = text(eval(t, app, sid, `return [img.stats(), Promise.resolve(1), () => 1]`))
-	mustContain(t, out, "[Value #", "stats()] (lazy", "[Promise] (not awaited", "[Function]")
+	mustContain(t, out, "[Value #", "stats()] (lazy", "[Promise] (not awaited", ", function()]")
 	out = text(eval(t, app, sid, `const x = 1`))
 	mustContain(t, out, "# nothing returned")
 }
