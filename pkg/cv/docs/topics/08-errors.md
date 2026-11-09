@@ -15,7 +15,7 @@ error:
   message: Regions has no method "heal".
   where: 'line 2: return specks.heal()'
   path: open(planted-256x192-16bit.tif) → detect.specks → ✗ heal
-  hint: '"heal" is an Image method that takes Regions: call it on the image.'
+  hint: '"heal" is an Image method that takes Regions: call it on the image and pass this node.'
   fix: img.heal(regions, …)
 ```
 

@@ -467,3 +467,12 @@ func TestCancelledEvaluation(t *testing.T) {
 		t.Fatal("cancelled evaluation ran ops")
 	}
 }
+
+func TestIndefiniteArticle(t *testing.T) {
+	for in, want := range map[string]string{"Image": "an Image", "Mask": "a Mask", "Regions": "a Regions", "Value": "a Value",
+		"number": "a number", "object": "an object", "": ""} {
+		if got := A(in); got != want {
+			t.Fatalf("A(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

@@ -113,6 +113,7 @@ func (b *binding) object() *goja.Object {
 	set("__placeholder", b.placeholder)
 	set("__look", b.look)
 	b.addDocs(o)
+	set("__fieldNames", b.fieldNames)
 	return o
 }
 
@@ -353,7 +354,7 @@ func (b *binding) unknown(c goja.FunctionCall) goja.Value {
 // __lazy(id, hint) throws E_LAZY_COMPARE.
 func (b *binding) lazy(c goja.FunctionCall) goja.Value {
 	n := b.nodeArg(c.Argument(0))
-	e := graph.Errorf(graph.ELazyCompare, "A %s node was used as a %s, but nodes are lazy: nothing has been computed yet.", n.Kind, c.Argument(1).String())
+	e := graph.Errorf(graph.ELazyCompare, "%s node was used as %s, but nodes are lazy: nothing has been computed yet.", capitalize(graph.A(string(n.Kind))), graph.A(c.Argument(1).String()))
 	e.Path = b.eng.Path(n.ID)
 	e.Hint = "Await the node to get its value."
 	if n.Kind == graph.KindValue || n.Kind == graph.KindParam {
@@ -369,7 +370,7 @@ func (b *binding) lazy(c goja.FunctionCall) goja.Value {
 func (b *binding) immutable(c goja.FunctionCall) goja.Value {
 	n := b.nodeArg(c.Argument(0))
 	prop := c.Argument(1).String()
-	e := graph.Errorf(graph.EImmutable, "Nodes are immutable: cannot set %q on a %s node.", prop, n.Kind)
+	e := graph.Errorf(graph.EImmutable, "Nodes are immutable: cannot set %q on %s node.", prop, graph.A(string(n.Kind)))
 	e.Path = append(b.eng.Path(n.ID), "✗ "+prop+" =")
 	e.Hint = "Every call returns a new node; keep the result in a variable."
 	if _, ok := b.eng.Registry().Lookup(n.Kind, prop); ok {

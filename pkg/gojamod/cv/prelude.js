@@ -29,6 +29,13 @@
     tables[kind] = t;
   }
 
+  const FIELDS = new Set(native.__fieldNames());
+  const OTHER_METHODS = new Set();
+  for (const kind of Object.keys(METHODS)) {
+    if (kind === "Value") continue;
+    for (const name of METHODS[kind]) OTHER_METHODS.add(name.split(".")[0]);
+  }
+
   // properties that generic JS machinery probes; they must not derive fields
   // or throw (console formatting, JSON, frameworks).
   const PROBES = new Set(["constructor", "__proto__", "prototype", "inspect", "nodeType", "$$typeof", "asymmetricMatch"]);
@@ -187,7 +194,9 @@
     const tab = tables[t.__kind];
     const entry = tab && tab[prop];
     if (entry) return entry.ns ? namespaceFor(t, prop, entry.ns) : method(t, entry.op);
-    if (t.__kind === "Value") return callOp(t, "field", [prop]);
+    // a method of another kind on a Value (stats().exposure) is an error with
+    // a cross-kind hint, unless it is also a documented field (dust().count)
+    if (t.__kind === "Value" && (!OTHER_METHODS.has(prop) || FIELDS.has(prop))) return callOp(t, "field", [prop]);
     return native.__unknown(t.__kind, prop, t.__id);
   }
 

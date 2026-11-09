@@ -134,7 +134,7 @@ func (r *Registry) UnknownMethod(k Kind, name string, path []string) *Error {
 	// cross-kind: an op of that name on another kind, or a documented field.
 	for _, op := range r.Find(name) {
 		if op.On != k {
-			e.Hint = fmt.Sprintf("%q is a %s method%s.", name, op.On, conversionHint(k, op.On))
+			e.Hint, e.Fix = crossKind(k, name, op)
 			return e
 		}
 	}
@@ -149,6 +149,48 @@ func (r *Registry) UnknownMethod(k Kind, name string, path []string) *Error {
 	sortStrings(e.Valid)
 	e.Hint = fmt.Sprintf("%s methods: %s.", k, strings.Join(e.Valid, ", "))
 	return e
+}
+
+// crossKind is the hint and literal fix for calling op (defined on another
+// kind) on a node of kind k: pass the node to the op on the right receiver
+// when the op takes k as an input (img.heal(regions, …)), convert when a
+// conversion exists, or call it on the right receiver.
+func crossKind(k Kind, name string, op *OpDef) (hint, fix string) {
+	if op.On == KindNone {
+		return fmt.Sprintf("%q is a cv function, not a method.", name), fmt.Sprintf("cv.%s(…)", name)
+	}
+	on, self := receiverVar(op.On), receiverVar(k)
+	for _, decl := range op.Inputs {
+		if accepts(decl, k) {
+			return fmt.Sprintf("%q is %s method that takes %s: call it on the %s and pass this node.", name, A(string(op.On)), string(k), kindNoun(op.On)),
+				fmt.Sprintf("%s.%s(%s, …)", on, name, self)
+		}
+	}
+	hint = fmt.Sprintf("%q is %s method%s.", name, A(string(op.On)), conversionHint(k, op.On))
+	switch {
+	case k == KindRegions && op.On == KindMask:
+		fix = fmt.Sprintf("%s.toMask().%s(…)", self, name)
+	case k == KindMask && op.On == KindRegions:
+		fix = fmt.Sprintf("%s.components().%s(…)", self, name)
+	case k == KindImage && op.On == KindValue:
+		fix = fmt.Sprintf("%s.stats().%s(…)", self, name)
+	case k == KindMask && op.On == KindImage:
+		hint = fmt.Sprintf("%q is an Image method; to apply it inside this mask use within.", name)
+		fix = fmt.Sprintf("img.within(%s, i => i.%s(…))", self, name)
+	case k == KindRegions && op.On == KindImage:
+		hint = fmt.Sprintf("%q is an Image method; to apply it inside these regions use within with their mask.", name)
+		fix = fmt.Sprintf("img.within(%s.toMask(), i => i.%s(…))", self, name)
+	default:
+		fix = fmt.Sprintf("%s.%s(…)", on, name)
+	}
+	return hint, fix
+}
+
+func kindNoun(k Kind) string {
+	if k == KindImage {
+		return "image"
+	}
+	return strings.ToLower(string(k))
 }
 
 func conversionHint(from, to Kind) string {

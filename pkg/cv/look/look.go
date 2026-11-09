@@ -97,7 +97,7 @@ func New(eng *graph.Engine, id graph.NodeID, opt Options) (*Look, error) {
 }
 
 func lookKindError(n *graph.Node) error {
-	e := graph.Errorf(graph.EWrongKind, "look() renders Image and Mask nodes (and histograms); %s is a %s node.", graph.Label(n), n.Kind)
+	e := graph.Errorf(graph.EWrongKind, "look() renders Image and Mask nodes (and histograms); %s is %s node.", graph.Label(n), graph.A(string(n.Kind)))
 	e.Hint = "Await a Value node to read its data; look at the image it was computed from."
 	switch n.Kind {
 	case graph.KindValue:

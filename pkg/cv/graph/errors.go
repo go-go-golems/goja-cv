@@ -91,6 +91,20 @@ func AsError(err error) (*Error, bool) {
 	return nil, false
 }
 
+// A prefixes word with its indefinite article: A("Image") = "an Image",
+// A("Mask") = "a Mask". It looks at the first letter only, which is right for
+// the kind names, types and op names it is used with.
+func A(word string) string {
+	if word == "" {
+		return word
+	}
+	switch word[0] {
+	case 'a', 'e', 'i', 'o', 'u', 'A', 'E', 'I', 'O', 'U':
+		return "an " + word
+	}
+	return "a " + word
+}
+
 // Warning travels with results instead of failing them.
 type Warning struct {
 	Code    string `json:"code"`

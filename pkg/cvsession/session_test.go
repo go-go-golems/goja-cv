@@ -269,3 +269,23 @@ return img.overlay(r, { labels: "id" }).look("regions")`)
 		t.Fatalf("want one UNUSED_NODE:\n%s", out)
 	}
 }
+
+func TestCrossKindErrorsHaveALiteralFixAndGrammar(t *testing.T) {
+	app, sid := newApp(t, cvsession.Options{Image: tiffPath})
+	for code, want := range map[string][]string{
+		"const specks = img.detect.specks()\nreturn specks.heal()": {"code: E_UNKNOWN_METHOD", `hint: '"heal" is an Image method that takes Regions`, "fix: img.heal(regions, …)"},
+		`return img.mask.box([0, 0, 10, 10]).exposure(1)`:          {"fix: img.within(mask, i => i.exposure(…))", "an Image method"},
+		`return img.detect.specks().feather(2)`:                    {`"feather" is a Mask method`, "fix: regions.toMask().feather(…)"},
+		`return img.pick("meanL")`:                                 {`"pick" is a Value method`, "fix: img.stats().pick(…)"},
+		`return img.stats().exposure(1)`:                           {"Value has no method \"exposure\"", "fix: img.exposure(…)"},
+		`if (img > 1) return 1`:                                    {"An Image node was used as a number"},
+		`img.foo = 1`:                                              {`cannot set "foo" on an Image node`},
+		`return img.stats().look()`:                                {"stats is a Value node"},
+	} {
+		out := text(eval(t, app, sid, code))
+		mustContain(t, out, want...)
+		mustNotContain(t, out, " a Image", " an Mask", " an Value", " an Regions", "TypeError")
+	}
+	// derived fields that share a name with a method of another kind still work
+	mustContain(t, text(eval(t, app, sid, `return await img.check.dust().count`)), "0")
+}

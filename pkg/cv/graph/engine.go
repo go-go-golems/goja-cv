@@ -133,7 +133,7 @@ func (e *Engine) Placeholder(receiver NodeID) (*Node, error) {
 		return nil, Errorf(EInternal, "unknown node #%d", receiver)
 	}
 	if r.Kind != op.Returns {
-		return nil, Errorf(EWrongKind, "builder lambdas take a %s; the receiver is a %s.", op.Returns, r.Kind)
+		return nil, Errorf(EWrongKind, "builder lambdas take %s; the receiver is %s.", A(string(op.Returns)), A(string(r.Kind)))
 	}
 	n, _, err := e.b.Intern(op, 0, nil, map[string]any{"for": float64(receiver), "w": r.DocW, "h": r.DocH})
 	return n, err

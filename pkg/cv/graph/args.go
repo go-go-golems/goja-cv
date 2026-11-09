@@ -329,11 +329,11 @@ func (b *binder) lift(id NodeID, where string, want string) (any, error) {
 	}
 	if isKindType(want) {
 		if !accepts(Kind(want), k) {
-			return nil, Errorf(EWrongKind, "%s wants a %s node, got a %s node.", where, want, k).
+			return nil, Errorf(EWrongKind, "%s wants %s node, got %s node.", where, A(want), A(string(k))).
 				WithHint(kindHint(Kind(want), k))
 		}
 	} else if k != KindValue && k != KindParam {
-		return nil, Errorf(EWrongKind, "%s wants a %s, got an %s node.", where, t2noun(want), k).
+		return nil, Errorf(EWrongKind, "%s wants %s, got %s node.", where, A(t2noun(want)), A(string(k))).
 			WithHint("Only Value and Param nodes can stand in for plain values; measure the image first.").
 			WithFix(fmt.Sprintf("e.g. %s: img.stats().p01", lastSegment(where)))
 	}
@@ -407,7 +407,7 @@ func (b *binder) check(s *ArgSpec, typ string, v any, where string) (any, error)
 		if val, ok := v.(Value); ok && b == nil && accepts(Kind(typ), val.Kind()) {
 			return val, nil
 		}
-		return nil, Errorf(EWrongKind, "%s needs a %s node, got %s.", where, typ, describeRaw(v))
+		return nil, Errorf(EWrongKind, "%s needs %s node, got %s.", where, A(typ), describeRaw(v))
 	}
 	if fa, ok := v.(FuncArg); ok {
 		if typ == "func" {
@@ -588,7 +588,7 @@ func lenHint(n int) string {
 }
 
 func typeErr(where, typ string, v any) *Error {
-	return Errorf(EArgType, "%s must be a %s, got %s.", where, t2noun(typ), describeRaw(v))
+	return Errorf(EArgType, "%s must be %s, got %s.", where, A(t2noun(typ)), describeRaw(v))
 }
 
 func describeRaw(v any) string {
@@ -658,15 +658,15 @@ func bind(op *OpDef, hasReceiver bool, raw []any, trusted map[string]any, kindOf
 	i := 0
 	for j, decl := range op.Inputs {
 		if i >= len(raw) {
-			return nil, Errorf(EArgType, "%s needs a %s as argument %d.", call, decl, j+1)
+			return nil, Errorf(EArgType, "%s needs %s as argument %d.", call, A(string(decl)), j+1)
 		}
 		na, ok := raw[i].(NodeArg)
 		if !ok {
-			return nil, Errorf(EWrongKind, "%s needs a %s node as argument %d, got %s.", call, decl, j+1, describeRaw(raw[i]))
+			return nil, Errorf(EWrongKind, "%s needs %s node as argument %d, got %s.", call, A(string(decl)), j+1, describeRaw(raw[i]))
 		}
 		k, _ := kindOf(na.ID)
 		if !accepts(decl, k) {
-			return nil, Errorf(EWrongKind, "%s needs a %s as argument %d, got a %s.", call, decl, j+1, k)
+			return nil, Errorf(EWrongKind, "%s needs %s as argument %d, got %s.", call, A(string(decl)), j+1, A(string(k)))
 		}
 		res.inputs = append(res.inputs, na.ID)
 		i++

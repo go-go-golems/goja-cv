@@ -72,10 +72,10 @@ func (b *Builder) Intern(op *OpDef, receiver NodeID, raw []any, trusted map[stri
 			return nil, nil, Errorf(EInternal, "unknown receiver node #%d", receiver)
 		}
 		if !accepts(op.On, recv.Kind) {
-			return nil, nil, Errorf(EWrongKind, "%s is a %s method; the receiver is a %s.", op.Name, op.On, recv.Kind)
+			return nil, nil, Errorf(EWrongKind, "%s is %s method; the receiver is %s.", op.Name, A(string(op.On)), A(string(recv.Kind)))
 		}
 	} else if op.On != KindNone {
-		return nil, nil, Errorf(EInternal, "%s needs a %s receiver", op.Name, op.On)
+		return nil, nil, Errorf(EInternal, "%s needs %s receiver", op.Name, A(string(op.On)))
 	}
 	raw, err := b.resolveBuilt(raw, receiver)
 	if err != nil {
@@ -193,7 +193,7 @@ func (b *Builder) Substitute(root, from, to NodeID) (NodeID, error) {
 		return 0, Errorf(EInternal, "substitute: unknown node")
 	}
 	if fn.Kind != tn.Kind {
-		return 0, Errorf(EInternal, "substitute: %s placeholder for a %s node", fn.Kind, tn.Kind)
+		return 0, Errorf(EInternal, "substitute: %s placeholder for %s node", fn.Kind, A(string(tn.Kind)))
 	}
 	memo := map[NodeID]*Node{from: tn}
 	var walk func(id NodeID) (*Node, error)
