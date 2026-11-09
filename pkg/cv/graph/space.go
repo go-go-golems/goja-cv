@@ -96,7 +96,7 @@ func (b *Builder) resolveSpace(op *OpDef, args Args, inputs []*Node) ([]*Node, [
 		ws = append(ws, w...)
 	}
 	if s == buffer.SpaceEncoded {
-		if w, ok := encodingWarning(op, inputs); ok {
+		if w, ok := b.encodingWarning(op, inputs); ok {
 			ws = append(ws, w)
 		}
 	}
@@ -106,7 +106,7 @@ func (b *Builder) resolveSpace(op *OpDef, args Args, inputs []*Node) ([]*Node, [
 
 // encodingWarning is ENCODING when an op in encoded space reads images of
 // different encodings: their encoded scales differ.
-func encodingWarning(op *OpDef, inputs []*Node) (Warning, bool) {
+func (b *Builder) encodingWarning(op *OpDef, inputs []*Node) (Warning, bool) {
 	byEnc := map[buffer.Encoding]string{}
 	var encs []buffer.Encoding
 	for _, in := range inputs {
@@ -114,7 +114,7 @@ func encodingWarning(op *OpDef, inputs []*Node) (Warning, bool) {
 			continue
 		}
 		if _, ok := byEnc[in.Enc]; !ok {
-			byEnc[in.Enc] = sourceLabel(in)
+			byEnc[in.Enc] = b.sourceLabel(in)
 			encs = append(encs, in.Enc)
 		}
 	}
@@ -132,7 +132,14 @@ func encodingWarning(op *OpDef, inputs []*Node) (Warning, bool) {
 
 // sourceLabel names the image a node was computed from: the label of the
 // source at the end of its receiver chain.
-func sourceLabel(n *Node) string {
+func (b *Builder) sourceLabel(n *Node) string {
+	for n.NExplicit > 0 && len(n.Inputs) > 0 {
+		in, ok := b.Node(n.Inputs[0])
+		if !ok {
+			break
+		}
+		n = in
+	}
 	return Label(n)
 }
 
