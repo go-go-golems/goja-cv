@@ -64,7 +64,7 @@ func Help(reg *graph.Registry, name string) map[string]any {
 	if name == "" {
 		h, _ := reg.Help("")
 		h["params"] = "P.slider(name, { min, max, value, step, label, unit }), P.toggle(name, { value }), P.choice(name, { options, value })"
-		h["sources"] = toAny([]string{"cv.open(path)"})
+		h["sources"] = toAny([]string{"cv.open(path, { encoding, box, origin, as })"})
 		h["functions"] = toAny([]string{"cv.evaluate", "cv.compare", "cv.describe", "cv.docs", "cv.isNode", "show", "mem", "node.look"})
 		h["docs"] = "Guides: cv.docs.list(), cv.docs.search(text), cv.docs.read(id, { section }). Start with cv.docs.read(\"getting-started\")."
 		h["topics"] = toAny(docs.IDs())
