@@ -36,3 +36,8 @@ Guide revision 3: decided §17 Q1-Q4 (stepChroma gate 1, symlinks refused, pinne
 
 Phase 0b: foundations without API change (commit 2b0955f)
 
+
+## 2026-11-09
+
+Phase 0c: Args redesign (commit ceb1ec4)
+

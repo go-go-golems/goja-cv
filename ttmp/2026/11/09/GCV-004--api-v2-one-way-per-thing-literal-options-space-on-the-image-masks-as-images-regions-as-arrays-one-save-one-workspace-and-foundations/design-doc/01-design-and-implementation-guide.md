@@ -2768,3 +2768,13 @@ order found; the phase is in brackets.
 5. [0b] `cutValue` cuts exactly `ScaledSize(window, scale)` only from a buffer that is at the render scale; a
    buffer computed at another scale (a sheet at its `AnalysisScale` 1) is cut to the pixels the window touches and
    `exactSize` resizes it, which is the one resize left.
+6. [0c] `Warn` keeps the builder as its first parameter, `(b *Builder, a Args)`: `toLab`'s warning walks the graph
+   from the receiver (`SourceNotes`). `ResultEnc.Space` keeps the working-space parameter until Phase 3.
+7. [0c] `RunFunc` keeps its `in []Value` parameter, which now holds the receiver's value only; node arguments are
+   read with `Args.Value`/`Values`.
+8. [0c] `Args.HasInputs()` exists for one caller: help computes an op's schema without a call (`DocFields`), where
+   `Receiver` must not be read.
+9. [0c] With named node inputs, help usage lines and explain lines name them (`heal(target, { radius, method })`,
+   `within(mask: #7, edit: #11)`), where they used to print the input kinds or nothing.
+10. [0c] The registry property test is the existing `TestRegistryWalk` (every op called and evaluated at three
+    scales, help for every op), not a separate call of each build-time function with default arguments.

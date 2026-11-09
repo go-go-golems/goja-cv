@@ -226,3 +226,110 @@ speck view: 197 points on 15 tiles, median rank 75, top50 39.6 %
 
 `git diff --stat fa115dc 2b0955f -- pkg cmd internal Makefile`: 35 files changed, 708 insertions(+), 295
 deletions(-) (of which tests: render_size_test 55, panic_test 160, json_test 52 lines).
+
+## Step 2: Phase 0c — the Args redesign (no API change)
+
+Phase 0c removes the second representation of node lists. Every node argument is now its own input of the node
+(in list order, repetitions kept), `OpDef.Inputs` is gone (its inputs are ordinary named `ArgSpec`s), and `Args`
+carries the node's inputs and, at evaluation, their values, so op code reads node arguments through `Receiver`,
+`Input`, `Inputs`, `Value` and `Values` and never indexes `inputs`. Every other accessor became loud. Value lifting
+still works (Phase 1 deletes it) through the same input slots.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 1)
+
+**Assistant interpretation:** Implement guide Phase 0c (§7.2, §7.3, §13): node arguments as own inputs, named node
+`ArgSpec`s, the new `Args` and its accessors, `(a Args)` build-time signatures; delete §9 item 4.
+
+**Inferred user intent:** Make the node-list and silent-accessor bug classes unwritable before the API phases.
+
+**Commit (code):** `ceb1ec4` — "GCV-004 Phase 0c: the Args redesign (no API change)"
+
+### What I did
+
+- `pkg/cv/graph/args.go`: `Args{op, vals, meta, ins, vs}`; `Receiver`, `Input`, `Inputs`, `Value`, `Values`,
+  `HasInputs`; `String`, `Bool`, `Numbers`, `Strings`, `Object`, `Func`, `Lengths`, `Box` check the spec type
+  (`allows`, union-aware) and the value's Go type and panic (`cv: <op>.<arg> is <T>, not <want>`), and every
+  accessor panics on an optional argument without a default read without `Has` (`present`). `Node`/`Nodes` are
+  deleted. The binder appends one input per node argument (`binder.inputs`; `liftIdx` deleted); a required node
+  argument given an object is not taken for the options object, so plain data keeps its `E_WRONG_KIND` with the
+  "plain data, not a node" hint. `resolveArgs` substitutes only lifted Value data (and re-checks it); node
+  arguments stay `InputRef`s that `Value` resolves against `vs`.
+- `registry.go`: `OpDef.Inputs` deleted; `DocFrame`, `Fields`, `Validate` take `(a Args)`; `Warn` takes
+  `(b *Builder, a Args)`; `ResultEnc{Enc(a), Space(a, s)}`; `firstImage` deleted (`KeepEnc` reads
+  `a.imageSource()`: the receiver, or for an overlay called on regions or a mask its image argument).
+- `node.go`: `Node.NExplicit` deleted (`Node.HasReceiver`); `internNode` stores the inputs in the node's `Args`;
+  `macroOutput` replaces three `inputs[len(inputs)-1]`. `eval.go`/`render.go`: Run receives the receiver only
+  (`receiverValue`); `EvalCtx.InputNode` deleted. `macro.go`: `Expander` reads inputs from `Args`.
+- Ops: `within(mask, edit)`, `blend(b, { …, mask })`, `heal(target, …)`, `inpaint(mask, …)`,
+  `and/or/minus(other)`, `refine(guide, …)`, `Image:overlay(target, …)`, `Regions:overlay(image, …)`,
+  `Mask:overlay(image, …)`, `regions.measure(image, …)` declare named node arguments; `cv.compare` and `cv.sheet`
+  read `a.Inputs("images"/"views")`; `listInputs`, `nodeOf`, `viewNodes` and every `inputs[k]` in build-time code
+  are gone (`crop`, `toLab`'s warning, `regions.measure`, `sortBy`, `where`, `sample`/`measure` points). Arithmetic
+  reads its `Image|number` operand with `Raw` and a type switch whose default panics.
+- Tests: `TestAccessorsAreLoud`, `TestNodeArgumentsAreOwnInputs` (`pkg/cv/graph/args_test.go`); a sheet over
+  `[img, img]` views keeps two cells per item (`TestSheetLayout`); `TestOverlayAndCompare`'s `[img, img]` case
+  passes unchanged. Test registries in `graph_test.go`, `m3_test.go` and `render_test.go` moved to named inputs.
+
+### Why
+
+- Two representations of a node list (deduplicated inputs, bound refs) caused the `cv.compare([img, img])` bug; a
+  zero-value accessor caused the `encoding` bug. With one representation and loud accessors both are unwritable.
+
+### What worked
+
+- The regex rewrite of the build-time signatures (`func(a graph.Args, _ []*graph.Node)` → `func(a graph.Args)`)
+  handled about 50 of 59 sites; the rest needed hand edits because they used the inputs.
+- `TestRegistryWalk` (every registered op called and evaluated at three scales, plus help for every op, which runs
+  `DocFields`) is the registry property test: it found the one accessor misuse left (arithmetic reading
+  `*graph.ImageValue` from `Raw`), which showed up as `E_ARG_TYPE: sub needs an image or a number, got
+  graph.InputRef` in 20 tests at once.
+- Gate green; goldens and real-data numbers unchanged.
+
+### What didn't work
+
+- First run: `img.overlay({ items: [] })` gave `E_UNKNOWN_OPTION: overlay has no option "items"` instead of
+  `E_WRONG_KIND`: with `Inputs` gone the positional loop took the object for the options object. Fixed by the
+  required-node-argument rule above.
+- `go vet` then failed on the three test registries that still used `Inputs:` and `NExplicit`.
+
+### What I learned
+
+- The registry walk is a better property test than calling build-time functions with default arguments in
+  isolation: most ops need a real receiver (a mask, regions with a schema) before their `Validate` or `Fields` mean
+  anything, and help covers the no-input case.
+
+### What was tricky to build
+
+- Help computes an op's schema without a call (`DocFields`), so `Fields` functions that read the receiver's schema
+  would panic under the strict `Receiver`. `Args.HasInputs()` is false only there; `receiverFields` returns the
+  geometry fields in that case.
+- `resolveArgs` used to substitute every `InputRef`, so kind-typed arguments became `Value`s inside `vals` and the
+  re-check in `check` accepted them. Now only lifted data is substituted (`substitute` reports whether it changed
+  anything, and only changed values are re-checked), so a union such as `Image|number` keeps its `InputRef`.
+
+### What warrants a second pair of eyes
+
+- `a.imageSource()` still scans node arguments for an image when the receiver is not one (the Mask and Regions
+  overlays and `regions.measure`); Phase 4 deletes those ops and with them the scan's purpose.
+- The required-node-argument rule in `bind` (an object passed where a required node argument is positional is data,
+  not options).
+
+### What should be done in the future
+
+- Phase 4 should reduce `imageSource` to `a.Receiver()` once the non-Image overlays are gone.
+
+### Code review instructions
+
+- Start with `pkg/cv/graph/args.go` (the accessor block, `binder.lift`, `bind`, `resolveArgs`/`substitute`), then
+  `pkg/cv/graph/node.go` (`call`, `internNode`, `macroOutput`) and `pkg/cv/ops/sheet.go` (`runSheet`).
+- Validate: `scripts/04-gate.sh`; `go test ./pkg/cv/graph -run 'TestAccessorsAreLoud|TestNodeArgumentsAreOwnInputs'`.
+
+### Technical details
+
+Agent-visible side effects (none of behaviour): `cv.help("heal").heal.usage` is now `heal(target, { radius,
+method })` (was `heal(regions|mask, …)`, generated from `Inputs`), and explain lines name node arguments:
+`within(mask: #7, edit: #11)` (was `within()`). The two tests that pinned the old strings were updated.
+
+`git diff --stat 2b0955f ceb1ec4 -- pkg cmd internal`: 39 files changed, 656 insertions(+), 451 deletions(-).
