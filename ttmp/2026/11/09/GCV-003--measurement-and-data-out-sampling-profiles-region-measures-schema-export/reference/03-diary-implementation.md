@@ -331,3 +331,63 @@ with the value and t ranges labelled in GCV-002's bitmap font (open item 4).
 
 ### Technical details
 - Golden: `pkg/cv/look/testdata/golden/profile-chart.png` (512 × 204).
+
+## Step 6: Phase 6 - writers and saving
+
+goja-cv can now write the images it computes: `node.save("views/speck.tif", { depth: 16 })` evaluates the node at scale
+1 and writes its encoded values under the session's out-root, recording the encoding and the frame origin where the
+format can hold them (TIFF ImageDescription, PNG gAMA/sRGB and tEXt). GCV-001's decoders read those back, so a saved
+linear view reopens as linear at the same absolute coordinates (open item 6). Without `--out-root`, saving is disabled.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 1)
+
+**Assistant interpretation:** Guide Phase 6 (§6 items 7, 12, §7.10) and open item 6 (writers write the metadata the decoders read; round-trip tests prove it).
+
+**Inferred user intent:** Derived images reach other programs with their meaning intact, and an agent can never write outside the directory the operator allowed.
+
+**Commit (code):** c0e2180 - "GCV-003 Phase 6: writers that record encoding and frame; save under --out-root"
+
+### What I did
+- `pkg/cv/buffer/write.go`: `EncodeTIFF` (classic little-endian TIFF, zlib/Deflate strips of about 64 KiB, `BitsPerSample` 8/16/32, `SampleFormat` 1 or 3, 1 or 3 samples, chunky, tag 270 = `FormatMetadata`), `EncodePNG(ctx, w, b, bits, meta)` (image/png, then `gAMA` 100000 for linear or `sRGB` for sRGB and `tEXt` `goja-cv\0goja-cv encoding=… origin=…` inserted after IHDR with CRCs), `EncodeNPY` (`<f4`, `<u2`), `Encode`, `FormatOf`, `Depths` (TIFF 16/8/32, PNG 16/8, NPY 32/16, JPEG 8), `ClippedFraction`.
+- Deleted `buffer.WriteFile`, `EncodeTIFF16` and the old `EncodePNG` (the RGBA-TIFF path through `x/image/tiff`).
+- `pkg/cv/graph/paths.go`: `EAccess` (moved from cvsession), `Within(root, p)` (resolves the longest existing prefix through symlinks, so a not-yet-existing file under a symlinked directory is caught), `OutPath`, `WriteOut` (creates parents, re-checks, reports `replaced`). `cv.open`'s root check uses `Within`.
+- `pkg/cv/dataout/save.go` (new package): `SaveImage` (Image/Mask only; extension and depth checks; masks saved linear; linear JPEG refused with the `.png` fix; `eng.Display` + `Evaluate` at scale 1; CLAMP warning with the clipped percentage and the `{ depth: 32 }` fix; notes for NPY and JPEG), `Saved.Data()`.
+- `save` FuncDef on Image, Mask and Data (`ops.DataKind`) with `path` and `depth`; the binding's `__save` binds through `BindOptions` and runs `SaveImage` on a goroutine via a new generic `binding.async` (promise settled on the owner, warnings with the calling line); `node.save` in the prelude (also linked onto awaited data).
+- `cvsession.Options.OutRoot` (absolute, separate from the read roots) → `graph.EngineOptions.OutRoot`; `--out-root DIR` on `eval`, `run` and `mcp` (must be a directory).
+- `internal/testimage`: `Write`/`WritePlanted` use `buffer.Encode` (sRGB metadata recorded); new `WriteFile(path, b, depth, meta)`; plain fixture writes in tests switched to it; `testdata/` regenerated with `make testdata`.
+- Tests: `buffer/write_test.go` (`TestWritersRoundTrip`: TIFF 16/8/32 and PNG 16/8 × 1/3 channels × srgb/linear read back values, encoding and origin; NPY 32/16 read back as linear at (0, 0); JPEG values; `TestWritersClampIntegersKeepFloats`), `cvsession/save_test.go` (save and reopen with frame [200, 80, …], replaced, masks, NPY note; refusals: `..`, absolute, symlink to outside, `.gif`, depth 32 PNG, linear JPEG, Regions, no out-root; CLAMP once for 16-bit and not for 32-bit).
+
+### Why
+- Guide §6 items 7 and 12, §7.10, Phase 6; open item 6.
+
+### What worked
+- Every TIFF and PNG variant round-trips values, encoding and origin through the existing decoders on the first run; the planted scan written by the new TIFF writer decodes to the same values, so no golden look moved and `TestCommittedTestdataMatchesGenerator` passed with the regenerated files.
+- `make smoke` (CI) still passes.
+
+### What didn't work
+- JPEG row: `values off by 0.69343101978302 (tolerance 0.06)` on a sawtooth test pattern (chroma subsampling); the JPEG row uses a smooth image and the mean error.
+- `TestSaveImagesReopenWithEncodingAndFrame` expected `view("speck")` to save as srgb; views are derived images (`DerivedEnc`), so they save as linear - the test now says so, and compares stats on an exposure(-0.5) image (no clipping).
+- Lint: `missing cases in switch of type buffer.Encoding: buffer.EncNone (exhaustive)`, `param max has same name as predeclared identifier`; logcopter: `generated file is not current: …/pkg/cv/dataout/logcopter.go` (new package → `make logcopter-generate`).
+
+### What I learned
+- The decoders accept Deflate (8) and LZW, so a plain zlib writer is all saving needs; `x/image/tiff` is now used only for its LZW reader.
+
+### What was tricky to build
+- Containment for files that do not exist yet: `filepath.EvalSymlinks` fails on a missing path, so the old cv.open check left such paths unresolved. `resolveExisting` walks up to the longest existing prefix, resolves it and appends the rest; a symlink `out/link → /elsewhere` makes `out/link/x.tif` resolve outside the root and the save is refused before any directory is created.
+
+### What warrants a second pair of eyes
+- The guide says GCV-001's fixture TIFF/NPY writers are deleted; they still exist, documented as the writers of decoder variants goja-cv never writes (LZW, PackBits, predictors, big-endian, `|u1`, `>u2`, `>f4`, `<f8`). Deleting them would drop the tests of those decoder paths. Recorded as a deviation.
+- `WriteOut` uses `os.WriteFile`, which follows a symlink at the final component; the containment check before it resolves that symlink, but a race between check and write is not defended against (local prototype).
+
+### What should be done in the future
+- N/A
+
+### Code review instructions
+- `pkg/cv/buffer/write.go`, `pkg/cv/graph/paths.go`, `pkg/cv/dataout/save.go`, `pkg/gojamod/cv/dataout.go`, `pkg/cvsession/session.go` (`OutRoot`).
+- `go test ./pkg/cv/buffer -run Writers -v`; `go test ./pkg/cvsession -run Save -v`.
+
+### Technical details
+- `await img.view("speck").save("views/speck.tif")` → `{ path: "/abs/out/views/speck.tif", format: "tiff", depth: 16, encoding: "linear", frame: [200, 80, 256, 192], bytes: …, replaced: false }`.
+- CLAMP example: `save("d16.tif"): 48.4 % of the samples lie outside [0, 1] and were clamped by the 16-bit format. fix: node.save("d16.tif", { depth: 32 })   // or .npy`.

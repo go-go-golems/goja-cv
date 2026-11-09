@@ -29,3 +29,8 @@ Step 4: Phase 4 regions.measure (commit 66318c0)
 
 Step 5: Phase 5 charts by op, profile line chart (commit 7c8d1ef)
 
+
+## 2026-11-09
+
+Step 6: Phase 6 writers and save (commit c0e2180)
+
