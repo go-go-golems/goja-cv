@@ -8,7 +8,7 @@
 - [x] Phase 3: tests first - DiskCoverage vs EllipseMask; probe means vs StatsWeighted exactly; measure vs mem.probe mapping (+0.5 coords, gray average/rec709); sample radius 0; profile sigma recovery; ringCoverage; OUTSIDE warning <!-- t:n2qd -->
 - [x] Phase 3: kernels.DiskCoverage (EllipseMask uses it), kernels/probe.go; sample, profile, measure ops (points only, space linear, analysisScale 1, gray option, naming table); merge StatsWeighted <!-- t:35jx -->
 - [x] Phase 4: regions.measure(image, {stats, channels, ring, coreRadius, prefix, gray, space}) with Region.Coverage; tests vs stats per region and measure at centroids; E_FIELD_EXISTS, E_FRAME <!-- t:d4ya -->
-- [ ] Phase 5: OpDef.Chart (bars, lines); profile line chart with pkg/cv/text axis labels <!-- t:nq0p -->
+- [x] Phase 5: OpDef.Chart (bars, lines); profile line chart with pkg/cv/text axis labels <!-- t:nq0p -->
 - [ ] Phase 6: writers - tiffwrite.go (uint8/16/float32, 1|3 samples, Deflate, tag 270), PNG chunk insertion (gAMA/sRGB/tEXt), NPY (<f4/<u2); round-trip table tests; delete buffer.WriteFile and EncodeTIFF16 <!-- t:ri8o -->
 - [ ] Phase 6: save FuncDef on Image/Mask and Data handle under --out-root (Options.OutRoot, shared containment helper with symlink test, EAccess moved to graph, CLAMP warning) <!-- t:gxf9 -->
 - [ ] Phase 7: pkg/cv/dataout Data handle; cv.json and cv.csv FuncDefs with the data argument type; budgets (MaxData, MaxDataBytes for mcp, ContentLimits sum) in collect <!-- t:w0kr -->

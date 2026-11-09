@@ -277,3 +277,57 @@ const dog = img.toGray("average").dog(1, 4, { polarity: "bright" })
 const hot = dog.levels({ black: 0, white: dog.stats().p99.mul(2) }).mask.luminance({ above: 0.99 }).components({ minArea: 4 })
 const ranked = hot.measure(dog, { stats: ["max"], prefix: "dog" }).measure(img, { ring: true }).sortBy("snr").top(30)
 ```
+
+## Step 5: Phase 5 - charts declared by the op
+
+`look()` of a Value node used to check for the histogram op by name. Ops now declare their chart (`OpDef.Chart`:
+bars or lines), and a profile's look is a line chart: t in doc px on x, one line per channel plus `meanL` in black,
+with the value and t ranges labelled in GCV-002's bitmap font (open item 4).
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 1)
+
+**Assistant interpretation:** Guide Phase 5 (§6 item 11, §7.8) and open item 4 (profile plots on GCV-002's render path and `pkg/cv/text`).
+
+**Inferred user intent:** An agent can see the shape of an edge across a speck as a picture, not only as a list of numbers.
+
+**Commit (code):** 7c8d1ef - "GCV-003 Phase 5: charts declared by the op (OpDef.Chart); profile looks are line charts"
+
+### What I did
+- `graph.ChartKind` (`ChartNone`, `ChartBars`, `ChartLines`) and `OpDef.Chart`; `histogram` declares bars, `profile` lines.
+- `look.New` accepts a Value node when its op declares a chart; `Look.chart` is the kind; the render goes through `Evaluator.Render` (GCV-002's path) like every look, then `renderChart` or `renderLines`.
+- `look/chart.go`: `renderLines` (range with 5 % padding, axis lines, labels at font size 2: the value range on the left, `t0` and `t1 doc px` below; Bresenham lines; nulls break a line) and `line`.
+- Golden harness: case `profile-chart` (a profile across the star, width 3), class chart.
+- `TestProfileLookIsALineChart`: PNG 512 × 204, a dark meanL line in the middle column, a zoom refused ("charts have no doc px").
+- The look function's doc mentions profiles.
+
+### Why
+- Guide §6 item 11, §7.8, Phase 5; open item 4.
+
+### What worked
+- Golden check before regenerating: every existing look passed exactly; the only failure was the missing `profile-chart.png` ("open golden: … no such file or directory (run with -update)"). After `-update` only that file is new; no golden moved.
+
+### What didn't work
+- A first Bresenham with `if … else` stepped only one axis per iteration (a staircase that misses diagonals); the standard form tests both.
+- `abs redeclared in this block` (vet): the golden test already defines `abs`; renamed to `iabs`.
+- `make lint`: `pkg/cv/look/look.go:119:1: File is not properly formatted (gofmt)` after the struct field type changed width; the gate script now checks `gofmt -l` first.
+
+### What I learned
+- The guide says both charts use the font for axis labels but also that "the histogram chart is unchanged" (the test list); I kept the histogram exactly as it was so its goldens hold, and only the line chart has labels.
+
+### What was tricky to build
+- Nothing deep: choosing a left margin from the widest of the two value labels so the plot area adapts to `0.1724` versus `1.026`.
+
+### What warrants a second pair of eyes
+- Histogram bars still have no labels (deviation recorded).
+
+### What should be done in the future
+- N/A
+
+### Code review instructions
+- `pkg/cv/look/chart.go` (`renderLines`), `pkg/cv/look/look.go` (`New`, `image`), `pkg/cv/graph/registry.go` (`ChartKind`).
+- `go test ./pkg/cv/look -run TestGoldenLooks -v`; `go test ./pkg/cvsession -run ProfileLook -v`.
+
+### Technical details
+- Golden: `pkg/cv/look/testdata/golden/profile-chart.png` (512 × 204).

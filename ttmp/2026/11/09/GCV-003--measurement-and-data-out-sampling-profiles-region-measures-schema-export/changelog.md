@@ -24,3 +24,8 @@ Step 3: Phase 3 probe kernel, sample/measure/profile (commit 5ddd78a)
 
 Step 4: Phase 4 regions.measure (commit 66318c0)
 
+
+## 2026-11-09
+
+Step 5: Phase 5 charts by op, profile line chart (commit 7c8d1ef)
+
