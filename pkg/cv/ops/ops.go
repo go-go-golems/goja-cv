@@ -20,6 +20,7 @@ func Register(r *graph.Registry) {
 	r.MustRegister(maskMakerOps()...)
 	r.MustRegister(maskOps()...)
 	r.MustRegister(regionOps()...)
+	r.MustRegister(regionMeasureOp())
 	r.MustRegister(compositeOps()...)
 	r.MustRegister(detectOps()...)
 	r.MustRegister(healOps()...)

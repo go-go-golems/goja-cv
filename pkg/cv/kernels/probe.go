@@ -188,13 +188,14 @@ func ProbeCoreRing(ctx context.Context, b *buffer.Buffer, pts [][2]float64, o Co
 	out := make([]CoreRing, len(pts))
 	err := parallel.Rows(ctx, len(pts), func(k0, k1 int) {
 		for k := k0; k < k1; k++ {
-			out[k] = probeOne(ctx, b, pts[k][0], pts[k][1], o)
+			out[k] = ProbePoint(ctx, b, pts[k][0], pts[k][1], o)
 		}
 	})
 	return out, err
 }
 
-func probeOne(ctx context.Context, b *buffer.Buffer, x, y float64, o CoreRingOptions) CoreRing {
+// ProbePoint is ProbeCoreRing for one point (radii not checked).
+func ProbePoint(ctx context.Context, b *buffer.Buffer, x, y float64, o CoreRingOptions) CoreRing {
 	core, err := measureSel(ctx, b, annulus(b, x, y, 0, o.Core), o.Gray, nil)
 	if err != nil {
 		return CoreRing{Outside: true}
@@ -239,4 +240,46 @@ func Bilinear(p []float32, w, h int, x, y float64) (float64, bool) {
 	a := float64(p[j0*w+i0])*(1-fu) + float64(p[j0*w+i1])*fu
 	c := float64(p[j1*w+i0])*(1-fu) + float64(p[j1*w+i1])*fu
 	return a*(1-fv) + c*fv, true
+}
+
+// SelectionStats are weighted statistics of the gray plane (or of one
+// channel) over a selection: what regions.measure's stats option reports.
+type SelectionStats struct {
+	Mean, Min, Max, Std, Median, P10, P90 float64
+}
+
+// StatsOf measures plane over pixels idx with weights w (the region's own
+// pixels with weight 1, or its coverage on another raster): mean, median and
+// percentiles as StatsWeighted computes them (min and max are its 0 and 1
+// quantiles), and the weighted standard deviation.
+func StatsOf(ctx context.Context, plane []float32, idx []int, w []float32, scale float64) (SelectionStats, error) {
+	b := buffer.New(len(idx), 1, 1, scale)
+	for j, i := range idx {
+		b.Pix[j] = plane[i]
+	}
+	ws, err := StatsWeighted(ctx, b, w, []float64{0, 0.1, 0.9, 1})
+	if err != nil {
+		return SelectionStats{}, err
+	}
+	q := ws.L.Percentiles
+	s := SelectionStats{Mean: ws.L.Mean, Median: ws.L.Median, Min: q[0], P10: q[1], P90: q[2], Max: q[3]}
+	var ss float64
+	for j, v := range b.Pix {
+		d := float64(v) - s.Mean
+		ss += float64(min(w[j], 1)) * d * d
+	}
+	s.Std = math.Sqrt(ss / ws.Weight)
+	return s, nil
+}
+
+// GrayPlane is the gray plane of a whole buffer (its plane for one channel).
+func GrayPlane(b *buffer.Buffer, g Gray) []float32 {
+	if b.C == 1 {
+		return b.Plane(0)
+	}
+	idx := make([]int, b.N())
+	for i := range idx {
+		idx[i] = i
+	}
+	return grayPlane(b, idx, g)
 }

@@ -39,6 +39,9 @@ var schemaCalls = map[string]func(s schemaNodes) (graph.NodeID, []any){
 	"Regions:without": func(s schemaNodes) (graph.NodeID, []any) { return s.specks.ID, []any{1} },
 	"Regions:sortBy":  func(s schemaNodes) (graph.NodeID, []any) { return s.specks.ID, []any{"contrast"} },
 	"Regions:top":     func(s schemaNodes) (graph.NodeID, []any) { return s.specks.ID, []any{5} },
+	"Regions:measure": func(s schemaNodes) (graph.NodeID, []any) {
+		return s.specks.ID, []any{graph.NodeArg{ID: s.img.ID}, map[string]any{"stats": []any{"max", "p90"}, "channels": true, "ring": true, "prefix": "img"}}
+	},
 }
 
 // schemaScalar are Value ops whose result is a number or a derived value of

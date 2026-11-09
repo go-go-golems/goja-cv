@@ -2,6 +2,7 @@ package graph
 
 import (
 	"context"
+	"image"
 	"math"
 	"sort"
 
@@ -251,45 +252,21 @@ func FrameRaster(f Frame, scale float64) Raster {
 // soft-edged when the target is coarser than the source; pixels outside the
 // target are skipped. Values are clamped to [0, 1].
 func (v *RegionsValue) Rasterize(ctx context.Context, t Raster) (*buffer.Buffer, error) {
-	w, h := t.W, t.H
-	out := buffer.New(w, h, 1, t.SX)
+	out := buffer.New(t.W, t.H, 1, t.SX)
 	pl := out.Plane(0)
-	sx, sy := v.axisScales()
-	same := w == v.W && h == v.H && t.OX == float64(v.Frame.X) && t.OY == float64(v.Frame.Y) && t.SX == sx && t.SY == sy
-	// source pixel x covers doc [Frame.X + x/sx, Frame.X + (x+1)/sx): in target px, (doc − OX)·SX
-	ax, bx := t.SX/sx, (float64(v.Frame.X)-t.OX)*t.SX
-	ay, by := t.SY/sy, (float64(v.Frame.Y)-t.OY)*t.SY
 	for k, r := range v.Items {
 		if k%64 == 0 {
 			if err := ctx.Err(); err != nil {
 				return nil, err
 			}
 		}
-		for _, p := range r.Pix {
-			x, y := int(p)%v.W, int(p)/v.W
-			if same {
-				pl[int(p)] = 1
-				continue
+		v.overlap(r, t, func(i int, a float32, set bool) {
+			if set {
+				pl[i] = 1
+			} else {
+				pl[i] += a
 			}
-			x0, x1 := float64(x)*ax+bx, float64(x+1)*ax+bx
-			y0, y1 := float64(y)*ay+by, float64(y+1)*ay+by
-			if x1 <= 0 || y1 <= 0 || x0 >= float64(w) || y0 >= float64(h) {
-				continue
-			}
-			for ty := max(0, int(math.Floor(y0))); ty < int(math.Ceil(y1)) && ty < h; ty++ {
-				oy := math.Min(y1, float64(ty+1)) - math.Max(y0, float64(ty))
-				if oy <= 0 {
-					continue
-				}
-				for tx := max(0, int(math.Floor(x0))); tx < int(math.Ceil(x1)) && tx < w; tx++ {
-					ox := math.Min(x1, float64(tx+1)) - math.Max(x0, float64(tx))
-					if ox <= 0 {
-						continue
-					}
-					pl[ty*w+tx] += float32(ox * oy)
-				}
-			}
-		}
+		})
 	}
 	for i, p := range pl {
 		if p > 1 {
@@ -297,4 +274,78 @@ func (v *RegionsValue) Rasterize(ctx context.Context, t Raster) (*buffer.Buffer,
 		}
 	}
 	return out, nil
+}
+
+// Coverage is one region's weights on target: the bounding window of its
+// pixels in target px (clipped to the target) and, row-major over it, the
+// area overlap of each target pixel with the region (clamped to 1), the rule
+// of Rasterize for one region. regions.measure weighs pixels with it when
+// the regions were found on a different raster than the image measured.
+func (v *RegionsValue) Coverage(r *Region, t Raster) (image.Rectangle, []float32) {
+	full := image.Rect(0, 0, t.W, t.H)
+	var rect image.Rectangle
+	v.overlap(r, t, func(i int, _ float32, _ bool) {
+		p := image.Rect(i%t.W, i/t.W, i%t.W+1, i/t.W+1)
+		if rect.Empty() {
+			rect = p
+		} else {
+			rect = rect.Union(p)
+		}
+	})
+	rect = rect.Intersect(full)
+	if rect.Empty() {
+		return rect, nil
+	}
+	w := make([]float32, rect.Dx()*rect.Dy())
+	v.overlap(r, t, func(i int, a float32, set bool) {
+		x, y := i%t.W-rect.Min.X, i/t.W-rect.Min.Y
+		if set {
+			w[y*rect.Dx()+x] = 1
+		} else {
+			w[y*rect.Dx()+x] += a
+		}
+	})
+	for i, a := range w {
+		if a > 1 {
+			w[i] = 1
+		}
+	}
+	return rect, w
+}
+
+// overlap calls emit for each target pixel (index into t) a source pixel of
+// r overlaps, with the overlap area; set is true when the target is the
+// source raster itself (the pixel is the region's, weight 1).
+func (v *RegionsValue) overlap(r *Region, t Raster, emit func(i int, a float32, set bool)) {
+	w, h := t.W, t.H
+	sx, sy := v.axisScales()
+	same := w == v.W && h == v.H && t.OX == float64(v.Frame.X) && t.OY == float64(v.Frame.Y) && t.SX == sx && t.SY == sy
+	// source pixel x covers doc [Frame.X + x/sx, Frame.X + (x+1)/sx): in target px, (doc − OX)·SX
+	ax, bx := t.SX/sx, (float64(v.Frame.X)-t.OX)*t.SX
+	ay, by := t.SY/sy, (float64(v.Frame.Y)-t.OY)*t.SY
+	for _, p := range r.Pix {
+		if same {
+			emit(int(p), 1, true)
+			continue
+		}
+		x, y := int(p)%v.W, int(p)/v.W
+		x0, x1 := float64(x)*ax+bx, float64(x+1)*ax+bx
+		y0, y1 := float64(y)*ay+by, float64(y+1)*ay+by
+		if x1 <= 0 || y1 <= 0 || x0 >= float64(w) || y0 >= float64(h) {
+			continue
+		}
+		for ty := max(0, int(math.Floor(y0))); ty < int(math.Ceil(y1)) && ty < h; ty++ {
+			oy := math.Min(y1, float64(ty+1)) - math.Max(y0, float64(ty))
+			if oy <= 0 {
+				continue
+			}
+			for tx := max(0, int(math.Floor(x0))); tx < int(math.Ceil(x1)) && tx < w; tx++ {
+				ox := math.Min(x1, float64(tx+1)) - math.Max(x0, float64(tx))
+				if ox <= 0 {
+					continue
+				}
+				emit(ty*w+tx, float32(ox*oy), false)
+			}
+		}
+	}
 }
