@@ -1567,3 +1567,35 @@ decoders read back.
 - CVJS-001 intern guide (design that preceded goja-cv): `/Users/manuel/code/wesen/2026-11-07--dust-scanning/ttmp/2026/11/08/CVJS-001--js-eval-cv-api-for-agents-compare-9-implementations/design-doc/` (Part 2 §2, Part 3 §15.1 and §15.3; `06-integration-surfaces…` for file format tiers).
 - TIFF 6.0 specification (Adobe, 1992); DNG specification 1.6 (Adobe); NumPy `.npy` format (NEP 1); sRGB: IEC 61966-2-1; CIE L*a*b* with D65: CIE 15:2004.
 - Next tickets: GCV-002 and GCV-003, `design-doc/01-design-and-implementation-guide.md` in each.
+
+## Implementation notes (deviations)
+
+Recorded while implementing on branch `task/gcv-001-image-model` (details and reasons in
+`reference/06-diary-implementation.md`). The guide above is unchanged; these notes say where the code differs.
+
+1. **`ResultEnc` is a struct, not a func type** (§7.5). `ResultEnc{Enc, Space}` holds two functions, and `OpDef.Result`
+   is a `*ResultEnc`. A func value cannot be compared, so `internNode` could not tell `DerivedEnc` (space linear) from
+   `KeepEnc` (space = the op's), and `convert` (space = its `to` argument), sources and the placeholder need their own
+   space rule. `KeepEnc`, `DerivedEnc` and `DisplayEnc` keep their names and meaning.
+2. **The grey-input rule always inserts `toGray`** (§7.5 step 2). Channel counts are not node statics, so the builder
+   cannot know at intern time that an input has three channels. `toGray` on a one-channel image returns its input (a
+   stamped copy), so the result is the same; `explain()` shows the extra `toGray` node for grey images.
+3. **`Identity(e, from, to)` is also true when either space is `none` or the encoding is not `srgb`** (§7.2): masks
+   and derived values are never converted.
+4. **Golden tolerance classes** (§13.3): besides levels and mask looks, two classes may change in the Phase 3 commit:
+   histogram charts (a bin count that flips by one moves a bar edge by a whole pixel: up to 215 codes on ≤ 0.006 % of
+   samples) and overlays (`overlay` runs in encoded space per §7.5, so mask and region tints are composited on display
+   values; tinted pixels change by up to 74 codes). Every other look stayed within 1 code on ≤ 0.006 % of its samples
+   and the speck count stayed 41. The `compare` side-by-side background is the encoded constant 0.1517
+   (sRGB_encode(0.02)), which keeps that look unchanged.
+5. **`stats` has no grey-input rule.** It reports per-channel numbers next to `meanL`, so its input stays three
+   channels; in encoded space `meanL`/`p01`/`p99` are the Rec. 709 weighted sum of encoded channels (luma). The default
+   (linear) is photometric as before.
+6. **Boxes and points outside the frame** (§3.7, §10): checked at intern time for arguments declared `InFrame`
+   (`stats.box`, `mask.box`, `mask.ellipse`, `mask.flood`). A box is refused only when it does not overlap the frame
+   (a zero-area box passes when its corner lies in the closed frame); gradient points may lie outside. The fix is a
+   literal call with the nearest valid value, e.g. `img.stats({ box: [100, 50, 10, 10] })`.
+7. **Usage lines omit the `space` option** (`signatureHint`, `goja-cv ops`, the reference's usage line); `cv.help(op)`
+   lists it under `args` and as `space: "<default> (default; …)"`, and unknown-option errors list it as valid.
+8. **Enum errors carry a literal fix** `op({ name: "value" })`: `mask.gradient.from` is now checked by the binder (type
+   `point|enum:top,bottom,left,right`) before the op's own validation could add its fix.

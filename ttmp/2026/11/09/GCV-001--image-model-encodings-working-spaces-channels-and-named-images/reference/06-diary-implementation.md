@@ -186,3 +186,69 @@ their frame. Every frame still has origin (0, 0) for opened files, and all golde
 
 ### Technical details
 - `Args.XY` shifts elements 0 and 1 (point, or box corner) by the origin; elements 2 and 3 (box size) are only scaled.
+
+## Step 4: Phase 3 - working spaces in the graph, space-agnostic kernels, encoded looks
+
+This is the phase where behaviour moves. Every pixel-reading op now has a working space resolved at build time; the
+builder inserts cached `convert` nodes and the grey-input `toGray(rec709)` of linear light; nodes carry static `Enc`
+and `Space`; kernels no longer convert; and looks render encoded values through `convert` and `Quantize`. The goldens
+were checked with the §13.3 tolerance rule and regenerated in the same commit.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 1)
+
+**Assistant interpretation:** Implement guide Phase 3 with `space_test.go` written against the §7.5 table, port the kernels of §4.3, switch display to encoded values, and regenerate goldens only after the tolerance check.
+
+**Inferred user intent:** sRGB images behave as before except the documented changes; every op accepts `{ space }`; nothing converts behind the graph's back.
+
+**Commit (code):** bc86f15 - "GCV-001 Phase 3: working spaces in the graph; kernels never convert; looks show encoded values"
+
+### What I did
+- `registry.go`: `Level` unit; `SpaceRule{Default, Fixed}`; `ResultEnc{Enc, Space}` with `KeepEnc`, `DerivedEnc`, `DisplayEnc`; `OpDef.Space/Result/Gray/Internal`; `Register` appends the static `space` option (enum linear,encoded); `Ops()` (and so help, Find, method tables, reference) skips internal ops.
+- `space.go` (new): `OpSpace`, `resolveSpace` (stores the resolved space in the canonical args, grey inputs, conversions over every Image input incl. lifted `Image[]` elements), `nodeStatics`, `SPACE` and `ENCODING` warnings, `Statics` for explain.
+- `node.go`: `Builder` holds the registry (`NewBuilder(reg)`) to insert `toGray`/`convert`; `Node.Enc/Space`; `Intern` calls `resolveSpace`. `eval.go`: values are stamped with `Enc` too; `EvalCtx.InputNode(i)`.
+- `engine.go`: `Call` refuses internal ops; `Placeholder` copies `enc`/`space`; `Display(id)` is the node a look renders. `explain.go`: `convert(→ encoded)`, default space omitted, statics column.
+- Ops: every `Space: "..."` string replaced (21 ops get a default: 9 linear, 12 encoded); `Gray` on mask.luminance, refine (`[1]`), detect.specks, check.dust, histogram("L"); `Level` on levels.black/white and mask.luminance.above/below; internal `convert` op (`ops/space.go`); `open` and the placeholder get result rules; overlay colours are display values; doc strings no longer say perceptual/linear light.
+- Kernels: Levels, Contrast, ColorMask, FloodMask, Histogram, AbsDiff and DetectSpecks compute on the values they get; `PerceptualLuminance` deleted; `MeanL` in the input's space. Guard test enabled.
+- `buffer.Quantize` replaces `ToImage`; PNG/JPEG/TIFF encoders and `WriteFile` write encoded values; `internal/testimage` converts its linear buffers before writing.
+- `look.go`: `root = Display(node)`, rendered through `Quantize`.
+- `pkg/cv/graph/space_test.go` (external package `graph_test`, so it can use `ops` and `graphtest`): defaults table, hash and option, statics of values and masks, convert shared and run once, no conversion on linear data, pure red 0.498 through the grey rule (mask.luminance, refine guide, histogram L, detect.specks), derived reinterpretation and identity stamping, lambdas on srgb and linear, compare converts each input, SPACE/ENCODING, explain column.
+
+### Why
+- Guide §7.1-§7.7 and Phase 3.
+
+### What worked
+- `go test ./pkg/cv/look -run TestGoldenLooks -golden.tolerant -v` after the display change: contrast and compare-diff exactly equal; exposure, gaussian, toGray, compare-split, compare-side within 1 code on at most 3 samples; levels, masks, overlays changed (expected); speck count 41. Then `-update` and an exact run.
+- Phase 3 tests passed once the test source had a result rule.
+
+### What didn't work
+- First golden run (before switching looks to encoded values) failed broadly (e.g. `contrast: largest difference 74 codes, 147407 of 147456 samples differ`): encoded-space results were still shown through the sRGB curve. Expected; the display change is part of the same phase.
+- `compare-side: largest difference 14 codes, 2305 of 297216 samples` - the 4 px gap. I had put sRGB_encode(0.02) as 0.0998; it is 0.1517 (`python3 -c "print(1.055*0.02**(1/2.4)-0.055)"`).
+- `mask-overlay` was "beyond tolerance: largest difference 48 codes, 84439 of 147456 samples": overlays now tint in encoded space (the guide's default for overlay colours). Reclassified as an expected change (deviation 4).
+- The histogram charts differed by 215 codes on 6-18 samples: a bin that flips by one count moves a bar edge. Added a chart class (deviation 4).
+- Space tests first failed with "source statics" empty: `graphtest`'s source had no result rule yet (I had removed it in Phase 2 because `Result` did not exist then).
+- Test expectations that changed by design: `meanL: 0.5059` → `0.50822` after levels (mcp_test), valid option lists now end in `space`, help/explain strings.
+
+### What I learned
+- The guide's claim "contrast/compare flip 0.26 % of codes" did not materialise on the planted scan: contrast came out byte-identical. The LUT error is far below one 8-bit code for these values.
+
+### What was tricky to build
+- Recursion: `resolveSpace` interns `toGray` and `convert` through the full `Intern`, so each inserted node resolves its own space. `convert` itself has no working space (`SpaceRule{}`) so it never converts its own input.
+- `space` must be stored in the canonical args before hashing so that an omitted option and the explicit default intern to the same node, while `Describe` hides it when it equals the default.
+- Overlay on a Mask receiver: the image is in `Inputs`, so conversions must look at every Image input, not only the receiver.
+
+### What warrants a second pair of eyes
+- `nodeStatics` for Value nodes (first Image input's encoding, the op's space; field/arith inherit their receiver's).
+- The overlay decision (tints composited in encoded space) - it follows §7.5 but changes how tints look.
+- `Engine.Display` interns a `convert` node at look creation (owner goroutine), not at render time.
+
+### What should be done in the future
+- GCV-002's render path must call `Display` (or the same rule) for its crops and zooms.
+
+### Code review instructions
+- Start at `pkg/cv/graph/space.go`, then `registry.go` (`SpaceRule`, `ResultEnc`, `Register`), `node.go` (`Intern`), `ops/space.go`, `look/look.go`.
+- `go test ./pkg/cv/graph -run 'Space|Convert|Grey|Derived|Lambdas|Compare|Explain' -v`; `go test ./pkg/cv/look -run TestGoldenLooks`; `go test ./pkg/cv/kernels -run SpaceAgnostic -v`.
+
+### Technical details
+- Tolerance run (before `-update`), largest difference / differing samples: exposure 1/1, gaussian 1/2, toGray 1/3, compare-side 1/1, compare-split 1/1, contrast 0/0, compare-diff 0/0, levels-stats 48/97 %, levels-gamma 34/99.9 %, mask-luminance 74/13 %, mask-overlay 48/57 %, specks-overlay 72/3 %, histogram 215/0.006 %.
