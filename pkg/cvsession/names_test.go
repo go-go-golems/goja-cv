@@ -12,8 +12,8 @@ import (
 )
 
 func TestNamedImagesPersistAndAreListed(t *testing.T) {
-	app, sid := newApp(t, cvsession.Options{Image: tiffPath})
 	dir := t.TempDir()
+	app, sid := newApp(t, cvsession.Options{Image: tiffPath, Read: []string{filepath.Dir(tiffPath), dir}})
 	src, _ := testimage.PlantedScan()
 	npy := filepath.Join(dir, "tile.npy")
 	if err := testimage.WriteFile(npy, src, 32, buffer.Meta{}); err != nil {
@@ -65,8 +65,8 @@ func TestBadNamesAreENAME(t *testing.T) {
 }
 
 func TestMCPOpenToolWithNameAndEncoding(t *testing.T) {
-	cs := connect(t, cvsession.Options{Image: tiffPath})
 	dir := t.TempDir()
+	cs := connect(t, cvsession.Options{Image: tiffPath, Read: []string{filepath.Dir(tiffPath), dir}})
 	lin := filepath.Join(dir, "lin.tif")
 	src, _ := testimage.PlantedScan()
 	if err := testimage.WriteFile(lin, src, 16, buffer.Meta{}); err != nil {

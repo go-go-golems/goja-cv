@@ -110,19 +110,20 @@ func sampleFields(graph.Args) []graph.FieldSpec {
 }
 
 func profileFields(graph.Args) []graph.FieldSpec {
-	list := func(n, doc string) graph.FieldSpec { return graph.FieldSpec{Name: n, Type: "number[]", Doc: doc} }
-	fs := []graph.FieldSpec{
-		{Name: "from", Type: "point", Unit: graph.DocPx, Doc: "start point [x, y] (doc px)"}, {Name: "to", Type: "point", Unit: graph.DocPx, Doc: "end point [x, y] (doc px)"},
-		numField("step", graph.DocPx, "distance between samples"), numField("width", graph.DocPx, "samples averaged across the line"),
-		list("t", "distance of each sample from the start (doc px)"), list("cx", "sample x"), list("cy", "sample y"),
-		list("meanL", "the gray plane at each sample (null outside the frame)"),
+	row := []graph.FieldSpec{
+		numField("t", graph.DocPx, "distance of the sample from the start (doc px)"), numField("cx", graph.DocPx, "sample x"), numField("cy", graph.DocPx, "sample y"),
+		numField("meanL", graph.Level, "the gray plane (null outside the frame)"),
 	}
 	for _, c := range []string{"R", "G", "B"} {
-		f := list("mean"+c, "channel "+c+" at each sample (colour images)")
+		f := numField("mean"+c, graph.Level, "channel "+c+" (colour images)")
 		f.Optional = true
-		fs = append(fs, f)
+		row = append(row, f)
 	}
-	return fs
+	return []graph.FieldSpec{
+		{Name: "from", Type: "point", Unit: graph.DocPx, Doc: "start point [x, y] (doc px)"}, {Name: "to", Type: "point", Unit: graph.DocPx, Doc: "end point [x, y] (doc px)"},
+		numField("step", graph.DocPx, "distance between samples"), numField("width", graph.DocPx, "samples averaged across the line"),
+		{Name: "rows", Type: "rows", Doc: "one row per sample", Rows: row},
+	}
 }
 
 // nullRow is a row of a point outside the frame: its point, outside and
@@ -284,14 +285,17 @@ func runProfile(ctx context.Context, ec *graph.EvalCtx, in []graph.Value, a grap
 	if len(outside) > 0 {
 		ec.Warn(WOutside, fmt.Sprintf("profile: %d of %d samples lie outside the frame %s (null).", len(outside), n, src.Frame), "")
 	}
-	out := map[string]any{
-		"from": []any{from[0], from[1]}, "to": []any{to[0], to[1]}, "step": step, "width": float64(width),
-		"t": t, "cx": xs, "cy": ys, "meanL": vl,
+	rows := make([]any, n)
+	for k := range rows {
+		row := map[string]any{"t": t[k], "cx": xs[k], "cy": ys[k], "meanL": vl[k]}
+		for c, name := range channelNames(b.C) {
+			row["mean"+name] = vc[c][k]
+		}
+		rows[k] = row
 	}
-	for c, name := range channelNames(b.C) {
-		out["mean"+name] = vc[c]
-	}
-	return data(out), nil
+	return data(map[string]any{
+		"from": []any{from[0], from[1]}, "to": []any{to[0], to[1]}, "step": step, "width": float64(width), "rows": rows,
+	}), nil
 }
 
 // profileSamples is the number of samples of a profile: t = 0, step, … ≤
@@ -356,7 +360,7 @@ func measurementOps() []graph.OpDef {
 			},
 			Fields: profileFields,
 			Run:    runProfile,
-			Doc: "The values along the line from A to B: { from, to, step, width, t, cx, cy, meanL, meanR, meanG, meanB } with bilinear samples at t = 0, step, … (doc px), " +
+			Doc: "The values along the line from A to B: { from, to, step, width, rows: [{ t, cx, cy, meanL, meanR, meanG, meanB }] } with bilinear samples at t = 0, step, … (doc px), " +
 				"each averaged over width positions across the line; null outside the frame. look() of a profile is a line chart.",
 			See: []string{"sample", "measure"},
 		},

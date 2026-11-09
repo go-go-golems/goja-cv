@@ -15,11 +15,11 @@ A point outside the frame gives a row with `outside: true` and null values, and 
 
 ## Profiles
 
-`img.profile(a, b, { step, width })` samples the line from a to b every `step` doc px (bilinear), averaging `width` samples across the line: `{ t, cx, cy, meanL, meanR, meanG, meanB }`. Its look is a line chart (t on x, one line per channel, meanL in black). A soft rise (dust blurred by the scanner, edge σ ≈ 1.6 px) and a sharp one (a grain boundary) look different.
+`img.profile(a, b, { step, width })` samples the line from a to b every `step` doc px (bilinear), averaging `width` samples across the line: `{ from, to, step, width, rows: [{ t, cx, cy, meanL, meanR, meanG, meanB }] }`. Its look is a line chart (t on x, one line per channel, meanL in black). A soft rise (dust blurred by the scanner, edge σ ≈ 1.6 px) and a sharp one (a grain boundary) look different.
 
 ```js looks=1
 const p = img.profile([185.5, 46.5], [215.5, 46.5], { width: 3 })
-const v = (await p).meanL
+const v = (await p).rows.map(r => r.meanL)
 return { peak: Math.max(...v).toFixed(3), plot: p.look("across the star") }
 ```
 
@@ -68,4 +68,4 @@ The unstretched DoG is measured (not `view("speck")`, which stretches per tile),
 
 ## Names and spaces
 
-`x, y, w, h` is always a box (corner and size), `cx, cy` a point or centre, `meanL` the gray mean; radii are options only. Measurements are in the receiver's space (on `img`, the values a look shows; measure `img.as("linear")` for physical units: light, density) and read the image at scale 1 (`analysisScale`), so they do not depend on a look's scale. To hand all items to a program, return `cv.csv(regions)` (see `cv.docs.read("data-out")`).
+`x, y, w, h` is always a box (corner and size), `cx, cy` a point or centre, `meanL` the gray mean; radii are options only. Measurements are in the receiver's space (on `img`, the values a look shows; measure `img.as("linear")` for physical units: light, density) and read the image at scale 1 (`analysisScale`), so they do not depend on a look's scale. To hand all items to a program, save them: `await cv.save("items.csv", regions)` (see `cv.docs.read("data-out")`).

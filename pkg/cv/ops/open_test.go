@@ -10,6 +10,7 @@ import (
 	"github.com/go-go-golems/goja-cv/internal/testimage"
 	"github.com/go-go-golems/goja-cv/pkg/cv/buffer"
 	"github.com/go-go-golems/goja-cv/pkg/cv/graph"
+	"github.com/go-go-golems/goja-cv/pkg/cv/graph/graphtest"
 )
 
 func openErr(t *testing.T, e *graph.Engine, path string, opts map[string]any) *graph.Error {
@@ -56,7 +57,7 @@ func TestOpenEncodingsWindowsAndOrigins(t *testing.T) {
 	if err := testimage.WriteFile(npy, src, 32, buffer.Meta{}); err != nil {
 		t.Fatal(err)
 	}
-	e := graph.NewEngine(NewRegistry(), graph.EngineOptions{})
+	e := graph.NewEngine(NewRegistry(), graphtest.Options(t))
 
 	// the file says linear: values are what is stored
 	lin := mustOpen(t, e, linTIF, nil)

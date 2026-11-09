@@ -63,10 +63,11 @@ var histogramFields = []graph.FieldSpec{
 	numField("bins", graph.Unitless, "number of bins"),
 	strField("channel", "L, r, g or b"),
 	strField("space", "working space of the levels"),
-	{Name: "counts", Type: "number[]", Doc: "pixels per bin over [0, 1]"},
 	numField("under", graph.Unitless, "pixels below 0"),
 	numField("over", graph.Unitless, "pixels above 1"),
 	numField("total", graph.Unitless, "pixels counted"),
+	{Name: "rows", Type: "rows", Doc: "one row per bin over [0, 1]", Rows: []graph.FieldSpec{
+		numField("lo", graph.Level, "lower edge of the bin"), numField("hi", graph.Level, "upper edge"), numField("count", graph.Unitless, "pixels in the bin")}},
 }
 
 var dustFields = []graph.FieldSpec{

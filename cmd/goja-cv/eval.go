@@ -1,9 +1,7 @@
 package main
 
 import (
-	"bytes"
 	"context"
-	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -14,6 +12,7 @@ import (
 
 	"github.com/go-go-golems/go-go-goja/pkg/replsession"
 	"github.com/go-go-golems/go-go-goja/pkg/resultcontent"
+	"github.com/go-go-golems/goja-cv/pkg/cv/graph"
 	"github.com/go-go-golems/goja-cv/pkg/cvsession"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
@@ -22,17 +21,19 @@ import (
 
 type evalFlags struct {
 	image   string
+	root    string
+	read    []string
 	out     string
-	outRoot string
 	prelude []string
 	json    bool
 	timeout int
 }
 
 func (f *evalFlags) register(cmd *cobra.Command) {
-	cmd.Flags().StringVar(&f.image, "image", "", "Image file to open and bind to img")
-	cmd.Flags().StringVar(&f.out, "out", "", "Directory for the delivered looks and data files (default: a new temporary directory)")
-	cmd.Flags().StringVar(&f.outRoot, "out-root", "", "The only directory save() may write under (default: saving is disabled)")
+	cmd.Flags().StringVar(&f.image, "image", "", "Image file to open and bind to img (in --root or a --read directory)")
+	cmd.Flags().StringVar(&f.root, "root", "", "The workspace: cv.save writes in it, cv.open reads relative paths in it (default: the current directory)")
+	cmd.Flags().StringArrayVar(&f.read, "read", nil, "A directory cv.open may also read, never write (repeatable; relative paths are looked up after the workspace, in order)")
+	cmd.Flags().StringVar(&f.out, "out", "", "Directory for the delivered looks (default: a new temporary directory)")
 	cmd.Flags().StringArrayVar(&f.prelude, "prelude", nil, "Script run in the session before the code (repeatable; e.g. helpers that define mem.*)")
 	cmd.Flags().BoolVar(&f.json, "json", false, "Print a JSON object instead of YAML")
 	cmd.Flags().IntVar(&f.timeout, "timeout-ms", 0, "Eval timeout in milliseconds (default 60000)")
@@ -75,13 +76,12 @@ func newEvalCommand(opts *rootOptions) *cobra.Command {
 	return cmd
 }
 
-// contentFile is one delivered content item written to disk (a look or a
-// data item), or one that was not delivered.
+// contentFile is one delivered look written to disk, or one that was not
+// delivered.
 type contentFile struct {
 	Caption  string `json:"caption"`
 	MIMEType string `json:"mimeType"`
 	Bytes    int    `json:"bytes"`
-	Rows     *int   `json:"rows,omitempty"` // data: CSV records or JSON array items
 	Path     string `json:"path,omitempty"`
 	Dropped  string `json:"dropped,omitempty"`
 }
@@ -98,21 +98,16 @@ func runCode(ctx context.Context, opts *rootOptions, f *evalFlags, code string) 
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	if f.image != "" {
-		if _, err := os.Stat(f.image); err != nil {
-			return usageErr("--image: %v", err)
-		}
-	}
-	logger := opts.logger()
-	if err := checkOutRoot(f.outRoot); err != nil {
+	if err := checkRoots(f.root, f.read, f.image); err != nil {
 		return err
 	}
+	logger := opts.logger()
 	for _, p := range f.prelude {
 		if st, err := os.Stat(p); err != nil || st.IsDir() {
 			return usageErr("--prelude %q is not a readable file", p)
 		}
 	}
-	sopts := cvsession.Options{Image: f.image, OutRoot: f.outRoot, Preludes: f.prelude, Logger: &logger}
+	sopts := cvsession.Options{Image: f.image, Root: f.root, Read: f.read, Preludes: f.prelude, Logger: &logger}
 	if f.timeout > 0 {
 		sopts.EvalTimeout = msDuration(f.timeout)
 	}
@@ -172,8 +167,6 @@ func printText(w io.Writer, resp *replsession.EvaluateResponse, files []contentF
 			v := l.Path
 			if v == "" {
 				v = "dropped: " + l.Dropped
-			} else if l.Rows != nil {
-				v += fmt.Sprintf(" (%d rows)", *l.Rows)
 			}
 			list.Content = append(list.Content,
 				&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: l.Caption},
@@ -192,15 +185,11 @@ func printYAML(w io.Writer, key string, value *yaml.Node) {
 	fmt.Fprintf(w, "\n%s", b)
 }
 
-var (
-	lookCaption = regexp.MustCompile(`^look (\d+): (.*?)(?: — | \()`)
-	dataCaption = regexp.MustCompile(`^data ([A-Za-z0-9_-]{1,64})(\.[a-z]+)$`)
-)
+var lookCaption = regexp.MustCompile(`^look (\d+): (.*?)(?: — | \()`)
 
-// writeContent writes the delivered content of resp into dir (a new
-// temporary directory when dir is empty): looks as look-<n>-<slug>.<ext>,
-// data items as <name>.<ext> from their caption (a second item of the same
-// name gets -2). Items that were not delivered are listed with the reason.
+// writeContent writes the delivered looks of resp into dir (a new temporary
+// directory when dir is empty) as look-<n>-<slug>.<ext>. Looks that were not
+// delivered are listed with the reason.
 func writeContent(resp *replsession.EvaluateResponse, dir string) ([]contentFile, error) {
 	refs := resp.Cell.Execution.Content
 	if len(refs) == 0 {
@@ -216,7 +205,6 @@ func writeContent(resp *replsession.EvaluateResponse, dir string) ([]contentFile
 		return nil, errors.Wrap(err, "create --out directory")
 	}
 	var out []contentFile
-	used := map[string]bool{}
 	for _, ref := range refs {
 		cf := contentFile{Caption: ref.Caption, MIMEType: ref.MIMEType, Bytes: ref.Bytes, Dropped: ref.Dropped}
 		if ref.Index < 0 || ref.Index >= len(resp.Content) {
@@ -227,19 +215,11 @@ func writeContent(resp *replsession.EvaluateResponse, dir string) ([]contentFile
 			continue
 		}
 		item := resp.Content[ref.Index]
-		name, ext := fmt.Sprintf("content-%d", ref.Provider), resultcontent.ExtensionForMIME(item.MIMEType)
-		switch m := lookCaption.FindStringSubmatch(item.Caption); {
-		case m != nil:
+		name := fmt.Sprintf("content-%d", ref.Provider)
+		if m := lookCaption.FindStringSubmatch(item.Caption); m != nil {
 			name = "look-" + m[1] + "-" + slug(m[2])
-		default:
-			if d := dataCaption.FindStringSubmatch(item.Caption); d != nil {
-				name = d[1]
-				rows := countRows(item.MIMEType, item.Data)
-				cf.Rows = &rows
-			}
 		}
-		file := uniqueName(used, name, ext)
-		abs, err := filepath.Abs(filepath.Join(dir, file))
+		abs, err := filepath.Abs(filepath.Join(dir, name+resultcontent.ExtensionForMIME(item.MIMEType)))
 		if err != nil {
 			return nil, err
 		}
@@ -250,40 +230,6 @@ func writeContent(resp *replsession.EvaluateResponse, dir string) ([]contentFile
 		out = append(out, cf)
 	}
 	return out, nil
-}
-
-// uniqueName returns name+ext, or name-2+ext, name-3+ext, … : the first file
-// name not yet in used, which it reserves. Generated names are reserved too,
-// so items named a, a and a-2 get a, a-2 and a-2-2 instead of overwriting.
-func uniqueName(used map[string]bool, name, ext string) string {
-	file := name + ext
-	for k := 2; used[file]; k++ {
-		file = fmt.Sprintf("%s-%d%s", name, k, ext)
-	}
-	used[file] = true
-	return file
-}
-
-// countRows counts CSV records (without the header) or JSON array items
-// (1 for any other JSON value).
-func countRows(mime string, data []byte) int {
-	switch mime {
-	case "text/csv":
-		recs, err := csv.NewReader(bytes.NewReader(data)).ReadAll()
-		if err != nil || len(recs) == 0 {
-			return 0
-		}
-		return len(recs) - 1
-	case "application/json":
-		var v any
-		if json.Unmarshal(data, &v) == nil {
-			if l, ok := v.([]any); ok {
-				return len(l)
-			}
-		}
-		return 1
-	}
-	return 0
 }
 
 var nonSlug = regexp.MustCompile(`[^a-zA-Z0-9]+`)
@@ -299,13 +245,35 @@ func slug(s string) string {
 	return s
 }
 
-// checkOutRoot requires --out-root, when given, to be an existing directory.
-func checkOutRoot(dir string) error {
-	if dir == "" {
+// checkRoots checks the workspace flags: --root and every --read must be
+// directories, and --image must lie in one of them.
+func checkRoots(root string, reads []string, image string) error {
+	if root == "" {
+		wd, err := os.Getwd()
+		if err != nil {
+			return usageErr("working directory: %v", err)
+		}
+		root = wd
+	}
+	ws, err := graph.OpenWorkspace(root, reads)
+	if err != nil {
+		return usageErr("%v", err)
+	}
+	defer ws.Close()
+	if image == "" {
 		return nil
 	}
-	if st, err := os.Stat(dir); err != nil || !st.IsDir() {
-		return usageErr("--out-root %q is not a directory", dir)
+	abs, err := filepath.Abs(image)
+	if err != nil {
+		return usageErr("--image: %v", err)
 	}
+	f, _, err := ws.Open(abs)
+	if err != nil {
+		if _, serr := os.Stat(abs); serr != nil {
+			return usageErr("--image: %v", serr)
+		}
+		return usageErr("--image %s is outside --root %s and the --read directories; add --read %s", image, ws.Dir(), filepath.Dir(abs))
+	}
+	_ = f.Close()
 	return nil
 }

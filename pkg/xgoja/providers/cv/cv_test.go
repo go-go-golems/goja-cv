@@ -45,7 +45,9 @@ func TestCVWithMCPCommandSet(t *testing.T) {
 	if err := xmcp.Register(providers); err != nil {
 		t.Fatal(err)
 	}
-	plan := &app.RuntimePlan{Runtime: app.RuntimeSection{Modules: []app.RuntimeModulePlan{{Provider: PackageID, Name: ModuleName, As: "cv"}}}}
+	testdata, _ := filepath.Abs(filepath.Join("..", "..", "..", "..", "testdata"))
+	plan := &app.RuntimePlan{Runtime: app.RuntimeSection{Modules: []app.RuntimeModulePlan{{Provider: PackageID, Name: ModuleName, As: "cv",
+		Config: map[string]any{"root": t.TempDir(), "read": []any{testdata}}}}}}
 	commandCtx := providerapi.CommandSetContext{
 		Context: ctx, PackageID: xmcp.PackageID, Name: xmcp.CommandSetName, Mount: "mcp",
 		Providers: providers, RuntimeFactory: app.NewRuntimeFactory(providers, plan, app.HostServices{}),

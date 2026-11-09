@@ -17,12 +17,15 @@ import (
 // FieldSpec describes one field of a result.
 type FieldSpec struct {
 	Name string
-	Type string // "number" | "string" | "bool" | "number[]" (one value per sample/row) | "point" ([x, y]) | "object"
+	Type string // "number" | "string" | "bool" | "number[]" | "point" ([x, y]) | "object" | "rows" (a list of rows: Rows)
 	Unit Unit   // DocPx (x, y, w, h, cx, cy), DocPx2 (area), Level (meanL, step, …), Unitless
 	Doc  string
 	// Optional fields are present only in some items or rows (check.dust's
 	// hint, a sample row's outside flag).
 	Optional bool
+	// Rows is the schema of each row of a "rows" field (a profile's
+	// samples, a histogram's bins).
+	Rows []FieldSpec
 }
 
 // GeometryFields are on every region, in this order.
@@ -137,6 +140,16 @@ func OrderBySchema(v any, fields []FieldSpec) any {
 		return v
 	}
 	order := func(m map[string]any) any {
+		for _, f := range fields { // nested rows in their own schema order, on a copy (m is a cached value)
+			if l, ok := m[f.Name].([]any); ok && f.Rows != nil {
+				c := make(map[string]any, len(m))
+				for k, v := range m {
+					c[k] = v
+				}
+				c[f.Name] = OrderBySchema(l, f.Rows)
+				m = c
+			}
+		}
 		rec := Record{Vals: m}
 		seen := map[string]bool{}
 		for _, f := range fields {

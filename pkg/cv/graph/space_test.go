@@ -3,6 +3,7 @@ package graph_test
 import (
 	"context"
 	"math"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -36,7 +37,7 @@ func spaceEngine(t *testing.T) *graph.Engine {
 			return graph.NewImage(out), nil
 		},
 	})
-	return graph.NewEngine(reg, graph.EngineOptions{})
+	return graph.NewEngine(reg, graphtest.Options(t))
 }
 
 func src(t *testing.T, e *graph.Engine, enc string, fill ...float64) *graph.Node {
@@ -86,7 +87,7 @@ func hasWarning(ws []graph.Warning, code string) bool {
 }
 
 // gradientTIFF is an sRGB-encoded 16-bit test file (cv.open).
-const gradientTIFF = "../../../testdata/gradient-64x48-16bit.tif"
+var gradientTIFF, _ = filepath.Abs("../../../testdata/gradient-64x48-16bit.tif")
 
 func openGradient(t *testing.T, e *graph.Engine) *graph.Node {
 	t.Helper()
@@ -102,7 +103,7 @@ func openGradient(t *testing.T, e *graph.Engine) *graph.Node {
 // conversion and its inverse cancel; the linear view of a file is its
 // pyramid level (openLinear, no copy).
 func TestOpenIsEncodedAndAsConverts(t *testing.T) {
-	e := graph.NewEngine(ops.NewRegistry(), graph.EngineOptions{})
+	e := graph.NewEngine(ops.NewRegistry(), graphtest.Options(t))
 	img := openGradient(t, e)
 	if img.Enc != buffer.EncSRGB || img.Space != buffer.SpaceEncoded {
 		t.Fatalf("open statics %s", graph.Statics(img))
@@ -150,7 +151,7 @@ func TestOpenIsEncodedAndAsConverts(t *testing.T) {
 // returns file units: as(exposure(openLinear), encoded), the same values as
 // linear exposure followed by encoding, with no extra conversion node.
 func TestPhysicalBracket(t *testing.T) {
-	e := graph.NewEngine(ops.NewRegistry(), graph.EngineOptions{})
+	e := graph.NewEngine(ops.NewRegistry(), graphtest.Options(t))
 	img := openGradient(t, e)
 	ex, _ := mustCall(t, e, "exposure", img, 1.0)
 	if ex.Op.Name != graph.AsOp || ex.Space != buffer.SpaceEncoded || ex.Enc != buffer.EncSRGB {
@@ -186,7 +187,7 @@ func TestPhysicalBracket(t *testing.T) {
 // TestReceiverDecides (GCV-004 §4.3, D16): other image inputs are converted
 // to the receiver's space, not the receiver.
 func TestReceiverDecides(t *testing.T) {
-	e := graph.NewEngine(ops.NewRegistry(), graph.EngineOptions{})
+	e := graph.NewEngine(ops.NewRegistry(), graphtest.Options(t))
 	img := openGradient(t, e)
 	lin, _ := mustCall(t, e, "as", img, "linear")
 	d, _ := mustCall(t, e, "sub", lin, graph.NodeArg{ID: img.ID})
@@ -204,7 +205,7 @@ func TestReceiverDecides(t *testing.T) {
 // receiver's space; physical ops return to it; display and derived results
 // are in their own.
 func TestOutputSpaceFollowsTheReceiver(t *testing.T) {
-	e := graph.NewEngine(ops.NewRegistry(), graph.EngineOptions{})
+	e := graph.NewEngine(ops.NewRegistry(), graphtest.Options(t))
 	img := openGradient(t, e)
 	lin, _ := mustCall(t, e, "as", img, "linear")
 	calls := map[string][]any{
@@ -256,7 +257,7 @@ func mustToGray(t *testing.T, e *graph.Engine, n *graph.Node) *graph.Node {
 // percentile of toGray(), and mask.luminance({ above: p99 }) selects about
 // 1 % of the pixels.
 func TestOneLuminance(t *testing.T) {
-	e := graph.NewEngine(ops.NewRegistry(), graph.EngineOptions{})
+	e := graph.NewEngine(ops.NewRegistry(), graphtest.Options(t))
 	img := openGradient(t, e)
 	s, _ := mustCall(t, e, "stats", img)
 	st := evalMap(t, e, s)
@@ -303,7 +304,7 @@ func evalNum(t *testing.T, e *graph.Engine, n *graph.Node) float64 {
 // TestColormapRangeOnItsReceiver: colormap follows its receiver, so a range
 // measured on it maps p01 and p99 to the ends.
 func TestColormapRangeOnItsReceiver(t *testing.T) {
-	e := graph.NewEngine(ops.NewRegistry(), graph.EngineOptions{})
+	e := graph.NewEngine(ops.NewRegistry(), graphtest.Options(t))
 	g, _ := mustCall(t, e, "toGray", openGradient(t, e))
 	st := evalMap(t, e, func() *graph.Node { n, _ := mustCall(t, e, "stats", g); return n }())
 	cm, _ := mustCall(t, e, "colormap", g, "gray", map[string]any{"range": []any{st["p01"], st["p99"]}})
@@ -373,7 +374,7 @@ func TestLambdasResolveLikeDirectCalls(t *testing.T) {
 }
 
 func TestCompareConvertsEachInput(t *testing.T) {
-	e := graph.NewEngine(ops.NewRegistry(), graph.EngineOptions{})
+	e := graph.NewEngine(ops.NewRegistry(), graphtest.Options(t))
 	img := openGradient(t, e)
 	lin, _ := mustCall(t, e, "as", img, "linear")
 	images := []any{graph.NodeArg{ID: img.ID}, graph.NodeArg{ID: lin.ID}}

@@ -22,7 +22,7 @@ func TestRegionItemsAreFlat(t *testing.T) {
 	out := mustOK(t, eval(t, app, sid, `
 const sp = await img.detect.specks()
 const it = sp.slice().sort((a, b) => b.area - a.area)[0]
-return { array: Array.isArray(sp), keys: Object.keys(it).join(","), json: JSON.stringify(it).slice(0, 20), box: it.box === undefined, data: cv.json(sp.slice(0, 2), { name: "two" }) }`))
+return { array: Array.isArray(sp), keys: Object.keys(it).join(","), json: JSON.stringify(it).slice(0, 20), box: it.box === undefined }`))
 	mustContain(t, out, "array: true", "keys: id,x,y,w,h,cx,cy,area,aspect,contrast,localNoise,sharpness,score,meanL,polarity", `json: '{"id":`, "box: true")
 	mustNotContain(t, out, "__cvref", "cv.item")
 	// a map that builds new objects drops the link: ITEMS names them
@@ -85,11 +85,11 @@ func dotsPNG(t *testing.T, w, h int) string {
 
 func TestAwaitedRegionsHaveEveryItem(t *testing.T) {
 	img := dotsPNG(t, 150, 150)
-	app, sid := newApp(t, cvsession.Options{Image: img, BaseDir: filepath.Dir(img)})
+	app, sid := newApp(t, cvsession.Options{Image: img})
 	out := mustOK(t, eval(t, app, sid, `
 const r = await img.mask.luminance({ above: 0.5 }).components()
 return { count: r.length, last: r[r.length - 1].id, all: r }`))
-	mustContain(t, out, "count: 5625", "more (return cv.json(x) for all)")
+	mustContain(t, out, "count: 5625", `more (save all: await cv.save("x.json", x))`)
 	mustNotContain(t, out, "truncated")
 }
 
@@ -147,10 +147,10 @@ return {
   encoded: s.meanB > l.meanB,
   star: rows[0].step > 0 && rows[0].snr > 1,
   outside: rows[1].step,
-  profile: p.t.length + " " + p.meanL.length + " peak " + (p.meanL.indexOf(Math.max(...p.meanL)) === 10),
+  profile: p.rows.length + " peak " + (p.rows.map(r => r.meanL).indexOf(Math.max(...p.rows.map(r => r.meanL))) === 10),
 }`))
 	mustContain(t, out, "keys: id,x,y,w,h,cx,cy,area,aspect,coreMean,ringMean,step,spread,snr,stepR,stepG,stepB,stepChroma,ringCoverage", "pixel: true", "encoded: true",
-		"star: true", "outside: null", "profile: 21 21 peak true", "OUTSIDE: measure: 1 of 2 items lie outside")
+		"star: true", "outside: null", "profile: 21 peak true", "OUTSIDE: measure: 1 of 2 items lie outside")
 	out = text(eval(t, app, sid, `return await img.measure([[10, 10]])`))
 	mustContain(t, out, "code: E_ARG_TYPE", "fix: 'img.measure(points, { coreRadius: 3 })'")
 	out = text(eval(t, app, sid, `return await img.measure([[10, 10]], { coreRadius: 4, ringRadii: [3, 9] })`))

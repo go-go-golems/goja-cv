@@ -19,10 +19,23 @@ var (
 	pngPath, _  = filepath.Abs(filepath.Join("..", "..", "testdata", "gradient-64x48-8bit.png"))
 )
 
+// testWorkspace gives a test session a temporary workspace and, when it
+// opens an image, the image's directory as a read directory.
+func testWorkspace(t *testing.T, opts cvsession.Options) cvsession.Options {
+	t.Helper()
+	if opts.Root == "" {
+		opts.Root = t.TempDir()
+	}
+	if opts.Image != "" && opts.Read == nil {
+		opts.Read = []string{filepath.Dir(opts.Image)}
+	}
+	return opts
+}
+
 func newApp(t *testing.T, opts cvsession.Options) (*cvsession.App, string) {
 	t.Helper()
 	ctx := context.Background()
-	app, err := cvsession.New(ctx, opts)
+	app, err := cvsession.New(ctx, testWorkspace(t, opts))
 	if err != nil {
 		t.Fatalf("new app: %v", err)
 	}
@@ -166,7 +179,7 @@ func TestErrorYAMLHasCodeFixAndLine(t *testing.T) {
 }
 
 func TestNoImageThenOpenPersists(t *testing.T) {
-	app, sid := newApp(t, cvsession.Options{})
+	app, sid := newApp(t, cvsession.Options{Read: []string{filepath.Dir(pngPath)}})
 	out := text(eval(t, app, sid, "return await img.stats()"))
 	mustContain(t, out, "code: E_NO_IMAGE", "fix: img = cv.open(\"scan.tif\")")
 	out = text(eval(t, app, sid, "img = cv.open("+quote(pngPath)+")\nreturn await img"))
@@ -175,11 +188,13 @@ func TestNoImageThenOpenPersists(t *testing.T) {
 	mustContain(t, out, "64", "mem: n (number)")
 }
 
+// TestRootsRestrictOpen: cv.open reads only the workspace and the read
+// directories.
 func TestRootsRestrictOpen(t *testing.T) {
-	app, sid := newApp(t, cvsession.Options{Roots: []string{t.TempDir()}})
+	app, sid := newApp(t, cvsession.Options{Read: []string{t.TempDir()}})
 	out := text(eval(t, app, sid, "img = cv.open("+quote(tiffPath)+")"))
 	mustContain(t, out, "code: E_ACCESS")
-	app2, sid2 := newApp(t, cvsession.Options{Roots: []string{filepath.Dir(tiffPath)}})
+	app2, sid2 := newApp(t, cvsession.Options{Read: []string{filepath.Dir(tiffPath)}})
 	out = text(eval(t, app2, sid2, "img = cv.open("+quote(tiffPath)+"); return await img"))
 	mustContain(t, out, "kind: Image")
 }
@@ -224,12 +239,12 @@ func TestTimeoutIsAStructuredError(t *testing.T) {
 }
 
 // TestTimeoutInsideANativeFunction: a native function that runs agent
-// JavaScript (cv.json reads a getter) is interrupted by the watchdog; the
+// JavaScript (cv.save reads a getter) is interrupted by the watchdog; the
 // panic boundary lets goja's interrupt through, so the result is E_TIMEOUT,
 // not E_INTERNAL (GCV-004 §7.11).
 func TestTimeoutInsideANativeFunction(t *testing.T) {
 	app, sid := newApp(t, cvsession.Options{Image: tiffPath, EvalTimeout: 300 * time.Millisecond})
-	resp := eval(t, app, sid, "return cv.json({ get x() { while (true) {} } })")
+	resp := eval(t, app, sid, `return await cv.save("loop.json", { get x() { while (true) {} } })`)
 	out := text(resp)
 	mustContain(t, out, "code: E_TIMEOUT")
 	mustNotContain(t, out, "E_INTERNAL")

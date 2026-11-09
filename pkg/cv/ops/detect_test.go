@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-go-golems/goja-cv/internal/testimage"
 	"github.com/go-go-golems/goja-cv/pkg/cv/graph"
+	"github.com/go-go-golems/goja-cv/pkg/cv/graph/graphtest"
 )
 
 // plantedEngine writes the planted-fault scan as a 16-bit TIFF and opens it.
@@ -18,7 +19,7 @@ func plantedEngine(t *testing.T) (*graph.Engine, *graph.Node, testimage.Planted)
 	if err != nil {
 		t.Fatal(err)
 	}
-	e := graph.NewEngine(NewRegistry(), graph.EngineOptions{})
+	e := graph.NewEngine(NewRegistry(), graphtest.Options(t))
 	img, err := e.Open(path, nil)
 	if err != nil {
 		t.Fatal(err)

@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/go-go-golems/goja-cv/pkg/cv/graph"
+	"github.com/go-go-golems/goja-cv/pkg/cv/graph/graphtest"
 	"github.com/go-go-golems/goja-cv/pkg/cv/look"
 )
 
@@ -136,7 +137,7 @@ func goldPoints(t *testing.T, dir, id string) []goldPoint {
 // luminance.
 func viewLook(t *testing.T, tif string, view func(e *graph.Engine, img *graph.Node) *graph.Node) [][]float64 {
 	t.Helper()
-	e := graph.NewEngine(NewRegistry(), graph.EngineOptions{})
+	e := graph.NewEngine(NewRegistry(), graphtest.Options(t))
 	l, err := look.New(e, view(e, openTile(t, e, tif)).ID, look.Options{MaxSide: 1024})
 	if err != nil {
 		t.Fatal(err)

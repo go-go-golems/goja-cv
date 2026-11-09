@@ -87,7 +87,7 @@ func TestLocalContrast(t *testing.T) {
 	ctx := context.Background()
 	reg := NewRegistry()
 	graphtest.RegisterSource(reg)
-	e := graph.NewEngine(reg, graph.EngineOptions{})
+	e := graph.NewEngine(reg, graphtest.Options(t))
 	flat, err := graphtest.Source(e, "linear", graph.Frame{W: 64, H: 48}, 0.4)
 	if err != nil {
 		t.Fatal(err)

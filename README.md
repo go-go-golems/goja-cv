@@ -72,37 +72,39 @@ goja-cv help concepts
 
 - Output is YAML (`--json` for a JSON envelope). Exit codes: **0** ok, **1** cv error (the structured error is
   still printed, with a literal `fix:`), **2** usage error.
-- `goja-cv help NAME` shows a guide page, a command's help, or a cv op / kind / function (`levels`, `Regions`,
-  `Regions.filter`), in that order.
+- `goja-cv help NAME` shows a guide page, a command's help, or a cv op / kind / function / concept (`levels`,
+  `Image.overlay`, `regions`), in that order.
 - `--timeout-ms` raises the 60 s limit per eval; `--log-level debug` logs to stderr.
-- **Data for programs:** return `cv.csv(x, { name: "spots" })` or `cv.json(x)` and the CLI writes `spots.csv` /
-  `.json` next to the looks (`--json` lists them under `files` with their row counts). `--out-root DIR` lets
-  `node.save("view.tif")` and `cv.csv(x).save("t.csv")` write under DIR (TIFF and PNG record the encoding and
-  frame). `--prelude helpers.js` runs a script first, so `mem` helpers need not be pasted into every call.
+- **The workspace:** `--root DIR` (default: the current directory) is where `await cv.save("spots.csv", regions)`
+  writes and where `cv.open` reads relative paths; `--read DIR` (repeatable) adds directories `cv.open` may read but
+  never write. The extension picks the format: `.tif`, `.png`, `.npy`, `.jpg` for images (TIFF and PNG record the
+  encoding and frame), `.json` for any data, `.csv` for a list of rows. `--prelude helpers.js` runs a script first,
+  so `mem` helpers need not be pasted into every call.
 
 ```bash
-goja-cv eval --json --out /tmp/specks --image TILE.tif \
-  -e 'return cv.csv(img.detect.specks({ polarity: "bright", maxArea: 2000 }), { name: "specks" })'
+goja-cv eval --root /tmp/specks --read ~/tiles --image ~/tiles/TILE.tif \
+  -e 'return await cv.save("specks.csv", img.detect.specks({ polarity: "bright", maxArea: 2000 }))'
 ```
 
 ## Use with coding agents
 
 `goja-cv mcp` serves the eval session as an MCP server over stdio. The agent gets an `eval` tool (plus `open`
 and session tools), the resources `cv://reference`, `cv://docs/<id>` and `cv://guide/<slug>`, and the prompt
-`cv-agent`. Two flags matter:
+`cv-agent`. The flags:
 
+- `--root DIR` (required) is the workspace: the one directory the agent writes (`cv.save`) and where `cv.open`
+  reads relative paths first.
+- `--read DIR` (repeatable) is a directory `cv.open` may also read, never write: where your scans live.
 - `--image FILE` opens an image at start and binds it to `img` (optional; the agent can call the `open` tool or
-  `img = cv.open(path)`).
-- `--root DIR` (repeatable) limits which files `cv.open` may read. Use it.
+  `img = cv.open(path)`); it must lie in `--root` or a `--read` directory.
 
-`--out-root DIR` (the only directory `save` may write under) and `--prelude FILE` work as on the CLI; data items
-larger than 256 KiB are not sent to the model, which is told to save them.
+`--prelude FILE` works as on the CLI.
 
 ### Claude Code
 
 ```bash
-claude mcp add cv -- goja-cv mcp --image scan.tif --root /path/to/images
-claude mcp add -s project cv -- goja-cv mcp --root ./images
+claude mcp add cv -- goja-cv mcp --root ~/cv-work --read /path/to/images --image /path/to/images/scan.tif
+claude mcp add -s project cv -- goja-cv mcp --root ./cv-work --read ./images
 ```
 
 The second form writes a project `.mcp.json` you can commit:
@@ -112,7 +114,7 @@ The second form writes a project `.mcp.json` you can commit:
   "mcpServers": {
     "cv": {
       "command": "goja-cv",
-      "args": ["mcp", "--image", "scan.tif", "--root", "/path/to/images"]
+      "args": ["mcp", "--root", "cv-work", "--read", "/path/to/images", "--image", "/path/to/images/scan.tif"]
     }
   }
 }
@@ -124,7 +126,7 @@ The second form writes a project `.mcp.json` you can commit:
 ### Codex
 
 ```bash
-codex mcp add cv -- goja-cv mcp --image /path/to/scan.tif --root /path/to/images
+codex mcp add cv -- goja-cv mcp --root /path/to/cv-work --read /path/to/images --image /path/to/images/scan.tif
 ```
 
 or in `~/.codex/config.toml`:
@@ -132,7 +134,7 @@ or in `~/.codex/config.toml`:
 ```toml
 [mcp_servers.cv]
 command = "goja-cv"
-args = ["mcp", "--image", "/path/to/scan.tif", "--root", "/path/to/images"]
+args = ["mcp", "--root", "/path/to/cv-work", "--read", "/path/to/images", "--image", "/path/to/images/scan.tif"]
 startup_timeout_sec = 20
 ```
 
@@ -153,7 +155,7 @@ Project `.mcp.json`:
   "mcpServers": {
     "cv": {
       "command": "goja-cv",
-      "args": ["mcp", "--image", "scan.tif", "--root", "/path/to/images"],
+      "args": ["mcp", "--root", "/path/to/cv-work", "--read", "/path/to/images", "--image", "/path/to/images/scan.tif"],
       "lifecycle": "keep-alive",
       "directTools": ["eval"]
     }
@@ -198,7 +200,7 @@ from six per task to two, every one corrected on the next call):
 
 ## Embedding
 
-- **Go:** `pkg/cvsession` — `cvsession.New(ctx, Options{Image, Roots, OutRoot, Preludes, EvalTimeout})`, `App.Evaluate(ctx, id, code)`,
+- **Go:** `pkg/cvsession` — `cvsession.New(ctx, Options{Image, Root, Read, Preludes, EvalTimeout})`, `App.Evaluate(ctx, id, code)`,
   `cvsession.NewMCPServer(ctx, app)`. See `goja-cv help embedding`.
 - **xgoja:** `pkg/xgoja/providers/cv` (provider package `goja-cv`, module `cv`) and
   `examples/xgoja/cv-agent/xgoja.yaml`. Provider ids must equal package IDs.

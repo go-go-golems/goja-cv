@@ -90,7 +90,7 @@ const [star] = await lin.measure([[200.5, 46.5]], { coreRadius: 3 })
 return {
   rows: ranked.map(r => [r.id, r.cx, r.cy, r.step.toFixed(3), r.snr.toFixed(2)].join(" ")),
   star: star.snr.toFixed(2),
-  table: cv.csv(lin.measure(specks), { name: "ranked" }),
+  table: (await cv.save("ranked.csv", lin.measure(specks))).rows,
 }
 ```
 

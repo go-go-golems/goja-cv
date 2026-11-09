@@ -19,7 +19,7 @@ func SourceInfo(n *Node) (map[string]any, bool) {
 		return nil, false
 	}
 	m := Meta[SourceMeta](n.Args)
-	info := map[string]any{"file": filepath.Base(m.Path), "encoding": n.Enc.String(), "frame": n.Frame.Data(),
+	info := map[string]any{"file": filepath.Base(m.Name), "encoding": n.Enc.String(), "frame": n.Frame.Data(),
 		"format": m.Info.Format, "bitDepth": float64(m.Info.Bits), "fileChannels": float64(m.Info.Channels)}
 	if m.Info.Sample != "" {
 		info["sample"] = m.Info.Sample

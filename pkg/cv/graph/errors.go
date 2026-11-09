@@ -35,7 +35,6 @@ const (
 	WDecorationFirst  = "DECORATION_FIRST" // a pixel op after a decoration sees the drawn marks
 	WCut              = "CUT"
 	WLooks            = "LOOKS" // looks beyond the session's per-eval budget were not delivered
-	WData             = "DATA"  // data items beyond the session's per-eval budget were not delivered
 	pathFailureMarker = "✗ "
 )
 

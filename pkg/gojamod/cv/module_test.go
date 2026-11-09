@@ -15,6 +15,7 @@ import (
 	"github.com/dop251/goja"
 	"github.com/go-go-golems/go-go-goja/pkg/engine"
 	"github.com/go-go-golems/goja-cv/pkg/cv/graph"
+	"github.com/go-go-golems/goja-cv/pkg/cv/graph/graphtest"
 	"github.com/go-go-golems/goja-cv/pkg/cv/ops"
 	cvmod "github.com/go-go-golems/goja-cv/pkg/gojamod/cv"
 )
@@ -26,7 +27,12 @@ var (
 
 func newRuntime(t *testing.T) *engine.Runtime {
 	t.Helper()
-	factory, err := engine.NewRuntimeFactoryBuilder().UseModuleMiddleware(engine.MiddlewareOnly("cv")).Build()
+	// the cv module with a test workspace (a temporary directory; the
+	// fixtures are read by absolute path from a read directory)
+	factory, err := engine.NewRuntimeFactoryBuilder(engine.WithDataOnlyDefaultRegistryModules(false)).
+		UseModuleMiddleware(engine.MiddlewareOnly("timer")).
+		WithModules(&cvmod.Registrar{NewEngine: func() *graph.Engine { return graph.NewEngine(cvmod.DefaultRegistry(), graphtest.Options(t)) }}).
+		Build()
 	if err != nil {
 		t.Fatalf("build runtime factory: %v", err)
 	}
@@ -352,7 +358,7 @@ func TestAwaitIsScaleOneAndImagesAreStatic(t *testing.T) {
 		const s = await w.stats()
 		const all = await Promise.all([img.stats(), img.exposure(1).stats(), img.histogram({ bins: 16 }), img.stats({ percentiles: [0.5] })])
 		const png = await cv.open(%q).stats()
-		return { w: s.w, scale: s.scale, n: all.length, bins: all[2].counts.length, total: all[2].total, pick: Object.keys(all[3].percentiles).join(","), png: png.meanL, tif: all[0].meanL }`, p, pngPath)).(map[string]any)
+		return { w: s.w, scale: s.scale, n: all.length, bins: all[2].rows.length, total: all[2].total, pick: Object.keys(all[3].percentiles).join(","), png: png.meanL, tif: all[0].meanL }`, p, pngPath)).(map[string]any)
 	if got["w"] != int64(2000) || got["scale"] != int64(1) || got["bins"] != int64(16) || got["total"] != int64(64*48) || got["pick"] != "0.5" {
 		t.Fatalf("await: %v", got)
 	}
@@ -369,7 +375,7 @@ func TestRegistrarAndNamespaces(t *testing.T) {
 			return &graph.DataValue{Data: map[string]any{"w": float64(b.W), "h": float64(b.H)}}, nil
 		}})
 	factory, err := engine.NewRuntimeFactoryBuilder().
-		WithModules(&cvmod.Registrar{NewEngine: func() *graph.Engine { return graph.NewEngine(reg, graph.EngineOptions{}) }}).
+		WithModules(&cvmod.Registrar{NewEngine: func() *graph.Engine { return graph.NewEngine(reg, graphtest.Options(t)) }}).
 		Build()
 	if err != nil {
 		t.Fatal(err)

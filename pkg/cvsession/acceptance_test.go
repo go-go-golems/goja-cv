@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"image"
 	"image/png"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -23,7 +22,7 @@ import (
 func acceptanceApp(t *testing.T) (*cvsession.App, string) {
 	t.Helper()
 	img := planted(t)
-	return newApp(t, cvsession.Options{Image: img, BaseDir: filepath.Dir(img)})
+	return newApp(t, cvsession.Options{Image: img})
 }
 
 func mustOK(t *testing.T, resp *replsession.EvaluateResponse) string {

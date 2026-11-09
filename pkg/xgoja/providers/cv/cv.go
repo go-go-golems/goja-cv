@@ -7,6 +7,7 @@ package cv
 import (
 	"bytes"
 	"encoding/json"
+	"os"
 
 	"github.com/dop251/goja"
 	"github.com/dop251/goja_nodejs/require"
@@ -24,8 +25,11 @@ const ModuleName = "cv"
 
 // Config is the optional runtime config of the cv module.
 type Config struct {
-	// BaseDir resolves relative cv.open paths (default: the working directory).
-	BaseDir string `json:"baseDir,omitempty"`
+	// Root is the workspace: the directory cv.save writes and cv.open reads
+	// relative paths in (default: the working directory).
+	Root string `json:"root,omitempty"`
+	// Read are read-only directories cv.open also reads (in order).
+	Read []string `json:"read,omitempty"`
 	// CacheBytes caps the value cache (default 2 GiB).
 	CacheBytes int64 `json:"cacheBytes,omitempty"`
 	// LookLong is the long side of looks (default 1568).
@@ -37,7 +41,8 @@ var ConfigSchema = json.RawMessage(`{
   "type": "object",
   "additionalProperties": false,
   "properties": {
-    "baseDir": {"type": "string", "description": "Directory relative cv.open paths resolve against"},
+    "root": {"type": "string", "description": "The workspace: cv.save writes in it, cv.open reads relative paths in it (default: the working directory)"},
+    "read": {"type": "array", "items": {"type": "string"}, "description": "Read-only directories cv.open also reads"},
     "cacheBytes": {"type": "integer", "minimum": 0, "description": "Byte cap of the value cache"},
     "lookLong": {"type": "integer", "minimum": 0, "description": "Long side of looks in px"}
   }
@@ -69,9 +74,22 @@ func Register(registry *providerapi.ProviderRegistry) error {
 			if err != nil {
 				return nil, err
 			}
-			opts := graph.EngineOptions{BaseDir: cfg.BaseDir, CacheBytes: cfg.CacheBytes, LookLong: cfg.LookLong}
+			root := cfg.Root
+			if root == "" {
+				if root, err = os.Getwd(); err != nil {
+					return nil, errors.Wrap(err, "goja-cv: working directory")
+				}
+			}
+			ws, err := graph.OpenWorkspace(root, cfg.Read) // checks the directories now
+			if err != nil {
+				return nil, errors.Wrap(err, "goja-cv: cv module config")
+			}
+			ws.Close()
+			opts := graph.EngineOptions{CacheBytes: cfg.CacheBytes, LookLong: cfg.LookLong}
 			mod := cvmod.New(cvmod.WithEngineFactory(func() *graph.Engine {
-				return graph.NewEngine(cvmod.DefaultRegistry(), opts)
+				o := opts
+				o.Workspace, _ = graph.OpenWorkspace(root, cfg.Read) // one per runtime: its opened files are its own
+				return graph.NewEngine(cvmod.DefaultRegistry(), o)
 			}))
 			// one engine per runtime: Loader builds it when the runtime first requires cv
 			return func(vm *goja.Runtime, module *goja.Object) { mod.Loader(vm, module) }, nil

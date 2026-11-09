@@ -40,11 +40,37 @@ func TestEncodeJSONRoundTripsOrderAndNaN(t *testing.T) {
 }
 
 func TestCSVCellsUsePlain(t *testing.T) {
-	out, rows, err := encodeCSV([]any{map[string]any{"a": math.NaN(), "b": []any{1.0, math.Inf(1)}}}, nil, nil)
+	out, rows, err := encodeCSV("x.csv", []any{map[string]any{"a": math.NaN(), "b": []any{1.0, math.Inf(1)}}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if rows != 1 || string(out) != "a,b\n,\"[1,null]\"\n" {
 		t.Fatalf("csv %d rows: %q", rows, out)
+	}
+}
+
+// CSV is a list of rows (GCV-004 §7.9): columns in first-seen order, records
+// in their key order; anything else is E_ARG_TYPE with the fix, the rows of
+// a value that has them.
+func TestCSVRowsOnly(t *testing.T) {
+	rows := []any{graph.Record{Keys: []string{"id", "x"}, Vals: map[string]any{"id": 1.0, "x": 2.0}}, map[string]any{"z": "a", "id": 2.0}}
+	out, n, err := encodeCSV("r.csv", rows)
+	if err != nil || n != 2 || string(out) != "id,x,z\n1,2,\n2,,a\n" {
+		t.Fatalf("csv %d %v: %q", n, err, out)
+	}
+	for _, tc := range []struct {
+		v   any
+		fix string
+	}{
+		{map[string]any{"meanL": 0.5}, `cv.save("t.json", x)`},
+		{map[string]any{"from": []any{0.0, 0.0}, "rows": []any{map[string]any{"t": 0.0}}}, `cv.save("t.csv", (await x).rows)`},
+		{[]any{[]any{1.0, 2.0}}, `cv.save("t.json", x)`},
+		{3.0, `cv.save("t.json", x)`},
+	} {
+		_, _, err := encodeCSV("t.csv", tc.v)
+		ce, ok := graph.AsError(err)
+		if !ok || ce.Code != graph.EArgType || ce.Fix != tc.fix {
+			t.Fatalf("%v: %v", tc.v, err)
+		}
 	}
 }

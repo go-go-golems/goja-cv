@@ -13,6 +13,7 @@ import (
 	"github.com/go-go-golems/goja-cv/internal/testimage"
 	"github.com/go-go-golems/goja-cv/pkg/cv/buffer"
 	"github.com/go-go-golems/goja-cv/pkg/cv/graph"
+	"github.com/go-go-golems/goja-cv/pkg/cv/graph/graphtest"
 )
 
 // Real-data tests (GCV-001 guide §13.4), gated on the files being present:
@@ -63,7 +64,7 @@ func maxDiff(a, b *buffer.Buffer) float64 {
 // through img.as("linear"): the two exports are interchangeable.
 func TestRealTileReEncodedAsLinear(t *testing.T) {
 	dir := tilesDir(t)
-	e := graph.NewEngine(NewRegistry(), graph.EngineOptions{})
+	e := graph.NewEngine(NewRegistry(), graphtest.Options(t))
 	tile := mustOpen(t, e, filepath.Join(dir, realTile+".tif"), map[string]any{"encoding": "linear"})
 	lin1 := evalImage(t, e, tile)
 	enc, err := buffer.Convert(context.Background(), lin1.Buf, buffer.EncSRGB, buffer.SpaceLinear, buffer.SpaceEncoded)
@@ -114,7 +115,7 @@ func TestRealTileAbsoluteCoordinates(t *testing.T) {
 	if err := json.Unmarshal(raw, &meta); err != nil {
 		t.Fatal(err)
 	}
-	e := graph.NewEngine(NewRegistry(), graph.EngineOptions{})
+	e := graph.NewEngine(NewRegistry(), graphtest.Options(t))
 	tile := mustOpen(t, e, filepath.Join(dir, realTile+".tif"), map[string]any{"encoding": "linear", "origin": []any{float64(meta.OriginX), float64(meta.OriginY)}})
 	if tile.Frame != (graph.Frame{X: meta.OriginX, Y: meta.OriginY, W: 1024, H: 1024}) {
 		t.Fatalf("frame %s", tile.Frame)
@@ -146,7 +147,12 @@ func TestRealDNGWindow(t *testing.T) {
 	if _, err := os.Stat(path); err != nil {
 		t.Skip(err)
 	}
-	info, err := buffer.ProbeFile(path)
+	f, err := os.Open(path) // #nosec G304 -- the gated DNG
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = f.Close() }()
+	info, err := buffer.ProbeFile(f)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,7 +163,7 @@ func TestRealDNGWindow(t *testing.T) {
 	if filepath.Base(path) == "raw0027.dng" && (info.W != 7256 || info.H != 7326) {
 		t.Fatalf("raw0027.dng is %d×%d, want 7256×7326", info.W, info.H)
 	}
-	e := graph.NewEngine(NewRegistry(), graph.EngineOptions{})
+	e := graph.NewEngine(NewRegistry(), graphtest.Options(t))
 	start := time.Now()
 	win := mustOpen(t, e, path, map[string]any{"box": []any{1536.0, 1536.0, 1024.0, 1024.0}})
 	wv := evalImage(t, e, win)
@@ -172,12 +178,12 @@ func TestRealDNGWindow(t *testing.T) {
 	if os.Getenv("GOJACV_DNG_FULL") != "1" {
 		return
 	}
-	full, _, err := buffer.DecodeFile(context.Background(), path, buffer.DecodeOptions{})
+	full, _, err := buffer.DecodeFile(context.Background(), f, buffer.DecodeOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	box := stdimage.Rect(1536, 1536, 2560, 2560)
-	win2, _, err := buffer.DecodeFile(context.Background(), path, buffer.DecodeOptions{Box: &box})
+	win2, _, err := buffer.DecodeFile(context.Background(), f, buffer.DecodeOptions{Box: &box})
 	if err != nil {
 		t.Fatal(err)
 	}

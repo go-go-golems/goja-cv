@@ -61,7 +61,7 @@ func NewMCPServer(ctx context.Context, app *App) (*MCPServer, error) {
 	s := &MCPServer{
 		App:            app,
 		DefaultSession: summary.ID,
-		limits:         replmcp.Limits{MaxResultChars: 20000, MaxImages: app.opts.MaxLooks + app.opts.MaxData, MaxImageBytes: app.opts.MaxLookBytes},
+		limits:         replmcp.Limits{MaxResultChars: 20000, MaxImages: app.opts.MaxLooks, MaxImageBytes: app.opts.MaxLookBytes},
 	}
 	server, err := replmcp.NewServer(app,
 		replmcp.WithName("goja-cv"),

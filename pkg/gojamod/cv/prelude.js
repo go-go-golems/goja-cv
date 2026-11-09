@@ -178,11 +178,6 @@
         return function (opts) {
           return native.__look(t.__id, opts === undefined ? null : marshal(opts));
         };
-      case "save":
-        // save(path, { depth }) → a promise of the saved file (under --out-root)
-        return function (path, opts) {
-          return native.__save(t.__id, path === undefined ? null : path, opts === undefined ? null : opts);
-        };
     }
     const tab = tables[t.__kind];
     const entry = tab && tab[prop];
@@ -209,7 +204,7 @@
     has(t, prop) {
       if (typeof prop !== "string") return false;
       const tab = tables[t.__kind];
-      return prop === "then" || prop === "__id" || prop === "__kind" || prop === "look" || prop === "save" || !!(tab && tab[prop]);
+      return prop === "then" || prop === "__id" || prop === "__kind" || prop === "look" || !!(tab && tab[prop]);
     },
     ownKeys() {
       return [];
@@ -265,14 +260,11 @@
     explain(node) {
       return native.__explain(requireNode(node, "cv.explain").__id);
     },
-    // json(x, { name }) / csv(x, { name, columns }) → a Data handle: content
-    // for programs (CLI: a file), or .save(path) under --out-root. Plain
-    // data is passed as it is (not lifted back to its node).
-    json(x, opts) {
-      return native.__data("json", x, opts === undefined ? null : opts);
-    },
-    csv(x, opts) {
-      return native.__data("csv", x, opts === undefined ? null : opts);
+    // save(path, x, { depth }) → a promise of the saved file, in the
+    // workspace; the extension picks the format. x is passed as it is: a node,
+    // or plain data (item links stay out of files).
+    save(path, x, opts) {
+      return native.__save(path, x, opts === undefined ? null : opts);
     },
   };
   for (const name of MODULE_OPS) {

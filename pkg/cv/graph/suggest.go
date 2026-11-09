@@ -94,10 +94,10 @@ var MethodRedirects = map[string]Redirect{
 }
 
 var (
-	saveRedirect = Redirect{Hint: "save writes a file under the out-root (--out-root): node.save(\"x.tif\") for an image or mask, cv.csv(x).save(\"x.csv\") for data.",
-		Fix: `node.save("x.tif")`}
-	csvRedirect  = Redirect{Hint: "cv.csv(x) is data for programs: every row, delivered as a file or text; cv.docs.read(\"data-out\").", Fix: `cv.csv(node, { name: "rows" })`}
-	jsonRedirect = Redirect{Hint: "cv.json(x) is data for programs: every item, delivered as a file or text; cv.docs.read(\"data-out\").", Fix: `cv.json(node, { name: "data" })`}
+	saveRedirect = Redirect{Hint: "cv.save(path, x) writes a file in the workspace; the extension picks the format (.tif, .png, .npy, .jpg, .json, .csv).",
+		Fix: `await cv.save("x.tif", node)`}
+	csvRedirect  = Redirect{Hint: "cv.save(\"x.csv\", x) writes a list of rows (region items, measurement rows) as CSV in the workspace.", Fix: `await cv.save("rows.csv", node)`}
+	jsonRedirect = Redirect{Hint: "cv.save(\"x.json\", x) writes any data as JSON in the workspace.", Fix: `await cv.save("data.json", node)`}
 )
 
 // levenshtein is the case-insensitive edit distance with adjacent

@@ -23,13 +23,16 @@ type binding struct {
 	mu       sync.Mutex
 	warnings []graph.Warning
 
-	track  tracker        // per-eval state (evaltrack.go)
-	late   []QueuedLook   // looks created while no eval was running (evaltrack.go)
-	opened []graph.NodeID // sources opened with cv.open
+	track     tracker        // per-eval state (evaltrack.go)
+	late      []QueuedLook   // looks created while no eval was running (evaltrack.go)
+	opened    []graph.NodeID // sources opened with cv.open
+	unhandled map[*goja.Promise]bool
 }
 
 func newBinding(vm *goja.Runtime, eng *graph.Engine) *binding {
-	return &binding{vm: vm, eng: eng}
+	b := &binding{vm: vm, eng: eng}
+	b.trackRejections()
+	return b
 }
 
 func (b *binding) object() *goja.Object {
@@ -48,8 +51,7 @@ func (b *binding) object() *goja.Object {
 	set("__builders", b.builders)
 	set("__placeholder", b.placeholder)
 	set("__look", b.look)
-	set("__save", b.saveNode)
-	set("__data", b.dataJS)
+	set("__save", b.save)
 	b.addDocs(o)
 	return o
 }

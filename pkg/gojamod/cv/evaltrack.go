@@ -68,6 +68,8 @@ type tracker struct {
 	usedList []graph.NodeID
 	warnings []SiteWarning
 	looks    []QueuedLook
+	saved    map[string]int // workspace-relative path → line of its save (E_DUPLICATE)
+	saves    []*pendingSave
 }
 
 func lookupBinding(vm *goja.Runtime) (*binding, bool) {
@@ -88,7 +90,8 @@ func BeginEval(vm *goja.Runtime, ctx context.Context) bool {
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.track = tracker{active: true, ctx: ctx, seen: map[graph.NodeID]bool{}, used: map[graph.NodeID]bool{}}
+	b.track = tracker{active: true, ctx: ctx, seen: map[graph.NodeID]bool{}, used: map[graph.NodeID]bool{}, saved: map[string]int{}}
+	b.unhandled = nil
 	return true
 }
 

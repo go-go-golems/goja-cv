@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-go-golems/goja-cv/pkg/cv/buffer"
 	"github.com/go-go-golems/goja-cv/pkg/cv/graph"
+	"github.com/go-go-golems/goja-cv/pkg/cv/graph/graphtest"
 	"github.com/go-go-golems/goja-cv/pkg/cv/kernels"
 )
 
@@ -154,7 +155,7 @@ func TestRealHotListMeasures(t *testing.T) {
 	nGold, bySNR, byArea, nAny, nRegions := 0, 0, 0, 0, 0
 	tiles := labelledTiles(t)
 	for _, lt := range tiles {
-		e := graph.NewEngine(NewRegistry(), graph.EngineOptions{})
+		e := graph.NewEngine(NewRegistry(), graphtest.Options(t))
 		v, err := e.Evaluate(context.Background(), hotList(t, e, openTile(t, e, lt.tif)).ID, graph.EvalOptions{Scale: 1})
 		if err != nil {
 			t.Fatal(err)
@@ -242,7 +243,7 @@ func TestRealHotListMeasures(t *testing.T) {
 func TestRealGoldCirclesMeasureHigherSNR(t *testing.T) {
 	var half, full, fixed []float64
 	for _, lt := range labelledTiles(t) {
-		e := graph.NewEngine(NewRegistry(), graph.EngineOptions{})
+		e := graph.NewEngine(NewRegistry(), graphtest.Options(t))
 		img := openTile(t, e, lt.tif)
 		var halves, fulls, points []any
 		for _, p := range lt.pts {
@@ -305,7 +306,7 @@ func hotPoints(tb testing.TB) (*buffer.Buffer, []float32, [][2]float64, []float6
 	if _, err := os.Stat(tif); err != nil {
 		tb.Skipf("real tiles not found in %s (set GOJACV_TILES)", dir)
 	}
-	e := graph.NewEngine(NewRegistry(), graph.EngineOptions{})
+	e := graph.NewEngine(NewRegistry(), graphtest.Options(tb))
 	v, err := e.Evaluate(context.Background(), hotList(tb, e, openTile(tb, e, tif)).ID, graph.EvalOptions{Scale: 1})
 	if err != nil {
 		tb.Fatal(err)
@@ -317,7 +318,12 @@ func hotPoints(tb testing.TB) (*buffer.Buffer, []float32, [][2]float64, []float6
 		pts = append(pts, [2]float64{r.Centroid[0], r.Centroid[1]})
 		cores = append(cores, math.Max(1, math.Sqrt(r.Area/math.Pi)))
 	}
-	lin, _, err := buffer.DecodeFile(context.Background(), tif, buffer.DecodeOptions{}) // the code value is density (linear)
+	f, err := os.Open(tif) // #nosec G304 -- the gated tile
+	if err != nil {
+		tb.Fatal(err)
+	}
+	defer func() { _ = f.Close() }()
+	lin, _, err := buffer.DecodeFile(context.Background(), f, buffer.DecodeOptions{}) // the code value is density (linear)
 	if err != nil {
 		tb.Fatal(err)
 	}

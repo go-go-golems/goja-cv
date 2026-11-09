@@ -67,7 +67,7 @@ return { all: specks.length, dust: dust.length, look: img.overlay(dust).look("du
 return img.detect.specks().filter(r => r.score >= 0.5)   // fix: (await img.detect.specks()).filter
 ```
 
-Other awaited data is not linked to its node: `(await img.stats()).p99` is a number. The YAML result shows at most 48 items of a list; return `cv.json(x)` or `cv.csv(x)` to hand a program all of them.
+Other awaited data is not linked to its node: `(await img.stats()).p99` is a number. The YAML result shows at most 48 items of a list; `await cv.save("x.csv", items)` hands a program all of them.
 
 ## UNUSED_NODE
 

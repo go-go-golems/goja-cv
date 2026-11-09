@@ -58,8 +58,8 @@ return {
 }
 ```
 
-`cv.docs.read(id, { section })` returns Markdown; `cv.help(name)` takes ops, kinds (`"Regions"`), `Kind.method`
-and cv functions, and never throws. In test runs with a small model (deepseek-4.1-flash via pi), making the
+`cv.docs.read(id, { section })` returns Markdown; `cv.help(name)` takes ops, kinds (`"Image"`), `Kind.method`,
+cv functions and concepts (`"regions"`), and never throws. In test runs with a small model (deepseek-4.1-flash via pi), making the
 docs reachable from eval and making every error carry a fix cut the calls per task from 30 to about 20, with
 every remaining error corrected on the next call.
 
@@ -75,14 +75,17 @@ every remaining error corrected on the next call.
 ## Security
 
 - The eval runtime loads **only** the `cv` module and `timer`: no `fs`, `exec`, network or other modules.
-- `cv.open` reads image files; restrict it with `--root DIR` (repeatable). Paths outside fail with `E_ACCESS`.
+- Files: the agent reads and writes only in the workspace (`--root DIR`, required for `mcp`) and reads the
+  `--read DIR` directories; paths, `..` and symlinks that leave them fail with `E_ACCESS`. A save never follows a
+  symlink and never replaces a file the session opened.
 - `--http` without `--allow-remote` only listens on loopback; the HTTP transport has no authentication, and all
   HTTP clients share the default session.
-- Nothing writes files except the CLI's `--out` look files; the MCP server returns images inline.
+- Nothing else writes files: `cv.save` writes in the workspace, the CLI its `--out` look files; the MCP server
+  returns images inline.
 
 ## What a good agent prompt adds
 
 - "Use cv.docs.search and cv.help(name) when unsure; apply the `fix:` of an error."
 - "Keep nodes in variables; await only to read data; store what you need later on mem."
 - "Return looks to see results; back judgements with img.measure(items) (regions, boxes, circles, or points with coreRadius)."
-- "Return cv.csv(x) when a program needs every row; save files with node.save(path) (needs --out-root)."
+- "When a program needs every row, save it: await cv.save(\"rows.csv\", items); reopen saved images with cv.open(saved.path)."

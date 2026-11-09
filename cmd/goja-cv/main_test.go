@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -23,7 +24,7 @@ func runCLI(t *testing.T, args ...string) (int, string, string) {
 
 func TestEvalWritesLookFiles(t *testing.T) {
 	dir := t.TempDir()
-	code, out, errOut := runCLI(t, "eval", "--image", tiffPath, "--out", dir, "-e",
+	code, out, errOut := runCLI(t, "eval", "--read", filepath.Dir(tiffPath), "--image", tiffPath, "--out", dir, "-e",
 		`return { meanL: (await img.stats()).meanL, after: img.exposure(0.5).look("after"), gray: img.toGray().look("gray") }`)
 	if code != exitOK {
 		t.Fatalf("exit %d\n%s\n%s", code, out, errOut)
@@ -49,7 +50,7 @@ func TestEvalWritesLookFiles(t *testing.T) {
 // are not written and the LOOKS warning names them.
 func TestEvalWarnsAboutLooksBeyondTheBudget(t *testing.T) {
 	dir := t.TempDir()
-	code, out, errOut := runCLI(t, "eval", "--image", tiffPath, "--out", dir, "-e",
+	code, out, errOut := runCLI(t, "eval", "--read", filepath.Dir(tiffPath), "--image", tiffPath, "--out", dir, "-e",
 		`for (const i of [1, 2, 3, 4, 5, 6]) img.exposure(i / 10).look("s" + i); return 1`)
 	if code != exitOK {
 		t.Fatalf("exit %d\n%s\n%s", code, out, errOut)
@@ -73,7 +74,7 @@ func TestRunScriptJSONAndExitCodes(t *testing.T) {
 	if err := os.WriteFile(script, []byte("img.exposure(-1).look(\"dark\")\nconsole.log(\"hi\")\nreturn 42\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	code, out, errOut := runCLI(t, "run", script, "--image", tiffPath, "--out", filepath.Join(dir, "looks"), "--json")
+	code, out, errOut := runCLI(t, "run", script, "--read", filepath.Dir(tiffPath), "--image", tiffPath, "--out", filepath.Join(dir, "looks"), "--json")
 	if code != exitOK {
 		t.Fatalf("exit %d\n%s\n%s", code, out, errOut)
 	}
@@ -89,7 +90,7 @@ func TestRunScriptJSONAndExitCodes(t *testing.T) {
 	}
 
 	// cv error: printed, exit 1; looks shown before the throw are still written
-	code, out, _ = runCLI(t, "eval", "--image", tiffPath, "--out", dir, "-e", "img.look(\"before\")\nreturn img.brightness(1)")
+	code, out, _ = runCLI(t, "eval", "--read", filepath.Dir(tiffPath), "--image", tiffPath, "--out", dir, "-e", "img.look(\"before\")\nreturn img.brightness(1)")
 	if code != exitCVError || !strings.Contains(out, "code: E_UNKNOWN_METHOD") || !strings.Contains(out, "look-1-before.png") {
 		t.Fatalf("cv error: exit %d\n%s", code, out)
 	}
@@ -102,9 +103,11 @@ func TestRunScriptJSONAndExitCodes(t *testing.T) {
 		"bad script":    {"run", filepath.Join(dir, "nope.js")},
 		"unknown cmd":   {"frob"},
 		"bad kind":      {"ops", "--kind", "Foo"},
-		"remote http":   {"mcp", "--http", "0.0.0.0:3999"},
+		"remote http":   {"mcp", "--http", "0.0.0.0:3999", "--root", dir},
 		"bad root":      {"mcp", "--root", filepath.Join(dir, "nope")},
-		"bad out-root":  {"eval", "--out-root", filepath.Join(dir, "nope"), "-e", "return 1"},
+		"mcp no root":   {"mcp"},
+		"bad read":      {"eval", "--read", filepath.Join(dir, "nope"), "-e", "return 1"},
+		"image outside": {"eval", "--root", dir, "--image", tiffPath, "-e", "return 1"},
 	} {
 		if code, out, errOut := runCLI(t, args...); code != exitUsage {
 			t.Fatalf("%s: exit %d, want 2\n%s\n%s", name, code, out, errOut)
@@ -141,7 +144,7 @@ func TestOpsAndHelp(t *testing.T) {
 func TestMCPCommandServer(t *testing.T) {
 	ctx := context.Background()
 	var errOut bytes.Buffer
-	srv, closeFn, err := newMCPServer(ctx, &rootOptions{stderr: &errOut}, &mcpFlags{image: tiffPath, roots: []string{filepath.Dir(tiffPath)}})
+	srv, closeFn, err := newMCPServer(ctx, &rootOptions{stderr: &errOut}, &mcpFlags{image: tiffPath, root: t.TempDir(), read: []string{filepath.Dir(tiffPath)}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -187,26 +190,21 @@ func TestMCPCommandServer(t *testing.T) {
 	}
 }
 
-// TestDataFilesFromEval: data items are written as <name>.<ext> next to the
-// looks, a second item of the same name gets -2, --json lists them under
-// files with their row counts, and save writes under --out-root.
-func TestDataFilesFromEval(t *testing.T) {
+// TestSaveFromEval: cv.save writes in --root (relative names), the looks go
+// to --out, a --read directory is never written, and --json lists the look
+// files.
+func TestSaveFromEval(t *testing.T) {
 	dir := t.TempDir()
 	out, root := filepath.Join(dir, "out"), filepath.Join(dir, "root")
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	code, stdout, errOut := runCLI(t, "eval", "--image", tiffPath, "--out", out, "--out-root", root, "--json", "-e", `
+	code, stdout, errOut := runCLI(t, "eval", "--read", filepath.Dir(tiffPath), "--image", tiffPath, "--out", out, "--root", root, "--json", "-e", `
 const regs = img.mask.luminance({ above: 0.5 }).components()
-const saved = await cv.csv(regs).save("tables/regs.csv")
-return {
-  look: img.look("scene"),
-  spots: cv.csv(regs, { name: "spots" }),
-  again: cv.csv((await regs).slice(0, 1), { name: "spots" }),
-  raw: cv.json([{ b: 1, a: 2 }, { b: 3, a: 4 }], { name: "probe" }),
-  anon: cv.json({ n: 1 }),
-  saved: saved.rows,
-}`)
+const t = await cv.save("tables/regs.csv", regs)
+const j = await cv.save("probe.json", [{ b: 1, a: 2 }, { b: 3, a: 4 }])
+const v = await cv.save("scene.tif", img)
+return { look: img.look("scene"), rows: t.rows, j: j.rows, again: (await cv.open(v.path)).w }`)
 	if code != exitOK {
 		t.Fatalf("exit %d\n%s\n%s", code, stdout, errOut)
 	}
@@ -214,37 +212,27 @@ return {
 	if err := json.Unmarshal([]byte(stdout), &res); err != nil {
 		t.Fatalf("json: %v\n%s", err, stdout)
 	}
-	byName := map[string]contentFile{}
-	for _, f := range res.Files {
-		byName[filepath.Base(f.Path)] = f
+	if len(res.Files) != 1 || filepath.Base(res.Files[0].Path) != "look-1-scene.png" || filepath.Dir(res.Files[0].Path) != out {
+		t.Fatalf("files %+v", res.Files)
 	}
-	for _, name := range []string{"look-1-scene.png", "spots.csv", "spots-2.csv", "probe.json", "data-5.json"} {
-		if _, ok := byName[name]; !ok {
-			t.Fatalf("no %s in %+v\n%s", name, res.Files, res.Result)
-		}
-	}
-	if r := byName["probe.json"].Rows; r == nil || *r != 2 {
-		t.Fatalf("probe rows %v", r)
-	}
-	if r := byName["spots-2.csv"].Rows; r == nil || *r != 1 {
-		t.Fatalf("spots-2 rows %v", r)
-	}
-	probe, _ := os.ReadFile(byName["probe.json"].Path)
+	probe, _ := os.ReadFile(filepath.Join(root, "probe.json"))
 	if string(probe) != `[{"b":1,"a":2},{"b":3,"a":4}]`+"\n" {
 		t.Fatalf("probe.json keeps key order: %s", probe)
 	}
-	csvData, _ := os.ReadFile(byName["spots.csv"].Path)
-	if !strings.HasPrefix(string(csvData), "id,x,y,w,h,cx,cy,area,aspect\n") {
-		t.Fatalf("spots.csv header: %s", csvData)
+	csvData, err := os.ReadFile(filepath.Join(root, "tables", "regs.csv"))
+	if err != nil || !strings.HasPrefix(string(csvData), "id,x,y,w,h,cx,cy,area,aspect\n") {
+		t.Fatalf("regs.csv: %v\n%s", err, csvData)
 	}
-	saved, err := os.ReadFile(filepath.Join(root, "tables", "regs.csv"))
-	if err != nil || string(saved) != string(csvData) {
-		t.Fatalf("saved csv: %v\n%s", err, saved)
+	if !strings.Contains(res.Result, "again: 64") {
+		t.Fatalf("result:\n%s", res.Result)
 	}
-	for _, s := range []string{"spots: '[content 2: data spots.csv (9 columns of components)]'", "raw: '[content 4: data probe.json (2 items)]'", "anon: '[content 5: data data-5.json (1 keys)]'"} {
-		if !strings.Contains(res.Result, s) {
-			t.Fatalf("result lacks %q:\n%s", s, res.Result)
-		}
+	// relative names resolve in the workspace; a read directory is not written
+	code, _, _ = runCLI(t, "eval", "--read", filepath.Dir(tiffPath), "--root", root, "-e", `return await cv.save(`+strconv.Quote(filepath.Join(filepath.Dir(tiffPath), "x.json"))+`, 1)`)
+	if code != exitCVError {
+		t.Fatalf("save into a read directory: exit %d", code)
+	}
+	if _, err := os.Stat(filepath.Join(filepath.Dir(tiffPath), "x.json")); err == nil {
+		t.Fatal("wrote into a read directory")
 	}
 }
 
@@ -267,18 +255,5 @@ func TestPreludeFlag(t *testing.T) {
 	}
 	if code, _, _ := runCLI(t, "eval", "--prelude", filepath.Join(dir, "nope.js"), "-e", "return 1"); code != exitUsage {
 		t.Fatalf("missing prelude: exit %d", code)
-	}
-}
-
-// TestUniqueName: generated names are reserved, so items named a, a and a-2
-// never overwrite each other (review of PR #4).
-func TestUniqueName(t *testing.T) {
-	used := map[string]bool{}
-	var got []string
-	for _, n := range []string{"a", "a", "a-2", "a"} {
-		got = append(got, uniqueName(used, n, ".csv"))
-	}
-	if want := []string{"a.csv", "a-2.csv", "a-2-2.csv", "a-3.csv"}; strings.Join(got, " ") != strings.Join(want, " ") {
-		t.Fatalf("got %v, want %v", got, want)
 	}
 }

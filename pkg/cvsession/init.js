@@ -26,12 +26,11 @@
     });
   }
 
-  // cv.open is restricted to the session's roots (when configured), and
+  // cv.open reads in the session's workspace and read directories, and
   // takes { as } (or name, bind, alias) to bind the image to a global; the
   // module's open does not know as.
   const open = cv.open;
   cv.open = function (path, opts) {
-    native.checkPath(path);
     let as;
     let rest = opts;
     if (opts !== null && typeof opts === "object" && !Array.isArray(opts)) {
@@ -71,12 +70,36 @@
     writable: false,
     // The body starts from a promise job: goja survives an interrupt
     // (timeout) in the synchronous part of an async function only when it was
-    // started from a job.
+    // started from a job. Every cv.save the eval started completes before it
+    // returns, awaited or not; an unawaited save that failed fails the eval.
     value: function (body) {
+      function saves() {
+        return Promise.allSettled(native.pendingSaves()).then(function () {
+          const e = native.saveFailure();
+          if (e !== null) throw e;
+        });
+      }
       return Promise.resolve()
         .then(function () {
           return body();
         })
+        .then(
+          function (v) {
+            return saves().then(function () {
+              return v;
+            });
+          },
+          function (e) {
+            return saves().then(
+              function () {
+                throw e;
+              },
+              function () {
+                throw e;
+              },
+            );
+          },
+        )
         .then(undefined, function (e) {
           native.fail(e);
           throw e;
