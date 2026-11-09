@@ -72,3 +72,46 @@ Implement and commit at appropriate intervals, keep a daiary according to the fo
 
 ### Code review instructions
 - `ttmp/2026/11/09/GCV-00*/design-doc/01-design-and-implementation-guide.md` once written.
+
+## Step 2: Guides written; review read started
+
+The writer delivered the three guides (GCV-001 ~1280 lines/20 tasks, GCV-002 ~960/15, GCV-003 ~860/13), same
+15-section outline, `docmgr doctor` clean, commits `7b3bb16`, `e1855d5`, `b30efec`, `bfbc3a0` (+ diary `193e98f`).
+I started three independent reviewers, one per guide, each writing ranked findings and its own diary, without
+committing (the writer and reviewers share the repo).
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 1)
+
+**Assistant interpretation:** Run the review read before anything goes to implementers.
+
+**Inferred user intent:** Guides an intern can execute without asking.
+
+### What I did
+- Read the writer's report: key decisions (encoding belongs to data, space to ops, explicit `convert` nodes; `Frame` replaces DocW/DocH; macros via `OpDef.Expand`; pixel-dependent things are nodes, output-only things are look options; signed arithmetic without `offset`; `img.view` presets; one flat region schema; result content with separate budgets; `--out-root`) and the legacy-removal lists.
+- Spawned reviewers for GCV-001/002/003 (checks: concept introduction, code correctness, gaps, guideline conformance, implementability, architecture), findings in `reference/*review-read-findings*`, diaries `reference/*diary-review-read*`.
+
+### Why
+- Three parallel cold reads are faster and keep each reviewer focused on one guide.
+
+### What worked
+- N/A yet.
+
+### What didn't work
+- N/A
+
+### What I learned
+- The writer departed from the colleague's proposals in three places (`img.view` vs `cv.view`, no `offset`, no `items({ all })`), each with a decision record — reviewers should judge those.
+
+### What was tricky to build
+- Concurrency: several agents in one repo; only the coordinator and the writer commit.
+
+### What warrants a second pair of eyes
+- N/A
+
+### What should be done in the future
+- Send findings to the writer for revision; then implementation.
+
+### Code review instructions
+- The three design docs; reviewers' findings once written.
