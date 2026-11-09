@@ -18,9 +18,13 @@ func TestCommittedTestdataMatchesGenerator(t *testing.T) {
 		bits int
 		tol  float64
 	}{{TIFF16, 16, 1e-4}, {PNG8, 8, 1.0 / 60}} {
-		got, info, err := buffer.DecodeFile(context.Background(), filepath.Join("..", "..", "testdata", tc.file))
+		enc, info, err := buffer.DecodeFile(context.Background(), filepath.Join("..", "..", "testdata", tc.file), buffer.DecodeOptions{})
 		if err != nil {
 			t.Fatalf("%s: %v (run `make testdata`)", tc.file, err)
+		}
+		got, err := buffer.Linearize(context.Background(), enc, info, info.Encoding)
+		if err != nil {
+			t.Fatal(err)
 		}
 		if info.Bits != tc.bits || got.W != W || got.H != H || got.C != 3 {
 			t.Fatalf("%s: %+v", tc.file, info)

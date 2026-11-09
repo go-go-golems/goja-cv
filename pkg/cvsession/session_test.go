@@ -375,7 +375,7 @@ return {
 func TestImageMetadata(t *testing.T) {
 	app, sid := newApp(t, cvsession.Options{Image: tiffPath})
 	out := text(eval(t, app, sid, `return { img: await img, d: cv.describe(img), derived: await img.exposure(1) }`))
-	mustContain(t, out, "bitDepth: 16", "format: tiff", "file: gradient-64x48-16bit.tif", "colorSpace: sRGB",
+	mustContain(t, out, "bitDepth: 16", "format: tiff", "file: gradient-64x48-16bit.tif", "encoding: srgb", "sample: uint", "frame: [0, 0, 64, 48]",
 		"images: img = gradient-64x48-16bit.tif (64×48, 16-bit TIFF)")
 	out = text(eval(t, app, sid, `img = cv.open(`+quote(pngPath)+`); return await img`))
 	mustContain(t, out, "bitDepth: 8", "format: png", "file: gradient-64x48-8bit.png")

@@ -256,13 +256,22 @@ func (b *binding) call(c goja.FunctionCall) goja.Value {
 	return handle(b.vm, n)
 }
 
-// __open(path) → {id, kind}
+// __open(path, opts|null) → {id, kind}
 func (b *binding) open(c goja.FunctionCall) goja.Value {
 	p := c.Argument(0)
 	if goja.IsUndefined(p) || p.ExportType() == nil || p.ExportType().Kind().String() != "string" {
 		b.throw(graph.Errorf(graph.EArgType, "cv.open needs a file path string.").WithFix(`cv.open("scan.tif")`))
 	}
-	n, err := b.eng.Open(p.String())
+	var opts map[string]any
+	if o := c.Argument(1); !goja.IsUndefined(o) && !goja.IsNull(o) {
+		m, ok := fromJS(o.Export()).(map[string]any)
+		if !ok {
+			b.throw(graph.Errorf(graph.EArgType, "cv.open options must be an object, got %s.", o.String()).
+				WithFix(`cv.open("scan.tif", { encoding: "linear" })`))
+		}
+		opts = m
+	}
+	n, err := b.eng.Open(p.String(), opts)
 	if err != nil {
 		b.throw(err)
 	}

@@ -306,8 +306,9 @@
     version: native.__version,
     kinds: ["Image", "Mask", "Regions", "Value", "Param"],
     P: P,
-    open(path) {
-      return nodeFor(native.__open(path));
+    // open(path, { encoding, box, origin }) → Image
+    open(path, opts) {
+      return nodeFor(native.__open(path, opts === undefined ? null : marshal(opts)));
     },
     help(name) {
       return native.__help(name === undefined ? null : name);

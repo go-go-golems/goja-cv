@@ -27,6 +27,7 @@ const (
 	EInternal         = "E_INTERNAL"    // a bug: an op panicked
 	EPlaceholder      = "E_PLACEHOLDER" // a builder lambda's placeholder node was evaluated outside its builder
 	EFrame            = "E_FRAME"       // images combined by one op cover different frames
+	EFormat           = "E_FORMAT"      // a file feature goja-cv does not read
 	WUnusedNode       = "UNUSED_NODE"
 	WRange            = "RANGE"
 	WCut              = "CUT"

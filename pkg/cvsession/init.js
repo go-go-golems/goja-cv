@@ -15,9 +15,9 @@
 
   // cv.open is restricted to the session's roots (when configured).
   const open = cv.open;
-  cv.open = function (path) {
+  cv.open = function (path, opts) {
     native.checkPath(path);
-    return open(path);
+    return open(path, opts);
   };
 
   // cv and P give a structured unknown-name error (with did-you-mean) instead

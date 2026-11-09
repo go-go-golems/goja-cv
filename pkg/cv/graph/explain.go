@@ -12,13 +12,19 @@ import (
 )
 
 // SourceInfo is the file metadata of an open() source node (ok false for
-// other nodes): file (basename), format, bitDepth, channels in the file and
-// the assumed colour space.
+// other nodes): file (basename), format, bitDepth, sample, channels in the
+// file, encoding, frame and notes.
 func SourceInfo(n *Node) (map[string]any, bool) {
 	if n.Op.On != KindNone || n.Op.Name != "open" {
 		return nil, false
 	}
-	info := map[string]any{"file": filepath.Base(n.Args.String("path")), "colorSpace": "sRGB (assumed; ICC profiles are not read)"}
+	info := map[string]any{"file": filepath.Base(n.Args.String("path")), "encoding": n.Enc.String(), "frame": n.Frame.Data()}
+	if n.Args.Has("sample") {
+		info["sample"] = n.Args.String("sample")
+	}
+	if n.Args.Has("notes") {
+		info["notes"] = n.Args.Raw("notes")
+	}
 	if n.Args.Has("format") {
 		info["format"] = n.Args.String("format")
 	}

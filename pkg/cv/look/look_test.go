@@ -22,7 +22,7 @@ var testTIFF = filepath.Join("..", "..", "..", "testdata", "gradient-64x48-16bit
 func newEngine(t *testing.T, path string) (*graph.Engine, *graph.Node) {
 	t.Helper()
 	e := graph.NewEngine(ops.NewRegistry(), graph.EngineOptions{})
-	img, err := e.Open(path)
+	img, err := e.Open(path, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

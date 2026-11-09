@@ -989,7 +989,11 @@ func withEnumFix(err error, call string, s *ArgSpec) error {
 	if strings.HasPrefix(ce.Hint, "Did you mean ") {
 		v = strings.Trim(strings.TrimSuffix(strings.TrimPrefix(ce.Hint, "Did you mean "), "?"), `"`)
 	}
-	ce.Fix = fmt.Sprintf("%s({ %s: %q })", call, s.Name, v)
+	if call == "cv.open" {
+		ce.Fix = fmt.Sprintf("cv.open(path, { %s: %q })", s.Name, v)
+	} else {
+		ce.Fix = fmt.Sprintf("%s({ %s: %q })", call, s.Name, v)
+	}
 	return ce
 }
 
@@ -1011,7 +1015,12 @@ func trimUndefined(raw []any) []any {
 	return raw
 }
 
-func callName(op *OpDef) string { return op.Name }
+func callName(op *OpDef) string {
+	if op.On == KindNone && op.Name == "open" {
+		return "cv.open"
+	}
+	return op.Name
+}
 
 // signatureHint renders "exposure(ev)" style usage.
 func signatureHint(op *OpDef) string {

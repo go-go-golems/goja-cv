@@ -44,7 +44,7 @@ type EvalInput struct {
 
 // OpenInput is the input of the open tool.
 type OpenInput struct {
-	Path      string `json:"path" jsonschema:"Image file to open (PNG, JPEG, TIFF); it becomes img."`
+	Path      string `json:"path" jsonschema:"Image file to open (PNG, JPEG, TIFF, LinearRaw DNG, .npy); it becomes img."`
 	SessionID string `json:"sessionId,omitempty" jsonschema:"Optional; omit it to use the default session; only pass ids returned by create_session or list_sessions."`
 }
 

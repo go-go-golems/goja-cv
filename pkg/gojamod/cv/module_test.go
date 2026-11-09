@@ -327,7 +327,7 @@ func TestParamsRecomputeOnlyDownstream(t *testing.T) {
 		t.Fatalf("param state: %v", got)
 	}
 	eng := engineOf(t, rt)
-	img, _ := eng.Open(tiffPath)
+	img, _ := eng.Open(tiffPath, nil)
 	if eng.Evaluator().Runs(img.ID) != 1 {
 		t.Fatalf("source decoded/resampled %d times", eng.Evaluator().Runs(img.ID))
 	}

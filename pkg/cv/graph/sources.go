@@ -2,21 +2,40 @@ package graph
 
 import (
 	"context"
+	"fmt"
+	"path/filepath"
 	"sync"
 
 	"github.com/go-go-golems/goja-cv/pkg/cv/buffer"
 	"golang.org/x/sync/singleflight"
 )
 
-// Source is a decoded image file with its preview pyramid.
+// Source is a decoded image file (or a window of one) with its preview
+// pyramid of linear values.
 type Source struct {
 	Path string
 	Info buffer.Info
 	Pyr  *buffer.Pyramid
 }
 
-// SourceStore loads each source file once (per path and file stamp) and
-// keeps its pyramid pinned; pyramids are not part of the byte-capped cache.
+// SourceKey identifies one decoded source: a file version (path and stamp),
+// a window of it (nil: the whole file) and the encoding it is read with.
+type SourceKey struct {
+	Path, Stamp string
+	Box         *[4]int // [x, y, w, h] in file px
+	Enc         buffer.Encoding
+}
+
+func (k SourceKey) String() string {
+	s := k.Path + "\x00" + k.Stamp + "\x00" + k.Enc.String()
+	if k.Box != nil {
+		s += fmt.Sprintf("\x00%v", *k.Box)
+	}
+	return s
+}
+
+// SourceStore loads each source once (per key) and keeps its pyramid pinned;
+// pyramids are not part of the byte-capped cache.
 type SourceStore struct {
 	mu      sync.Mutex
 	m       map[string]*Source
@@ -29,10 +48,11 @@ func NewSourceStore(minLong int) *SourceStore {
 	return &SourceStore{m: map[string]*Source{}, minLong: minLong}
 }
 
-// Load returns the decoded source for path; stamp distinguishes versions of
-// the same file (size and modification time).
-func (s *SourceStore) Load(ctx context.Context, path, stamp string) (*Source, error) {
-	key := path + "\x00" + stamp
+// Load returns the decoded source for k: the decoder's encoded values
+// converted to linear values for encoding k.Enc (exact 8/16-bit tables for
+// integer files), with a pyramid that averages linear values.
+func (s *SourceStore) Load(ctx context.Context, k SourceKey) (*Source, error) {
+	key := k.String()
 	s.mu.Lock()
 	src, ok := s.m[key]
 	s.mu.Unlock()
@@ -40,21 +60,32 @@ func (s *SourceStore) Load(ctx context.Context, path, stamp string) (*Source, er
 		return src, nil
 	}
 	v, err, _ := s.flight.Do(key, func() (any, error) {
-		buf, info, err := buffer.DecodeFile(ctx, path)
+		var o buffer.DecodeOptions
+		if k.Box != nil {
+			o.Box = buffer.RectXYWH(k.Box[0], k.Box[1], k.Box[2], k.Box[3])
+		}
+		enc, info, err := buffer.DecodeFile(ctx, k.Path, o)
 		if err != nil {
 			return nil, err
 		}
-		pyr, err := buffer.NewPyramid(ctx, buf, s.minLong)
+		lin, err := buffer.Linearize(ctx, enc, info, k.Enc)
 		if err != nil {
 			return nil, err
 		}
-		src := &Source{Path: path, Info: info, Pyr: pyr}
+		pyr, err := buffer.NewPyramid(ctx, lin, s.minLong)
+		if err != nil {
+			return nil, err
+		}
+		src := &Source{Path: k.Path, Info: info, Pyr: pyr}
 		s.mu.Lock()
 		s.m[key] = src
 		s.mu.Unlock()
 		return src, nil
 	})
 	if err != nil {
+		if fe, ok := buffer.IsFormatError(err); ok {
+			return nil, Errorf(EFormat, "cv.open(%q): %s.", filepath.Base(k.Path), fe.Feature).WithHint("Supported: " + buffer.SupportedFormats + ".")
+		}
 		return nil, err
 	}
 	return v.(*Source), nil

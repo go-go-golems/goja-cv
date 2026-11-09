@@ -53,7 +53,7 @@ git clone https://github.com/go-go-golems/goja-cv && cd goja-cv
 go build -o goja-cv ./cmd/goja-cv
 ```
 
-Go 1.26 or newer. Inputs: PNG, JPEG, TIFF (8 or 16 bit), assumed sRGB.
+Go 1.26 or newer. Inputs: PNG, JPEG, TIFF (8/16-bit integer, 32-bit float; LZW, Deflate, PackBits), LinearRaw DNG and NumPy `.npy`; each file has an encoding (`srgb` or `linear`) that `cv.open(path, { encoding })` can override.
 
 ## Quick start on the CLI
 

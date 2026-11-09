@@ -19,7 +19,7 @@ func plantedEngine(t *testing.T) (*graph.Engine, *graph.Node, testimage.Planted)
 		t.Fatal(err)
 	}
 	e := graph.NewEngine(NewRegistry(), graph.EngineOptions{})
-	img, err := e.Open(path)
+	img, err := e.Open(path, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
