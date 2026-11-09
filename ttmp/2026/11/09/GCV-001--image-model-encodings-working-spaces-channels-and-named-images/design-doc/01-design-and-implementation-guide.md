@@ -1622,3 +1622,8 @@ Recorded while implementing on branch `task/gcv-001-image-model` (details and re
     at evaluation, and `colormap` on three channels an `E_WRONG_KIND` at evaluation, both with the guide's fixes.
 16. **Colormap tables** are generated: viridis and magma from Matt Zucker's CC0 degree-6 polynomial fits (within
     about 0.01 of matplotlib), diverging from five ColorBrewer RdBu anchors (blue–white–red), gray linear.
+17. **Names** (§7.10): the table is `order`, `nodes` and `defined` (the globals it defined, `img` from the start).
+    Besides the listed reserved names, JavaScript keywords and `undefined`/`NaN`/`Infinity`/`eval`/`arguments` are
+    refused; a name is free when the table defined it or `globalThis` has no such property. `checkName` runs before
+    the file is opened, so a bad name fails fast. The MCP `open` tool without `as` binds `img` (as before). The context
+    block names a float format `float32 NPY` and a window `file [x,y,w,h] (16-bit DNG, linear)`.

@@ -368,3 +368,55 @@ outputs (split) are returned as an array all the way to JavaScript.
 
 ### Technical details
 - Lab: X = 0.4124564 R + 0.3575761 G + 0.1804375 B, Y = 0.2126729 R + 0.7151522 G + 0.0721750 B, Z = 0.0193339 R + 0.1191920 G + 0.9503041 B; white (0.95047, 1, 1.08883); red → (53.24, 80.09, 67.20).
+
+## Step 7: Phase 6 - named images
+
+Phase 6 turns the single `img` slot into a session name table: `cv.open(path, { as: "ref" })` binds a global that
+persists across evals, `img` is the first entry, and the context block lists every name (and every unnamed open)
+with its file, frame, format and encoding. Names stay in the session layer; the engine and node hashes never see them.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 1)
+
+**Assistant interpretation:** Implement Phase 6 with `names_test.go` first: as binds and persists, E_NAME with fixes, rebinding, unnamed opens in the context block, MCP open with as, bare module rejects as.
+
+**Inferred user intent:** Let an agent hold a reference image (a cleaned version, another scan) next to img and see both in every result's context.
+
+**Commit (code):** 2161beb - "GCV-001 Phase 6: named images in the session"
+
+### What I did
+- `pkg/cvsession/names.go`: `nameTable`, reserved names and keywords, native `checkName`, `bindName`, `getName` (E_NO_IMAGE for an unbound name), `setName`, `asKey` (as or a synonym), `imageDesc`/`imagesLine` for the context block, `namedNodes` (count as used for UNUSED_NODE).
+- `init.js`: `defineName` (getter/setter on globalThis), `img` defined through it, the `cv.open` wrapper splits `{ as, ...rest }` and binds after opening.
+- `session.go`/`native.go`/`processor.go`: `state.names` replaces `state.img`; `getImg`/`setImg` removed; the images line comes from the table plus `cvmod.Opened` for unnamed opens.
+- Binding: `{ as }` in a bare module is E_UNKNOWN_OPTION with the hint and a `const ref = cv.open(…)` fix.
+- MCP `open`: `encoding` and `as` fields with when-to-omit descriptions; the tool runs `cv.open(path, { as, encoding })`.
+- Tests: `pkg/cvsession/names_test.go` (names in order with a DNG window and an unnamed npy, persistence, blend across names, rebinding, `name:` synonym, seven E_NAME/E_ARG_TYPE cases, the MCP tool with `as` and `encoding: linear`), `TestBareModuleRejectsAs`; context-line expectations in older tests gained `, srgb`.
+
+### Why
+- Guide §7.10 and the named-images decision record (issue 20).
+
+### What worked
+- The new tests passed on their first run; gate green.
+
+### What didn't work
+- Only expectation updates: four existing tests asserted the old context line without the encoding.
+
+### What I learned
+- goja's `Object.Get` returns nil for a missing property and a value (possibly undefined) for a present one, which is enough to tell "free" from "taken" without walking own keys.
+
+### What was tricky to build
+- Ordering in the wrapper: validate the name before opening (fast failure, no orphan open), bind after (the node exists), and only define the global for a new name (rebinding keeps the accessor).
+
+### What warrants a second pair of eyes
+- A name that was a sloppy-mode global before (`ref = 3` without `let`) is "already a global" and refused; the fix suggests `ref2`.
+
+### What should be done in the future
+- N/A
+
+### Code review instructions
+- `pkg/cvsession/names.go`, `init.js` (`defineName`, `cv.open`), `processor.go` (`contextBlock`), `mcp.go` (`OpenInput`, `open`).
+- `go test ./pkg/cvsession -run 'Named|BadNames|NameAndEncoding' -v`.
+
+### Technical details
+- Context example: `images: img = gradient-64x48-16bit.tif (64×48, 16-bit TIFF, srgb), ref = gradient-64x48-8bit.png (64×48, 8-bit PNG, srgb), scan = raw.dng [10,20,64,48] (16-bit DNG, linear), (unnamed) tile.npy (256×192, float32 NPY, linear)`.
