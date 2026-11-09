@@ -34,6 +34,13 @@ Results are YAML capped at 9000 characters with `warnings:` (RANGE, UNUSED_NODE 
 and a `context:` block; errors are YAML with `code, message, where, path, hint, fix`.
 `node.look({ label, maxSide })` returned in the value (or `show()`) delivers a numbered image
 whose caption gives the scale (`look 1: after (1568×1045, 1 image px = 4.0 doc px)`).
+The guides are readable from inside eval, so an agent with only the eval tool can find them:
+`cv.docs.list()`, `cv.docs.search("heal dust", { limit: 3 })` → `[{ id, title, section, snippet, score }]`,
+`cv.docs.read("recipes", { section: "Remove dust" })` → Markdown (topics: getting-started, units-and-scales,
+nodes-and-evaluation, lambdas, masks-and-regions, looks, params, errors, recipes; sources in
+`pkg/cv/docs/topics`, every `js` block is run by `TestDocsCodeBlocksRun`). The MCP server sends short
+instructions (eval contract, most used calls) and serves the topics as `cv://docs/<id>` next to the full op
+reference `cv://reference`.
 Exit codes: 0 ok, 1 cv error (still printed), 2 usage error. Go API: `pkg/cvsession`
 (`cvsession.New`, `App.Evaluate`, `NewMCPServer`); xgoja: `pkg/xgoja/providers/cv` and
 `examples/xgoja/cv-agent/xgoja.yaml`.
@@ -52,7 +59,7 @@ await img.histogram({ bins: 64, channel: "L" })
 await cv.evaluate(node, { scale: "full" })      // explicit scale: number, "preview" (default), "look", "full"
 img.exposure(0.3).gaussian(2).explain()         // the graph as lines, with sizes and cache state
 const ev = P.slider("ev", { min: -2, max: 2, value: 0.3 }); P.set("ev", 1)
-cv.help(); cv.help("levels"); cv.warnings()
+cv.help(); cv.help("levels"); cv.warnings(); cv.docs.search("mask feather")
 ```
 
 Ops: `exposure`, `levels`, `contrast`, `toGray`, `gaussian`, `stats`, `histogram`, `explain`;
@@ -99,6 +106,7 @@ mask.components({ minArea: 4 })                            // Mask → Regions
 - `pkg/cv/ops` – op registrations
 - `pkg/gojamod/cv` – go-go-goja native module `cv` and its embedded `prelude.js`
 - `pkg/cv/look` – looks (lazy image results with burned-in numbers)
+- `pkg/cv/docs` – the agent guides (`cv.docs`), embedded Markdown topics
 - `pkg/cvsession` – the eval session on replapi, result processor, MCP server
 - `cmd/goja-cv` – the CLI
 - `pkg/xgoja/providers/cv` – xgoja provider for the cv module
