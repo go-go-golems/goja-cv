@@ -9,6 +9,8 @@ topics:
       description: Computer vision
     - slug: agents
       description: LLM agents
+    - slug: analysis
+      description: Image analysis primitives
     - slug: image-model
       description: Image representation
     - slug: io
