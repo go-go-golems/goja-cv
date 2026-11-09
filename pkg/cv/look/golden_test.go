@@ -99,6 +99,8 @@ func goldenCases() []goldenCase {
 		}, Options{}},
 		{"histogram", classChart, c("histogram"), Options{}},
 		{"histogram-r", classChart, c("histogram", map[string]any{"channel": "r"}), Options{}},
+		// GCV-003 Phase 5: a profile across the star as a line chart
+		{"profile-chart", classChart, c("profile", []any{180.5, 46.5}, []any{220.5, 46.5}, map[string]any{"width": 3.0}), Options{}},
 		{"compare-side", classStrict, compareCase("side"), Options{}},
 		{"compare-split", classStrict, compareCase("split"), Options{}},
 		// GCV-002: a 32 × 32 crop at zoom 8 with rulers every 4 doc px and a grid every 8

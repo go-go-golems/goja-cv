@@ -472,7 +472,7 @@ func measurementOps() []graph.OpDef {
 			See: []string{"sample", "profile", "Regions.measure"},
 		},
 		{
-			Name: "profile", On: graph.KindImage, Returns: graph.KindValue, Space: linear,
+			Name: "profile", On: graph.KindImage, Returns: graph.KindValue, Space: linear, Chart: graph.ChartLines,
 			Args: []graph.ArgSpec{
 				{Name: "from", Type: "point", Unit: graph.DocPx, Positional: true, Doc: "start point (doc px; [x, y] or an object with cx, cy)"},
 				{Name: "to", Type: "point", Unit: graph.DocPx, Positional: true, Doc: "end point"},

@@ -137,7 +137,7 @@ func measureOps() []graph.OpDef {
 			See:    []string{"histogram", "levels", "percentile"},
 		},
 		{
-			Name: "histogram", On: graph.KindImage, Returns: graph.KindValue, Space: graph.SpaceRule{Default: buffer.SpaceEncoded}, Global: true,
+			Name: "histogram", On: graph.KindImage, Returns: graph.KindValue, Space: graph.SpaceRule{Default: buffer.SpaceEncoded}, Global: true, Chart: graph.ChartBars,
 			Args: []graph.ArgSpec{
 				{Name: "bins", Type: "number", Default: 256.0, Min: graph.F(2), Max: graph.F(4096)},
 				{Name: "channel", Type: "enum:L,r,g,b", Default: "L"},

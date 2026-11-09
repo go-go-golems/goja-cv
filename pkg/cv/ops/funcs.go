@@ -42,7 +42,7 @@ func funcDefs() []graph.FuncDef {
 	return []graph.FuncDef{
 		{
 			Name: "look", On: []string{string(graph.KindImage), string(graph.KindMask), string(graph.KindValue)}, Args: LookArgs(),
-			Doc: "An image of the node to return in the result (Image, Mask, histogram). Numbered, with what it shows and its scale in the caption.",
+			Doc: "An image of the node to return in the result (Image, Mask; a histogram as bars, a profile as lines). Numbered, with what it shows and its scale in the caption.",
 			See: []string{"show", "compare", "overlay"},
 		},
 		{

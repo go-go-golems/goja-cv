@@ -155,3 +155,31 @@ return {
 	out = text(eval(t, app, sid, `return await img.profile([0, 0], [255, 190], { step: 0.05 })`))
 	mustContain(t, out, "code: E_ARG_RANGE", "at most 4096")
 }
+
+// TestProfileLookIsALineChart: look() of a profile is a PNG line chart of
+// the chart size, captioned as a chart; a zoom is refused.
+func TestProfileLookIsALineChart(t *testing.T) {
+	app, sid := acceptanceApp(t)
+	resp := eval(t, app, sid, `return img.profile([180.5, 46.5], [220.5, 46.5], { width: 3 }).look("across the star")`)
+	out := mustOK(t, resp)
+	mustContain(t, out, "look 1: across the star", "chart)")
+	if len(resp.Content) != 1 {
+		t.Fatalf("%d content items", len(resp.Content))
+	}
+	m := decodePNG(t, resp.Content[0].MIMEType, resp.Content[0].Data)
+	if b := m.Bounds(); b.Dx() != 512 || b.Dy() != 204 {
+		t.Fatalf("chart is %v", b)
+	}
+	dark := 0
+	for y := 0; y < 204; y++ {
+		r, g, b, _ := m.At(300, y).RGBA()
+		if r>>8 < 100 && g>>8 < 100 && b>>8 < 100 {
+			dark++
+		}
+	}
+	if dark == 0 {
+		t.Fatal("no meanL line in column 300")
+	}
+	out = text(eval(t, app, sid, `return img.profile([180.5, 46.5], [220.5, 46.5]).look({ zoom: 2 })`))
+	mustContain(t, out, "code: E_ARG_TYPE", "charts have no doc px")
+}

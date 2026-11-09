@@ -220,6 +220,16 @@ func (c OpClass) String() string {
 	return "pixel"
 }
 
+// ChartKind is how look() draws a Value node: no chart, bars (histogram
+// counts) or lines (a profile: t against meanL, meanR, meanG, meanB).
+type ChartKind uint8
+
+const (
+	ChartNone ChartKind = iota
+	ChartBars
+	ChartLines
+)
+
 // RunFunc computes an op. in holds the evaluated explicit inputs (the
 // receiver first, then OpDef.Inputs); node-valued arguments have already been
 // evaluated and substituted into args.
@@ -238,6 +248,7 @@ type OpDef struct {
 	Gray     func(args Args) []int // positions of the Image inputs read as luminance (fed toGray rec709 in linear space)
 	Internal bool                  // not callable from JavaScript, not listed in help (convert)
 	Lossless bool                  // looks of its result are PNG by default (format "auto"): contact sheets
+	Chart    ChartKind             // look() of a Value result draws this chart (histogram: bars, profile: lines)
 	// MaxItems is a static upper bound on the item count of a Regions
 	// result (top(n)); ok false when unknown (a lifted n). A sheet sizes
 	// itself by it.
