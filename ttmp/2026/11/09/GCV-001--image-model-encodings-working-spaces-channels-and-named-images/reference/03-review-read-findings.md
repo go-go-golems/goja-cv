@@ -478,3 +478,58 @@ How to work through this list:
 - GCV-002 guide (uses `DocFrame`, `Frame.Sheet`, `DerivedEnc`, `Expand`, encoded defaults for arithmetic and
   high-pass) and GCV-003 guide (uses `Level`, linear measurement defaults, saved-file metadata read back by
   GCV-001 decoders).
+
+## Disposition (revision 2 of the guide, 2026-11-09)
+
+Section numbers refer to revision 2 of `design-doc/01-design-and-implementation-guide.md`. "Foundations" is
+`reference/05-foundations-goja-cv-for-the-gcv-guides.md`.
+
+| finding | disposition | where |
+|---|---|---|
+| P1-1 | fixed: rule (b), luminance from linear light through a graph-level grey-input rule (`OpDef.Gray`); decision record with the 0.498/0.213 and 0.512/0.471 numbers | §3.5, §7.5 "Grey input", §8, §9.3 |
+| P1-2 | fixed: golden-look harness is Phase 0 step 1; expected differences named | §12 Phase 0, §13.3 |
+| P1-3 | fixed: phases reordered (golden/dead code, encodings, frames + box/point, spaces + display, decoders, macros/channels, names, docs), each with its after-state | §12 |
+| P1-4 | fixed: statics computed in `internNode` from (op, args, inputs); placeholder copies receiver statics; `Substitute` inherits them; lambda test | §7.5, §9.3, §12 Phase 3 |
+| P2-1 | fixed: shared Foundations chapter (§F1–§F12) with the CVJS-001 absolute path; guide points to it | How to read, Foundations |
+| P2-2 | fixed: "linear in Q", linear light, density numbers (50 %/25 %), "goja-cv does not know the quantity" | §3.1 |
+| P2-3 | fixed: `perceptual` dropped; two spaces; decision record | §3.3, §7.2, §8 |
+| P2-4 | fixed: masks have `EncNone`/`SpaceNone`, displayed directly; decision retitled | §3.6, §7.2, §8 |
+| P2-5 | fixed: `KeepEnc` = first Image input (receiver, Inputs, kind-typed args) | §7.5 |
+| P2-6 | fixed: loop guarded by `s != SpaceNone`; three input sources named; `Image[]` elements; compare test | §7.5, §9.2, §12 Phase 3 |
+| P2-7 | fixed: `Buffer.Space` dropped; `Convert(ctx, b, enc, from, to)` | §7.2 |
+| P2-8 | fixed: values get statics stamped by the evaluator; `NewImage(buf)`; `EvalCtx.InputNode` | §7.2, §7.5, §6 item 6 |
+| P2-9 | fixed: `DocFrame` in the `OpDef` block with its default; used by `open` | §7.4, §7.5 |
+| P2-10 | fixed: absolute-coordinate rule, out-of-frame `E_ARG_RANGE`, integer origin; `XY` shifts corners/points only. Note: `RegionsValue.NewRegion` does exist (`regions.go:67`); the finding confused it with `NewRegions` | §3.7, §8 frames record, §10 |
+| P2-11 | fixed: `as` handled only by the `init.js` wrapper; engine `open` does not know it; bare module rejects it | §7.4, §7.10, §9.1 |
+| P2-12 | fixed: unnamed opens listed as `(unnamed) …` | §7.10 |
+| P2-13 | fixed: Value nodes carry the measured image's `Enc`; warning only when `!Identity` | §7.2, §7.6 |
+| P2-14 | fixed: `Describe` omits `space` equal to the op default; labelled statics column | §7.5, §9.3 |
+| P2-15 | fixed: `Register` checks exactly one of `Run`/`Expand`; `CallResult`; Expander collects warnings, may call Internal ops | §7.8 |
+| P2-16 | fixed: TIFF primer with the tile's hex dump; own decompression (x/image/tiff/lzw, zlib, PackBits); no x/image fallback | §7.3, §8 |
+| P2-17 | fixed: `Info.Origin`, PNG `tEXt` with keyword `goja-cv`, chunk scan, Phase 4 read-back test | §7.3, §12 Phase 4 |
+| P2-18 | fixed: `Convert` uses exact functions; LUTs only as a documented fast path; 1e-6 relative | §7.2, §12 Phase 1 |
+| P2-19 | fixed: two-question rule; defaults table labels each row | §3.4, §7.5 |
+| P2-20 | fixed: chroma defined in §3.8 (not CIE C*); level defined with the homonym note; "root frame" removed; lifting in Foundations §F3; issues 10 and 22 in §2.2 | §2.2, §3.3, §3.8 |
+| P2-21 | fixed: records for levels/stats defaults, macros, linear pyramid | §8 |
+| P2-22 | fixed: cost paragraph | §7.5 "Cost" |
+| P3-1 | fixed: analogy removed | §2.1 |
+| P3-2 | fixed: lines 55–59, comment marked as added | §2.1 |
+| P3-3 | fixed: decode-direction pair 0.0096/0.0615 (6.4×) | §3.4 |
+| P3-4 | fixed: I_base defined | §2.1 |
+| P3-5 | fixed | §4.1 |
+| P3-6 | fixed: `mem.ref` workaround mentioned | §4.5 |
+| P3-7 | fixed: `session_test.go:378` | §11 |
+| P3-8 | fixed: `02-units-and-scales.md:25`, `05-masks-and-regions.md`, `pkg/doc/08-recipes.md` added | §11 |
+| P3-9 | fixed: `OpenOptions` removed; `Engine.Open(path, raw)` only | §7.4 |
+| P3-10 | fixed: `open.box` is `{Type: "box", Unit: Unitless, Static: true}` | §7.4 |
+| P3-11 | fixed: `ParseSpace` declared; `MustSpace` dropped | §7.2, §7.5 |
+| P3-12 | fixed: `Result` is a function with three named values; `encode` returns its argument | §7.5, §7.7 |
+| P3-13 | fixed: `convert` has `SpaceRule{}`; Internal ops skipped by method tables and help | §7.5 |
+| P3-14 | fixed differently: the default range is computed at the evaluation scale and the doc says so; `Global: true` declined because `Global` has no reader (GCV-002 P2-7) | §7.9 |
+| P3-15 | fixed: code `PRIMARIES`, listed in §10 | §7.9, §10 |
+| P3-16 | fixed: value synonyms scoped per enum | §10 |
+| P3-17 | fixed: `rec601` removed | §4.6, §6 item 10, §12 Phase 5 |
+| P3-18 | fixed: compare each fixture with its generating float buffer within one code | §12 Phase 4 |
+| P3-19 | fixed: full-sentence bullets | §13.1 |
+| P3-20 | fixed: key points after §7 and §12; closing §15 | §7, §12, §15 |
+| P3-21 | fixed: the optional-parameter lesson and the run-variance caveat are stated; Phase 7 names the other repository and gives an acceptance criterion | §7.10, §12 Phase 7, §13.5 |

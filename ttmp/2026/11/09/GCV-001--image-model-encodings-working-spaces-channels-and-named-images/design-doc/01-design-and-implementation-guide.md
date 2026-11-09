@@ -10,169 +10,180 @@ DocType: design-doc
 Intent: long-term
 Owners: []
 RelatedFiles:
+    - Path: ttmp/2026/11/09/GCV-001--image-model-encodings-working-spaces-channels-and-named-images/reference/05-foundations-goja-cv-for-the-gcv-guides.md
+      Note: shared foundations chapter (read first)
+    - Path: ttmp/2026/11/09/GCV-001--image-model-encodings-working-spaces-channels-and-named-images/reference/03-review-read-findings.md
+      Note: review findings and their disposition (revision 2)
     - Path: pkg/cv/buffer/io.go
-      Note: decode always applies the sRGB curve (Linear8/Linear16); ToImage always encodes sRGB; replaced by a decoder registry and Quantize
+      Note: decode always applies the sRGB curve; ToImage always encodes sRGB; replaced by a decoder registry and Quantize
     - Path: pkg/cv/buffer/color.go
-      Note: transfer functions and LUTs; become the single conversion point (buffer.Convert)
-    - Path: pkg/cv/buffer/buffer.go
-      Note: Buffer gains a Space tag; DocW/DocH pairs elsewhere become Frame
+      Note: transfer functions and LUTs; buffer.Convert uses the exact functions
     - Path: pkg/cv/graph/registry.go
-      Note: OpDef.Space string (documentation only) becomes a typed SpaceRule plus Result encoding and Expand (macros)
+      Note: OpDef.Space string becomes SpaceRule; Result, Gray, DocFrame, Expand, Internal
     - Path: pkg/cv/graph/node.go
-      Note: Node gains Enc, Space, Frame; Base (E_STALE) is removed
+      Note: internNode computes Enc, Space, Frame; Base is removed; Substitute and placeholders inherit statics
     - Path: pkg/cv/graph/args.go
-      Note: binder resolves the space option, inserts convert nodes, new Level unit and SPACE warning
+      Note: space option, Level unit, box and point types, SPACE warning
     - Path: pkg/cv/graph/engine.go
-      Note: Open takes options (encoding, as, box, origin) and probes through the decoder registry
+      Note: Open takes encoding, box, origin; Placeholder copies statics; Call returns CallResult
     - Path: pkg/cv/graph/explain.go
-      Note: SourceInfo reports encoding instead of the assumed sRGB colorSpace
-    - Path: pkg/cv/kernels/tone.go
-      Note: Levels and Contrast convert to perceptual privately; become space-agnostic
+      Note: SourceInfo reports encoding; Describe omits the default space
     - Path: pkg/cv/kernels/mask.go
-      Note: PerceptualLuminance, ColorMask, FloodMask convert privately; become space-agnostic
+      Note: PerceptualLuminance, ColorMask, FloodMask convert privately
+    - Path: pkg/cv/kernels/tone.go
+      Note: Levels and Contrast convert privately
     - Path: pkg/cv/kernels/measure.go
       Note: Histogram bins perceptual values privately
-    - Path: pkg/cv/kernels/draw.go
-      Note: AbsDiff works in perceptual space privately (removed in GCV-002)
     - Path: pkg/cv/kernels/specks.go
       Note: DetectSpecks mixes perceptual detection and linear MeanL
-    - Path: pkg/cv/ops/source.go
-      Note: the open op; gains encoding, box, origin
-    - Path: pkg/cv/ops/tone.go
-      Note: toGray is the only channel op today
     - Path: pkg/cv/look/look.go
-      Note: Render converts with ToImage (sRGB); renders encoded values after this ticket
+      Note: Render renders encoded values after this ticket
     - Path: pkg/cvsession/init.js
-      Note: img is a special-cased global; generalized to named images
-    - Path: pkg/cvsession/native.go
-      Note: getImg/setImg; becomes a named-image table
+      Note: cv.open wrapper gains as; img becomes one entry of a name table
     - Path: pkg/cvsession/processor.go
-      Note: context block lists opened images; adds names and encodings
-    - Path: pkg/cvsession/mcp.go
-      Note: the open MCP tool takes only a path today
-    - Path: pkg/cv/docs/topics/02-units-and-scales.md
-      Note: the Linear and perceptual section is rewritten as Encodings and spaces
+      Note: context block lists names, encodings and unnamed opens
     - Path: internal/testimage/planted.go
-      Note: the planted scan; source of the new fixtures (linear TIFF, float TIFF, npy, DNG)
+      Note: the planted scan; source of the new fixtures
 ExternalSources:
     - /Users/manuel/code/wesen/2026-11-07--dust-scanning/ttmp/2026/11/07/DUST-002--film-dust-detector-model-exploration/reference/07-goja-cv-handover-issues.md
     - /Users/manuel/code/wesen/2026-11-07--dust-scanning/ttmp/2026/11/07/DUST-002--film-dust-detector-model-exploration/scripts/82-export-cv-tiles.py
     - /Users/manuel/code/wesen/2026-11-07--dust-scanning/dustds/rawio.py
-    - /Users/manuel/code/wesen/2026-11-07--dust-scanning/ttmp/2026/11/08/CVJS-001--js-eval-cv-api-for-agents-compare-9-implementations/design-doc/04-intern-guide-part-3-implementing-cv-in-go-go-goja.md
-Summary: "Intern guide for GCV-001: what encodings and working spaces are, why goja-cv's hard-wired sRGB model fails on scientific data, and how to replace it with tagged encodings, one evaluator-resolved space option, linear/float/npy/DNG decoders, frames, channel ops and named images."
-LastUpdated: 2026-11-09T12:00:00-05:00
+Summary: "Intern guide for GCV-001: what encodings and working spaces are, why goja-cv's hard-wired sRGB model fails on scientific data, and how to replace it with tagged encodings, one build-time space option with convert nodes, linear/float/npy/DNG decoders, frames, channel ops, macros and named images."
+LastUpdated: 2026-11-09T21:00:00-05:00
 WhatFor: "Implementing GCV-001 (the first of GCV-001..003)."
 WhenToUse: "Read before touching buffer IO, op spaces, the open op, channels or session image bindings."
 ---
 
 # GCV-001 — Image model: encodings, working spaces, channels and named images
 
-This guide is for an intern who will implement GCV-001 in goja-cv. It assumes you have read the CVJS-001
-intern guide, Parts 1–3 (`design-doc/02` to `04` in the CVJS-001 ticket), or at least its vocabulary table:
-node, kind, op, evaluation, scale, doc px, look, kernel, buffer. Where goja-cv's implementation diverged from
-that guide, this document says so.
+## Revision history
 
-GCV-001 is the first of three tickets. GCV-002 (inspection views and looks) and GCV-003 (measurement and
-data out) both rely on the image model defined here: every view and every measurement must know in which
-space its numbers live. Implement GCV-001 first.
+| date | revision | what changed |
+|---|---|---|
+| 2026-11-09 | 1 | First version (commit 7b3bb16). |
+| 2026-11-09 | 2 | Revised from the review read (`reference/03-review-read-findings.md`, disposition table at its end). Foundations moved to a shared chapter (`reference/05-foundations-goja-cv-for-the-gcv-guides.md`). `perceptual` dropped: two spaces. Luminance is computed from linear light (decision record). Node statics are computed in `internNode`; placeholders inherit them. Phases reordered so every phase ends green, with a golden-look harness in Phase 0. TIFF primer and one TIFF decoder with its own decompression. `box`/`point` argument types, macro nodes, saved-file metadata (`Info.Origin`, PNG `tEXt`), and five new decision records. |
+
+## How to read this guide
+
+This guide is for an intern who will implement GCV-001 in goja-cv (`/Users/manuel/code/wesen/go-go-golems/goja-cv`).
+Read the shared foundations chapter first:
+`ttmp/2026/11/09/GCV-001--image-model-encodings-working-spaces-channels-and-named-images/reference/05-foundations-goja-cv-for-the-gcv-guides.md`.
+It defines nodes, kinds, build time and evaluation, the binder and lifting, the pixel and scale vocabulary, the
+session, looks and result content, diagnostics and the test infrastructure. This guide cites it as "Foundations
+§Fn" and does not repeat it.
+
+GCV-001 is the first of three tickets. GCV-002 (inspection views and looks) and GCV-003 (measurement and data
+out) use what this ticket defines: encodings, the two working spaces and the `space` option, the `Level` unit,
+frames, the `box`/`point` argument types, derived results, macros and named images. Implement GCV-001 first.
 
 ## 1. Executive summary
 
-goja-cv decodes every file as if it held sRGB-encoded light and converts it to linear light at load time. Each
+goja-cv decodes every file as if it held sRGB-encoded light and converts it to linear light at load time; each
 kernel then converts back to a perceptual scale privately when it needs one. That model is correct for
-photographs and wrong for everything else: linear scans, float data, density maps, depth maps, `.npy` arrays.
-The colleague who uses goja-cv to prepare film-density tiles for vision-model subagents currently stores
-`sRGB_encode(density)` in 16-bit TIFFs only so that goja-cv's decode undoes the curve.
+photographs and wrong for linear scans, float data, density maps, depth maps and `.npy` arrays. The colleague who
+uses goja-cv to prepare film-density tiles for vision-model subagents stores `sRGB_encode(density)` in 16-bit
+TIFFs only so that goja-cv's decode undoes the curve.
 
-This ticket replaces the hard-wired model with three explicit ideas:
+This ticket replaces the hard-wired model with three ideas:
 
 1. An **encoding** is a property of image data: the transfer function between the values a file stores (and a
-   look shows) and values proportional to the measured quantity. goja-cv knows two: `srgb` and `linear`.
-   Decoders report the encoding of what they read; `cv.open(path, { encoding })` overrides it.
-2. A **working space** is where an op does its arithmetic: `linear`, `encoded` or `perceptual`. Every op that
-   reads pixel values gets one `space` option, resolved when the node is built. The builder inserts explicit,
-   cached `convert` nodes where an input is in another space. Kernels never convert.
-3. **Frames** and **named images**: an image knows where it sits in document coordinates (so a window read
-   from a large DNG keeps its raw coordinates), and a session can hold several opened images under names
-   (`cv.open(path, { as: "ref" })`), all listed in the context block.
+   look shows) and values proportional to the measured quantity. goja-cv knows two, `srgb` and `linear`.
+   Decoders report the encoding of what they read, and `cv.open(path, { encoding })` overrides it.
+2. A **working space** is where an op does its arithmetic: `linear` or `encoded`. Every op that reads pixel
+   values gets one `space` option, resolved when the node is built. The builder inserts explicit, cached
+   `convert` nodes where an input is in the other space. Kernels never convert.
+3. A **frame** places an image in document coordinates, so a window read from a large scan keeps the scan's
+   coordinates; and a session holds several opened images under **names** (`cv.open(path, { as: "ref" })`), all
+   listed in the context block.
 
 Along the way the ticket adds decoders for linear and float TIFF, `.npy` and VueScan's linear DNG, channel ops
-(`channel`, `split`, `toLab`, `chroma`, `colormap`, `encode`), and a small macro mechanism (`OpDef.Expand`)
-that GCV-002 uses for its views. It removes the per-kernel conversions, the documentation-only `Space` string
-on `OpDef`, the assumed-sRGB metadata, and a few dead fields.
+(`channel`, `split`, `toLab`, `chroma`, `colormap`, `encode`), `box` and `point` argument types, and a macro
+mechanism (`OpDef.Expand`) that GCV-002 uses for its views. It removes the per-kernel conversions, the
+documentation-only `Space` string on `OpDef`, the assumed-sRGB metadata, `DocW`/`DocH` pairs, and dead fields.
 
 ## 2. Problem statement and scope
 
 ### 2.1 The workflow this serves
 
-The colleague's project (DUST-002) annotates dust, hairs and scratches on film scans with vision-language
-model (VLM) subagents. Each subagent gets one 1024 × 1024 px tile and uses goja-cv through MCP as a darkroom:
-it builds enhanced views in which faint specks stand out, gets a list of places worth a close look, and
-judges magnified crops by eye. The playbook is `reference/04-goja-cv-dust-playbook.md` in DUST-002; the
-handover issues are `reference/07-goja-cv-handover-issues.md`.
+The colleague's project (DUST-002, in the dust-scanning repository) annotates dust, hairs and scratches on film
+scans with vision-language model (VLM) subagents. Each subagent gets one 1024 × 1024 px tile. Through goja-cv's
+MCP tools it builds enhanced views in which faint specks stand out, lists candidate spots, and judges magnified
+crops of them by eye. The agent playbook is `reference/04-goja-cv-dust-playbook.md` and the handover issues are
+`reference/07-goja-cv-handover-issues.md`, both under
+`/Users/manuel/code/wesen/2026-11-07--dust-scanning/ttmp/2026/11/07/DUST-002--film-dust-detector-model-exploration/`.
 
 The tiles are cut from VueScan DNG scans of colour negatives. The quantity that matters is film **density**,
-D = −log10(I / I_base), normalized per tile to v ∈ [0, 1]. Dust blocks light, so it raises density, and a
-speck of a given opacity adds the same density step on a thin and on a dense part of the film. The export
-script (`scripts/82-export-cv-tiles.py`, docstring lines 1–15) explains the trick the colleague needed:
+D = −log10(I / I_base), where I is the light the scanner measured through the film and I_base the light
+measured through unexposed film base. The export script normalizes D per tile to v ∈ [0, 1]. Dust blocks
+light, so it raises density, and a speck of a given opacity adds the same density step on a thin and on a dense
+part of the film. The export (`scripts/82-export-cv-tiles.py`, lines 55–59; the comment is added here) shows the
+trick the colleague needed:
 
 ```python
-# 82-export-cv-tiles.py, lines 60-63
 v = np.clip((D - lo) / rng, 0, 1)
 if not a.perceptual:
-    v = np.where(v <= 0.0031308, 12.92 * v, 1.055 * np.power(v, 1 / 2.4) - 0.055)   # sRGB_encode(v)
+    v = np.where(v <= 0.0031308, 12.92 * v, 1.055 * np.power(v, 1 / 2.4) - 0.055)   # this stores sRGB_encode(v)
+p = OUT / f"{t['tile_id']}.tif"
 tifffile.imwrite(p, (v * 65535 + 0.5).astype(np.uint16), photometric="rgb")
 ```
 
-They store sRGB_encode(v) so that goja-cv's decode, which always applies the inverse sRGB curve, recovers
-v as the "linear" value on which blur, blend and stats run. Four handover issues follow from this:
+They store sRGB_encode(v) so that goja-cv's decode, which always applies the inverse sRGB curve, recovers v as
+the "linear" value on which blur, blend and stats run.
 
-| issue | title | priority | what it asks |
+### 2.2 The issues
+
+| issue | title | priority | in this ticket |
 |---|---|---|---|
-| 6 | Open linear and scientific inputs | P1 | `cv.open(path, { encoding })`; 16-bit linear TIFF, float TIFF, VueScan DNG, `.npy`; encoding in the context block |
-| 7 | Choose the working space for filters and stats | P2 | a `{ space: "linear" \| "encoded" }` option; `explain()` and captions state the space |
+| 6 | Open linear and scientific inputs | P1 | encodings, decoders, `cv.open(path, { encoding })`, encoding in the context block |
+| 7 | Choose the working space for filters and stats | P2 | the `space` option; `explain()` shows it |
 | 13 | Channels, colour spaces and false colour | P2 | `channel`, `split`, `toLab`, `chroma`, `colormap` |
-| 20 | Several named images per session | P3 | `cv.open(path, { as: "ref" })`, listed in the context block |
+| 20 | Several named images per session | P3 | `cv.open(path, { as })`, names in the context block |
+| 10 | Measure regions against another image | P2 | context only: its neutrality cue (chroma ≈ 0.2 for dust) is implemented in GCV-003 |
+| 22 | Named view presets | P3 | context only: presets are GCV-002 macros built on §7.8 |
 
-### 2.2 Scope
+### 2.3 Scope
 
-In scope: the image model (encodings, spaces, frames), decoders for the listed formats, the `space` option
-on every pixel-reading op, the channel ops, named images, the macro mechanism, and the documentation an agent
-reads. Out of scope: ICC colour management (files with embedded profiles are still treated by their transfer
-curve only), camera-raw demosaicing (only DNGs whose data is already `LinearRaw` are read), writing files
-(GCV-003, `node.save`), crops and zoomed looks (GCV-002), signed arithmetic (GCV-002).
+In scope: the image model (encodings, spaces, frames), decoders for the listed formats, the `space` option on
+every pixel-reading op, the channel ops, `box`/`point` argument types, named images, the macro mechanism, and the
+documentation an agent reads. Out of scope: ICC colour management (embedded profiles are ignored), camera-raw
+demosaicing (only DNGs whose data is already `LinearRaw` are read), BigTIFF, writing files (GCV-003), crops and
+zoomed looks (GCV-002), signed arithmetic (GCV-002).
 
 ## 3. Concepts
 
-This section builds the vocabulary in dependency order. Each idea is defined before it is used, with numbers
-you can check with a calculator.
+This section builds the vocabulary in dependency order, with numbers you can check with a calculator. It
+assumes Foundations §F2–§F5.
 
-### 3.1 Code values and quantities
+### 3.1 Code values, quantities and "linear"
 
-A 16-bit image file stores integers between 0 and 65535 per channel. These integers are **code values**. A
-code value by itself says nothing about the physical quantity it stands for; the file format, a tag, or a
-convention supplies that meaning. goja-cv normalizes code values to [0, 1] by dividing by the largest code
-(255 or 65535); float files store their values directly. In this guide "encoded value" always means this
-normalized code value.
+A 16-bit image file stores integers between 0 and 65535 per channel. These integers are **code values**. A code
+value does not say what it measures; a file format, a tag, or a convention supplies that meaning. goja-cv
+normalizes code values to [0, 1] by dividing by the largest code (255 or 65535); float files store their values
+directly. In this guide an **encoded value** is that normalized code value.
 
-The **quantity** is what the data measures: light intensity for a photograph, film density for the
-colleague's tiles, depth for a depth map. A quantity is **linear** when doubling it means "twice as much":
-twice the photons, twice the density.
+The **quantity** is what the data measures: light for a photograph, film density for the colleague's tiles,
+depth for a depth map. A stored number is **linear in a quantity Q** when it is proportional to Q: zero means
+none, and doubling the number doubles Q. **Linear light** means linear in the amount of light (photon count). The
+two notions differ for density. Density is logarithmic in light: a density of 0.3 transmits 10^−0.3 = 50 % of the
+base light and a density of 0.6 transmits 25 %. So a tile that stores v linear in density is not linear in light,
+and the right numbers for averaging specks are density numbers.
+
+goja-cv cannot know the quantity. In goja-cv, **linear** always means "the values after the declared encoding is
+undone". The user chooses the encoding under which those values are the quantity they care about: `linear` for
+the density tiles (v is density), `srgb` for a photograph (undoing the curve gives light).
 
 ### 3.2 Encodings and transfer functions
 
 An **encoding** is the function that maps an encoded value e to a linear value x. goja-cv needs two:
 
-- `srgb`: the sRGB transfer function. x = e / 12.92 for e ≤ 0.04045, else x = ((e + 0.055) / 1.055)^2.4.
-  Its inverse, used to encode, is e = 12.92 · x for x ≤ 0.0031308, else e = 1.055 · x^(1/2.4) − 0.055.
+- `srgb`: the sRGB transfer function. x = e / 12.92 for e ≤ 0.04045, else x = ((e + 0.055) / 1.055)^2.4. Its
+  inverse, used to encode, is e = 12.92 · x for x ≤ 0.0031308, else e = 1.055 · x^(1/2.4) − 0.055.
   `pkg/cv/buffer/color.go:29-50` implements both, extended to all reals (odd-symmetric below zero).
-- `linear`: the identity. x = e.
+- `linear`: the identity, x = e.
 
 Photographs (PNG, JPEG, ordinary 8/16-bit TIFF) are almost always sRGB-encoded, because the sRGB curve spends
-code values where human vision distinguishes small differences, in the shadows. Scanner raw data, float
-TIFFs and NumPy arrays are almost always linear.
-
-A few values make the curve concrete:
+code values where vision distinguishes small differences, in the shadows. Scanner raw data, float TIFFs and NumPy
+arrays are almost always linear.
 
 | encoded e | linear x (srgb) | linear x (linear) |
 |---|---|---|
@@ -180,121 +191,162 @@ A few values make the curve concrete:
 | 0.5 | 0.214 | 0.5 |
 | 0.8 | 0.604 | 0.8 |
 
-So the same code value 32768 (e = 0.5) means 21 % of white in an sRGB file and 50 % in a linear file. A reader
+The same code value 32768 (e = 0.5) means 21 % of white in an sRGB file and 50 % in a linear file. A reader
 that guesses wrong is off by a factor of 2.3 in the midtones.
 
-### 3.3 Three working spaces
+### 3.3 Two working spaces, and levels
 
-A kernel computes on numbers. The **working space** of an op is the representation those numbers are in when
-the kernel sees them. goja-cv uses three:
+A kernel computes on numbers. The **working space** of an op is the representation those numbers are in when the
+kernel sees them. goja-cv uses two:
 
-| space | definition | where it is the right scale |
+| space | definition | used by default for |
 |---|---|---|
-| `linear` | x: values proportional to the quantity (the encoding undone) | averaging, blurring, scaling, compositing light; photometric measurement |
-| `encoded` | e: the normalized code values, as the file stores them and as a look shows them | thresholds and contrast "as you see it"; data whose stored value is already the meaningful scale |
-| `perceptual` | p = sRGB_encode(x): the sRGB curve applied to linear values, whatever the file's encoding | comparing lightness across images of different encodings |
+| `linear` | x: the encoding undone, proportional to the quantity | averaging, blurring, scaling, compositing; photometric measurement |
+| `encoded` | e: the normalized code values, as the file stores them and as a look shows them | thresholds and contrast judged by eye; detection of what is visible |
 
-Two identities follow from the definitions, and they matter for performance and for explaining the model:
+A **level** is a number on the value scale of a space: a black point, a threshold, a percentile. Whether 0.5 is a
+dark or a mid level depends on the space it is read in. (Levels in this sense are unrelated to the `levels` op,
+except that the op's `black` and `white` arguments are levels.)
 
-- For an `srgb` image, encoded = perceptual. Every op that today runs "in perceptual space" runs in encoded
-  space without any numerical change.
-- For a `linear` image, encoded = linear. Opening the colleague's density tiles with `encoding: "linear"`
-  makes every op, whatever its space, see v itself.
+For a `linear`-encoded image the two spaces coincide: opening the colleague's density tiles with `encoding:
+"linear"` makes every op, whatever its space, see v itself. For an `srgb` image the spaces differ by the sRGB
+curve.
 
-The table below follows one pixel through the three spaces for three kinds of file.
+| file | stored code | encoded e | linear x |
+|---|---|---|---|
+| sRGB photo (16-bit TIFF) | 32768 | 0.5 | 0.214 |
+| linear scan (16-bit TIFF, `encoding: "linear"`) | 32768 | 0.5 | 0.5 |
+| today's density tile (stores sRGB_encode(v)), v = 0.3 | 38261 | 0.584 | 0.300 |
+| density tile stored as v, opened `linear`, v = 0.3 | 19661 | 0.300 | 0.300 |
 
-| file | stored code | encoded e | linear x | perceptual p |
-|---|---|---|---|---|
-| sRGB photo (16-bit TIFF) | 32768 | 0.5 | 0.214 | 0.5 |
-| linear scan (16-bit TIFF, `encoding: "linear"`) | 32768 | 0.5 | 0.5 | 0.735 |
-| today's density tile (stores sRGB_encode(v)), v = 0.3 | 38261 | 0.584 | 0.300 | 0.584 |
-| density tile stored as v, opened `linear`, v = 0.3 | 19661 | 0.300 | 0.300 | 0.584 |
+The last two rows are the same density. With this ticket the colleague stores v directly and opens with
+`encoding: "linear"`.
 
-The last two rows are the same density. With this ticket the colleague can store v directly and open with
-`encoding: "linear"`; linear and encoded then both equal v.
+goja-cv's code and docs also speak of a **perceptual** scale: the sRGB curve applied to linear light, a scale on
+which equal steps look roughly equally different. For sRGB images it is the encoded space. For linear-encoded
+light it is what `img.encode("srgb")` produces (§7.7). It is not a third space; §8 records why.
 
-### 3.4 Why the space changes results
+### 3.4 Which space an op should use
 
-Spaces are not a formality. The colleague measured that their speck ranking in a high-pass view got two to
-three times worse when the filter ran in the wrong space (issue 7). The reason is visible with two numbers.
+Spaces change results. The colleague measured that their speck ranking in a high-pass view got two to three
+times worse when the filter ran in the wrong space (issue 7). Two numbers show why.
 
-Take a dust speck that adds a density step Δv = 0.05. On a thin part of the film (v = 0.10) and on a dense
-part (v = 0.60) the step is the same in density units, because density is the linear quantity here. If the
-same data were viewed through the sRGB curve, the step would be:
+Take a dust speck that adds a density step Δv = 0.05, on a thin part of the film (v = 0.10) and on a dense part
+(v = 0.60). In density units the step is the same. Read through the sRGB curve in either direction, it is not:
 
 ```
-dark background:  sRGB_encode(0.15) − sRGB_encode(0.10) = 0.4236 − 0.3492 = 0.0744
-light background: sRGB_encode(0.65) − sRGB_encode(0.60) = 0.8267 − 0.7977 = 0.0289
+encode (v stored, viewed through sRGB_encode):
+  dark:  sRGB_encode(0.15) − sRGB_encode(0.10) = 0.4236 − 0.3492 = 0.0744
+  light: sRGB_encode(0.65) − sRGB_encode(0.60) = 0.8267 − 0.7977 = 0.0289      2.6× stronger on dark
+decode (v stored as code, decoded to "linear light" by today's goja-cv):
+  dark:  sRGB_decode(0.15) − sRGB_decode(0.10) = 0.0196 − 0.0100 = 0.0096
+  light: sRGB_decode(0.65) − sRGB_decode(0.60) = 0.3800 − 0.3186 = 0.0615      6.4× stronger on light
 ```
 
-The same physical speck looks 2.6 times stronger on the dark background. A detector or a ranked list built in
-that space prefers specks in thin areas and grain in thin areas alike. The correct space is the one in which
-the quantity is linear; for photographs of light it is linear light, for density tiles it is density.
+The decode direction is the colleague's measured problem: v stored as a plain code value and decoded as sRGB made
+grain louder in bright areas.
 
-Blur makes the same point from another side. A Gaussian blur averages neighbours. Averaging two pixels of light
-0.0 and 1.0 gives 0.5 linear, which displays as sRGB 0.735; averaging their encoded values gives 0.5 encoded,
-which is 0.214 linear. Optics averages light, so blurring a photograph should happen in linear space; a
-density map should be averaged in density.
+The rule has two parts, because ops answer two kinds of question:
 
-### 3.5 Light and derived quantities
+- If equal **physical** steps must count equally (averaging light, scaling exposure, measuring how much
+  material there is), use the space in which the quantity is linear: `linear`.
+- If equal **visible** steps must count equally (a threshold chosen by looking at a picture, contrast around the
+  displayed mid-grey, "is this speck visible"), use the space the look shows: `encoded`.
 
-Some ops do not transform light; they compute a new quantity from it. The difference of two images, a
-high-pass residual, a local contrast ratio, a chroma value, Lab coordinates: none of these is "light", and
-pushing them through a transfer function is meaningless. sRGB_decode of a difference of 0.05 encoded units is
-0.0039, a number that describes nothing.
+For linear-encoded data the two coincide, which is why the colleague's case is solved by the encoding alone. For
+sRGB photographs they differ, and the defaults table in §7.5 labels each op with the question it answers.
 
-This guide calls such outputs **derived**. A derived image is tagged with the `linear` encoding: its stored
-value is its value, so linear, encoded and the displayed grey level all coincide. The rule an agent can rely
-on is "for derived images, what you measure is what you see". Masks follow the same rule; a mask value of 0.5
-displays as grey 128, not as sRGB 0.735 (which is what `pkg/cv/buffer/io.go:182-190` does today).
+### 3.5 Luminance is computed from light
 
-### 3.6 Frames
+Several ops reduce a colour image to one grey plane before they work: `mask.luminance`, `refine`,
+`detect.specks`, `check.dust`, and `histogram` with channel `"L"`. Today they all compute **luminance** the
+photometric way: Y = 0.2126 R + 0.7152 G + 0.0722 B on linear channels, then (for the perceptual ops) the sRGB
+curve of Y (`PerceptualLuminance`, `pkg/cv/kernels/mask.go:41-52`).
 
-A **frame** is the rectangle an image covers in document coordinates: an origin (x, y) and a size (w, h), in
-doc px. Today every image's frame has origin (0, 0) and the size of its source file; goja-cv only stores the
-size (`DocW`, `DocH` on nodes and values). Two cases need a non-zero origin. Reading a 1024 px window out of
-a 7256 × 7326 DNG should keep the raw coordinates, so that a speck found at (1337, 131) is at (1337, 131)
-in the scan, not at (313, 131) in the window. Opening an exported tile whose top-left is raw (1024, 0) should
-be able to say so. GCV-002's crop is the third producer of frames.
+Computing the same weighted sum on encoded channels gives a different number, called **luma**:
 
-### 3.7 Channels and colormaps
+| colour (encoded R, G, B) | sRGB_encode(Y of linear channels) | luma of encoded channels |
+|---|---|---|
+| pure red (1, 0, 0) | 0.498 | 0.213 |
+| orange (0.8, 0.4, 0.2) | 0.512 | 0.471 |
+
+So "the same op in encoded space" is not automatically today's behaviour for colour images. This guide keeps
+luminance photometric: a luminance op computes Y from linear channels and then expresses Y in its working space.
+The graph does this, not the kernel (§7.5, "Grey input"), so kernels stay space-agnostic and today's numbers on
+sRGB images are preserved exactly.
+
+### 3.6 Light, derived values and masks
+
+Some ops do not transform light; they compute a new quantity from it: the difference of two images, a high-pass
+residual, a local contrast ratio, a chroma value, Lab coordinates. Pushing such a value through a transfer
+function is meaningless: sRGB_decode of a difference of 0.05 encoded units is 0.0039, a number that describes
+nothing.
+
+This guide calls such outputs **derived**. A derived image is tagged with the `linear` encoding: its stored value
+is its value, so linear, encoded and the displayed grey level coincide. For derived images, what you measure is
+what you see.
+
+**Masks** have no encoding at all (`Enc` is unset and their space is `none`). They are weights, never converted,
+and a look shows a mask value directly: 0.5 is grey 128. Today a mask of 0.5 is shown through the sRGB curve as
+188 (`pkg/cv/buffer/io.go:182-190`).
+
+### 3.7 Frames and absolute coordinates
+
+A **frame** (Foundations §F5) is the rectangle an image covers in doc px: an integer origin (x, y) and an integer
+size (w, h). Today every frame has origin (0, 0); goja-cv stores only the size (`DocW`, `DocH`).
+
+The rule this ticket introduces: **all doc-px arguments and results are absolute**. They are in the coordinates of
+the file the image came from, or in the coordinates declared by `origin` when the file is itself a window.
+Reading `cv.open("raw0027.dng", { box: [1536, 1536, 1024, 1024] })` gives an image whose frame is
+(1536, 1536, 1024, 1024); a speck found at raw (1700, 1600) is reported at (1700, 1600), and
+`img.stats({ box: [1600, 1600, 50, 50] })` measures inside it. A box or point outside the frame is
+`E_ARG_RANGE` with the frame in the message and the nearest valid box as the fix; `img.stats({ box: [0, 0, 100,
+100] })` on that image is such an error. Origins are integers because they come from file pixel positions.
+
+### 3.8 Channels, chroma and colormaps
 
 A colour image has three channels. Several inspection cues live in one channel or in the relation between
-channels: dust on colour film is neutral (equal density step in all three channels), colour grain is not.
-The colleague measured chroma ≈ 0.2 for confirmed dust against ≈ 0.8 for rejects (issue 10). A **colormap**
-maps a single-channel value to a display colour; a diverging map (blue–white–red) shows the sign of a signed
-map at a glance, which grey cannot.
+channels: dust on colour film is neutral (an equal density step in all three channels), colour grain and coloured
+scene detail are not.
 
-### 3.8 Named images
+In goja-cv, **chroma** of a pixel means the spread of its channels: max(R, G, B) − min(R, G, B), optionally
+divided by the channel mean. It is not CIE chroma C*, which is computed in Lab. The colleague's neutrality cue
+is a different, related number: the spread of a spot's per-channel *contrast steps* relative to the mean step
+(≈ 0.2 for confirmed dust, ≈ 0.8 for rejects, issue 10). GCV-003 implements that cue as the region field
+`stepChroma`; this ticket's `chroma()` is the per-pixel map.
 
-A session can hold several opened images. A **name** is a global the agent can use for one of them: `img` is
-the first, `ref` could be a cleaned version or another scan of the same frame. Ops already accept nodes built
-from different files as long as their sizes match; names only make the images reachable and visible in the
+A **colormap** maps a single-channel value to a display colour. A diverging map (blue–white–red) shows the sign
+of a signed map at a glance, which grey cannot.
+
+### 3.9 Named images
+
+A session can hold several opened images. A **name** is a global the agent uses for one of them: `img` is the
+first, `ref` could be a cleaned version or another scan of the same frame. Ops already accept nodes built from
+different files when their frames match; names make the images reachable across evals and visible in the
 context block.
 
 The key points:
 
-- An encoding belongs to the data; a working space belongs to the op. Confusing the two is the bug this ticket
+- An encoding belongs to the data; a working space belongs to the op. Confusing them is the bug this ticket
   removes.
-- For sRGB images encoded and perceptual coincide; for linear images encoded and linear coincide.
-- The space in which the measured quantity is linear is the right space for averaging and for thresholds that
-  must mean the same everywhere.
-- Derived values carry the linear encoding, so their numbers and their grey levels agree.
-- A frame places an image in document coordinates; most images have origin (0, 0).
+- `linear` means "the declared encoding undone"; the user picks the encoding under which that is the quantity.
+- Physical questions use `linear`, visible questions use `encoded`; for linear-encoded data they coincide.
+- Luminance is computed from linear light and then expressed in the op's space.
+- Derived values carry the linear encoding; masks carry none; both display their values directly.
+- Coordinates are absolute in the frame of the file they came from.
 
 ## 4. Current-state analysis
 
-Every claim below is anchored to the code at the commit this ticket was written against (`175b5d4`). Read the
-cited lines; the guide only summarizes them.
+Every claim is anchored to the code at commit `175b5d4`; `pkg/`, `internal/` and `cmd/` are unchanged since.
 
 ### 4.1 Decoding always applies the sRGB curve
 
 `buffer.Decode` (`pkg/cv/buffer/io.go:67-133`) switches on the Go image type and converts every sample through
-`Linear8` or `Linear16` (`io.go:89`, `:101`, `:124`, `:144`, `:160-162`). These are the sRGB decode tables from
-`color.go:5-27`. There is no branch for linear data and no way to ask for one. `DecodeConfigFile`
-(`io.go:30-51`) reads the header through `image.DecodeConfig`, which only knows PNG, JPEG and TIFF formats that
-`golang.org/x/image/tiff` supports. That package rejects float samples (`SampleFormat` ≠ 1, x/image
-`tiff/reader.go:252-262`) and unknown photometric interpretations such as DNG's `LinearRaw` (34892).
+`Linear8` or `Linear16` (`io.go:89`, `:101`, `:124`, `:144`, `:160-162`), the sRGB decode tables of
+`color.go:5-27`. There is no branch for linear data. `DecodeConfigFile` (`io.go:30-51`) reads headers through
+`image.DecodeConfig`, which knows PNG, JPEG, and the TIFF variants `golang.org/x/image/tiff` supports. That package
+rejects float samples (`SampleFormat` ≠ 1, x/image v0.47.0 `tiff/reader.go:252-262`) and has no case for DNG's
+`LinearRaw` photometric interpretation (34892).
 
 `Engine.Open` (`pkg/cv/graph/engine.go:87-120`) probes the header and stamps format, bit depth and channel count
 into hidden arguments of the `open` node; its error hint says "Supported formats: PNG, JPEG, TIFF (8/16-bit)"
@@ -304,129 +356,122 @@ for every file (`pkg/cv/graph/explain.go:21`).
 
 ### 4.2 The op `Space` field is documentation only
 
-`OpDef.Space` is a string with six possible meanings: `"linear" | "perceptual" | "geometry" | "analysis" |
-"source" | "data"` (`pkg/cv/graph/registry.go:106`), and the ops also use `"selection"` and `"present"`. The
-only code that reads it is the help renderer, which copies it into the help entry (`pkg/cv/graph/help.go:77-79`).
-The evaluator never looks at it (`pkg/cv/graph/eval.go` has no reference to `Space`). The field mixes two
-unrelated things: the working space of pixel ops, and a category for everything else. The counts across
-`pkg/cv/ops` are 7 linear, 5 perceptual, 3 geometry, 7 analysis, 11 data, 5 selection, 4 present, 3 source.
+`OpDef.Space` is a string with the documented values `"linear" | "perceptual" | "geometry" | "analysis" |
+"source" | "data"` (`pkg/cv/graph/registry.go:106`); the ops also use `"selection"` and `"present"`. The only
+reader is the help renderer (`pkg/cv/graph/help.go:77-79`); `pkg/cv/graph/eval.go` never mentions it. Across
+`pkg/cv/ops` the values occur 7 (linear), 5 (perceptual), 3 (geometry), 7 (analysis), 11 (data), 5 (selection), 4
+(present) and 3 (source) times.
 
 ### 4.3 Kernels convert privately
-
-Because the evaluator does not convert, every kernel that wants a perceptual value converts on its own:
 
 | kernel | file:lines | what it converts |
 |---|---|---|
 | `Levels` | `pkg/cv/kernels/tone.go:39-54` | black/white and every sample to perceptual, result back to linear |
 | `Contrast` | `tone.go:59-68` | every sample to perceptual and back |
-| `PerceptualLuminance` | `pkg/cv/kernels/mask.go:41-52` | linear luminance to perceptual (used by `mask.luminance`, `refine`, `detect.specks`) |
+| `PerceptualLuminance` | `pkg/cv/kernels/mask.go:41-52` | sRGB_encode of linear Rec. 709 luminance (`mask.luminance`, `refine`, `detect.specks`) |
 | `ColorMask` | `mask.go:124-145` (line 134) | each channel to perceptual before computing hue |
 | `FloodMask` | `mask.go:251-270` (lines 262, 266) | seed and every visited pixel to perceptual |
-| `Histogram` | `pkg/cv/kernels/measure.go:194-231` (line 216) | bins perceptual values |
-| `AbsDiff` | `pkg/cv/kernels/draw.go:100-121` | |P(a) − P(b)| · gain, back to linear |
+| `Histogram` | `pkg/cv/kernels/measure.go:194-231` (line 216) | bins perceptual values; channel `"L"` is linear luminance first |
+| `AbsDiff` | `pkg/cv/kernels/draw.go:100-121` | \|P(a) − P(b)\| · gain, back to linear |
 | `DetectSpecks` | `pkg/cv/kernels/specks.go:166-178` | detects on perceptual luminance, reports `MeanL` from linear luminance (line 175) |
 | `parseColor` | `pkg/cv/ops/mask.go:69-106` (line 105) | overlay colours from perceptual to linear |
 
-The histogram op even hard-codes `"space": "perceptual"` into its result (`pkg/cv/ops/measure.go:158`). No
-caller can ask any of these for another space, and none of them can be reused on a linear-encoded image without
-silently applying the sRGB curve.
+The histogram op also hard-codes `"space": "perceptual"` into its result (`pkg/cv/ops/measure.go:158`).
 
-### 4.4 Encoding for display and files assumes sRGB
+### 4.4 Display and files assume sRGB
 
-`buffer.ToImage` (`io.go:169-224`) clamps linear values and encodes them with `EncodeSRGB8`/`EncodeSRGB16`
-for every buffer, including masks and gray images. `look.Render` (`pkg/cv/look/look.go:180-209`) calls it for
-every look. `WriteFile` (`io.go:254-294`) writes 16-bit sRGB TIFFs and PNGs the same way. A mask value of 0.5
-therefore displays as code 188 of 255, not 128.
+`buffer.ToImage` (`io.go:169-224`) clamps linear values and encodes them with `EncodeSRGB8`/`EncodeSRGB16` for every
+buffer, masks included. `look.Render` (`pkg/cv/look/look.go:180-209`) calls it for every look, and `WriteFile`
+(`io.go:254-294`) writes 16-bit sRGB PNGs and TIFFs the same way.
 
 ### 4.5 One bound image
 
-The session defines `img` as a getter/setter pair over one slot (`pkg/cvsession/init.js:47-56`,
+The session defines `img` as a getter/setter over one slot (`pkg/cvsession/init.js:47-56`,
 `pkg/cvsession/native.go:120-132`). `cv.open` returns a node and records it in the binding's `opened` list
 (`pkg/gojamod/cv/binding.go:259-271`, `pkg/gojamod/cv/evaltrack.go:197-206`); `img = cv.open(p)` rebinds `img`.
-The context block lists all opened files and marks the one bound to `img` (`pkg/cvsession/processor.go:482-498`).
-A second image can be used through a `const` (lost after the eval) or a sloppy-mode global, which the context
-block does not show. The MCP `open` tool takes only a path (`pkg/cvsession/mcp.go:47`).
+The context block lists every opened file and marks the one bound to `img` (`pkg/cvsession/processor.go:482-498`).
+A second image survives across evals today as `mem.ref = cv.open(p)` (listed under `mem`, not under images) or
+as a sloppy-mode global (not listed at all). The MCP `open` tool takes only a path (`pkg/cvsession/mcp.go:47`).
 
 ### 4.6 Channels: only toGray
 
 The only channel op is `toGray(weights)` (`pkg/cv/ops/tone.go:76-92`), with weights `rec709`, `rec601` and
 `average` applied to linear values (`pkg/cv/kernels/tone.go:70-90`). Rec. 601 weights are defined for
-gamma-encoded luma, so `toGray("rec601")` mixes conventions. There is no way to take one channel, compute a
-colour difference, or display a single-channel value in false colour.
+gamma-encoded luma, so `toGray("rec601")` on linear values mixes conventions.
 
-### 4.7 Dead and vestigial pieces in the core
+### 4.7 Dead and duplicated pieces in the core
 
-`Node.Base` (`pkg/cv/graph/node.go:21`, set at `:127-129`) exists for an `E_STALE` check of a document layer
-that does not exist; nothing reads it. The error codes `EStale`, `EReadOnly`, `EFragmentCapture`, `ENoModel`
-and `WScale` (`pkg/cv/graph/errors.go:21-35`) are never used outside their declaration. `OpDef.Halo`
-(`registry.go:108`) is declared and filled but never read; GCV-002 gives it its first reader, so it stays.
+- `Node.Base` (`pkg/cv/graph/node.go:21`, set at `:127-129`) exists for an `E_STALE` check of a document layer that
+  does not exist; nothing reads it.
+- The codes `EStale`, `EReadOnly`, `EFragmentCapture`, `ENoModel` and `WScale` (`pkg/cv/graph/errors.go:21-35`)
+  are never used outside their declaration.
+- `DocW`/`DocH` are duplicated on nodes and on evaluated values (`pkg/cv/graph/value.go:15-36`): every `Run`
+  threads them through `NewImage(buf, docW, docH)` although the node knows them statically.
+- `OpDef.Halo` (`registry.go:108`) is declared and never read; GCV-002 gives it a reader.
 
 ### 4.8 What the workaround costs
 
 The colleague exported 300 MB of TIFFs for 50 tiles, cannot open the DNGs or their `.npy` caches, and has to
-remember which of goja-cv's numbers are density and which are sRGB_encode(density). Issue 7 reports that their
-probe helper had to re-apply the sRGB curve in JavaScript to get stats in file units. `stats`, `gaussian` and
-`blend` happened to run on v only because of the export trick; `histogram`, `mask.luminance` and
-`detect.specks` ran on sRGB_encode(v).
+remember which goja-cv numbers are density and which are sRGB_encode(density). Issue 7 reports that their probe
+helper once had to re-apply the sRGB curve in JavaScript to get stats in file units.
 
 ## 5. Gap analysis
 
 | need | today | gap |
 |---|---|---|
-| Read linear, float, `.npy`, LinearRaw DNG data | PNG/JPEG/TIFF ints, always sRGB | decoders and an encoding per source |
-| Say which encoding an image has | `colorSpace: sRGB (assumed)` | encoding in metadata, captions, context block |
-| Run any pixel op in a chosen space | fixed per kernel, undocumented in the evaluator | one `space` option resolved at build time |
-| Know where a number lives | not recorded | static `Space` on nodes; explain shows it |
-| Neutral/colour cues, false colour | `toGray` only | `channel`, `split`, `toLab`, `chroma`, `colormap` |
+| Read linear, float, `.npy`, LinearRaw DNG data | PNG/JPEG/TIFF integers, always sRGB | decoders and an encoding per source |
+| Say which encoding an image has | `colorSpace: sRGB (assumed)` | encoding in metadata, explain and the context block |
+| Run any pixel op in a chosen space | fixed per kernel | one `space` option resolved at build time |
+| Know which space a number is in | not recorded | static `Space` on nodes, shown by `explain()` |
+| Neutral and colour cues, false colour | `toGray` only | `channel`, `split`, `toLab`, `chroma`, `colormap` |
 | Read a window of a large scan in scan coordinates | not possible | frames, `open({ box })` |
 | Two images in a session, visible to the agent | one `img` slot | named images |
 
 ## 6. Legacy to remove or refactor
 
-The project is early-stage and local-only: no compatibility shims, no deprecated aliases. The items below are
-removed or rewritten by this ticket.
+The project is early-stage and local-only: no compatibility shims and no deprecated aliases. This ticket removes
+or rewrites the following.
 
-1. **Per-kernel colour conversion.** Every `buffer.ToPerceptual` / `buffer.ToLinear` call in `pkg/cv/kernels`
-   and `pkg/cv/ops` (table in §4.3) goes. Kernels compute on whatever numbers they are given. A test greps the
-   kernel sources so the calls cannot come back.
-2. **`OpDef.Space string`.** Replaced by a typed `SpaceRule` (working-space default and whether it is fixed).
-   The category values (`geometry`, `analysis`, `data`, `selection`, `present`, `source`) are dropped; help
-   already groups ops by receiver kind.
-3. **sRGB decode in `buffer.Decode` and sRGB encode in `buffer.ToImage`.** Decoders return encoded values and
-   an encoding; `ToImage` becomes `Quantize`, which only scales and clamps encoded values.
-4. **`DecodeConfigFile` through `image.DecodeConfig`.** Replaced by `Probe` on a decoder registry.
-5. **`colorSpace: "sRGB (assumed; …)"`** in `SourceInfo` and in the `metadata`/`meta`/`info` help redirects
-   (`pkg/gojamod/cv/help.go:52-54`). Replaced by `encoding`.
-6. **`DocW`, `DocH` pairs** on `Node`, `ImageValue` and `RegionsValue`. Replaced by one `Frame` value.
-7. **The single `img` slot** (`getImg`/`setImg`, `noteOpen`/`Opened` as the image list). Replaced by a
-   named-image table; `img` is the first name, not a special case.
-8. **`"space": "perceptual"` literal** in the histogram result and the "perceptual" wording in docs, help
-   strings and the MCP instructions (`pkg/cvsession/reference.go:28-29`). Replaced by the resolved space.
-9. **`Node.Base` and the unused codes** `EStale`, `EReadOnly`, `EFragmentCapture`, `ENoModel`, `WScale`.
-10. **`toGray("rec601")` on linear values.** Kept as a weight set, but the docs say to pass
-    `{ space: "encoded" }` with it; the mixed convention is no longer the default behaviour of anything.
-11. **`cv.kinds` hand list** in `pkg/gojamod/cv/prelude.js:307` duplicates `graph.Kinds`; the binding exports
-    the list from Go.
+1. Every `buffer.ToPerceptual` and `buffer.ToLinear` call in `pkg/cv/kernels` and `pkg/cv/ops` (table in §4.3) is
+   removed, and a test parses the sources so the calls cannot come back.
+2. `OpDef.Space string` is replaced by a typed `SpaceRule`; the category values (`geometry`, `analysis`, `data`,
+   `selection`, `present`, `source`) are dropped because help already groups ops by receiver kind.
+3. The sRGB decode in `buffer.Decode` and the sRGB encode in `buffer.ToImage` are removed; decoders return encoded
+   values, and `ToImage` becomes `Quantize`, which only scales and clamps encoded values.
+4. `DecodeConfigFile` through `image.DecodeConfig` is replaced by `Probe` on a decoder registry.
+5. The `colorSpace` metadata field and the `metadata`/`meta`/`info` help redirects that mention it
+   (`pkg/gojamod/cv/help.go:52-54`) are replaced by `encoding`.
+6. `DocW`/`DocH` on nodes and values, and `OpDef.DocSize`, are replaced by `Frame` and `OpDef.DocFrame`; values get
+   their frame stamped by the evaluator instead of from every `Run`.
+7. The single `img` slot (`getImg`/`setImg`) and the binding's `opened` list as the source of the context block are
+   replaced by a session name table; `img` is its first entry.
+8. The `"space": "perceptual"` literal in histogram results, and the word "perceptual" in docs, help strings and the
+   MCP instructions (`pkg/cvsession/reference.go:28-29`), are replaced by the resolved space.
+9. `Node.Base` and the unused codes `EStale`, `EReadOnly`, `EFragmentCapture`, `ENoModel` and `WScale` are deleted.
+10. `toGray("rec601")` is deleted; `toGray` keeps `rec709` (linear light) and `average` (any space).
+11. The hand-written `cv.kinds` list (`pkg/gojamod/cv/prelude.js:307`) is replaced by the list exported from
+    `graph.Kinds`.
+12. `ToPerceptual`/`ToLinear` interpolated tables stay only as a documented fast path; `Convert` uses the exact
+    transfer functions.
 
 ## 7. Proposed architecture
 
 ### 7.1 Overview
 
 ```
- file ──▶ decoder registry ──▶ encoded float32 + Info{encoding, format, bits, sample}
-                                   │ source loader: encoded → linear (exact 8/16-bit tables), pyramid in linear
+ file ──▶ decoder registry ──▶ encoded float32 + Info{encoding, format, bits, sample, origin}
+                                   │ source loader: encoded → linear (exact 8/16-bit tables), pyramid of linear values
                                    ▼
- open node  (Enc = srgb|linear, Space = linear, Frame = {x, y, w, h})
-   │
-   │  agent calls  img.mask.luminance({ above: 0.9 })
+ open node  (Enc = srgb | linear, Space = linear, Frame = {x, y, w, h})
+   │  agent calls img.mask.luminance({ above: 0.9 })
    ▼
- Builder.Intern ── resolve space (option or op default) ── input in another space?
-   │                                                         │ yes: intern convert(input → space)
-   ▼                                                         ▼
- mask.luminance node (Space = encoded)  ◀── input ── convert node (cached like any node)
+ Builder.Intern: bind args → resolve space (option or op default) → grey input? → inputs in another space?
+   │                                                     │ yes: intern toGray / convert nodes (cached, shared)
+   ▼                                                     ▼
+ internNode computes Enc, Space, Frame from (op, args, inputs)   ◀── the only place statics are set
    │
    ▼
- evaluator runs kernels on already-converted buffers; kernels never convert
+ evaluator runs kernels on already-converted buffers; kernels never convert; values get statics stamped
    │
    ▼
  look: convert(root → encoded), Quantize to 8 bits, encode PNG/JPEG
@@ -434,12 +479,11 @@ removed or rewritten by this ticket.
 
 Three rules carry the design:
 
-- Encoding and space are **static**: known when the node is built, recorded on the node, part of its hash.
-  Nothing about them is decided at evaluation time.
+- Encoding, space and frame are **static**: known when the node is built, computed from the node's own op, args
+  and inputs, never modified afterwards.
 - Conversions are **nodes**. They are hash-consed and cached like every other node, so two ops that need the
-  encoded version of the same input share one conversion, and `explain()` shows every conversion.
-- Kernels are **space-agnostic**. A kernel computes on the numbers it receives; which numbers those are is the
-  builder's decision.
+  encoded version of one input share one conversion, and `explain()` shows each conversion.
+- Kernels are **space-agnostic**. A kernel computes on the numbers it receives.
 
 ### 7.2 Types
 
@@ -448,57 +492,60 @@ Three rules carry the design:
 package buffer
 
 // Encoding is the transfer function between encoded values (what a file
-// stores and a look shows) and linear values (proportional to the quantity).
+// stores and a look shows) and linear values.
 type Encoding uint8
 
 const (
-    EncSRGB   Encoding = iota + 1 // sRGB curve
-    EncLinear                     // identity
+    EncNone   Encoding = iota // masks and non-image values
+    EncSRGB                   // sRGB curve
+    EncLinear                 // identity
 )
 
-func (e Encoding) String() string            // "srgb" | "linear"
+func (e Encoding) String() string            // "", "srgb", "linear"
 func ParseEncoding(s string) (Encoding, bool)
 
-// Space is the representation a buffer's values are in.
+// Space is the representation a set of values is in.
 type Space uint8
 
 const (
-    SpaceNone       Space = iota // not a level: masks, data
-    SpaceLinear                  // x: proportional to the quantity
-    SpaceEncoded                 // e: normalized code values, as stored and displayed
-    SpacePerceptual              // p = sRGB_encode(x), whatever the encoding
+    SpaceNone    Space = iota // not levels: masks, counts, geometry
+    SpaceLinear               // x: the encoding undone
+    SpaceEncoded              // e: normalized code values, as stored and displayed
 )
 
-// Identity reports whether converting from → to is the identity for e
-// (encoded = perceptual for srgb, encoded = linear for linear).
+func (s Space) String() string               // "", "linear", "encoded"
+func ParseSpace(s string) (Space, bool)
+
+// Identity reports whether converting from → to is the identity for e:
+// always for from == to, and for every pair when e is linear.
 func Identity(e Encoding, from, to Space) bool
 
-// Convert returns b's values in space to. b.Space must be set. It returns b
-// itself when Identity holds; otherwise a new buffer.
-func Convert(ctx context.Context, b *Buffer, e Encoding, to Space) (*Buffer, error)
+// Convert returns b's values, which are in space from, in space to, for
+// encoding e, using the exact transfer functions. It returns b itself when
+// Identity holds.
+func Convert(ctx context.Context, b *Buffer, e Encoding, from, to Space) (*Buffer, error)
 ```
 
-`Buffer` gains one field, `Space Space`, set by every producer. It is a tag for assertions and debugging; the
-graph is the authority (§7.5). Conversion table:
+The conversion table has two non-trivial cells:
 
 | from → to | `srgb` | `linear` |
 |---|---|---|
 | linear → encoded | sRGB encode | identity |
 | encoded → linear | sRGB decode | identity |
-| linear → perceptual | sRGB encode | sRGB encode |
-| encoded → perceptual | identity | sRGB encode |
-| perceptual → encoded | identity | sRGB decode |
-| perceptual → linear | sRGB decode | sRGB decode |
 
-All non-identity conversions go through the existing extended transfer functions and LUTs in `color.go`, which
-stay. `Linear8`, `Linear16`, `EncodeSRGB8`, `EncodeSRGB16` remain as table helpers used by `Convert` and by the
-source loader's exact 8/16-bit decode.
+`Convert` uses the exact `SRGBToLinear`/`LinearToSRGB` functions (`color.go:29-50`), so a round trip is accurate
+to float32 precision. The interpolated tables behind `ToPerceptual`/`ToLinear` (error up to 2e-5,
+`color.go:58-60`) remain only as an optional fast path with that documented error. The exact 8/16-bit decode
+tables (`Linear8`, `Linear16`) stay for the source loader.
+
+`Buffer` does not gain a space field. The graph is the authority: when `Identity` holds, one cached buffer serves
+both spaces, so a tag on the buffer would be wrong for one of them.
 
 ```go
 // pkg/cv/graph: frames replace DocW/DocH pairs
 type Frame struct {
-    X, Y float64 // origin in doc px
-    W, H int     // size in doc px
+    X, Y int // origin in doc px (file pixel positions)
+    W, H int // size in doc px
 }
 
 type Node struct {
@@ -509,33 +556,71 @@ type Node struct {
     Args      Args
     Kind      Kind
     Hash      [32]byte
-    Frame     Frame          // was DocW, DocH (and Base, removed)
-    Enc       buffer.Encoding // Image nodes; 0 for other kinds
-    Space     buffer.Space    // Image: space of the values; Value: space of level-valued numbers; else SpaceNone
-}
-
-type ImageValue struct {
-    Buf   *buffer.Buffer
-    Frame Frame
-    Enc   buffer.Encoding
-    kind  Kind
+    Frame     Frame           // was DocW, DocH; Base is removed
+    Enc       buffer.Encoding // Image: its encoding; Value: the encoding of the image it measured; else EncNone
+    Space     buffer.Space    // Image: space of its values; Value: space of its level-valued numbers; else SpaceNone
 }
 ```
 
-`RegionsValue` swaps `DocW, DocH` for `Frame` as well. Region geometry stays in doc px of the root frame, so a
-region found on a window of a DNG has raw coordinates (§7.9).
+Evaluated values carry the same statics so that `Run` functions can read their inputs' frames and encodings, but
+`Run` never sets them: it returns `graph.NewImage(buf)` (or `NewMask(buf)`), and the evaluator stamps `Frame` and
+`Enc` from the node after `Run` returns. `RegionsValue` swaps `DocW, DocH` for `Frame` the same way.
 
 ### 7.3 Decoders
+
+#### A TIFF primer
+
+Most of the work in this ticket's IO is reading TIFF files, including DNG, which is a TIFF. A TIFF file is a
+header followed by **IFDs** (image file directories), each a list of tagged entries describing one image. The
+first 32 bytes of the colleague's tile `1d955ef4b27d3d88_1536_1536.tif`:
+
+```
+00000000: 4949 2a00 0800 0000 0f00 0001 0400 0100  II*.............
+00000010: 0000 0004 0000 0101 0400 0100 0000 0004  ................
+```
+
+- `49 49` (`II`) means little-endian (`MM` would be big-endian); `2a 00` is 42, the TIFF magic number (43 would be
+  BigTIFF, out of scope); `08 00 00 00` is the offset of the first IFD, 8.
+- At offset 8, `0f 00` says the IFD has 15 entries. Each entry is 12 bytes: tag (2), type (2), count (4), value or
+  offset (4). The first entry is `00 01 | 04 00 | 01 00 00 00 | 00 04 00 00`: tag 256 (ImageWidth), type 4 (LONG,
+  4 bytes), count 1, value 1024. The next is tag 257 (ImageLength), 1024. A value that does not fit in 4 bytes is
+  stored elsewhere and the entry holds its offset. Type sizes: BYTE 1, ASCII 1, SHORT 2, LONG 4, RATIONAL 8,
+  FLOAT 4, DOUBLE 8.
+- After the entries come 4 bytes with the offset of the next IFD (0 = none).
+
+The tags the decoder needs:
+
+| tag | name | used for |
+|---|---|---|
+| 254 | NewSubfileType | 0 = full-resolution image (DNG thumbnails have 1) |
+| 256, 257 | ImageWidth, ImageLength | size |
+| 258 | BitsPerSample | 8, 16 or 32 per sample |
+| 259 | Compression | 1 none, 5 LZW, 8 / 32946 Deflate, 32773 PackBits |
+| 262 | PhotometricInterpretation | 1 BlackIsZero, 2 RGB, 34892 LinearRaw (32803 CFA is refused) |
+| 270 | ImageDescription | goja-cv's own metadata (below) |
+| 273, 279 | StripOffsets, StripByteCounts | where each strip of rows lives |
+| 277 | SamplesPerPixel | 1 or 3 (4 with ExtraSamples: alpha, dropped) |
+| 278 | RowsPerStrip | rows per strip |
+| 284 | PlanarConfiguration | 1 chunky (supported), 2 planar (refused) |
+| 317 | Predictor | 2 horizontal differencing (supported with LZW/Deflate) |
+| 330 | SubIFDs | offsets of child IFDs (DNG keeps the raw image there) |
+| 339 | SampleFormat | 1 unsigned integer, 3 IEEE float |
+| 50714, 50717, 50712 | BlackLevel, WhiteLevel, LinearizationTable | DNG value mapping |
+
+Tiles (`TileOffsets`) are refused with `E_FORMAT` naming the feature; none of the target files use them.
+
+#### The registry
 
 ```go
 // pkg/cv/buffer/decode.go
 type Info struct {
     Format   string          // "png", "jpeg", "tiff", "dng", "npy"
     W, H     int
-    Channels int             // 1 or 3 after decoding (alpha is dropped)
+    Channels int             // 1 or 3 after decoding (alpha dropped)
     Bits     int             // 8, 16 or 32 per sample in the file
     Sample   string          // "uint" | "float"
     Encoding Encoding        // what the file implies (overridable by cv.open)
+    Origin   *[2]int         // frame origin recorded by goja-cv (TIFF description, PNG tEXt); nil otherwise
     Notes    []string        // e.g. "camera RGB primaries (DNG)", "LZW"
 }
 
@@ -545,8 +630,8 @@ type DecodeOptions struct {
 
 type Decoder interface {
     Name() string
-    Sniff(head []byte) bool                                   // magic bytes
-    Probe(r io.ReadSeeker) (Info, error)                      // header only
+    Sniff(head []byte) bool                                                              // magic bytes
+    Probe(r io.ReadSeeker) (Info, error)                                                 // header only
     Decode(ctx context.Context, r io.ReadSeeker, o DecodeOptions) (*Buffer, Info, error) // encoded values
 }
 
@@ -555,68 +640,74 @@ func ProbeFile(path string) (Info, error)
 func DecodeFile(ctx context.Context, path string, o DecodeOptions) (*Buffer, Info, error)
 ```
 
-The registry replaces `Decode`, `DecodeFile` and `DecodeConfigFile` in `io.go`. Decoders return **encoded**
-values: integers divided by their maximum, floats as stored. The source loader (`graph.SourceStore.Load`,
-`pkg/cv/graph/sources.go:34-61`) converts to linear once, with the exact 8/16-bit tables for integer files,
-and builds the pyramid in linear values (area averaging of light, as today). The source node's `Space` is
-therefore `linear`.
+Decoders return **encoded** values: integers divided by their maximum, floats as stored. The source loader
+(`graph.SourceStore.Load`, `pkg/cv/graph/sources.go:34-61`) converts to linear once, with the exact 8/16-bit tables
+for integer files, and builds the preview pyramid from linear values (area averaging of light, as today). The
+source node's space is therefore `linear`.
 
 | decoder | formats | encoding implied | notes |
 |---|---|---|---|
-| `png` | 8/16-bit gray, RGB, palette | srgb | stdlib `image/png`; alpha dropped |
-| `jpeg` | baseline/progressive | srgb | stdlib; EXIF orientation not applied (as today) |
-| `tiff` | own IFD parser; uncompressed 8/16-bit uint and 32-bit float, chunky, 1 or 3 samples; Photometric 1, 2, 34892 (LinearRaw); SubIFDs | srgb for uint Gray/RGB, linear for float and LinearRaw | compressed strips (LZW, Deflate, PackBits) are handed to `golang.org/x/image/tiff`; `Box` reads only the strips it needs when uncompressed |
-| `npy` | NumPy v1–v3, C order, `\|u1`, `<u2`, `>u2`, `<f4`, `>f4`, `<f8`; shape (H, W), (H, W, 1), (H, W, 3) | linear | f8 is narrowed to float32; Fortran order is `E_FORMAT` |
+| `png` | 8/16-bit gray, RGB, palette | `srgb`; `linear` when a `gAMA` chunk says 1.0 (100000) | pixels via stdlib `image/png`; a small chunk scan reads `gAMA`, `sRGB` and `tEXt` (stdlib ignores them) |
+| `jpeg` | baseline, progressive | `srgb` | stdlib; EXIF orientation not applied (as today) |
+| `tiff` | own parser for everything in the primer | `srgb` for uint Gray/RGB, `linear` for float and LinearRaw | decompression in the same parser: LZW via `golang.org/x/image/tiff/lzw` (an exported package), Deflate via `compress/zlib`, PackBits in about 20 lines; `Box` reads only the strips that intersect the window |
+| `npy` | NumPy format v1–v3, C order; `\|u1`, `<u2`, `>u2`, `<f4`, `>f4`, `<f8`; shapes (H, W), (H, W, 1), (H, W, 3) | `linear` | f8 narrowed to float32; Fortran order is `E_FORMAT`; `Box` reads rows with seeks |
 
-The DNG case is part of the TIFF decoder, because a DNG is a TIFF. The VueScan DNGs are well described by the
-dataset code (`dustds/rawio.py:1-46`, and `~/dustds/meta/dng_meta.jsonl`): the full-resolution image is the
-IFD with `NewSubfileType` (254) = 0 and `PhotometricInterpretation` (262) = 34892, either top-level or inside the
-`SubIFDs` (330) of IFD0; 16 bits, 3 samples, uncompressed, contiguous strips; no `BlackLevel` (50714),
-`WhiteLevel` (50717) or `LinearizationTable` (50712), so the decoded value equals the stored value / 65535. An
-example from the metadata file: `raw0027.dng`, 7256 × 7326, data offset 8, VueScan 9.8.39, Perfection V600. The
-decoder applies `BlackLevel`/`WhiteLevel` when present ((v − black) / (white − black)), refuses
-`LinearizationTable` and colour-filter-array data (Photometric 32803) with `E_FORMAT`, and notes "camera RGB
-primaries" in `Info.Notes` (the colour matrices are not applied).
+There is no fallback to `x/image/tiff`: one TIFF code path handles compressed and uncompressed, integer and float,
+whole and windowed reads.
 
-Files that goja-cv itself writes (GCV-003's `save`) record their encoding and frame: TIFFs carry
-`goja-cv encoding=linear origin=1536,1536` in `ImageDescription` (270), PNGs a `gAMA` chunk of 1.0 for linear
-data or an `sRGB` chunk. The TIFF and PNG decoders read these back into `Info.Encoding` and the frame origin, so a
-saved derived view reopens as it was. Other files' descriptions are ignored.
+**DNG.** The VueScan DNGs are described by the dataset code (`dustds/rawio.py:1-46` and
+`~/dustds/meta/dng_meta.jsonl`): the full-resolution image is the IFD with `NewSubfileType` = 0 and
+`PhotometricInterpretation` = 34892, top-level or inside the `SubIFDs` of IFD0; 16 bits, 3 samples, uncompressed,
+contiguous strips; no `BlackLevel`, `WhiteLevel` or `LinearizationTable`, so the decoded value is the stored value
+/ 65535. Example from the metadata: `raw0027.dng`, 7256 × 7326, data offset 8, VueScan 9.8.39, Perfection V600.
+The decoder applies `BlackLevel`/`WhiteLevel` when present ((v − black) / (white − black)), refuses
+`LinearizationTable` and CFA data with `E_FORMAT`, and adds the note "camera RGB primaries (DNG)" (colour matrices
+are not applied).
 
-A full VueScan DNG decodes to 7256 × 7326 × 3 float32 = 638 MB, plus about a third more for the pyramid.
-`DecodeOptions.Box` makes the tile workflow cheap: an uncompressed TIFF window is read row by row with seeks,
-so a 1024² window costs 6 MB of reads.
+**Saved-file metadata.** GCV-003's `save` records the encoding and frame origin of what it writes: TIFFs carry the
+ASCII string `goja-cv encoding=linear origin=1536,1536` in `ImageDescription` (270); PNGs carry a `gAMA` chunk
+(1.0 for linear, absent for sRGB with an `sRGB` chunk instead) and a `tEXt` chunk with keyword `goja-cv` and the
+same string. The decoders parse that string into `Info.Encoding` and `Info.Origin`. Other descriptions are ignored.
+`.npy` files cannot carry metadata: they open as `linear` with origin (0, 0).
+
+A full VueScan DNG decodes to 7256 × 7326 × 3 float32 = 638 MB plus about a third more for the pyramid. A 1024²
+window read with `Box` costs 6 MB of reads.
 
 ### 7.4 Opening: `cv.open(path, options)`
 
 ```js
 img = cv.open("/Users/manuel/dustdet/cv_tiles/1d955ef4b27d3d88_1536_1536.tif")          // encoding from the file: srgb
-const d = cv.open("tile.npy")                                                            // linear (npy default)
-cv.open("raw0027.dng", { as: "scan", box: [1536, 1536, 1024, 1024] })                    // linear, frame origin (1536, 1536)
-cv.open("tile_v.tif", { encoding: "linear", origin: [1536, 1536], as: "img" })           // stored v, raw coordinates
+cv.open("/data/tile_v.tif", { encoding: "linear", origin: [1536, 1536], as: "v" })       // stored v, raw coordinates
+cv.open("/data/raw0027.dng", { as: "scan", box: [1536, 1536, 1024, 1024] })               // linear, frame (1536, 1536, 1024, 1024)
+const d = cv.open("/data/tile.npy")                                                       // linear (npy default), unnamed
 ```
 
 | option | type | meaning |
 |---|---|---|
 | `encoding` | `"srgb" \| "linear"` | override what the file implies |
-| `as` | identifier | bind the image to this global (§7.10); session-only, not part of the node hash |
-| `box` | `[x, y, w, h]` file px | read only this window; the frame origin becomes (x, y) |
-| `origin` | `[x, y]` doc px | declare the frame origin of a file that is itself a window (not with `box`) |
+| `box` | `box` (file px) | read only this window; the frame origin becomes (x, y) |
+| `origin` | `point` (doc px) | declare the frame origin of a file that is itself a window; not with `box`, and it overrides a recorded origin |
+| `as` | identifier | session only (§7.10): bind the image to this global |
+
+**Box and point types.** Coordinates are passed in many places, and today each op declares them as `number[]` with
+`Len: 4` or `Len: 2` (`pkg/cv/ops/mask.go:149`, `:266`). This ticket adds two argument types to the binder, first
+needed by `open` and then used by every op with a box or point:
+
+| type | accepts | canonical form |
+|---|---|---|
+| `box` | `[x, y, w, h]`; an object with numeric `x, y, w, h` | `[]any{x, y, w, h}` |
+| `point` | `[x, y]`; an object with numeric `cx, cy` | `[]any{x, y}` |
+
+The two object forms follow one naming rule that GCV-003 applies to every result: `x, y` is always the corner of a
+box, `cx, cy` is always a point or a centre. An object with only `x, y` is refused as a point with the fix
+`[obj.x, obj.y]` and the explanation. Objects are converted at bind time, so hashes and `explain()` see numbers.
+`open`'s `box` is declared `{Type: "box", Unit: graph.Unitless, Static: true}`: it is in file px and must not be
+scaled as a doc-px length.
 
 `open` stays a registry op (`KindNone`, `pkg/cv/ops/source.go:11-36`) with `encoding`, `box` and `origin` as
-declared arguments, so unknown options, synonyms and did-you-mean work through the binder like for every other
-op. `as` is declared too, but `Engine.Open` removes it before interning and returns it to the binding:
-
-```go
-// pkg/cv/graph/engine.go
-type OpenOptions struct {
-    Encoding buffer.Encoding // 0 = from the file
-    Box      *[4]int
-    Origin   *[2]float64
-}
-
-func (e *Engine) Open(path string, raw map[string]any) (*Node, string /*as*/, error)
-```
+declared arguments, so unknown options, synonyms and did-you-mean work through the binder. Its frame comes from its
+`DocFrame` (§7.5) applied to `w`, `h`, `box`, `origin` and the recorded origin. `Engine.Open(path string, raw
+map[string]any) (*Node, error)` probes the file and interns the node; the engine knows nothing of `as`.
 
 Awaiting an opened image, or `cv.describe(img)`, gives its metadata:
 
@@ -635,81 +726,113 @@ h: 1024
 scale: 1
 ```
 
-### 7.5 Working spaces: one option, resolved by the builder
+### 7.5 Working spaces in the graph
 
-**SpaceRule.** Each op declares how it relates to pixel values:
+#### OpDef changes
 
 ```go
-// pkg/cv/graph/registry.go
+// pkg/cv/graph/registry.go (fields changed or added; Space string and DocSize are removed)
 type SpaceRule struct {
     Default buffer.Space // working space when the call passes no { space }; SpaceNone: the op does not read levels
-    Fixed   bool         // the op only makes sense in Default (toLab: linear); no option is offered
+    Fixed   bool         // the op only works in Default (toLab, encode): no space option is offered
 }
 
-// ResultEnc says what encoding an Image result has.
-type ResultEnc uint8
+// ResultEnc computes the encoding of an Image result from the op's args and
+// inputs. The three named rules cover every op but encode.
+type ResultEnc func(args Args, inputs []*Node) buffer.Encoding
 
-const (
-    KeepEnc    ResultEnc = iota // light in, light out: the receiver's encoding (exposure, gaussian, blend, …)
-    DerivedEnc                  // a new quantity: linear encoding, values as computed (chroma, toLab, GCV-002 sub/highpass)
-    DisplayEnc                  // display colours: srgb, values are encoded (colormap)
+var (
+    KeepEnc    ResultEnc // the encoding of the first Image input (receiver, then Inputs, then kind-typed args)
+    DerivedEnc ResultEnc // EncLinear: a new quantity (chroma, toLab; GCV-002's sub, highpass)
+    DisplayEnc ResultEnc // EncSRGB: display colours (colormap)
 )
 
 type OpDef struct {
-    // … existing fields, minus Space string …
-    Space  SpaceRule
-    Result ResultEnc
-    Expand ExpandFunc // macros, §7.8
-    Internal bool     // not callable from JavaScript, not listed in help (convert)
+    // … Name, On, Inputs, Args, Returns, Identity, Halo, Global, NoCache, Lazy, Fields, Validate, AnalysisScale, Builders, Run, Doc, See …
+    Space    SpaceRule
+    Result   ResultEnc                                   // nil = KeepEnc
+    Gray     func(args Args) bool                        // the op reads one luminance plane (§3.5)
+    DocFrame func(args Args, inputs []*Node) Frame       // the result's frame; nil = the first input with a non-empty frame
+    Expand   ExpandFunc                                  // macros (§7.8); exactly one of Run and Expand is set
+    Internal bool                                        // not callable from JavaScript, not listed in help (convert)
 }
 ```
 
-**The option.** `Registry.Register` appends one argument to every op whose `Space.Default` is not
-`SpaceNone` and not `Fixed`:
+`Registry.Register` (`registry.go:155-196`) checks that exactly one of `Run` and `Expand` is set, and appends the
+`space` option to every op whose `Space.Default` is not `SpaceNone` and not `Fixed`:
 
 ```go
-graph.ArgSpec{Name: "space", Type: "enum:linear,encoded,perceptual", Optional: true, Static: true,
-    Doc: "working space of this op: linear (proportional to the quantity), encoded (the file's values, what looks show) or perceptual (sRGB curve of linear)"}
+graph.ArgSpec{Name: "space", Type: "enum:linear,encoded", Optional: true, Static: true,
+    Doc: "working space: linear (the encoding undone) or encoded (the file's values, what looks show)"}
 ```
 
 `Static` means the value must be a literal; a param cannot move it, because it changes the graph's shape.
 
-**Resolution at build time.** `Builder.Intern` (`pkg/cv/graph/node.go:67`) binds arguments as today, then:
+#### Resolution in `Intern`, statics in `internNode`
 
-1. `s := args.space` if given, else `op.Space.Default`. It stores `s` in the canonical args, so the hash, the
-   cache signature and `explain()` include it.
-2. For each explicit input of kind `Image` (the receiver and `Inputs` of kind Image, plus kind-typed Image
-   arguments), if `input.Space != s` and `!buffer.Identity(input.Enc, input.Space, s)`, the input is replaced by
-   `convert(input, s)` (interned, so shared).
-3. The new node's `Space` and `Enc` follow from `op.Result`:
-   - `KeepEnc`: `Enc = receiver.Enc`, `Space = s` (or the receiver's space when `Default` is `SpaceNone`).
-   - `DerivedEnc`: `Enc = linear`, `Space = linear`; the values are reinterpreted, not converted.
-   - `DisplayEnc`: `Enc = srgb`, `Space = encoded`.
-   - Value results: `Space = s` when the op reports levels (stats, histogram edges, GCV-003's sample); fields
-     derived from a Value inherit its `Space`.
+`Builder.Intern` (`pkg/cv/graph/node.go:67-111`) binds arguments as today. Then:
 
-Masks are weights, not light: Mask nodes have `Space = SpaceNone` and are never converted.
+1. **Space.** `s := args.space` if given, else `op.Space.Default`. When `s` is not `SpaceNone`, `s` is stored in
+   the canonical args, so the hash and the cache signature include it.
+2. **Grey input.** If `op.Gray(args)` is true and the receiver has three channels, the receiver is replaced by
+   `toGray(receiver, "rec709")` interned in `linear` space (§3.5). Its result is linear luminance with the
+   receiver's encoding.
+3. **Conversions.** If `s` is not `SpaceNone`, every Image input that is not in `s` and for which
+   `!Identity(input.Enc, input.Space, s)` is replaced by `convert(input, s)` (interned, so shared). The Image
+   inputs come from three places, all covered: the receiver, the explicit `Inputs` (`bd.inputs`), and lifted
+   kind-typed arguments (`bd.lifted`) whose kind is Image, including the elements of `Image[]` arguments
+   (`compare`). Mask inputs are never converted.
+4. **Warnings.** `SPACE` for lifted `Level` arguments (§7.6); `ENCODING` when `s` is `encoded` and Image inputs
+   have different encodings ("blend mixes img (srgb) and scan (linear) in encoded space; their encoded scales
+   differ. fix: { space: \"linear\" }").
+5. `internNode(op, args, inputs, nExplicit)` creates or finds the node.
 
-**Defaults.** The table fixes the default of every existing op. For sRGB images, every op that used to be
-"perceptual" now defaults to `encoded`, which is numerically the same, so their behaviour does not change.
+`internNode` (`node.go:113-143`) computes the statics from `(op, args, inputs)` alone, before the node is
+published: `Frame` from `op.DocFrame` (default: the first input with a non-empty frame, as the `DocW` loop does
+today at `node.go:131-140`); `Enc` and `Space` from `op.Result` and `s`:
 
-| op | default | reason |
+| op returns | Enc | Space |
 |---|---|---|
-| `exposure`, `gaussian`, `blend`, `within`, `heal`, `inpaint` | linear | they model light: scaling, averaging, compositing |
-| `toGray` | linear | Rec. 709 weights are defined on linear light |
-| `stats` | linear | photometric measurement; matches `levels` |
-| `levels` | linear | `levels({ black: s.p01, white: s.p99 })` with `s = img.stats()` keeps working |
-| `contrast` | encoded | contrast around the displayed mid-grey |
-| `histogram` | encoded | bins over the scale the look shows |
-| `mask.luminance`, `mask.color`, `mask.flood`, `refine` | encoded | thresholds and tolerances "as you see it" |
-| `detect.specks`, `check.dust` | encoded | contrast as seen; `MeanL` is reported in the same space |
-| `overlay` colours, `compare` | encoded | colours are display values |
+| Image, `KeepEnc` | first Image input's | `s`, or the first Image input's space when `s` is `SpaceNone` |
+| Image, `DerivedEnc` | linear | linear (the values are reinterpreted, not converted) |
+| Image, `DisplayEnc` | srgb | encoded |
+| Mask, Regions | none | none |
+| Value | the measured image's (first Image input's) | `s` when the op reports levels, else none; `field` nodes inherit their receiver's |
 
-`levels` is the one visible behaviour change on sRGB images: the remap now happens in linear space and the
-gamma is applied to the linear ramp. With `black = 0` the displayed result is sRGB_encode(v / w) instead of
-today's sRGB_encode(v) / sRGB_encode(w). Because the sRGB curve is close to a power law the two agree well
-when `white` is high, and drift apart when `white` is low and in the deep shadows, where the curve's linear toe
-breaks the power law. Measured over v ∈ (0, w], in 8-bit codes:
+Because statics depend only on the hash inputs, a hash hit returns a node with exactly the statics a new node would
+get. Nothing sets fields on a node after it is published, so `Node` stays immutable (`node.go:12`).
+
+**Builder lambdas.** The placeholder that a lambda receives (`Engine.Placeholder`, `pkg/cv/graph/engine.go:122-141`)
+copies the receiver's `Enc`, `Space` and `Frame` into hidden arguments (it copies `w`, `h` today at
+`engine.go:139`), and its `DocFrame`/`Result` read them back, so a lambda's graph resolves exactly as it would on
+the receiver. `Builder.Substitute` (`node.go:189-230`) re-interns the path through `internNode`, which recomputes
+statics; since the placeholder and the receiver have equal statics, the conversions decided inside the lambda stay
+valid. A Phase 3 test checks that `img.within(mask, i => i.contrast(0.2))` builds the same inner graph as
+`img.contrast(0.2)` on an sRGB and on a linear-encoded image.
+
+#### Defaults
+
+Each default answers one of the two questions of §3.4. For sRGB images, every op that was "perceptual" now runs in
+`encoded`, which is numerically identical per channel; luminance ops stay identical through the grey-input rule.
+
+| op | default | question | notes |
+|---|---|---|---|
+| `exposure`, `gaussian`, `blend`, `within`, `heal`, `inpaint` | linear | physical | scaling, averaging, compositing light |
+| `toGray` | linear | physical | Rec. 709 weights are defined on linear light; `average` is valid in either space |
+| `stats` | linear | physical | photometric measurement; matches `levels` |
+| `levels` | linear | physical | `levels({ black: s.p01, white: s.p99 })` with `s = img.stats()` keeps working (§8) |
+| `contrast` | encoded | visible | contrast around the displayed mid-grey |
+| `histogram` | encoded | visible | bins over the scale a look shows; channel `"L"` uses the grey-input rule |
+| `mask.luminance`, `refine` | encoded | visible | grey-input rule |
+| `mask.color`, `mask.flood` | encoded | visible | hue and tolerance of displayed colour |
+| `detect.specks`, `check.dust` | encoded | visible | grey-input rule; `MeanL` is reported in the same space |
+| `overlay` colours | encoded | visible | colours are display values |
+
+`levels` is the one visible change on sRGB images: the remap now happens in linear space and the gamma is applied
+to the linear ramp. With `black = 0` the displayed result is sRGB_encode(v / w) instead of today's
+sRGB_encode(v) / sRGB_encode(w). Because the sRGB curve is close to a power law, the two agree when `white` is high
+and drift apart when `white` is low and in the deep shadows, where the curve's linear toe breaks the power law.
+Measured over v ∈ (0, w], in 8-bit codes:
 
 | white w | largest difference | largest difference for v/w in 20–80 % |
 |---|---|---|
@@ -718,30 +841,45 @@ breaks the power law. Measured over v ∈ (0, w], in 8-bit codes:
 | 0.5 | 4.5 | 2.5 |
 | 0.3 | 8.5 | 4.9 |
 
-With `black > 0` shadows come out slightly darker. The docs examples that print post-levels numbers change
-(§11).
+With `black > 0` shadows come out slightly darker. Mask looks also change (§3.6). These are the only expected
+differences in the golden-look diff (§13.3).
 
-**The convert op.** It is an ordinary registered op, marked `Internal`:
+**Cost.** The source is linear, so on an sRGB file every encoded-default op, and every look of a linear-space node,
+needs one `convert(→ encoded)` of its input, cached per scale: 12 MB for a 1024² RGB tile at scale 1. This is what
+`ToImage` paid on every render before, now cached and visible.
+
+#### The convert op, explain and help
 
 ```go
 {
     Name: "convert", On: graph.KindImage, Returns: graph.KindImage, Internal: true,
-    Args: []graph.ArgSpec{{Name: "to", Type: "enum:linear,encoded,perceptual", Positional: true}},
-    Run: func(ctx context.Context, _ *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
+    // Space: SpaceRule{} — Register adds no space option; Result: KeepEnc
+    Args: []graph.ArgSpec{{Name: "to", Type: "enum:linear,encoded", Positional: true}},
+    Run: func(ctx context.Context, ec *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
         src := image(in[0])
-        out, err := buffer.Convert(ctx, src.Buf, src.Enc, buffer.MustSpace(a.String("to")))
+        from := ec.InputNode(0).Space
+        to, _ := buffer.ParseSpace(a.String("to"))
+        out, err := buffer.Convert(ctx, src.Buf, src.Enc, from, to)
         if err != nil {
             return nil, err
         }
-        return graph.NewImage(out, src.Frame, src.Enc), nil
+        return graph.NewImage(out), nil // the evaluator stamps Frame and Enc
     },
 }
 ```
 
-### 7.6 Levels and the SPACE warning
+`EvalCtx` gains `InputNode(i int) *Node` for the few `Run` functions that need an input's statics. `Internal` ops
+are skipped by `Registry.Methods` (the JavaScript method tables), `cv.help` and the generated reference; macros and
+the builder may still call them.
 
-`DocPx` taught the binder that some numbers are lengths. This ticket adds a unit for numbers that are
-**levels**: values on the intensity scale of the op's working space.
+`Describe` (`explain.go:53-85`) omits an argument when it equals its default (`explain.go:79`); the `space` option
+has no declared default, so `Describe` also omits `space` when it equals `op.Space.Default`. `explain()` shows each
+Image node's statics in a labelled right-hand column: `enc srgb · space linear`.
+
+### 7.6 The Level unit and the SPACE warning
+
+`DocPx` taught the binder that some numbers are lengths. This ticket adds a unit for numbers that are levels
+(§3.3):
 
 ```go
 const (
@@ -749,13 +887,14 @@ const (
     DocPx
     Fraction
     DocPx2
-    Level // a value in the op's working space (levels.black, mask.luminance.above, colormap.range, …)
+    Level // a value on the scale of the op's working space (levels.black, mask.luminance.above, colormap.range)
 )
 ```
 
-When a `Level` argument is a lifted Value node whose static `Space` differs from the op's resolved space, the
-binder emits a warning. It does not convert the number: a percentile would survive conversion, a mean would not,
-and the binder cannot know which one it has.
+When a `Level` argument is a lifted Value node whose static `Space` differs from the op's resolved space `s`, and
+`!Identity(valueNode.Enc, valueNode.Space, s)`, the binder emits a warning. It does not convert the number: a
+percentile would survive conversion, a mean would not, and the binder cannot tell them apart. On the colleague's
+linear-encoded tiles `Identity` holds, so `img.mask.luminance({ above: img.stats().p99 })` raises no warning.
 
 ```yaml
 warnings:
@@ -764,39 +903,52 @@ warnings:
 
 ### 7.7 Looks and display
 
-A look renders encoded values. `look.Render` evaluates `convert(node → encoded)` (a no-op for derived images
-and for most display chains), then `buffer.Quantize(buf, 8)` clamps to [0, 1] and scales to 255. Concretely:
+A look renders encoded values. `look.Render` evaluates `convert(node → encoded)` (no node is added when `Identity`
+holds or the node is a Mask), then `buffer.Quantize(buf, 8)` clamps to [0, 1] and rounds to 0…255. Concretely:
 
-- sRGB images look exactly as before, because encoded = sRGB_encode(linear), which is what `ToImage` computed.
-- Linear-encoded images show their stored values linearly. A density tile opened with `encoding: "linear"`
-  shows v as grey level v.
-- Masks and derived images show their values linearly (mask 0.5 → grey 128).
+- sRGB images look exactly as before, because encoded = sRGB_encode(linear) is what `ToImage` computed.
+- Linear-encoded images show their stored values linearly. A density tile opened with `encoding: "linear"` shows
+  v as grey level v.
+- Masks and derived images show their values directly (mask 0.5 → grey 128).
 
 A linear-encoded photograph (a demosaiced linear raw) looks dark when its values are shown linearly. The op
-`img.encode("srgb")` re-encodes it: same linear light, `Enc = srgb`, so looks and encoded-space ops see the
-sRGB curve. `encode` is `Space: {Default: linear, Fixed: true}` with a `KeepEnc` result whose `Enc` comes from
-its argument. It never changes linear values; to reinterpret a file, open it with another `encoding`.
+`img.encode("srgb")` re-encodes it: same linear light, encoding `srgb`, so looks and encoded-space ops see the
+sRGB curve. `encode` has `Space: {Default: linear, Fixed: true}` and a `Result` function that returns its
+argument. It never changes linear values; to reinterpret a file, open it with another `encoding`.
 
 ### 7.8 Macros: `OpDef.Expand`
 
-Some ops are best defined as a small graph of other ops. `split()` returns three channel nodes; GCV-002's
-`highpass`, `dog`, `compare({ mode: "diff" })` and `view` presets are sub/gaussian/levels chains. A macro is an
-`OpDef` whose `Expand` builds that graph at intern time:
+Some ops are best defined as a small graph of other ops: `split()` returns three channel nodes, and GCV-002's
+`highpass`, `dog` and `view` presets are chains of `gaussian`, `sub` and `levels`. A **macro** is an `OpDef` with
+`Expand` instead of `Run`:
 
 ```go
-// ExpandFunc builds the op's graph from primitive ops. It returns one node
-// or a list of nodes (split). The macro node itself is never interned.
+// ExpandFunc builds the op's graph from other ops at intern time. args are
+// bound and the space is resolved (args.String("space") is set for macros
+// with a SpaceRule).
 type ExpandFunc func(x *Expander, recv *Node, args Args) ([]*Node, error)
 
-type Expander struct{ /* builder and registry */ }
+type Expander struct{ /* builder, registry, accumulated warnings */ }
 
-func (x *Expander) Call(name string, recv *Node, args ...any) (*Node, error) // interns name on recv with args
+// Call interns op name on recv with args through Intern (binding, space
+// resolution, conversions). It may call Internal ops. Warnings are collected.
+func (x *Expander) Call(name string, recv *Node, args ...any) (*Node, error)
 ```
 
-Macros are registered like ops, so they get help, option checking, synonyms and did-you-mean for free. Because
-they expand at build time, `explain()` and look captions show the primitive chain that actually ran, which is
-what issue 22 asks for. The binding returns an array of handles when `Expand` returns several nodes; the
-prelude turns it into an array of node proxies.
+The binder binds a macro's arguments and resolves its space first, then calls `Expand`. What happens next depends on
+how many nodes `Expand` returns:
+
+- **One node** (highpass, dog, view): the builder interns a **macro node** whose op is the macro's own `OpDef`,
+  whose inputs are the receiver and then the expansion's output, and whose args are the macro's canonical args.
+  Evaluating a macro node evaluates its last input and returns that value, with no compute and no separate cache
+  entry. The macro node gives `img.highpass(3)` its own identity and label (GCV-002's captions show `highpass(3)`),
+  while the expansion's nodes are exactly the nodes of the hand-written chain and are shared with it through
+  hash-consing. `explain()` shows the macro node with its expansion indented below it.
+- **Several nodes** (split): no macro node; the call returns the nodes.
+
+`Engine.Call` returns a `CallResult{Nodes []*Node; Warnings []Warning}` instead of `(*Node, []Warning, error)`;
+the binding returns one handle or an array of handles, and the prelude turns an array into an array of node
+proxies. Macros get help, option checking, synonyms and did-you-mean from the registry like every op.
 
 ### 7.9 Channel ops
 
@@ -805,261 +957,326 @@ prelude turns it into an array of node proxies.
 | `img.channel("r" \| "g" \| "b" \| 0 \| 1 \| 2)` | 1-channel Image | none (plane selection) | keeps encoding and space |
 | `img.split()` | `[r, g, b]` (macro over `channel`) | — | — |
 | `img.toLab()` | 3-channel Image: L*/100, a*/100, b*/100 | fixed linear | derived |
-| `img.chroma({ relative })` | 1-channel Image: max − min over channels (÷ mean when `relative`) | encoded | derived |
+| `img.chroma({ relative })` | 1-channel Image: max − min over channels (÷ (mean + 1e-3) when `relative`) | encoded | derived |
 | `img.colormap(name, { range, center })` | 3-channel Image | encoded | display |
-| `img.encode("srgb" \| "linear")` | Image | fixed linear | re-encoded |
-
-Details an implementer needs:
+| `img.encode("srgb" \| "linear")` | Image | fixed linear | its argument |
 
 - `channel` on a 1-channel image with "g" or "b" is `E_ARG_RANGE` with the fix `img.toGray()`.
-- `toLab` assumes sRGB/Rec. 709 primaries and the D65 white point. On a DNG source (`notes` contains "camera
-  RGB primaries") it emits a `RANGE`-class warning, `PRIMARIES`, saying the a*/b* values are approximate.
-- `chroma` is the per-pixel channel spread. With `relative: true` it divides by the channel mean plus 1e-3,
-  which matches the colleague's chroma = (max − min) / mean on regions (GCV-003 reuses the kernel).
-- `colormap` accepts only 1-channel images (`E_WRONG_KIND` with the fixes `.channel("g")` and `.toGray()`).
-  Names: `gray`, `viridis`, `magma`, `diverging` (blue–white–red). `range: [lo, hi]` is in `Level` units; the
-  default is the image's [p01, p99] computed at evaluation, and for `diverging` the symmetric range ±max(|p01|,
-  |p99|) around `center` (default 0). The colormap tables are 256-entry sRGB lookup tables in a new file
-  `pkg/cv/kernels/colormap.go`.
+- `toLab` assumes sRGB/Rec. 709 primaries and the D65 white point. On a DNG source (note "camera RGB primaries")
+  it emits a warning with code `PRIMARIES`: the a*/b* values are approximate.
+- `colormap` accepts only 1-channel images (`E_WRONG_KIND` with the fixes `.channel("g")` and
+  `.toGray("average")`). Names: `gray`, `viridis`, `magma`, `diverging` (blue–white–red). `range: [lo, hi]` is in
+  `Level` units. Without `range`, the range is the input's [p01, p99] computed when the colormap is evaluated, at
+  the evaluation scale (so a preview and a full-scale look can differ slightly); for `diverging` it is ±max(|p01|,
+  |p99|) around `center` (default 0). The tables are 256-entry sRGB lookup tables in `pkg/cv/kernels/colormap.go`.
 
 ### 7.10 Named images
 
-A **name table** in the session replaces the `img` slot:
+The session (not the engine) owns names.
 
 ```go
 // pkg/cvsession/names.go
 type nameTable struct {
-    order []string                 // binding order, for the context block
-    nodes map[string]goja.Value    // name → node proxy (owner goroutine only)
+    order []string               // binding order, for the context block
+    nodes map[string]goja.Value  // name → node proxy (owner goroutine only)
 }
 
 var reservedNames = []string{"cv", "P", "mem", "show", "doc", "globalThis", "Math", "JSON", "Promise", "console"}
 ```
 
-- `cv.open(path, { as: "ref" })` validates the name (`^[A-Za-z_$][A-Za-z0-9_$]*$`, not reserved, not an
-  existing global that the table does not own) and defines a getter/setter on `globalThis` that reads the table.
-  Errors use a new code `E_NAME`: `cv.open(…, { as: "show" }): "show" is a session global. fix: { as: "show2" }`.
-- `img` is the first entry of the table, bound by `--image` or `cv.open(path, { as: "img" })`. `img =
-  cv.open(p)` keeps working: the setter rebinds the name, as today.
-- Re-opening with an existing name rebinds it.
-- The context block lists every name with file, size, format and encoding, in binding order:
+- The `cv.open` wrapper in `init.js` (`pkg/cvsession/init.js:16-21`) splits `{ as, ...rest }`, checks `as` through a
+  session-native `bindName`, and passes `rest` to the module's `open`. Synonyms for `as` (`name`, `bind`, `alias`)
+  are resolved by the wrapper with the option-synonym helper the binding exports from Go. The module's `open` op
+  does not know `as`; in a bare module (no session), `cv.open(p, { as })` is `E_UNKNOWN_OPTION` with the hint "names
+  exist only in eval sessions".
+- `bindName` validates the name (`^[A-Za-z_$][A-Za-z0-9_$]*$`, not reserved, not a global the table does not own)
+  and defines a getter/setter on `globalThis` that reads the table. Errors use the code `E_NAME`:
+  `cv.open(…, { as: "show" }): "show" is a session global. fix: { as: "show2" }`.
+- `img` is the first entry, bound by `--image` or `cv.open(path, { as: "img" })`; `img = cv.open(p)` keeps working
+  through the setter. Re-opening with an existing name rebinds it.
+- The context block lists names in binding order, then unnamed opens, each with file, frame, format and encoding:
 
 ```yaml
 context:
-  images: img = 1d955ef4b27d3d88_1536_1536.tif (1024×1024, 16-bit TIFF, srgb), scan = raw0027.dng [1536,1536,1024,1024] (16-bit DNG, linear)
+  images: img = 1d955ef4b27d3d88_1536_1536.tif (1024×1024, 16-bit TIFF, srgb), scan = raw0027.dng [1536,1536,1024,1024] (16-bit DNG, linear), (unnamed) tile.npy (1024×1024, float32 NPY, linear)
 ```
 
-- The MCP `open` tool gains `encoding` and `as` fields (`pkg/cvsession/mcp.go:47`), with schema descriptions
-  that say when to omit them (the deep-dive article's lesson about optional parameters).
+- The MCP `open` tool gains `encoding` and `as` (`pkg/cvsession/mcp.go:47`). Their schema descriptions say when to
+  omit them, because the agent runs showed that an optional parameter without an explanation gets invented values.
 
-Ops that take two images (blend, within, compare, GCV-002's sub) check frames instead of buffer sizes: equal
-`W` and `H` and equal origin. Mixing encodings in `encoded` space emits an `ENCODING` warning ("blend mixes img
-(srgb) and scan (linear) in encoded space; their encoded scales differ. fix: { space: \"linear\" }").
+Two-image ops (blend, within, compare, GCV-002's arithmetic) require equal frames (origin and size). A mismatch is
+`E_FRAME` with both frames.
 
-### 7.11 Agent-facing surface
-
-The JavaScript surface after this ticket, as an agent sees it:
+### 7.11 The agent-facing surface
 
 ```js
 img = cv.open("tile_v.tif", { encoding: "linear", origin: [1536, 1536] })
 cv.open("clean.tif", { as: "ref" })
-const s = await img.stats({ space: "encoded" })                 // numbers in file units
+const s = await img.stats({ space: "encoded" })                 // numbers in file units (equal to linear here)
 const lum = img.mask.luminance({ above: 0.9 })                   // encoded by default
 const neutral = img.chroma({ relative: true }).colormap("viridis")
-return {
-  enc: (await img).encoding,
-  p99: s.p99,
-  plan: lum.explain(),
-  look: neutral.look("chroma"),
-}
+return { enc: (await img).encoding, p99: s.p99, plan: lum.explain(), look: neutral.look("chroma") }
 ```
 
-`cv.help("open")`, `cv.help("space")` and `cv.help("encoding")` must answer. `space` and `encoding` are not ops,
-so they become entries in the help table of concepts (§10).
+`cv.help("open")` answers from the registry. `space`, `encoding`, `frame` and `names` are concepts, not ops; they
+become entries of the help table for non-op names (§10).
+
+The key points:
+
+- `internNode` is the only place statics are set, so every creation path (Intern, Substitute, macros) agrees.
+- The builder decides conversions and grey inputs; kernels never convert.
+- Looks show encoded values; masks and derived images show their values.
+- Macros expand at intern time; single-output macros keep their own node for labels.
+- Names live in the session; frames make coordinates absolute.
 
 ## 8. Decision records
 
 ### Decision: encoding is a property of the data, space a property of the op
 
-- **Context:** The current code conflates the two: decode assumes an encoding, kernels assume a space. Issues 6
-  and 7 each ask for one of them.
-- **Options considered:** (a) a single session-wide "the data is linear" switch; (b) a per-op space option
-  only, keeping the sRGB decode; (c) an encoding per source plus a space per op.
+- **Context:** The current code conflates the two: decode assumes an encoding, kernels assume a space. Issues 6 and
+  7 each ask for one of them.
+- **Options considered:** (a) one session-wide "the data is linear" switch; (b) a per-op space option only,
+  keeping the sRGB decode; (c) an encoding per source plus a space per op.
 - **Decision:** (c).
-- **Rationale:** (a) cannot express two images of different encodings in one session (issue 20) and gives
-  stats and thresholds no way to differ. (b) keeps the colleague's export trick alive: without an encoding,
-  "encoded" for their tile would still be sRGB_encode(v). With (c), the identities in §3.3 make the common cases
-  free: sRGB data behaves as today, linear data has linear = encoded.
-- **Consequences:** Nodes carry `Enc` and `Space`; decoders report encodings; captions and the context block
-  show them. ICC profiles remain unsupported and are the obvious next encoding source.
-- **Status:** proposed
+- **Rationale:** (a) cannot express two images of different encodings in one session (issue 20). (b) keeps the
+  export trick alive: without an encoding, "encoded" for the colleague's tile is still sRGB_encode(v). With (c),
+  sRGB data behaves as today and linear data has linear = encoded.
+- **Consequences:** Nodes carry `Enc` and `Space`; decoders report encodings; the context block shows them. ICC
+  profiles remain unsupported.
+- **Status:** accepted
+
+### Decision: two spaces, no `perceptual`
+
+- **Context:** Revision 1 had three spaces; no op defaulted to `perceptual`, and for sRGB images it equals
+  `encoded`.
+- **Options considered:** (a) keep `perceptual` as a third option; (b) two spaces, with `img.encode("srgb")` as the
+  way to get perceptual values of linear light.
+- **Decision:** (b).
+- **Rationale:** `perceptual` doubled the conversion table, the enum, the synonyms and the docs for a case that
+  `encode("srgb")` covers explicitly. Issue 7 asks for `linear | encoded`.
+- **Consequences:** Measuring lightness of a linear photograph is `img.encode("srgb").stats({ space: "encoded" })`.
+- **Status:** accepted
+
+### Decision: luminance is computed from linear light
+
+- **Context:** Ops that reduce colour to one plane compute today sRGB_encode(Y of linear channels). Computing the
+  weighted sum on encoded channels gives luma, which differs: pure red 0.498 vs 0.213, orange (0.8, 0.4, 0.2) 0.512
+  vs 0.471.
+- **Options considered:** (a) accept luma in encoded space and list the change; (b) compute Y from linear channels
+  and express it in the op's space, through a graph rule.
+- **Decision:** (b), with the `Gray` flag: the builder feeds such ops `toGray(receiver, "rec709")` in linear space,
+  then converts to the op's space.
+- **Rationale:** (b) is photometrically correct, keeps today's numbers for sRGB images exactly, and keeps kernels
+  space-agnostic because the graph does the work.
+- **Consequences:** Luminance ops on colour images get one extra cached node; `toGray` is part of their graph and
+  visible in `explain()`.
+- **Status:** accepted
 
 ### Decision: conversions are graph nodes inserted by the builder
 
-- **Context:** Some layer must convert between spaces. Today each kernel does it privately.
-- **Options considered:** (a) each kernel converts (status quo); (b) the evaluator converts inputs before
-  `Run`, invisibly; (c) the builder inserts `convert` nodes at intern time.
+- **Context:** Some layer must convert between spaces.
+- **Options considered:** (a) each kernel converts (status quo); (b) the evaluator converts inputs invisibly before
+  `Run`; (c) the builder inserts `convert` nodes at intern time.
 - **Decision:** (c).
-- **Rationale:** (c) makes conversions cached and shared by hash-consing (two encoded-space ops on the same
-  input convert once), visible in `explain()`, and testable as ordinary nodes. (b) would need a second cache
-  keyed by (node, space) and would hide work from `explain`. (a) is what made the space untestable and
-  unchangeable.
-- **Consequences:** `Intern` needs static `Space`/`Enc` for every node; the evaluator stays unchanged. Graphs
-  grow by one node per distinct conversion.
-- **Status:** proposed
+- **Rationale:** (c) makes conversions cached and shared by hash-consing, visible in `explain()`, and testable as
+  ordinary nodes. (b) would need a second cache keyed by (node, space). (a) is what made spaces untestable.
+- **Consequences:** Every node needs static `Space`/`Enc`; the evaluator is unchanged.
+- **Status:** accepted
 
-### Decision: the space is resolved at build time, per call, with op defaults; no session or image default
+### Decision: the space is resolved per call with op defaults; no session or image default
 
-- **Context:** Issue 7 suggests either a per-op option or one session-wide setting.
-- **Options considered:** (a) per-call option with op defaults; (b) plus a session default (`cv.space(...)`);
-  (c) plus an image default (`cv.open(path, { space })`).
+- **Context:** Issue 7 suggests a per-op option or one session-wide setting.
+- **Options considered:** (a) per-call option with op defaults; (b) plus a session default; (c) plus an image default.
 - **Decision:** (a).
-- **Rationale:** A default that lives outside the call makes the same source text build different graphs
-  depending on hidden state, which defeats reading a script. The colleague's case does not need it: opened
-  with `encoding: "linear"`, their linear and encoded spaces coincide, so every default is already v. A
-  photographer who wants a different space for one op says so in that op.
-- **Consequences:** Agents write `{ space }` where they mean it; `explain()` shows non-default spaces. If a
-  second user group needs a default, an image-level default (c) can be added without changing nodes, because
-  resolution already happens in one place.
-- **Status:** proposed
+- **Rationale:** A default outside the call makes the same source text build different graphs depending on hidden
+  state. The colleague does not need one: with `encoding: "linear"` their spaces coincide.
+- **Consequences:** Agents write `{ space }` where they mean it. An image-level default could be added later in
+  the same resolution step.
+- **Status:** accepted
 
-### Decision: derived quantities and masks carry the linear encoding
+### Decision: `levels` and `stats` default to linear
 
-- **Context:** Differences, ratios, chroma and Lab are not light; converting them through the sRGB curve is
-  meaningless, and stats on them must read the values themselves.
-- **Options considered:** (a) treat every Image alike and let users pick spaces; (b) a `Derived` result class
-  whose output is reinterpreted as linear-encoded.
+- **Context:** `levels` is a display stretch, which suggests `encoded`; agents and docs use
+  `levels({ black: s.p01, white: s.p99 })` with `s = img.stats()`.
+- **Options considered:** (a) both linear; (b) `levels` encoded, `stats` linear, with a `SPACE` warning on the idiom;
+  (c) both encoded.
+- **Decision:** (a).
+- **Rationale:** (b) would warn on the most common idiom in every session. (c) makes `stats` report sRGB-encoded
+  numbers for photographs, where photometric measurement is the expected meaning. (a) keeps the idiom correct and
+  changes `levels` output by at most 0.5–8.5 codes (table in §7.5).
+- **Consequences:** The levels change is documented as the main visible break on sRGB images.
+- **Status:** accepted
+
+### Decision: derived quantities carry the linear encoding; masks carry none
+
+- **Context:** Differences, ratios, chroma and Lab are not light; masks are weights.
+- **Options considered:** (a) treat every Image alike; (b) a derived result rule reinterpreting values as
+  linear-encoded, and no encoding for masks.
 - **Decision:** (b).
-- **Rationale:** With (a), `stats()` (linear by default) of a high-pass built in encoded space returns
-  sRGB_decode of differences (0.05 becomes 0.0039), and a look of it shows sRGB_encode of differences. With
-  (b), numbers and grey levels agree, and every later op sees the computed values in every space.
-- **Consequences:** Op authors choose `KeepEnc`, `DerivedEnc` or `DisplayEnc`. Masks display linearly, which
-  changes mask looks (0.5 shows as 128 instead of 188).
-- **Status:** proposed
+- **Rationale:** With (a), `stats()` of a high-pass built in encoded space returns sRGB_decode of differences, and
+  a look shows sRGB_encode of differences. With (b), numbers and grey levels agree.
+- **Consequences:** Op authors pick `KeepEnc`, `DerivedEnc` or `DisplayEnc`. Mask looks change (0.5 → 128).
+- **Status:** accepted
 
 ### Decision: looks show encoded values
 
-- **Context:** Today a look shows sRGB_encode(linear). For linear-encoded data that would show v = 0.3 as
-  0.584 and a signed map's 0.5 offset as 0.735.
+- **Context:** For linear-encoded data, showing sRGB_encode(linear) would show v = 0.3 as 0.584 and a signed map's
+  0.5 offset as 0.735.
 - **Options considered:** (a) show perceptual (today's rule); (b) show encoded; (c) a per-look display option.
 - **Decision:** (b), with `img.encode("srgb")` for linear photographs.
-- **Rationale:** (b) is today's rule for every sRGB file and the scientific-viewer rule (show the stored
-  value) for linear data. It makes a display offset of 0.5 grey 128 in every case. (c) adds a second place where
-  spaces are chosen.
-- **Consequences:** Linear photographs need `.encode("srgb")` (or a stretch from GCV-002) to look normal.
-- **Status:** proposed
+- **Rationale:** (b) is today's rule for every sRGB file and the scientific-viewer rule for linear data. (c) adds a
+  second place where spaces are chosen.
+- **Consequences:** Linear photographs need `encode("srgb")` or a stretch to look normal.
+- **Status:** accepted
 
-### Decision: one TIFF decoder with its own IFD parser
+### Decision: sources are stored as a linear pyramid
 
-- **Context:** `x/image/tiff` rejects float samples and LinearRaw; DNG needs SubIFD traversal; windowed reads
-  need strip offsets.
-- **Options considered:** (a) a separate DNG decoder next to x/image/tiff; (b) libtiff through cgo; (c) an own
-  IFD parser for all TIFFs, delegating compressed pixel data to x/image/tiff.
+- **Context:** The source loader must store something; previews are area averages.
+- **Options considered:** (a) store encoded values and average them; (b) store linear values and average light.
+- **Decision:** (b), as today.
+- **Rationale:** Area averaging is an average of light only in linear values; (a) would darken previews of
+  high-contrast detail. For linear-encoded files the two are identical.
+- **Consequences:** Every encoded-space op on an sRGB file needs one cached conversion (§7.5, "Cost").
+- **Status:** accepted
+
+### Decision: one TIFF decoder with its own IFD parser and decompression
+
+- **Context:** `x/image/tiff` rejects float samples and LinearRaw, has no SubIFD or strip-level API, and cannot read
+  windows.
+- **Options considered:** (a) a separate DNG decoder next to x/image/tiff; (b) libtiff through cgo; (c) one own
+  parser for all TIFFs, decompressing strips itself with `x/image/tiff/lzw`, `compress/zlib` and PackBits.
 - **Decision:** (c).
-- **Rationale:** The formats in question are uncompressed and simple; an IFD parser is about 300 lines. One
-  parser gives probing, SubIFDs, float, LinearRaw and windows in one place, keeps the static pure-Go build
-  (CVJS-001 integration-surfaces decision on tier-1 formats), and leaves LZW/Deflate to the existing package.
-- **Consequences:** We own a TIFF parser and must fuzz it (§13). Compressed files cannot be read by window
-  (the whole image is decoded, then cut).
-- **Status:** proposed
+- **Rationale:** One code path covers probing, SubIFDs, float, LinearRaw, compression and windows, and keeps the
+  static pure-Go build. (a) would leave float + LZW unsupported and duplicate header parsing.
+- **Consequences:** We own a TIFF parser and fuzz it (§13). BigTIFF and tiled TIFFs are refused.
+- **Status:** accepted
 
-### Decision: frames replace doc sizes
+### Decision: frames replace doc sizes; coordinates are absolute
 
 - **Context:** A window read from a scan should keep scan coordinates; GCV-002's crop needs the same.
-- **Options considered:** (a) keep `DocW/DocH` and add a separate origin where needed; (b) a `Frame` value on
-  nodes and values.
+- **Options considered:** (a) keep `DocW/DocH` and add an origin where needed; (b) one `Frame` on nodes and values,
+  with absolute coordinates everywhere.
 - **Decision:** (b).
-- **Rationale:** Every place that reads `DocW/DocH` already reasons about "the rectangle this image covers"; one
-  type makes the origin impossible to forget. The refactor is mechanical.
-- **Consequences:** `Args.XY` and `AxisScales` subtract the origin; `NewRegion` adds it; two-image ops compare
-  frames.
-- **Status:** proposed
+- **Rationale:** Every reader of `DocW/DocH` already reasons about "the rectangle this image covers"; one type makes
+  the origin impossible to forget.
+- **Consequences:** `Args.XY` shifts point coordinates and box origins by the frame origin (sizes are not shifted);
+  region geometry adds the origin when regions are created (`RegionsValue.NewRegion`, `regions.go:67-100`); `Rasterize` and two-image
+  ops compare frames.
+- **Status:** accepted
 
-### Decision: named images are a session feature, not an engine feature
+### Decision: `box` and `point` argument types; `x, y` is a corner, `cx, cy` a centre
+
+- **Context:** Boxes and points are bare arrays today; GCV-002 and GCV-003 need to pass region items and
+  measurement rows as boxes and points.
+- **Options considered:** (a) keep arrays; (b) structural coercion (any object with `x, y` is a point); (c) typed
+  arguments with one naming rule.
+- **Decision:** (c).
+- **Rationale:** (b) would read a region's box corner as its centre, which is the mistake to prevent. (c) gives each
+  name one meaning across all three tickets.
+- **Consequences:** GCV-003's result rows name points `cx, cy`.
+- **Status:** accepted
+
+### Decision: macros expand at intern time; one-node macros keep a macro node
+
+- **Context:** Views and `split` are compositions; captions should name them, and their parts should be shared.
+- **Options considered:** (a) kernels for each composite op; (b) JavaScript helpers in the prelude; (c) Go macros
+  expanded at intern time, wrapped in a pass-through macro node when they produce one node.
+- **Decision:** (c).
+- **Rationale:** (c) reuses the registry for help and options, shares caches with hand-written chains, and gives a
+  label without mutating shared nodes. (b) would hide the composition from Go and from `explain()`.
+- **Consequences:** `Register` accepts `Expand` instead of `Run`; `Engine.Call` returns several nodes.
+- **Status:** accepted
+
+### Decision: named images are a session feature
 
 - **Context:** Issue 20 asks for several names.
-- **Options considered:** (a) names in the engine (nodes carry names); (b) names in the session layer as
-  globals backed by a table.
+- **Options considered:** (a) names in the engine; (b) names in the session layer as globals backed by a table.
 - **Decision:** (b).
-- **Rationale:** Names do not change what a node computes, so they must not enter hashes. The session already
-  owns `img`; generalizing it removes a special case.
-- **Consequences:** The context block and the MCP tool learn names; the CLI's `--image` binds `img`.
-- **Status:** proposed
+- **Rationale:** Names do not change what a node computes, so they must not reach the engine or the hash; the session
+  already owns `img`.
+- **Consequences:** The `init.js` wrapper handles `as`; the context block and the MCP tool learn names.
+- **Status:** accepted
 
 ## 9. Pseudocode and key flows
 
 ### 9.1 Opening and decoding
 
 ```
-cv.open(path, opts)                                    // init.js wrapper: checkPath(path)
-  binding.open(path, opts)
-    node, as := engine.Open(path, opts)
-      abs := resolve(path)
-      info := buffer.ProbeFile(abs)                    // decoder registry, header only
-      enc := opts.encoding or info.Encoding
-      frame := Frame{X: box.x or origin.x or 0, Y: …, W: box.w or info.W, H: box.h or info.H}
-      n := Intern(open, args{path, stamp, enc, box, hidden info}) with n.Enc = enc, n.Space = linear, n.Frame = frame
-    if as != "": session.names.bind(as, node)
-    return node
+cv.open(path, opts)                                  // init.js wrapper
+  checkPath(path); { as, ...rest } := opts
+  node := module.open(path, rest)                    // binding → Engine.Open
+    info := buffer.ProbeFile(abs)                    // decoder registry, header only
+    Intern(open, raw{path, encoding?, box?, origin?} + hidden{stamp, w, h, format, bits, sample, fileEncoding, recordedOrigin})
+      internNode: Frame = DocFrame(args), Enc = encoding or fileEncoding, Space = linear
+  if as: bindName(as, node)
+  return node
 
 first evaluation of open at scale s:
-  src := sources.Load(abs, stamp, box)                 // once per file version and window
-    buf, info := decoder.Decode(r, {Box})              // encoded values
-    lin := buffer.Convert(buf, enc, linear)            // exact 8/16-bit tables; identity for linear
-    pyr := NewPyramid(lin)                             // area averages of linear values
-  return pyr.AtScale(s) with Space = linear
+  src := sources.Load(abs, stamp, box)               // once per file version and window
+    buf, info := decoder.Decode(r, {Box})            // encoded values
+    lin := buffer.Convert(buf, enc, encoded, linear) // exact tables for 8/16-bit integers; identity for linear
+    pyr := NewPyramid(lin)
+  return NewImage(pyr.AtScale(s))                    // evaluator stamps Frame, Enc
 ```
 
 ### 9.2 Interning with spaces
 
 ```
 Intern(op, receiver, raw):
-  args := bind(op, raw)                                // types, units, unknown options, synonyms (unchanged)
-  if op.Expand != nil: return op.Expand(expander, receiver, args)
+  args, warnings := bind(op, raw)                       // types, units, box/point coercion, unknown options, synonyms
   s := args.space or op.Space.Default
-  if op.Space.Default != none: args.space = s
-  for each image input i of op:
-      if i.Space != s and !Identity(i.Enc, i.Space, s):
-          i = Intern(convert, i, [s])                  // hash-consed: shared with other consumers
-  warn SPACE for lifted Level args whose node.Space != s
-  warn ENCODING when s == encoded and image inputs have different Enc
-  n := internNode(op, args, inputs)
-  n.Enc, n.Space = resultEncoding(op.Result, receiver, s)
-  n.Frame = op.DocFrame(args, inputs) or receiver.Frame
-  return n
+  if s != none: args.space = s
+  if op.Expand != nil:
+      nodes := op.Expand(expander, receiver, args)      // inner Calls go through Intern
+      if len(nodes) == 1: return internNode(op, args, [receiver, nodes[0]])   // macro node
+      return nodes
+  inputs := [receiver] + explicit inputs + lifted inputs
+  if op.Gray != nil and op.Gray(args) and receiver has 3 channels:
+      inputs[0] = Intern(toGray, inputs[0], ["rec709", {space: linear}])
+  if s != none:
+      for each Image input i (including Image[] elements):
+          if i.Space != s and !Identity(i.Enc, i.Space, s): replace i by Intern(convert, i, [s])
+  warn SPACE for lifted Level args v with v.Space != s and !Identity(v.Enc, v.Space, s)
+  warn ENCODING when s == encoded and Image inputs differ in Enc
+  return internNode(op, args, inputs)                    // computes Frame, Enc, Space from (op, args, inputs)
 ```
 
-### 9.3 A trace
+### 9.3 Two traces
 
-Take the colleague's tile in today's form (sRGB_encode(v) stored, `encoding: "srgb"` implied) and ask for a
-luminance mask:
+The colleague's tile in today's form (stores sRGB_encode(v); `srgb` implied):
 
 ```js
 return img.mask.luminance({ above: 0.9 }).explain()
 ```
 
 ```yaml
-- "#3 mask.luminance(above: 0.9)       Mask 1024×1024"
-- "  #2 convert(→ encoded)             Image 1024×1024 srgb"
-- "    #1 source 1d955ef4….tif          Image 1024×1024 srgb, linear"
+- "#4 mask.luminance(above: 0.9)        Mask 1024×1024"
+- "  #3 convert(→ encoded)              Image 1024×1024   enc srgb · space encoded"
+- "    #2 toGray(rec709)                Image 1024×1024   enc srgb · space linear"
+- "      #1 source 1d955ef4….tif         Image 1024×1024   enc srgb · space linear"
 ```
 
 The same tile re-exported with v stored and opened with `encoding: "linear"`:
 
 ```yaml
-- "#2 mask.luminance(above: 0.9)       Mask 1024×1024"
-- "  #1 source 1d955ef4…_v.tif          Image 1024×1024 linear, linear"
+- "#3 mask.luminance(above: 0.9)        Mask 1024×1024"
+- "  #2 toGray(rec709)                  Image 1024×1024   enc linear · space linear"
+- "    #1 source 1d955ef4…_v.tif         Image 1024×1024   enc linear · space linear"
 ```
 
-No conversion node: for a linear encoding, linear and encoded are the same values, so the builder did not
-insert one. The first mask thresholds sRGB_encode(v) > 0.9; the second thresholds v > 0.9. That difference
-is issue 7.
+No conversion node: for a linear encoding the spaces coincide. The first mask thresholds sRGB_encode(Y) > 0.9; the
+second thresholds Y(v) > 0.9. That difference is issue 7.
+
+A builder lambda on the first tile, `img.within(mask, i => i.contrast(0.2))`: the placeholder has `enc srgb · space
+linear`, so `contrast` (encoded default) gets `convert(placeholder → encoded)`; after `Substitute`, the same
+`convert(img → encoded)` node that `img.contrast(0.2)` uses.
 
 ### 9.4 Rendering a look
 
 ```
 look.Render(node, scale):
-  root := Intern(convert, node, [encoded]) unless Identity(node.Enc, node.Space, encoded) or node.Kind == Mask
+  root := node
+  if node.Kind == Image and !Identity(node.Enc, node.Space, encoded): root = Intern(convert, node, [encoded])
   v := Evaluate(root, scale)
   img := buffer.Quantize(v.Buf, 8)                     // clamp to [0, 1], round to 0..255, no transfer curve
   burn the look number; encode PNG or JPEG (GCV-002 adds format)
@@ -1067,215 +1284,251 @@ look.Render(node, scale):
 
 ## 10. Errors and diagnostics
 
-New and changed diagnostics follow the existing patterns: a code, a message in the API's terms, a hint, a
-literal fix, a `valid` list, and did-you-mean (`pkg/cv/graph/args.go:556-585`).
+New and changed diagnostics follow the existing patterns (Foundations §F10).
 
 | situation | code | message and fix |
 |---|---|---|
-| unsupported file feature | `E_FORMAT` | `cv.open("x.dng"): CFA (mosaiced) raw data is not supported; goja-cv reads LinearRaw DNGs.` hint: export a linear DNG or TIFF. Each decoder names the feature (compression, sample format, Fortran order, planar config). |
-| unknown encoding | `E_ARG_TYPE` (enum) | `cv.open.encoding = "gamma" is not one of srgb, linear.` fix: `cv.open(path, { encoding: "linear" })` |
-| `box` outside the file | `E_ARG_RANGE` | with the file size and a clipped box as the fix |
+| unsupported file feature | `E_FORMAT` | names the feature: `cv.open("x.dng"): CFA (mosaiced) raw data is not supported; goja-cv reads LinearRaw DNGs.` Likewise for tiles, planar configuration, BigTIFF, Fortran order. |
+| unknown encoding | `E_ARG_TYPE` | `cv.open.encoding = "gamma" is not one of srgb, linear.` fix: `cv.open(path, { encoding: "linear" })` |
+| box or point outside the frame | `E_ARG_RANGE` | the frame and the nearest valid box of the same size as the fix |
 | `box` and `origin` together | `E_ARG_TYPE` | "box already sets the origin" |
+| `{ x, y }` given as a point | `E_ARG_TYPE` | "x, y is a box corner; a point is [x, y] or an object with cx, cy" with fix `[obj.x, obj.y]` |
 | bad or taken name | `E_NAME` | names the conflicting global; fix with a free name |
+| two-image op on different frames | `E_FRAME` | both frames |
 | lifted level from another space | `SPACE` warning | §7.6 |
-| mixed encodings in encoded space | `ENCODING` warning | §7.10 |
+| mixed encodings in encoded space | `ENCODING` warning | §7.5 |
+| `toLab` on camera RGB | `PRIMARIES` warning | "a*/b* are approximate: the DNG's colour matrices are not applied" |
 | channel out of range | `E_ARG_RANGE` | fix `img.toGray()` or the valid channel names |
-| two-image op on different frames | `E_FRAME` | both frames; GCV-002 adds the crop-specific fix |
-| colormap on 3 channels | `E_WRONG_KIND` | fix `img.channel("g").colormap("viridis")` |
+| colormap on 3 channels | `E_WRONG_KIND` | fix `img.toGray("average").colormap("viridis")` |
 
-Synonyms (`OptionSynonyms`, `pkg/cv/graph/args.go:590-605`) gain entries that map words agents use to the new
-options: `colorSpace`, `colorspace`, `transfer`, `gamma` → `encoding`; `name`, `bind`, `alias` → `as`;
-`window`, `rect`, `region` → `box` (already partly present); `workingSpace`, `in` → `space`. Enum values gain
-a small value-synonym table checked before edit distance: `sRGB`, `gamma` → `srgb`; `raw`, `lin`, `none`,
-`identity` → `linear`; `file`, `stored`, `code` → `encoded`. Op synonyms (`pkg/cv/graph/suggest.go:10-41`) gain
-`grayscaleChannel` → `channel`, `lab` → `toLab`, `saturation` → `chroma`, `falseColor`, `lut`, `heatmap` →
-`colormap`, `reencode` → `encode`.
+New codes go into `pkg/cv/graph/errors.go`, except `E_NAME`, which belongs to the session (`pkg/cvsession`).
 
-`cv.help` never throws (`pkg/gojamod/cv/help.go:12-17`). Add concept entries to its function table for
-`encoding`, `space`, `frame` and `names`, each with a usage line and a pointer to the docs topic. Replace the
-`metadata` redirect text ("colorSpace") with "encoding".
+Option synonyms (`OptionSynonyms`, `pkg/cv/graph/args.go:590-605`) gain `colorSpace`, `colorspace`, `transfer`,
+`gamma` → `encoding`; `window`, `rect`, `region` → `box`; `workingSpace` → `space`. The session wrapper maps
+`name`, `bind`, `alias` → `as`. Enum values get value synonyms scoped per enum (a map keyed by the enum's
+`ArgSpec`): for `encoding`, `sRGB` and `gamma` → `srgb`, `lin`, `raw`, `identity` → `linear`; for `space`, `file`,
+`stored`, `code`, `display` → `encoded`, `lin`, `light` → `linear`. Op synonyms (`pkg/cv/graph/suggest.go:10-41`)
+gain `lab` → `toLab`, `saturation`, `channelSpread` → `chroma`, `falseColor`, `lut`, `heatmap` → `colormap`,
+`reencode` → `encode`.
+
+`cv.help` never throws (`pkg/gojamod/cv/help.go:12-17`). Its table of non-op names gains `encoding`, `space`,
+`frame` and `names`, each with a usage line and the docs topic to read. The `metadata` redirect text says
+`encoding` instead of `colorSpace`.
 
 ## 11. Documentation and examples that change
 
-Docs are part of the tool: agents read them through `cv.docs` and every ```js block runs in tests
-(`pkg/cvsession/docs_test.go:77-152`).
+Docs are part of the tool: agents read them through `cv.docs`, and every ```js block runs in tests (Foundations
+§F11).
 
-- New topic `pkg/cv/docs/topics/10-encodings-and-spaces.md` (id `encodings-and-spaces`): the §3 concepts in
-  agent language, the default table, the three identities, how to open linear data, `{ space }` examples,
-  `encode`, and a `js warns=SPACE` block. Remove the "Linear and perceptual" section from
-  `02-units-and-scales.md:43-49` and link to the new topic.
-- `02-units-and-scales.md`: a "Frames" section (window opens keep file coordinates).
-- `01-getting-started.md`: the globals table describes names (`img` and `cv.open(path, { as })`).
-- `06-looks.md`: "masks and derived images show their values; colour images show encoded values".
-- `09-recipes.md`: a recipe "Open scientific data" (npy, float TIFF, DNG window) and "Neutral or coloured?"
-  (chroma + colormap).
-- Guidebook (`pkg/doc/02-concepts.md`): encodings and spaces paragraph; `03-cli.md`: `--image` binds `img`.
-- MCP instructions (`pkg/cvsession/reference.go:15-37`): replace "(linear light)" and "black/white are linear
-  levels like stats" with one line: "Numbers are in the op's space: linear (default for exposure, blur, blend,
-  stats, levels) or encoded (what looks show: thresholds, contrast, histogram, specks); pass { space } to
-  change it; cv.docs.read(\"encodings-and-spaces\")." Keep the instructions under 4000 characters (comment at
-  `reference.go:14`).
-- README: the quick-start `stats` output and the "image metadata" paragraph.
+- A new topic `pkg/cv/docs/topics/10-encodings-and-spaces.md` (id `encodings-and-spaces`) explains §3 in agent
+  language: the two spaces and the two questions, the defaults table, opening linear data, `{ space }`, `encode`,
+  and a `js warns=SPACE` block. The "Linear and perceptual" section of `02-units-and-scales.md:43-49` is removed
+  and links to it.
+- `02-units-and-scales.md` gains a "Frames" section; its awaited-summary example (line 25, which lists `docW`,
+  `docH` and `colorSpace`) changes to `frame` and `encoding`.
+- `01-getting-started.md` describes names in the globals table; `06-looks.md` says that masks and derived images
+  show their values; `05-masks-and-regions.md` and `09-recipes.md` gain "Open scientific data" and "Neutral or
+  coloured?" recipes.
+- The guidebook `pkg/doc/02-concepts.md` replaces "float32 pixels in linear light" with encodings and spaces;
+  `pkg/doc/03-cli.md` says `--image` binds `img`; `pkg/doc/08-recipes.md` replaces `docW` with `frame`.
+- The MCP instructions (`pkg/cvsession/reference.go:15-37`) replace "(linear light)" and "black/white are linear
+  levels like stats" with one line: "Numbers are in the op's space: linear (exposure, blur, blend, stats, levels)
+  or encoded (what looks show: thresholds, contrast, histogram, specks); pass { space } to change it;
+  cv.docs.read(\"encodings-and-spaces\")."
+- README: the quick-start `stats` output and the image-metadata paragraph.
 
-Examples and tests that change because of breaking behaviour:
+Tests and examples that change because of breaking behaviour:
 
 | change | affected |
 |---|---|
-| `levels` remaps in linear | numbers after `levels` in `06-looks.md` (meanL 0.27479), README, `pkg/cv/ops/ops_test.go` levels cases, golden looks of levels |
-| masks display linearly | look golden bytes of mask looks (`pkg/cv/look/look_test.go`) |
-| `colorSpace` → `encoding` | `pkg/gojamod/cv/module_test.go` metadata asserts, README, `cvsession` context-block tests |
-| `DocW/DocH` → `frame` in awaited summaries | every test that reads `docW`/`docH` from an awaited value; the summary keeps `w`, `h` and adds `frame` |
+| `levels` remaps in linear | numbers after `levels` in `06-looks.md` (meanL 0.27479), README, `pkg/cv/ops/ops_test.go` levels cases, golden looks |
+| masks display linearly | golden mask looks |
+| `colorSpace` → `encoding` | `pkg/cvsession/session_test.go:378`, README |
+| `docW/docH` → `frame` in awaited summaries | tests reading `docW`/`docH`; summaries keep `w`, `h` and add `frame` |
 | histogram result `space` is the resolved space | histogram tests |
+| `toGray("rec601")` removed | tone tests, docs mentioning it |
 
 ## 12. Implementation phases
 
-Each phase ends with `go test ./... -count=1`, `make lint`, and a commit. Write the listed tests first.
+Each phase ends with `go test ./... -count=1`, `make lint` and a commit, and states how the system behaves after it.
+Write the listed tests first.
 
-**Phase 0 — groundwork.**
-1. Add `TestKernelsAreSpaceAgnostic` (`pkg/cv/kernels/space_guard_test.go`): parse the non-test files of
+**Phase 0 — safety net and dead code.**
+1. Write `pkg/cv/look/golden_test.go`. It renders a fixed list of looks on the planted scan (the source, exposure,
+   gaussian, contrast, `levels` from stats, each mask op, a `detect.specks` overlay, the histogram chart, and the
+   three `compare` modes) and stores per-look PNG bytes under `pkg/cv/look/testdata/golden/`. A `-update` flag
+   rewrites them; a mismatch reports the largest per-channel code difference and the number of differing pixels.
+2. Add `TestKernelsAreSpaceAgnostic` (`pkg/cv/kernels/space_guard_test.go`): parse the non-test files of
    `pkg/cv/kernels` and `pkg/cv/ops` with `go/parser` and fail on calls to `buffer.ToPerceptual`,
-   `buffer.ToLinear`, `buffer.Linear8/16`, `buffer.EncodeSRGB8/16`. Mark it `t.Skip` until Phase 3 ends.
-2. Remove `Node.Base` and the unused error codes; `go build ./...` and tests pass unchanged.
+   `buffer.ToLinear`, `buffer.Linear8/16`, `buffer.EncodeSRGB8/16`; skip it until Phase 3 ends.
+3. Remove `Node.Base` and the unused codes.
 
-**Phase 1 — encodings, spaces, conversion.**
-1. Tests first: `pkg/cv/buffer/encoding_test.go` with the identity table, round-trip properties
-   (`Convert(Convert(b, e, from→to), e, to→from) ≈ b` within 2e-6 for random values in [−0.5, 2]), and the
-   numbers of §3.2 (0.5 → 0.214, 0.05 → 0.0039).
-2. Implement `Encoding`, `Space`, `Identity`, `Convert`, `Buffer.Space`; `Quantize` replacing `ToImage`;
-   encoders write encoded values.
+After Phase 0, behaviour is unchanged and the goldens record it.
 
-**Phase 2 — decoders.**
-1. Fixtures: extend `internal/testimage` with writers for the planted scan as 16-bit linear TIFF, float32
-   TIFF, LZW TIFF, `.npy` (`<f4` and `<u2`), and a minimal DNG (IFD0 thumbnail plus a SubIFD with
-   `NewSubfileType` 0, Photometric 34892, 16-bit, 3 samples, uncompressed). The writers are a few dozen lines
-   each; a TIFF writer for these simple layouts is easier to trust than a third-party one.
-2. Tests: each fixture decodes to the same linear buffer as the sRGB TIFF within 2e-5; `Probe` reports format,
-   bits, sample, encoding; `Box` reads equal the full decode cut to the box; malformed headers return
-   `E_FORMAT`, never panic (`FuzzTIFFProbe`, `FuzzNPYProbe` with the fixtures as seeds).
-3. Implement the registry, `png`, `jpeg`, `tiff` (IFD parser, SubIFDs, uncompressed reader, x/image fallback),
-   `npy`. Delete `Decode`, `DecodeFile`, `DecodeConfigFile`.
-4. `Engine.Open(path, raw)`; the `open` op gains `encoding`, `box`, `origin`, `as`; `SourceInfo` reports
-   `encoding`, `sample`, `frame`, `notes`.
+**Phase 1 — encodings and conversion.**
+1. Write `pkg/cv/buffer/encoding_test.go`: the identity table; `Convert` round trips within 1e-6 relative for random
+   values in [−0.5, 2]; the numbers of §3.2 (0.5 → 0.214, 0.05 → 0.0039); 8/16-bit tables equal the exact functions
+   at every code.
+2. Implement `Encoding`, `Space`, `ParseSpace`, `Identity`, `Convert`. Keep `ToImage`.
+
+After Phase 1, nothing uses the new types yet.
+
+**Phase 2 — frames and coordinate types.**
+1. Write tests: `Frame` replaces sizes with no behaviour change (the goldens pass); `box` and `point` accept arrays
+   and the object forms and refuse `{ x, y }` as a point; `Args.XY` shifts by a non-zero origin.
+2. Replace `DocW/DocH` with `Frame` on nodes, values and Regions (`grep -rn DocW pkg cmd` lists the sites);
+   `DocSize` becomes `DocFrame`; values are stamped by the evaluator; add `box`/`point` types and switch
+   `stats.box`, `mask.box`, `mask.ellipse`, `mask.flood` and `mask.gradient`'s point form to them.
+
+After Phase 2, every frame has origin (0, 0) and all goldens pass unchanged.
 
 **Phase 3 — spaces in the graph.**
-1. Tests first (`pkg/cv/graph/space_test.go`): default resolution per op (table-driven over the §7.5
-   defaults); explicit `{ space }` changes the hash; a conversion node is inserted once and shared by two
-   consumers (`Evaluator.Runs`); no conversion for linear-encoded inputs; `DerivedEnc` reinterprets;
-   `SPACE` and `ENCODING` warnings with their fixes.
-2. Replace `OpDef.Space string` with `SpaceRule`; add `Result`, `Internal`; `Register` appends the `space`
-   option; `Intern` resolves and inserts `convert`.
-3. Port the kernels in §4.3: remove the private conversions; `PerceptualLuminance` becomes `Luminance`
-   (weighted channels of whatever space it is given); `DetectSpecks` reports `MeanL` in its working space.
-   Turn on the guard test.
-4. `look.Render` renders encoded values; masks display linearly. Update goldens deliberately, one commit.
+1. Write `pkg/cv/graph/space_test.go`: defaults per op (table-driven over §7.5); explicit `{ space }` changes the
+   hash; a conversion node is inserted once and shared by two consumers (`Evaluator.Runs`); no conversion for
+   linear-encoded inputs; the grey-input rule gives today's numbers for pure red; `DerivedEnc` reinterprets;
+   `within` lambdas build the same inner graph as direct calls on sRGB and linear images; `compare([a, b])` with
+   inputs in different spaces converts each; `SPACE` fires across spaces on sRGB and not on linear-encoded data;
+   `ENCODING` fires on mixed encodings.
+2. Replace `OpDef.Space string` with `SpaceRule`; add `Result`, `Gray`, `Internal`; `Register` appends the `space`
+   option; `Intern` resolves spaces and inserts `toGray`/`convert`; `internNode` computes `Enc`/`Space`; the
+   placeholder copies statics; the `Level` unit and the warnings.
+3. Port the kernels in §4.3: remove the private conversions; `PerceptualLuminance` is deleted (the grey-input rule
+   replaces it); `DetectSpecks` reports `MeanL` in its working space; enable the guard test.
+4. `look.Render` renders encoded values through `convert` and `Quantize`; `WriteFile` writes `convert(→ encoded)`
+   values for sRGB images; delete `ToImage`. Regenerate goldens and check that only `levels` and mask looks differ.
 
-**Phase 4 — channels and macros.**
-1. Tests: `channel` on 1 and 3 channels; `split` returns three nodes equal to three `channel` calls (same
-   ids); `toLab` of known sRGB colours against reference values (white → (1, 0, 0); sRGB red → L* 53.24,
-   a* 80.09, b* 67.20); `chroma` of a grey image is 0; `colormap` endpoints; `encode` round trip.
-2. Implement `Expand`/`Expander`, the binding's array return, and the ops.
+After Phase 3, sRGB images behave as before except `levels` and mask display, and every op accepts `{ space }`.
 
-**Phase 5 — frames.**
-1. Tests: `open({ box })` regions and `stats({ box })` use file coordinates; two-image ops reject different
-   origins; `origin` shifts coordinates without reading differently.
-2. Replace `DocW/DocH` with `Frame` everywhere (`grep -rn DocW pkg cmd` lists the sites); update `XY`,
-   `AxisScales`, `NewRegion`, `Rasterize`, summaries.
+**Phase 4 — decoders and opening.**
+1. Extend `internal/testimage` with writers for the planted scan's float buffer as 16-bit linear TIFF, float32 TIFF,
+   LZW TIFF with predictor, `.npy` (`<f4`, `<u2`), and a minimal DNG (IFD0 thumbnail plus a SubIFD with
+   `NewSubfileType` 0, Photometric 34892, 16-bit, 3 samples, uncompressed). Each writer is a few dozen lines.
+2. Write decoder tests: each fixture decodes to its generating float buffer within one code of its format (1/65535
+   for 16-bit, exact for float); `Probe` fields; `Box` reads equal the full decode cut to the box; a hand-written
+   `ImageDescription` and PNG `tEXt`/`gAMA` chunk produce `Info.Encoding` and `Info.Origin`; malformed headers return
+   `E_FORMAT` and never panic (`FuzzTIFFProbe`, `FuzzNPYProbe`, seeded with the fixtures).
+3. Implement the registry, `png`, `jpeg`, `tiff`, `npy`; delete `Decode`, `DecodeFile`, `DecodeConfigFile`; give
+   `open` its `encoding`, `box` and `origin` arguments and `DocFrame`; `SourceInfo` reports `encoding`, `sample`,
+   `frame` and `notes`.
+
+After Phase 4, linear, float, npy and DNG files open, and windows keep file coordinates.
+
+**Phase 5 — macros and channels.**
+1. Write tests: `split()` returns three nodes equal to three `channel` calls; a one-node macro has its own node whose
+   last input is the hand-written chain's node; `channel` on 1 and 3 channels; `toLab` of sRGB white → (1, 0, 0) and
+   sRGB red → L* 53.24, a* 80.09, b* 67.20; `chroma` of a grey image is 0; `colormap` endpoints; `encode` keeps
+   linear values.
+2. Implement `Expand`, `Expander`, `CallResult`, the binding's array return, and the ops; remove `rec601`.
 
 **Phase 6 — named images.**
-1. Tests (`pkg/cvsession/names_test.go`): `as` binds and persists across evals; reserved and invalid names give
-   `E_NAME` with a fix; rebinding; the context block lists names and encodings; the MCP `open` tool with `as`.
-2. Implement the name table, `init.js` changes, context block, MCP schema.
+1. Write `pkg/cvsession/names_test.go`: `as` binds and persists across evals; reserved and invalid names give `E_NAME`
+   with a fix; rebinding; unnamed opens appear in the context block; the MCP `open` tool with `as`; the bare module
+   rejects `as`.
+2. Implement the name table, the `init.js` wrapper, the context block and the MCP schema.
 
 **Phase 7 — documentation and agent check.**
-1. New and changed topics, help concept entries, synonyms, instructions, guidebook, README (§11). The docs
-   tests must pass with the new blocks.
-2. Run the pi harness task (§13.5) on the old and new builds; record the table in the ticket.
+1. Write the topics, help entries, synonyms, instructions, guidebook and README changes of §10 and §11; the docs tests
+   must pass.
+2. Add the gated real-data tests (§13.4).
+3. In the dust-scanning repository, add the `IMAGE` and `QUESTIONS` overrides to
+   `CVJS-001/scripts/06-pi-cv-agent/run.sh` and the question file (§13.5); run both builds twice and record the
+   results in `CVJS-001/various/pi-runs/README.md`.
+
+The key points:
+
+- Phase 0 records today's looks before anything changes, so every later difference is deliberate.
+- Frames land before spaces, and both before decoders, so each phase has defined, testable semantics.
+- The kernel port and the display change happen in the same phase, which is the only phase where goldens move.
 
 ## 13. Test strategy
 
 ### 13.1 Unit and property tests
 
-- Transfer functions: identities, round trips, monotonicity of `Convert` for every (encoding, from, to).
-- Decoders: fixture equivalence, windows, probes, malformed input fuzzing.
-- Graph: space resolution, conversion sharing, derived reinterpretation, frames, warnings.
-- Kernels: the existing kernel tests keep passing with explicitly converted inputs; the guard test forbids
-  private conversions.
+- `encoding_test.go` checks identities, round trips, monotonicity and the exact integer tables.
+- The decoder tests compare each fixture with the float buffer that generated it, check probes and windows, and fuzz
+  the TIFF and NPY header parsers.
+- `space_test.go` covers resolution, sharing, grey inputs, derived reinterpretation, lambdas, lists and warnings.
+- The existing kernel tests keep passing with explicitly converted inputs, and the guard test forbids private
+  conversions.
 
 ### 13.2 Documentation tests
 
-Every ```js block in `pkg/cv/docs/topics` and `pkg/doc` runs against the planted scan
-(`pkg/cvsession/docs_test.go:77-152`). The new topic needs fixtures beyond the planted TIFF; add a second test
-image set written by `internal/testimage` (the linear TIFF and `.npy` of the planted scan) into the same
-temporary directory, and refer to them by relative names in the docs (`cv.open("planted-linear.tif")`).
+Every ```js block in `pkg/cv/docs/topics` and `pkg/doc` runs against the planted scan (`docs_test.go:77-152`). The new
+topic needs a linear fixture: the docs test harness writes the planted scan as a 16-bit linear TIFF and an `.npy`
+into the same temporary directory, and the docs refer to them by relative names (`cv.open("planted-linear.tif")`).
 
 ### 13.3 Golden looks
 
-Keep golden looks for sRGB images byte-identical except for `levels` and masks: render the existing look
-tests before and after Phase 3 and diff. Any other change is a bug in the defaults table.
+The Phase 0 golden test is the regression guard for "sRGB images look as before". After Phase 3 its expected
+differences are exactly the `levels` looks and the mask looks; any other difference is a bug in the defaults table
+or the grey-input rule.
 
 ### 13.4 Real data (gated)
 
-`~/dustdet/cv_tiles` holds 50 tiles (`{tile_id}.tif` 16-bit, 1024², uncompressed RGB, one strip; plus
-`{tile_id}.json` with `origin_x`, `origin_y`). Gate on `GOJACV_TILES` (default `~/dustdet/cv_tiles`, skip when
-absent):
+On `GOJACV_TILES` (default `~/dustdet/cv_tiles`, skipped when absent):
 
-- Open `1d955ef4b27d3d88_1536_1536.tif` (srgb, stores sRGB_encode(v)). Write its linear buffer as a 16-bit
-  linear TIFF in `t.TempDir()`, open that with `encoding: "linear"`. Assert: linear buffers equal within
-  2e-5; `mask.luminance({ above: 0.9, space: "linear" })` on the first equals `mask.luminance({ above: 0.9 })`
-  on the second; `stats()` agree (the current tile has meanL 0.33567, p01 0.0085, p99 0.918 in linear).
-- With `origin` from the tile's JSON, region centroids are absolute raw coordinates.
+- Open `1d955ef4b27d3d88_1536_1536.tif` (stores sRGB_encode(v)); write its linear buffer as a 16-bit linear TIFF in
+  `t.TempDir()`; open that with `encoding: "linear"`. Assert that the linear buffers agree within 1/65535, that
+  `mask.luminance({ above: 0.9, space: "linear" })` on the first equals `mask.luminance({ above: 0.9 })` on the
+  second, and that `stats()` agree (the tile has meanL 0.33567, p01 0.0085, p99 0.918 in linear today).
+- With `origin` from the tile's JSON, region centroids are absolute raw-scan coordinates.
 
-DNG, gated on `GOJACV_DNG` (for example the 319 MB `raw0027.dng` listed in `dng_meta.jsonl`): `Probe` gives
-7256 × 7326, 16-bit, linear; `open({ box: [1536, 1536, 1024, 1024] })` takes under a second and equals the same
-window cut from a full decode (run the full decode only with `GOJACV_DNG_FULL=1`).
+On `GOJACV_DNG` (for example `raw0027.dng`, listed in `~/dustds/meta/dng_meta.jsonl`): `Probe` gives 7256 × 7326,
+16-bit, linear; `open({ box: [1536, 1536, 1024, 1024] })` returns in under a second and equals the same window cut
+from a full decode (run the full decode only with `GOJACV_DNG_FULL=1`).
 
 ### 13.5 Agent harness
 
-The pi harness (`CVJS-001/scripts/06-pi-cv-agent/run.sh GOJA_CV_DIR OUT_DIR [MODEL]`) builds goja-cv, writes the
-planted scan, and asks `questions.md`. Extend it with two environment overrides, `IMAGE` and `QUESTIONS`, and a
-question file for this ticket, `questions-gcv-001.md`, against a density tile re-exported as v (16-bit linear)
-plus the original tile as a reference:
+The pi harness (Foundations §F11) gets `IMAGE` and `QUESTIONS` environment overrides and a question file
+`questions-gcv-001.md` next to `questions.md`, run against a density tile re-exported as v (16-bit linear) plus
+the original tile as a reference:
 
 1. What is the image's encoding, and what are p01 and p99 in file units?
-2. Open the second file as `ref`. Is it the same frame? What is the largest absolute difference in file
-   units?
+2. Open the second file as `ref`. Is it the same frame? What is the largest absolute difference in file units?
 3. Is the bright blob near (x, y) neutral or coloured? Give a number.
 
-Run it against the build before this ticket (where the model has to work around the missing encoding) and
-after. Record calls, errors and correctness in the CVJS-001 pi-runs table format. The measure is friction, not
-capability; the deep-dive article's caveat about run-to-run variance applies (run each build twice).
+Run the build before this ticket and after, twice each, because the agent's path varies between runs of the same
+build (two runs on one build in CVJS-001 differed by 21 calls). Record calls, errors and correctness in the
+pi-runs table. Acceptance: on the new build, both runs answer all three questions correctly with no `E_` error
+caused by a missing capability.
 
 ## 14. Risks, alternatives and open questions
 
 **Risks.**
 
-- *Default changes on sRGB images.* Only `levels` and mask display change; the golden diff (§13.3) is the
-  guard. If agents' existing recipes break visibly, revisit the `levels` default before changing anything else.
-- *Graph growth.* Conversion nodes add cached buffers. On a 1024² RGB tile a conversion is 12 MB at scale 1;
-  the cache cap (2 GiB, `engine.go:24`) absorbs dozens. On full DNGs it is 638 MB per conversion; windows are
-  the answer, and the docs recipe uses them.
-- *TIFF parser bugs.* Fuzzing and the fixture equivalence tests are mandatory before merging Phase 2.
-- *Agent confusion about spaces.* Three spaces are one more concept to learn. The mitigations are the
-  identities (most images have only two distinct spaces), the `SPACE` warning with a fix, and the docs topic.
+- The `levels` change is visible in agents' recipes. The golden diff and the docs examples show it; if it hurts,
+  revisit the `levels` default before anything else.
+- Conversion and grey nodes add cached buffers: 12 MB per conversion on a 1024² tile, 638 MB on a full DNG. Windows
+  are the answer for DNGs, and the docs recipe uses them.
+- Parser bugs in an own TIFF reader. Fuzzing and fixture equivalence are required before Phase 4 merges.
+- Agents must learn spaces. The mitigations are two spaces instead of three, the two-question rule, the `SPACE`
+  warning with a fix, and the docs topic.
 
-**Alternatives not taken.** A single "data mode" flag; an ICC-based colour pipeline (too large for the need);
-reading DNGs through a Python sidecar (CVJS-001 Part 4 §20.2 suggested an external decoder for camera raw; the
-LinearRaw case does not need one).
+**Alternatives not taken.** A single "data mode" flag; an ICC-based colour pipeline; reading DNGs through a Python
+sidecar (not needed for LinearRaw).
 
 **Open questions.**
 
-1. Should `stats` default to `encoded` for linear-encoded images? It makes no numerical difference there, so the
-   question only matters for sRGB images, where linear is the photometric default. Proposed answer: no.
-2. Does the colleague want `.npy` caches of whole DNGs (7256 × 7326 × 3 uint16, 319 MB) opened with `box`? The
-   NPY decoder can read windows of C-order arrays with seeks; it is cheap to add in Phase 2 if needed.
-3. Should `encode` accept a gamma value (`encode({ gamma: 2.2 })`)? Only if a user brings such data.
+1. Should `encode` accept a gamma (`encode({ gamma: 2.2 })`)? Only if a user brings such data.
+2. Should the NPY decoder support memory-mapped windows of whole-scan caches (7256 × 7326 × 3 uint16)? It already
+   reads windows with seeks; this is about performance only.
 
-## 15. References
+## 15. Closing
 
-- Handover issues: `/Users/manuel/code/wesen/2026-11-07--dust-scanning/ttmp/2026/11/07/DUST-002--film-dust-detector-model-exploration/reference/07-goja-cv-handover-issues.md` (issues 6, 7, 13, 20), `05-goja-cv-feature-requests.md` (items 4, 6, 7), `06-goja-cv-generic-inspection-features.md` (B2b, B6, B7, C4, D1, D2).
-- Playbook: `…/DUST-002…/reference/04-goja-cv-dust-playbook.md`; export script `…/scripts/82-export-cv-tiles.py`; helpers `…/scripts/84-cv-helpers.js`.
+GCV-002 can now assume an image model in which every node knows its frame, its encoding and the space of its
+values; in which a view's `space` is one option resolved at build time; in which derived values display and measure
+as themselves; and in which composite views are macros with their own labels. GCV-002 adds the render scale and
+the decoration rule on top of these frames, and its arithmetic and high-pass ops are the first `DerivedEnc` users.
+GCV-003 adds measurements that report levels in a resolved space and writes files whose encoding and frame these
+decoders read back.
+
+## 16. References
+
+- Foundations: `ttmp/2026/11/09/GCV-001--image-model-encodings-working-spaces-channels-and-named-images/reference/05-foundations-goja-cv-for-the-gcv-guides.md`.
+- Review findings with disposition: `reference/03-review-read-findings.md` in this ticket.
+- Handover issues 6, 7, 10, 13, 20, 22: `/Users/manuel/code/wesen/2026-11-07--dust-scanning/ttmp/2026/11/07/DUST-002--film-dust-detector-model-exploration/reference/07-goja-cv-handover-issues.md`; `05-goja-cv-feature-requests.md` items 4, 6, 7; `06-goja-cv-generic-inspection-features.md` B2b, B6, B7, C4, D1, D2.
+- Playbook `…/DUST-002…/reference/04-goja-cv-dust-playbook.md`; export script `…/scripts/82-export-cv-tiles.py`; helpers `…/scripts/84-cv-helpers.js`.
 - DNG layout: `/Users/manuel/code/wesen/2026-11-07--dust-scanning/dustds/rawio.py`, `~/dustds/meta/dng_meta.jsonl`.
-- CVJS-001 intern guide Parts 1–3 (vocabulary; Part 2 §2 on linear light; Part 3 §15.1 buffers, §15.3 registry) and `06-integration-surfaces…` (file format tiers, pure-Go decision): `/Users/manuel/code/wesen/2026-11-07--dust-scanning/ttmp/2026/11/08/CVJS-001--js-eval-cv-api-for-agents-compare-9-implementations/design-doc/`.
-- Agent lessons: go-go-parc `Projects/2026/11/09/ARTICLE - Deep Dive - Teaching a Cheap Model an Image Eval API - goja-cv, Docs and pi Runs.md` (docs inside the tool, never-throwing help, literal fixes, synonyms, describing optional parameters).
-- Next tickets: GCV-002 (`design-doc/01-design-and-implementation-guide.md`: crops and zoom use `Frame`, views use macros and derived encodings), GCV-003 (measurements use `Level` units and resolved spaces; `node.save` writes encoded values with the image's encoding).
-- sRGB transfer function: IEC 61966-2-1; CIE L*a*b* with D65: CIE 15:2004.
+- CVJS-001 intern guide (design that preceded goja-cv): `/Users/manuel/code/wesen/2026-11-07--dust-scanning/ttmp/2026/11/08/CVJS-001--js-eval-cv-api-for-agents-compare-9-implementations/design-doc/` (Part 2 §2, Part 3 §15.1 and §15.3; `06-integration-surfaces…` for file format tiers).
+- TIFF 6.0 specification (Adobe, 1992); DNG specification 1.6 (Adobe); NumPy `.npy` format (NEP 1); sRGB: IEC 61966-2-1; CIE L*a*b* with D65: CIE 15:2004.
+- Next tickets: GCV-002 and GCV-003, `design-doc/01-design-and-implementation-guide.md` in each.
