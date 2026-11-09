@@ -101,3 +101,54 @@ item 2 of the hand-over). Old habits (`r.box`, `r.centroid`, `meanMask`) throw `
 ### Technical details
 - Example: `img.mask.luminance({ above: 0.75 }).components().where({ score: { gte: 0.5 } })` → `E_UNKNOWN_OPTION: where: these regions have no field "score"; they have id, x, y, w, h, cx, cy, area, aspect.` hint `score comes from img.detect.specks().`, fix `img.detect.specks()`.
 - Item keys of `detect.specks`: `id,x,y,w,h,cx,cy,area,aspect,contrast,localNoise,sharpness,score,meanL,polarity`.
+
+## Step 2: Phase 2 - no item cap
+
+Awaited Regions now contain every item. The 100-item `SummaryLimit` and the `truncated` flag are gone; a safety limit
+(`MaxRegionItems = 100000`) turns a pathological mask into `E_TOO_MANY` with a literal fix instead of a huge JavaScript
+array. The caps that protect the model's context stay in the YAML renderer, and their notes now point to data out.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 1)
+
+**Assistant interpretation:** Guide Phase 2: remove the cap, add the safety limit, point truncation notes at `cv.json`.
+
+**Inferred user intent:** JavaScript that iterates `items` (the colleague's `mem.hot`) must never silently see a prefix.
+
+**Commit (code):** e5adb68 - "GCV-003 Phase 2: awaited Regions have every item; MaxRegionItems safety limit (E_TOO_MANY); truncation notes point to data out"
+
+### What I did
+- `graph.RegionsValue.Summary()` returns `(map, error)`: every item, or `E_TOO_MANY: 100001 regions; await at most 100000.` with fix `regions.sortBy("area").top(1000)   // or await regions.count()`. New code `graph.ETooMany`.
+- `binding.evaluate` rejects the promise with that error (with the node path); `resultToJS` returns an error.
+- `pkg/cvsession/yaml.go`: "… N more (return cv.json(x) for all)" on lists, "(… more characters; return cv.json(x) for all)" on strings; the CUT note adds "return cv.json(x) or cv.csv(x) for complete data".
+- Docs: nodes topic says awaited Regions hold every region.
+- Tests: `TestAwaitedRegionsHaveEveryItem` (a 150 × 150 PNG of isolated dots: 5625 regions, all awaited, the YAML list note), `TestAwaitingTooManyRegionsIsAnError` (Go level, 100001 items), session tests no longer expect `truncated`.
+
+### Why
+- Guide §6 item 4, §7.7, Phase 2.
+
+### What worked
+- Gate green on the first run (`build=0 vet=0 test=0 lint=0 logcopter=0`). I now run the gate through a script that prints each status and exits non-zero on any failure (`/tmp/gate.sh; echo gate=$?`), so no pipe can hide a red step.
+
+### What didn't work
+- Two session tests asserted the old key list: `text does not contain "keys: 'count,frame,items,kind,scale,truncated'"`; updated.
+
+### What I learned
+- The 100 000-item limit is checked on the evaluated value, so `await regions.count()` stays cheap and valid for any count.
+
+### What was tricky to build
+- Nothing beyond threading an error out of `resultToJS`, which runs inside the settle callback on the owner goroutine: the rejection must be built there (`errorObject(vm, err)`), not on the evaluation goroutine.
+
+### What warrants a second pair of eyes
+- The YAML notes mention `cv.json`/`cv.csv`, which only exist from Phase 7 on; within this stacked PR the final state is consistent.
+
+### What should be done in the future
+- N/A
+
+### Code review instructions
+- `pkg/cv/graph/regions.go` (`MaxRegionItems`, `Summary`), `pkg/gojamod/cv/binding.go` (`evaluate`, `resultToJS`), `pkg/cvsession/yaml.go`.
+- `go test ./pkg/cvsession -run AwaitedRegions -v`; `go test ./pkg/cv/graph -run TooMany -v`.
+
+### Technical details
+- Memory: one awaited item is a JavaScript object of ~9-15 numbers; 100 000 items is tens of MB, the bound the limit sets.
