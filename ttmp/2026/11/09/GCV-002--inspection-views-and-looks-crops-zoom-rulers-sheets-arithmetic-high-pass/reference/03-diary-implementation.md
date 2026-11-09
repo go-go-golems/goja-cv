@@ -14,10 +14,16 @@ RelatedFiles:
       Note: Cut and Upsample (Phase 2)
     - Path: repo://pkg/cv/graph/funcs.go
       Note: FuncDef, RegisterFunc, BindOptions (Phase 1)
+    - Path: repo://pkg/cv/graph/order.go
+      Note: CROP_FIRST and DECORATION_FIRST (Phase 3)
     - Path: repo://pkg/cv/graph/render.go
       Note: render path above scale 1 (Phase 2)
+    - Path: repo://pkg/cv/look/ruler.go
+      Note: rulers and grid (Phase 3)
     - Path: repo://pkg/cv/ops/funcs.go
       Note: look and show functions and their ArgSpecs
+    - Path: repo://pkg/cv/ops/geometry.go
+      Note: crop (Phase 3)
     - Path: repo://pkg/cv/text/text.go
       Note: the one bitmap font (Phase 1)
 ExternalSources: []
@@ -26,6 +32,7 @@ LastUpdated: 2026-11-09T05:54:43.150917-05:00
 WhatFor: Reviewing and continuing the GCV-002 implementation on branch task/gcv-002-inspection-views (stacked on task/gcv-001-image-model).
 WhenToUse: Before reviewing a GCV-002 commit, or when picking up GCV-003 on top of it.
 ---
+
 
 
 
@@ -165,3 +172,62 @@ The render path is tested with test-only decorations before any real op is a dec
 
 ### Technical details
 - Render cache key: sha256("render" ‖ scale-1 signature ‖ round(scale·1e4) ‖ interp ‖ window x, y, w, h).
+
+## Step 3: Phase 3 - crop, rulers, chain captions
+
+Phase 3 makes a window of an image a node (`crop`, a geometric op that keeps absolute coordinates) and lets a look read
+coordinates off its image (`ruler`, `grid`). Captions now say what the image is: the op chain from the source, with the
+agent's label in front and the doc-px range at the end. Two build-time warnings name the orders of ops that silently give
+the wrong view (CROP_FIRST, DECORATION_FIRST); CROP_FIRST is the first reader of `OpDef.Halo`.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 1)
+
+**Assistant interpretation:** Implement guide Phase 3: crop with frames, clipping and the outside-box fix, the order warnings, rulers and grid with a golden, and chain captions through macro nodes.
+
+**Inferred user intent:** An agent writes `img.crop(box).look({ zoom: 8, ruler: 8 })` and reads scan coordinates off the image.
+
+**Commit (code):** b3db2b0 - "GCV-002 Phase 3: crop, rulers and grid, op-chain captions, CROP_FIRST and DECORATION_FIRST"
+
+### What I did
+- `pkg/cv/ops/geometry.go`: `crop` on Image and on Mask (`Class: GeometricOp`, box `Static` and `InFrame`), `cropFrame` (outward rounding, clip), `Validate` (no area), `Warn` (RANGE with the clipped box), `cropValue` (below scale 1: `ScaledSize(frame, s)` buffer px from the nearest buffer pixel, origin recorded).
+- `graph`: `Args.Box`; `ImageValue.BufferOrigin`/`WithOrigin` (unexported origin, carried by `stamp` through ops that keep the raster; `Args.XY` uses it); `Intersect`.
+- `graph/order.go`: `orderWarnings` for CROP_FIRST (op with `Halo > 0` - a lifted length counts - after a geometric op) and DECORATION_FIRST (pixel op after a decoration) on the receiver chain; `Builder.call(…, nested)` so `internOp` (expansions, inserted convert/toGray) raises none.
+- `graph/explain.go`: `ShortCall`, `Short`, `Evaluator.Chain`/`Engine.Chain` (skips internal ops and the toGray the grey-input rule inserts; 120-character cut), `shortFile` for long file names.
+- `pkg/cv/look/ruler.go`: `axis`, `ticks` (from the first whole doc px of the axis; labels every k-th tick, k ∈ 1, 2, 5, 10, …), `autoTick`, `layoutRulers`, `addRulers`, `drawGrid`. Look options `ruler` (`number|bool`, doc px) and `grid`; captions `label — chain (W×H + ruler, …, doc x a–b, y c–d)`; charts refuse ruler/grid.
+- CLI: look file names take the label part of the caption (regexp stops at " — ").
+- Tests: `pkg/cv/graph/crop_test.go` (frames, crop of a crop, RANGE with the clipped box, outside fix `img.crop([192, 10, 64, 64])`, no area, node in box refused, pixels at 1, buffer size and origin at 0.5, render at 8 = window upsampled, a test decoration before and after the crop gives the same 1 px lines, the order warnings and their absence); `pkg/cv/look/ruler_test.go` (tick positions and thinning, labels read back by glyph matching for a crop at (300, 100) at zoom 8, tick at the left edge of pixel 308, chain captions plain/long/value); goldens `ruler-crop-zoom8`, `grid-gray-crop-zoom4`; caption expectations in session, MCP, CLI and xgoja tests.
+
+### Why
+- Guide §3.5, §7.3, §7.7 (rulers, captions), §9.1, §10 and Phase 3.
+
+### What worked
+- Golden check before `-update`: every existing look byte-identical; only the two new goldens were written.
+- Visual check of `img.crop([150, 30, 64, 48]).look({ zoom: 8, ruler: true, grid: 8 })`: ticks 150, 158, …, 214 and 30, 38, …, 78, grid aligned with the ticks.
+
+### What didn't work
+- `TestTicksAndLabelThinning`: "ruler 8: [{doc:304 px:32 …}]" - my first ticks were multiples of the spacing (304, 312, …); the guide's example labels a crop at 300 with 300, 308, …, so ticks now count from the axis origin.
+- First visual check: the look number covered the first x and y labels in the top-left corner; labels are now clamped to start at the margins, leaving the corner to the number.
+
+### What I learned
+- Every caption in the session tests changed (the chain is now part of it), e.g. `look 1: after — open(gradient-64x48-16bit.tif) → exposure(0.5) (64×48, …)`.
+
+### What was tricky to build
+- Crops below scale 1: the buffer must be exactly `ScaledSize(frame, s)` so that a crop combines with masks made on it (mask makers allocate that size), yet the cut can only start on a buffer pixel. The value therefore records where its buffer starts in doc px, and `stamp` carries that origin through ops that keep the raster (same frame and size as their first input), so `Args.XY` and rulers stay exact.
+- Order warnings must come from the call the agent wrote, not from a macro's expansion or an inserted conversion: `Builder.call` takes a `nested` flag that `internOp` sets.
+
+### What warrants a second pair of eyes
+- Side margins are widened to fit the longest y label (`max(28, label + 12)`), so a ruled look can be more than 56 px wider than its image (deviation).
+- `Chain` hides any `toGray(rec709)` consumed as a luminance input, also one the agent wrote (it would have been inserted anyway).
+- Labels read as integers; at render scales where ticks are fractional doc px (`ruler: 0.5`) labels round.
+
+### What should be done in the future
+- N/A
+
+### Code review instructions
+- `pkg/cv/ops/geometry.go`, `pkg/cv/graph/order.go`, `explain.go` (`Chain`, `Short`), `pkg/cv/look/ruler.go`, `look.go` (`Caption`, `image`).
+- `go test ./pkg/cv/graph -run 'Crop|Order' -v`; `go test ./pkg/cv/look -run 'Ticks|Ruler|Chain|Golden' -v`.
+
+### Technical details
+- Ruler layout: top margin 28, bottom 28 when the image is ≥ 256 px tall; left `max(28, widest y label + 12)`, right the same when the image is ≥ 256 px wide; tick marks 6 px; labels at font px 2 (14 px tall), 2 px from the tick.

@@ -6,8 +6,8 @@
 - [ ] Phase 1: graph.FuncDef + RegisterFunc, graph.BindOptions, ArgSpec.Redirects; register look and show with ArgSpecs (label, zoom, interp, maxSide, ruler, grid, format); delete lookOptionKeys; synonym and redirect tests <!-- t:vvf2 -->
 - [x] Phase 2: render_test.go (pixel op at 8 == nearest-upsampled scale-1 window; Regions/Values not upsampled; test-only decoration; memo keys scale/interp/window; Evaluate refuses >1; render >16 refused) <!-- t:yxkk -->
 - [x] Phase 2: Engine.Render with RenderOptions{Scale, Interp, Window}, OpDef.Class (pixel, geometric, decoration), macro-node dispatch, buffer.Upsample, EvalCtx.Warn with cache replay; look zoom/interp and captions below scale 1 <!-- t:h78y -->
-- [ ] Phase 3: crop (geometric, box type, Args.Box, integer frame, RANGE/E_ARG_RANGE nearest valid box), CROP_FIRST (first reader of Halo) and DECORATION_FIRST warnings <!-- t:nm2q -->
-- [ ] Phase 3: rulers and grid in look/ruler.go (margins, absolute labels, thinning) with golden PNG; chain captions through macro nodes <!-- t:410s -->
+- [x] Phase 3: crop (geometric, box type, Args.Box, integer frame, RANGE/E_ARG_RANGE nearest valid box), CROP_FIRST (first reader of Halo) and DECORATION_FIRST warnings <!-- t:nm2q -->
+- [x] Phase 3: rulers and grid in look/ruler.go (margins, absolute labels, thinning) with golden PNG; chain captions through macro nodes <!-- t:410s -->
 - [ ] Phase 4: kernels.Binary; Image add, sub (derived), mul, abs, min, max; Image|number union operand; frame checks; gray broadcast; tests incl. lifted Value SPACE <!-- t:fblc -->
 - [ ] Phase 4: blend keeps normal/multiply/screen with enum redirects; delete AbsDiff and img.compare; cv.compare module op (side, split) with picture frames and diff redirect; prelude builds cv.* from module ops and functions <!-- t:v6od -->
 - [ ] Phase 5: highpass and dog macros (Space default encoded, polarity) with node-identity tests; localContrast kernel; levels auto (Optional black/white, Identity off with auto) <!-- t:2g2r -->
