@@ -2877,3 +2877,19 @@ order found; the phase is in brackets.
     `didYouMean`, and a fix (`img.heal(regions, …)`, `(await regions).filter(…)`).
 40. [5] `explainDataMisuse` keeps one branch: an Image op called on plain data names `img.op(…)` (with the array as
     its argument when the op takes items), and `count()` on an awaited array names `.length`.
+41. [6] One workspace per session engine (and per xgoja runtime): the files a session opened and wrote are its own.
+    `EngineOptions.Workspace` is a value the session and the provider open from `root` and `read`; an engine without
+    one cannot open or save (`E_ACCESS`); the module's default engine uses the working directory. Tests use
+    `graphtest.Workspace` (a temporary directory with `/` as a read directory).
+42. [6] `SourceMeta` has `Loc` and `Name` (workspace-relative, or absolute in a read directory); `Name` is also
+    `open`'s first canonical argument (what explain shows).
+43. [6] Pending saves (coordinator): every `cv.save` of an eval is waited for by `__cv_run` before the eval returns;
+    an unawaited save that failed fails the eval ("was not awaited and failed", at its line); other promises
+    rejected without a handler during the eval are `UNHANDLED` warnings (goja's `SetPromiseRejectionTracker`, one
+    tracker per runtime). The runner waits on internal promises so that its waiting does not mark the agent's
+    promises handled.
+44. [6] `cv.save`'s result has `space`: the space of the values in the file (encoded, or linear for a
+    linear-encoded image); `histogram` keeps `space` beside its rows; its `counts` array is gone.
+45. [6] A relative `cv.open` name that exists in the workspace as an escaping or dangling link is `E_ACCESS`; the
+    lookup does not fall through to the read directories.
+46. [6] `cv.open`'s `as` → `name` rename (§6.6, D21) is done with the names in Phase 7.

@@ -1100,3 +1100,142 @@ r/2, ring [1.5 r, 2.5 r]: 1.98; core r/2, ring [r, 2r]: 1.78; core r, ring [2r, 
 
 `git diff --stat 7ffe54b 449aaed -- pkg cmd internal README.md`: 74 files changed, 1847 insertions(+), 1983
 deletions(-); non-test Go and JavaScript only: 33 files changed, 967 insertions(+), 1283 deletions(-).
+
+## Step 9: Phase 6 — one save, one workspace
+
+Phase 6 gives a session one place to write and reread: the workspace (`--root`), opened as a Go `os.Root`, plus
+read-only directories (`--read`). `cv.save(path, x)` is the one output function, the format chosen by the extension;
+`cv.json`, `cv.csv`, `node.save`, Data handles, the data budgets and the `DATA` warning are gone, and with them the
+home-made containment code (`paths.go`) and the second root (`--out-root`). Saves an eval forgot to await still
+complete, and their failures surface.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 8) "Phase 6: the workspace (`--root` read-write, repeatable read-only
+`--read`, relative `cv.open` resolved in the workspace and then the read dirs, `os.Root`) and `cv.save`. The v1
+`DATA` warning goes away here."
+
+Coordinator message (verbatim): "2. **Phase 6: track `cv.save` promises.** Add each `cv.save` promise an eval
+creates to that eval's pending list, and have the eval runner (`__cv_run` or its equivalent) wait for all of them
+before it returns. A save the agent forgot to `await` must still complete, and its failure must surface in that
+eval. If goja's rejection tracker is easy to hook, report an unhandled rejection as an `UNHANDLED` warning. If it
+isn't, record that and leave it to GCV-005."
+
+**Assistant interpretation:** Guide §4.6, §6.7, §7.8, §7.9, §10.4–10.5, D10, D11, §9 items 11–12, the Phase 6 test
+list, docs 13 and `pkg/doc` 03–07, 09, README; plus pending saves and `UNHANDLED`.
+
+**Inferred user intent:** Saved files always reopen (the 23 `E_ACCESS` errors of the pi runs), data stays where it
+lives, and an agent's forgotten `await` cannot lose a file silently.
+
+**Commit (code):** `1c1acf3` — "GCV-004 Phase 6: one save, one workspace"
+
+### What I did
+
+- `pkg/cv/graph/workspace.go` (new): `Workspace{root, reads}` of `dirRoot{os.Root, dir, resolved}`;
+  `OpenWorkspace`, `Open`/`OpenAt` (reads), `SaveName` (writes: workspace only), `Write` (Lstat: symlink →
+  `E_ACCESS` "saves do not follow links"; `os.SameFile` against the files the session opened and did not write →
+  `E_ACCESS`; `MkdirAll`, `WriteFile` to `rel.tmp-<pid>-<n>`, `Rename`), `NoteOpened`, `Location{Root, Rel}`,
+  `Name`. `locate` follows §10.5: relative names in the workspace then the read directories (flag order), absolute
+  names against each root's own and resolved name; `..` and errors from `os.Root` (escaping or dangling links) are
+  `E_ACCESS`; a missing file is `E_ARG_TYPE` "no such file" listing the roots. `EDuplicate`.
+- Engine: `EngineOptions.Workspace` replaces `BaseDir` and `OutRoot`; `Engine.Open` opens through it, probes the open
+  file, records it (`NoteOpened`) and stores `SourceMeta{Loc, Name, Stamp, Info}`; `SourceStore` opens by location
+  and refuses a changed stamp before the first decode (`E_EVAL` "changed since it was opened; open it again").
+  `buffer.ProbeFile`/`DecodeFile` take `*os.File`. `paths.go` and its test are deleted.
+- `pkg/cv/dataout/save.go` (rewritten; `data.go` deleted): `FormatOf`, `CheckKind` (image vs data mismatches with
+  the fix), `CheckImage` (depth, JPEG only for sRGB), `EncodeImage`, `NodeData`, `EncodeData`; CSV accepts only a
+  list of objects (columns in first-seen order; nested values as JSON) and refuses anything else with the fix,
+  `cv.save("x.csv", (await x).rows)` for a value with rows. `table`, `columnArrays`, `hasArrays`, `NamePattern`, the
+  Data handle and its captions are gone.
+- `pkg/gojamod/cv/save.go` (new; `dataout.go` deleted): `__save(path, x, opts)` checks the path, the format, the
+  depth and `E_DUPLICATE` on the owner goroutine, exports plain data with `exportOrdered` (string keys only: item
+  links never reach a file), encodes and writes on a goroutine; every save is a `pendingSave` of the eval with an
+  internal never-rejecting `done` promise. `trackRejections` installs goja's `SetPromiseRejectionTracker`;
+  `SavesPending`/`SaveFailure` are what the session's `__cv_run` awaits: an unawaited save that failed fails the
+  eval ("cv.save("bad.tif") was not awaited and failed: …", at its line via a synthetic stack), other unhandled
+  rejections become `UNHANDLED` warnings. The prelude's `cv.save`, `cv.json`, `cv.csv` and node `save` changed
+  accordingly; the registered `save`/`json`/`csv` functions became one `save` function for help.
+- Rows plus metadata: `profile` returns `{ from, to, step, width, rows: [{ t, cx, cy, meanL, … }] }`, `histogram`
+  `{ bins, channel, space, under, over, total, rows: [{ lo, hi, count }] }`; `FieldSpec.Rows`, nested ordering in
+  `OrderBySchema` (on a copy: the map is a cached value); the chart renderers read `rows` (goldens exact).
+- Session: `Options.Root`/`Read` replace `Roots`/`OutRoot`/`BaseDir`; one workspace per session engine (its opened
+  files are its own); `MaxData`, `MaxDataBytes`, `MCPMaxDataBytes`, `numbered`, the data half of `collect`,
+  `checkPath`, `graph.WData` deleted; YAML truncation notes say `cv.save`.
+- CLI: `--root` (eval/run default the working directory; required for `mcp`, usage error "mcp needs --root DIR …"),
+  repeatable `--read`, `checkRoots` (directories exist; `--image` must lie in a root); `--out` writes looks only
+  (`uniqueName`, `countRows`, the data caption path deleted). xgoja config `root`/`read` (one workspace per runtime).
+  Makefile smoke: `eval --root`, and `mcp` without `--root` must fail naming `--root`.
+- Save redirects (`export`, `write`, `store`, `json`, `csv`, …) now point at `cv.save`.
+- Tests: `TestWorkspacePaths`, `TestWorkspaceAliases`, `TestWorkspaceSymlinks`, `TestWorkspaceProtectsOpenedFiles`
+  (graph); `TestSaveImagesReopenWithEncodingAndFrame`, `TestSaveData`, `TestSaveRefusals`, `TestUnawaitedSaves`,
+  `TestSavedFilesReopenAndChangedFiles` (session); `TestSaveFromEval` and usage errors (`mcp` without `--root`,
+  `--image` outside the roots, a bad `--read`) in cmd; `TestCSVRowsOnly`. Test engines get `graphtest.Workspace`
+  (a temporary workspace with `/` as a read directory); session tests get a temporary workspace with the image's
+  directory as a read directory.
+- Docs: `13-data-out` rewritten; `12` and `03` notes; guidebook `01`, `03` (a "workspace" section), `04`, `05`,
+  `06`, `07`, `08`, `09`, `10`; README (CLI and MCP setup with `--root`/`--read`); MCP instructions (3981
+  characters).
+
+### Why
+
+- Guide §4.6, §6.7, §7.8, D10, D11; the coordinator's pending-save rule.
+
+### What worked
+
+- Gate: `gofmt=0 build=0 vet=0 test=0 lint=0 logcopter=0 smoke=0 gate=0`. Goldens exact (`histogram`,
+  `histogram-r`, `profile-chart` render the same bytes from `rows`). Real data identical to Step 8.
+- The four workspace tests passed on their first run: `os.Root` refuses the outside link, the dangling link and the
+  linked directory by itself; only the alias rule and the overwrite checks are ours.
+- goja's rejection tracker is a plain hook (`SetPromiseRejectionTracker`), unused by go-go-goja, so `UNHANDLED` is
+  in this phase rather than left to GCV-005.
+
+### What didn't work
+
+- The first wiring of the line of an unawaited failed save gave `line 2` (the wrapper's line); the error object now
+  carries a synthetic `stack` (`at <eval>:LINE:COL`) so the session maps it to the agent's line like any error.
+- `TestSavedFilesReopenAndChangedFiles` first saved the same path twice in one eval and got `E_DUPLICATE` (as it
+  should); the test now saves in two evals.
+- A Python edit wrote a real newline into a Go string literal (`newline in string`); fixed.
+- Every engine built with `EngineOptions{}` in tests lost `cv.open` (`this engine has no workspace`), and relative
+  fixture paths (`../../../testdata/…`) became `E_ACCESS`; both fixed in the tests (`graphtest.Options(t)`,
+  `filepath.Abs`).
+- Topic and instruction sizes again (instructions 4041 → 3981 characters).
+
+### What I learned
+
+- `os.Root` refuses absolute symlink targets even inside the root; links inside a workspace must be relative to be
+  followed for reading.
+- `Promise.allSettled` on the agent's own save promises would mark them handled; the runner waits on separate
+  `done` promises so the rejection tracker still tells handled from unhandled failures.
+
+### What was tricky to build
+
+- Ordering at the end of an eval: the body settles, then `__cv_run` waits for the pending saves, then asks Go which
+  failed saves are still unhandled (and turns the other unhandled rejections into warnings), all on the owner loop.
+- Per-session protection: the opened and written lists live in the workspace, so each session engine opens its
+  own workspace (an engine factory per runtime in the session and in xgoja).
+
+### What warrants a second pair of eyes
+
+- `pkg/cv/graph/workspace.go` (`locate`, `Write`), `pkg/gojamod/cv/save.go` (`SaveFailure`, the tracker),
+  `pkg/cvsession/init.js` (`__cv_run`).
+- `graphtest.Workspace` reads `/`: fine for tests, never for a session.
+
+### What should be done in the future
+
+- Phase 7 renames `cv.open`'s binding option `as` → `name` (guide §6.6, D21) with the synonym tables.
+
+### Code review instructions
+
+- Start with `pkg/cv/graph/workspace.go` and `workspace_test.go`, then `engine.go` (`Open`), `sources.go`,
+  `pkg/cv/dataout/save.go`, `pkg/gojamod/cv/save.go`, `pkg/cvsession/init.js`, `session.go`, `cmd/goja-cv/eval.go`
+  (`checkRoots`), `mcp.go`.
+- Validate: `scripts/04-gate.sh`; `go test ./pkg/cvsession -run 'TestSave|TestUnawaited' -v`;
+  `go test ./pkg/cv/graph -run Workspace -v`.
+
+### Technical details
+
+`git diff --stat 449aaed 1c1acf3 -- pkg cmd internal README.md Makefile`: 80 files changed, 2048 insertions(+), 1716
+deletions(-); non-test Go and JavaScript: 35 files changed, 1347 insertions(+), 1252 deletions(-).
+
+Goldens: none moved. Real data: identical to Step 8.
