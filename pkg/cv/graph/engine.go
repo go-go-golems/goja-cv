@@ -114,7 +114,8 @@ func (e *Engine) Open(path string) (*Node, error) {
 			WithHint("Supported formats: PNG, JPEG, TIFF (8/16-bit).")
 	}
 	stamp := fmt.Sprintf("%d-%d", st.Size(), st.ModTime().UnixNano())
-	n, _, err := e.b.Intern(op, 0, []any{abs}, map[string]any{"stamp": stamp, "w": info.W, "h": info.H})
+	n, _, err := e.b.Intern(op, 0, []any{abs}, map[string]any{"stamp": stamp, "w": info.W, "h": info.H,
+		"format": info.Format, "bits": info.Bits, "channels": info.Channels})
 	return n, err
 }
 

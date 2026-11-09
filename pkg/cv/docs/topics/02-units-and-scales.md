@@ -22,7 +22,7 @@ return { coverage: await soft.coverage(), explain: soft.explain() }
 | a look | look scale: long side at most 1568 px, or `maxSide` |
 | `cv.evaluate(node, { scale })` | a number in (0, 1], `"preview"`, `"look"` or `"full"` |
 
-An awaited Image gives a summary, never pixels: `{ kind, w, h, channels, scale, docW, docH }`. Statistics are computed at the scale they are evaluated at; for exact full-size numbers use `cv.evaluate(node, { scale: "full" })`.
+An awaited Image gives a summary, never pixels: `{ kind, w, h, channels, scale, docW, docH }`; an opened file adds `file`, `format`, `bitDepth` (8 or 16 bits per sample in the file), `fileChannels` and `colorSpace` (sRGB is assumed; ICC profiles are not read). Statistics are computed at the scale they are evaluated at; for exact full-size numbers use `cv.evaluate(node, { scale: "full" })`.
 
 ```js
 const s = img.stats()

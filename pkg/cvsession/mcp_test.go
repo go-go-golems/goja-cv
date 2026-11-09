@@ -127,7 +127,7 @@ func TestMCPOpenTool(t *testing.T) {
 	if isErr || len(images) != 1 {
 		t.Fatalf("open: isErr=%v images=%d\n%s", isErr, len(images), text)
 	}
-	mustContain(t, text, "kind: Image", "look 1: opened", "images: img = gradient-64x48-8bit.png (64×48)")
+	mustContain(t, text, "kind: Image", "look 1: opened", "images: img = gradient-64x48-8bit.png (64×48, 8-bit PNG)")
 	text, _, _ = callEval(t, cs, `return (await img.stats()).w`)
 	mustContain(t, text, "64")
 }

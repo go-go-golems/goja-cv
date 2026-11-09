@@ -11,6 +11,26 @@ import (
 	"github.com/go-go-golems/goja-cv/pkg/cv/buffer"
 )
 
+// SourceInfo is the file metadata of an open() source node (ok false for
+// other nodes): file (basename), format, bitDepth, channels in the file and
+// the assumed colour space.
+func SourceInfo(n *Node) (map[string]any, bool) {
+	if n.Op.On != KindNone || n.Op.Name != "open" {
+		return nil, false
+	}
+	info := map[string]any{"file": filepath.Base(n.Args.String("path")), "colorSpace": "sRGB (assumed; ICC profiles are not read)"}
+	if n.Args.Has("format") {
+		info["format"] = n.Args.String("format")
+	}
+	if n.Args.Has("bits") {
+		info["bitDepth"] = n.Args.Raw("bits")
+	}
+	if n.Args.Has("channels") {
+		info["fileChannels"] = n.Args.Raw("channels")
+	}
+	return info, true
+}
+
 // Label is the short name of a node used in paths: "open(scan.tif)",
 // "P.slider(ev)", or the op name.
 func Label(n *Node) string {

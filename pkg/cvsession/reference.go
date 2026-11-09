@@ -22,7 +22,7 @@ Eval contract
 - Errors are YAML with code, message, where (your line), path, hint and a literal fix: apply the fix.
 - The document layer (doc.apply, propose, undo, export) is not available yet: describe edits and show them as looks.
 
-Globals: img (the open image; img = cv.open(path) rebinds it), cv, P, mem, show.
+Globals: img (the open image; img = cv.open(path) rebinds it; await img gives its size, file, format, bitDepth), cv, P, mem, show.
 
 Most used calls
 - await img.stats() → { meanL, p01, p99, clipLow, clipHigh, … } (linear light); img.stats({ box: [x, y, w, h] }) or img.stats({ mask }) measures only there (+ area, coverage); img.histogram().look()

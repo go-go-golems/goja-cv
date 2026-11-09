@@ -15,6 +15,9 @@ func sourceOps() []graph.OpDef {
 				{Name: "stamp", Type: "string", Hidden: true},
 				{Name: "w", Type: "number", Hidden: true},
 				{Name: "h", Type: "number", Hidden: true},
+				{Name: "format", Type: "string", Hidden: true, Optional: true},
+				{Name: "bits", Type: "number", Hidden: true, Optional: true},
+				{Name: "channels", Type: "number", Hidden: true, Optional: true},
 			},
 			DocSize: func(a graph.Args, _ []*graph.Node) (int, int) { return a.Int("w"), a.Int("h") },
 			Run: func(ctx context.Context, ec *graph.EvalCtx, _ []graph.Value, a graph.Args) (graph.Value, error) {

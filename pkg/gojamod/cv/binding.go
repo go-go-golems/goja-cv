@@ -307,16 +307,22 @@ func (b *binding) evaluate(c goja.FunctionCall) goja.Value {
 				_ = reject(errorObject(vm, err))
 				return
 			}
-			_ = resolve(resultToJS(vm, v))
+			_ = resolve(resultToJS(vm, v, n))
 		})
 	}()
 	return vm.ToValue(promise)
 }
 
-func resultToJS(vm *goja.Runtime, v graph.Value) goja.Value {
+func resultToJS(vm *goja.Runtime, v graph.Value, n *graph.Node) goja.Value {
 	switch x := v.(type) {
 	case *graph.ImageValue:
-		return toJS(vm, x.Summary())
+		s := x.Summary()
+		if info, ok := graph.SourceInfo(n); ok { // an opened file: its metadata too
+			for k, val := range info {
+				s[k] = val
+			}
+		}
+		return toJS(vm, s)
 	case *graph.RegionsValue:
 		return toJS(vm, x.Summary(graph.SummaryLimit))
 	case *graph.DataValue:
@@ -329,13 +335,19 @@ func resultToJS(vm *goja.Runtime, v graph.Value) goja.Value {
 func (b *binding) describe(c goja.FunctionCall) goja.Value {
 	n := b.nodeArg(c.Argument(0))
 	scale := b.eng.PreviewScale(n.ID)
-	return toJS(b.vm, map[string]any{
+	d := map[string]any{
 		"id": float64(n.ID), "kind": string(n.Kind), "op": n.Op.Name, "label": graph.Label(n),
 		"call": graph.Describe(b.eng.Builder(), n, scale, b.eng.Params().Snapshot()),
 		"docW": float64(n.DocW), "docH": float64(n.DocH),
 		"path":  toAny(b.eng.Path(n.ID)),
 		"scale": scale,
-	})
+	}
+	if info, ok := graph.SourceInfo(n); ok {
+		for k, v := range info {
+			d[k] = v
+		}
+	}
+	return toJS(b.vm, d)
 }
 
 // __unknown(kind, prop, receiverId) throws E_UNKNOWN_METHOD / E_NAMESPACE.
