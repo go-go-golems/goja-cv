@@ -2,8 +2,8 @@
 
 ## TODO
 
-- [ ] Phase 0: golden-look harness pkg/cv/look/golden_test.go with testdata/golden and -update flag (source, exposure, gaussian, contrast, levels, mask ops, specks overlay, histogram, compare modes) <!-- t:1pu0 -->
-- [ ] Phase 0: TestKernelsAreSpaceAgnostic guard (go/parser over pkg/cv/kernels and pkg/cv/ops; skipped until Phase 3); remove Node.Base and unused codes EStale, EReadOnly, EFragmentCapture, ENoModel, WScale <!-- t:sjd1 -->
+- [x] Phase 0: golden-look harness pkg/cv/look/golden_test.go with testdata/golden and -update flag (source, exposure, gaussian, contrast, levels, mask ops, specks overlay, histogram, compare modes) <!-- t:1pu0 -->
+- [x] Phase 0: TestKernelsAreSpaceAgnostic guard (go/parser over pkg/cv/kernels and pkg/cv/ops; skipped until Phase 3); remove Node.Base and unused codes EStale, EReadOnly, EFragmentCapture, ENoModel, WScale <!-- t:sjd1 -->
 - [ ] Phase 1: encoding_test.go (identity table, exact round trips within 1e-6 relative, 0.5->0.214, 0.05->0.0039, integer tables vs exact functions) <!-- t:bqeo -->
 - [ ] Phase 1: buffer.Encoding, Space (linear, encoded), ParseSpace, Identity, Convert(ctx, b, enc, from, to) with exact transfer functions; keep ToImage <!-- t:8y6b -->
 - [ ] Phase 2: Frame replaces DocW/DocH on nodes, values and Regions; DocFrame replaces DocSize; evaluator stamps value statics; goldens unchanged <!-- t:vncu -->
