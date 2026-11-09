@@ -578,6 +578,11 @@ decoder applies `BlackLevel`/`WhiteLevel` when present ((v − black) / (white �
 `LinearizationTable` and colour-filter-array data (Photometric 32803) with `E_FORMAT`, and notes "camera RGB
 primaries" in `Info.Notes` (the colour matrices are not applied).
 
+Files that goja-cv itself writes (GCV-003's `save`) record their encoding and frame: TIFFs carry
+`goja-cv encoding=linear origin=1536,1536` in `ImageDescription` (270), PNGs a `gAMA` chunk of 1.0 for linear
+data or an `sRGB` chunk. The TIFF and PNG decoders read these back into `Info.Encoding` and the frame origin, so a
+saved derived view reopens as it was. Other files' descriptions are ignored.
+
 A full VueScan DNG decodes to 7256 × 7326 × 3 float32 = 638 MB, plus about a third more for the pyramid.
 `DecodeOptions.Box` makes the tile workflow cheap: an uncompressed TIFF window is read row by row with seeks,
 so a 1024² window costs 6 MB of reads.

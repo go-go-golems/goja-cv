@@ -21,3 +21,4 @@
 - [ ] Phase 7: docs - topic 10-encodings-and-spaces, units/frames, getting-started names, looks, recipes; help concept entries; synonyms; MCP instructions; guidebook; README <!-- t:zztz -->
 - [ ] Phase 7: gated real-data tests (GOJACV_TILES tile re-encoded as linear; GOJACV_DNG window open) <!-- t:r49f -->
 - [ ] Phase 7: pi harness IMAGE/QUESTIONS overrides + questions-gcv-001.md; run before/after twice each; record table <!-- t:dgm6 -->
+- [ ] Phase 2: TIFF and PNG decoders read goja-cv ImageDescription (encoding, origin) and PNG gAMA/sRGB chunks (round trip with GCV-003 save) <!-- t:uwx2 -->
