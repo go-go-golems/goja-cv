@@ -13,8 +13,30 @@ const fixed = img.levels({ black: s.p01, white: s.p99 }) // node-valued args are
 return await fixed.stats()                             // evaluated at preview scale
 ```
 
-Status: milestones M0/M1 (engine core) and M3 (selection and retouch) of the CVJS-001
-intern guide. The eval tool, looks and MCP (M2) and the document (M4) come next.
+Status: milestones M0/M1 (engine core), M2 (eval tool: looks, YAML results, lints, context block,
+`goja-cv` CLI and MCP server) and M3 (selection and retouch) of the CVJS-001 intern guide. The
+document layer (M4) comes next.
+
+## The eval tool (M2)
+
+```
+goja-cv eval -e 'return { s: await img.stats(), after: img.exposure(0.5).look("after") }' --image scan.tif --out looks/
+goja-cv run script.js --image scan.tif [--out DIR] [--json]
+goja-cv ops [--kind Image] [--json]
+goja-cv help levels
+goja-cv mcp --image scan.tif --root .          # MCP over stdio; --http 127.0.0.1:3092 for streamable HTTP
+claude mcp add cv -- goja-cv mcp --image scan.tif --root .
+```
+
+Code is the body of an async function (`await`, `return`). Pre-bound globals: `cv`, `P`, `img`,
+`mem` (persists between evals), `show(node, opts)`; `doc` arrives with the document layer (M4).
+Results are YAML capped at 9000 characters with `warnings:` (RANGE, UNUSED_NODE with your line)
+and a `context:` block; errors are YAML with `code, message, where, path, hint, fix`.
+`node.look({ label, maxSide })` returned in the value (or `show()`) delivers a numbered image
+whose caption gives the scale (`look 1: after (1568×1045, 1 image px = 4.0 doc px)`).
+Exit codes: 0 ok, 1 cv error (still printed), 2 usage error. Go API: `pkg/cvsession`
+(`cvsession.New`, `App.Evaluate`, `NewMCPServer`); xgoja: `pkg/xgoja/providers/cv` and
+`examples/xgoja/cv-agent/xgoja.yaml`.
 
 ## What works today
 
@@ -76,6 +98,10 @@ mask.components({ minArea: 4 })                            // Mask → Regions
 - `pkg/cv/graph` – op registry, nodes and hash-consing, params, evaluator, cache
 - `pkg/cv/ops` – op registrations
 - `pkg/gojamod/cv` – go-go-goja native module `cv` and its embedded `prelude.js`
+- `pkg/cv/look` – looks (lazy image results with burned-in numbers)
+- `pkg/cvsession` – the eval session on replapi, result processor, MCP server
+- `cmd/goja-cv` – the CLI
+- `pkg/xgoja/providers/cv` – xgoja provider for the cv module
 
 ## Development
 
