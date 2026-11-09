@@ -55,9 +55,10 @@ func Linear8(u uint8) float32 { return srgbToLinear8[u] }
 // Linear16 decodes a 16-bit sRGB sample to linear light.
 func Linear16(u uint16) float32 { return srgbToLinear16[u] }
 
-// ToPerceptual converts a linear value to the perceptual (sRGB-encoded) scale
-// used by perceptual ops. Values in [0, 1] use an interpolated table (error
-// below 2e-5); others use the exact extended transfer function.
+// ToPerceptual is a fast path for LinearToSRGB: values in [0, 1] use an
+// interpolated table (error below 2e-5); others use the exact extended
+// transfer function. Convert uses the exact functions; kernels and ops never
+// convert (the graph inserts convert nodes).
 func ToPerceptual(v float32) float32 {
 	if v >= 0 && v <= 1 {
 		return lutInterp(&toPercLUT, v)
@@ -65,7 +66,7 @@ func ToPerceptual(v float32) float32 {
 	return float32(LinearToSRGB(float64(v)))
 }
 
-// ToLinear is the inverse of ToPerceptual.
+// ToLinear is the fast path for SRGBToLinear, with the error of ToPerceptual.
 func ToLinear(p float32) float32 {
 	if p >= 0 && p <= 1 {
 		return lutInterp(&toLinLUT, p)
