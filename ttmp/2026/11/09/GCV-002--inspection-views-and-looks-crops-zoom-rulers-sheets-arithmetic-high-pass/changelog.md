@@ -34,3 +34,8 @@ Step 5 (Phase 5): highpass, dog, localContrast, levels auto, view presets, sigma
 
 Step 6 (Phase 6): overlay/annotate decorations, cv.sheet, format rule (commit 802aa0e)
 
+
+## 2026-11-09
+
+Step 7 (Phase 7): docs, synonyms, acceptance and ranking tests, pi runs, PR #3 (commits c84db61, fc226ce, guide notes 7c3e274)
+
