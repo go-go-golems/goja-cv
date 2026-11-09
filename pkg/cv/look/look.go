@@ -99,8 +99,12 @@ func New(eng *graph.Engine, id graph.NodeID, opt Options) (*Look, error) {
 func lookKindError(n *graph.Node) error {
 	e := graph.Errorf(graph.EWrongKind, "look() renders Image and Mask nodes (and histograms); %s is a %s node.", graph.Label(n), n.Kind)
 	e.Hint = "Await a Value node to read its data; look at the image it was computed from."
-	if n.Kind == graph.KindValue {
+	switch n.Kind {
+	case graph.KindValue:
 		e.Fix = "return { value: await node, look: img.look() }"
+	case graph.KindRegions:
+		e.Hint = "Regions are areas, not an image: draw them as a mask over the image."
+		e.Fix = "regions.toMask().overlay(img).look(\"regions\")"
 	}
 	return e
 }

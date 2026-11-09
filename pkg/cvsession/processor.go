@@ -252,7 +252,7 @@ func (s *state) unusedNodes(vm *goja.Runtime, trace cvmod.EvalTrace, returned []
 	}
 	var out []string
 	for _, c := range trace.Created {
-		if used[c.ID] || feeds[c.ID] {
+		if used[c.ID] || feeds[c.ID] || s.onPlaceholder(c.ID, map[graph.NodeID]bool{}) {
 			continue
 		}
 		what := s.sourceLine(s.agentLine(c.Site.Line))
@@ -266,6 +266,29 @@ func (s *state) unusedNodes(vm *goja.Runtime, trace cvmod.EvalTrace, returned []
 			" builds a node and discards it. Nodes are lazy: nothing ran. Return it, await it, show() it, or keep it in mem.")
 	}
 	return out
+}
+
+// onPlaceholder reports whether node id is built on a builder-lambda
+// placeholder (within(mask, i => i.exposure(-0.4)) builds i.exposure on a
+// placeholder that Go substitutes); such nodes are intermediate, not discarded.
+func (s *state) onPlaceholder(id graph.NodeID, seen map[graph.NodeID]bool) bool {
+	if seen[id] {
+		return false
+	}
+	seen[id] = true
+	n, ok := s.eng.Node(id)
+	if !ok {
+		return false
+	}
+	if n.Op.On == graph.KindNone && n.Op.Name == "placeholder" {
+		return true
+	}
+	for _, in := range n.Inputs {
+		if s.onPlaceholder(in, seen) {
+			return true
+		}
+	}
+	return false
 }
 
 var syntaxPos = regexp.MustCompile(`Line (\d+):(\d+)\s*`)

@@ -237,3 +237,30 @@ func TestInterruptInAsyncContinuationIsReported(t *testing.T) {
 		t.Fatalf("broken session should fail fast: %s %q after %s", resp.Cell.Execution.Status, resp.Cell.Execution.Error, time.Since(start))
 	}
 }
+
+// TestM3KindsInTheSession covers masks, builder lambdas, regions and data
+// lambdas through the session (M3 landed on main before the M2 rebase).
+func TestM3KindsInTheSession(t *testing.T) {
+	app, sid := newApp(t, cvsession.Options{Image: tiffPath})
+	resp := eval(t, app, sid, `const sky = img.mask.gradient({ from: "top", to: 0.45 })
+const darker = img.within(sky, i => i.exposure(-0.4))
+return { cov: await sky.coverage(), sky: sky.look("sky"), darker: darker.look("darker") }`)
+	out := text(resp)
+	mustContain(t, out, "cov: 0.22492", "look 1: sky", "look 2: darker")
+	mustNotContain(t, out, "UNUSED_NODE")
+	if len(resp.Content) != 2 || resp.Content[0].MIMEType != "image/png" || resp.Content[1].MIMEType != "image/jpeg" {
+		t.Fatalf("content %+v", resp.Content)
+	}
+	resp = eval(t, app, sid, `const m = img.mask.luminance({ above: 0.5 })
+const big = m.components().filter(x => x.area > 10)
+return { n: await big.count(), sel: m.overlay(img).look("sel") }`)
+	mustContain(t, text(resp), "n: ", "look 3: sel")
+	mustNotContain(t, text(resp), "UNUSED_NODE", "error")
+	out = text(eval(t, app, sid, `return img.mask.luminance({ above: 0.5 }).components().look()`))
+	mustContain(t, out, "code: E_WRONG_KIND", "toMask().overlay(img)")
+	out = text(eval(t, app, sid, "img.within(img.mask.box({ box: [0, 0, 10, 10] }), i => i.exposure(1))\nreturn 1"))
+	mustContain(t, out, "UNUSED_NODE line 1: img.within(")
+	if strings.Count(out, "UNUSED_NODE") != 1 {
+		t.Fatalf("want one UNUSED_NODE:\n%s", out)
+	}
+}
