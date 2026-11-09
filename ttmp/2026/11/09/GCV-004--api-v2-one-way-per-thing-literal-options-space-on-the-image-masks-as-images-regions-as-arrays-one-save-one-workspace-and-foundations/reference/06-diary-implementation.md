@@ -1013,7 +1013,7 @@ detector-plus-gold workflow becomes one array, and the real-data tests stop brea
 
 - The ranking investigation's first assumption (labels) was wrong; see Technical details.
 - D17's prediction failed on the gold labels: `circles sized from r: median snr 0.86, not above the fixed 3 px core's
-  1.17` (deviation 39).
+  1.17` (deviation 38).
 - `TestMeasureMatchesTheHelper` failed after the switch to Regions: `ok: false d: [4.6269e-05, 4.976e-05, 3.1856e-05,
   4.8805e-05, 0.0076872]` — region measures were rounded to 4 decimals; they are exact now (deviation 34).
 - `TestGoldenLooks/sheet-2x2: largest difference 238 codes, 99 of 113472 samples differ`: literal points are labelled
