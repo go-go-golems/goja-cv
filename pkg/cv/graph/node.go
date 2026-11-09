@@ -107,7 +107,7 @@ func (b *Builder) Call(op *OpDef, receiver NodeID, raw []any, trusted map[string
 	if err != nil {
 		return CallResult{}, err
 	}
-	bd, err := bind(op, recv != nil, raw, trusted, b.kindOf)
+	bd, err := bind(op, callName(op), recv != nil, raw, trusted, b.kindOf)
 	if err != nil {
 		return CallResult{}, err
 	}

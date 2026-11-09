@@ -31,8 +31,6 @@ var cvFuncs = map[string]cvFunc{
 	"warnings": {"cv.warnings({ clear })", "RANGE warnings collected while building nodes (they also appear under warnings: in every result).", nil},
 	"version":  {"cv.version", "The cv module version.", nil},
 	"kinds":    {"cv.kinds", "The node kinds: Image, Mask, Regions, Value, Param.", nil},
-	"look":     {"node.look(label) · node.look({ label, maxSide })", "An image of the node to return in the result (Image, Mask, histogram). Numbered, with the scale in its caption.", []string{"show", "compare", "overlay"}},
-	"show":     {"show(node, opts) · show(look)", "Create a look, queue it and return it; queued looks are delivered even if the eval throws later.", []string{"look"}},
 	"mem":      {"mem.name = value", "A plain object that persists between evals (const/let do not).", nil},
 	"img":      {"img · img = cv.open(path)", "The open image (an Image node); assigning a cv.open node rebinds it. More images: cv.open(path, { as: \"ref\" }).", []string{"open", "names"}},
 	"encoding": {"cv.open(path, { encoding: \"srgb\" | \"linear\" }) · (await img).encoding · img.encode(\"srgb\")", "How a file's values relate to the quantity: srgb (photographs) or linear (float TIFF, DNG, .npy, density data). Decoders report it; cv.open's option overrides it. Read cv.docs.read(\"encodings-and-spaces\").", []string{"open", "encode", "space"}},
@@ -91,8 +89,11 @@ func Help(reg *graph.Registry, name string) map[string]any {
 			if op, ok := reg.Lookup(k, method); ok {
 				return opHelp(reg, op.Name, k)
 			}
-			if f, ok := cvFuncs[method]; ok && method == "look" {
-				return funcHelp(method, f)
+			for _, f := range reg.FuncsOn(k) {
+				if f.Name == method {
+					h, _ := reg.FuncHelp(method)
+					return h
+				}
 			}
 			e := reg.UnknownMethod(k, method, nil)
 			hint := e.Message
@@ -105,6 +106,9 @@ func Help(reg *graph.Registry, name string) map[string]any {
 			}
 			return out
 		}
+	}
+	if h, ok := reg.FuncHelp(name); ok {
+		return h
 	}
 	if f, ok := cvFuncs[name]; ok {
 		return funcHelp(name, f)
@@ -133,8 +137,8 @@ func kindHelp(reg *graph.Registry, k graph.Kind) map[string]any {
 		}
 		methods[m] = oneLine(op.Doc)
 	}
-	if k == graph.KindImage || k == graph.KindMask {
-		methods["look"] = "An image of the node for the result: node.look(label)."
+	for _, f := range reg.FuncsOn(k) {
+		methods[f.Name] = oneLine(f.Doc)
 	}
 	return map[string]any{"kind": string(k), "methods": methods, "usage": fmt.Sprintf("cv.help(\"%s.<method>\") or cv.help(\"<method>\") describes one.", k)}
 }
@@ -234,6 +238,9 @@ func suggest(reg *graph.Registry, name string, k graph.Kind) []string {
 	}
 	for f := range cvFuncs {
 		cands = append(cands, f)
+	}
+	for _, f := range reg.Funcs() {
+		cands = append(cands, f.Name)
 	}
 	for _, kk := range graph.Kinds {
 		cands = append(cands, string(kk))

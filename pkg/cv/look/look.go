@@ -27,6 +27,7 @@ import (
 	"github.com/go-go-golems/go-go-goja/pkg/resultcontent"
 	"github.com/go-go-golems/goja-cv/pkg/cv/buffer"
 	"github.com/go-go-golems/goja-cv/pkg/cv/graph"
+	"github.com/go-go-golems/goja-cv/pkg/cv/text"
 	"github.com/pkg/errors"
 )
 
@@ -41,6 +42,24 @@ const (
 type Options struct {
 	Label   string // shown in the caption; default: the node's label
 	MaxSide int    // long side in image px; 0 = the engine's look size (1568)
+}
+
+// OptionsFrom reads the look options bound by graph.BindOptions against the
+// look function's ArgSpecs (ops.LookArgs).
+func OptionsFrom(a graph.Args) (Options, error) {
+	var o Options
+	if a.Has("label") {
+		o.Label = a.String("label")
+	}
+	if a.Has("maxSide") {
+		f := a.Number("maxSide")
+		if f != float64(int(f)) {
+			return o, graph.Errorf(graph.EArgType, "look maxSide must be an integer number of image px; got %g.", f).
+				WithFix(fmt.Sprintf("node.look({ maxSide: %d })", int(f)))
+		}
+		o.MaxSide = int(f)
+	}
+	return o, nil
 }
 
 // Look is a lazily rendered image of one node.
@@ -190,7 +209,7 @@ func (l *Look) Render(ctx context.Context) ([]byte, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
-	BurnNumber(m, l.Number())
+	text.BurnNumber(m, l.Number())
 	return Encode(m, l.chart)
 }
 

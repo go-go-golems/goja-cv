@@ -486,7 +486,9 @@ func (b *binder) check(s *ArgSpec, typ string, v any, where string) (any, error)
 			}
 		}
 		e := Errorf(EArgType, "%s = %q is not one of %s.", where, str, quoteList(allowed)).WithValid(allowed)
-		if sug, ok := s.ValueSynonyms[str]; ok {
+		if r, ok := s.Redirects[str]; ok {
+			e.Hint, e.Fix = r.Hint, r.Fix
+		} else if sug, ok := s.ValueSynonyms[str]; ok {
 			e.Hint = fmt.Sprintf("Did you mean %q?", sug)
 		} else if sug := closest(str, allowed); sug != "" {
 			e.Hint = fmt.Sprintf("Did you mean %q?", sug)
@@ -744,6 +746,10 @@ func checkKeys(specs []ArgSpec, m map[string]any, what string, fix func(sug stri
 	for _, k := range sortedKeys(m) {
 		if !known[k] {
 			e := Errorf(EUnknownOption, "%s has no option %q. Valid options: %s.", what, k, strings.Join(valid, ", ")).WithValid(valid)
+			if r, ok := optionRedirect(specs, k); ok {
+				e.Hint, e.Fix = r.Hint, r.Fix
+				return e
+			}
 			sug, semantic := optionSynonym(k, known), true
 			if sug == "" {
 				sug, semantic = closest(k, valid), false
@@ -770,7 +776,7 @@ var OptionSynonyms = map[string][]string{
 	"min": {"above", "minArea", "minContrast"}, "minimum": {"above", "minArea"}, "lower": {"above"}, "from": {"above"},
 	"max": {"below", "maxArea"}, "maximum": {"below", "maxArea"}, "upper": {"below"}, "to": {"below"},
 	"threshold": {"above", "minContrast", "threshold"}, "thresh": {"above", "minContrast", "threshold"}, "cutoff": {"above", "minContrast"},
-	"radius": {"r", "radius"}, "sigma": {"r"}, "size": {"r", "maxArea"}, "blur": {"r"}, "kernel": {"r"}, "width": {"r"},
+	"radius": {"r", "radius"}, "sigma": {"r"}, "size": {"r", "maxArea", "maxSide"}, "blur": {"r"}, "kernel": {"r"}, "width": {"r"},
 	"maxSize": {"maxArea"}, "minSize": {"minArea"}, "area": {"maxArea", "minArea"}, "contrast": {"minContrast"},
 	"opacity": {"alpha", "opacity"}, "alpha": {"opacity", "alpha"}, "strength": {"amount", "opacity", "alpha"}, "intensity": {"amount", "opacity"},
 	"colour": {"color"}, "label": {"labels", "label"}, "showIds": {"labels"}, "ids": {"labels"},
@@ -783,6 +789,18 @@ var OptionSynonyms = map[string][]string{
 	"window": {"box"}, "crop": {"box"}, "colorSpace": {"encoding"}, "colorspace": {"encoding"}, "transfer": {"encoding"},
 	"gamma": {"encoding"}, "workingSpace": {"space"}, "working_space": {"space"}, "offset": {"origin"},
 	"amount": {"amount", "ev", "opacity"}, "stops": {"ev"}, "exposure": {"ev"},
+	"long": {"maxSide"}, "longSide": {"maxSide"}, "maxsize": {"maxSide"}, "max_side": {"maxSide"}, "width_px": {"maxSide"},
+	"caption": {"label"}, "title": {"label"}, "text": {"label"},
+}
+
+// optionRedirect finds the redirect of an unknown option name among specs.
+func optionRedirect(specs []ArgSpec, k string) (Redirect, bool) {
+	for i := range specs {
+		if r, ok := specs[i].Redirects[k]; ok {
+			return r, true
+		}
+	}
+	return Redirect{}, false
 }
 
 func optionSynonym(k string, known map[string]bool) string {
@@ -868,9 +886,8 @@ type bound struct {
 // positional args in declaration order, then an optional trailing options
 // object whose keys may name any non-hidden argument. trusted values (set by
 // Go, e.g. hidden source stamps) are bound without the unknown-key check.
-func bind(op *OpDef, hasReceiver bool, raw []any, trusted map[string]any, kindOf func(NodeID) (Kind, bool)) (*bound, error) {
+func bind(op *OpDef, call string, hasReceiver bool, raw []any, trusted map[string]any, kindOf func(NodeID) (Kind, bool)) (*bound, error) {
 	raw = normalize(trimUndefined(raw)).([]any)
-	call := callName(op)
 	res := &bound{}
 	i := 0
 	for j, decl := range op.Inputs {
@@ -935,7 +952,7 @@ func bind(op *OpDef, hasReceiver bool, raw []any, trusted map[string]any, kindOf
 		opts, ok := raw[i].(map[string]any)
 		if !ok || i != len(raw)-1 {
 			return nil, Errorf(EArgType, "%s takes at most %d positional argument(s); got %d.", call, len(op.Inputs)+len(positional), len(raw)).
-				WithHint(signatureHint(op))
+				WithHint(signatureHint(op, call))
 		}
 		fix := func(sug string) string {
 			if call == "cv.open" {
@@ -973,7 +990,7 @@ func bind(op *OpDef, hasReceiver bool, raw []any, trusted map[string]any, kindOf
 			case s.Variadic:
 				out[s.Name] = []any{}
 			case !s.Optional:
-				return nil, Errorf(EArgType, "%s is missing its %s argument.", call, s.Name).WithHint(signatureHint(op))
+				return nil, Errorf(EArgType, "%s is missing its %s argument.", call, s.Name).WithHint(signatureHint(op, call))
 			}
 			continue
 		}
@@ -1031,8 +1048,8 @@ func callName(op *OpDef) string {
 	return op.Name
 }
 
-// signatureHint renders "exposure(ev)" style usage.
-func signatureHint(op *OpDef) string {
+// signatureHint renders "exposure(ev)" style usage of op called as call.
+func signatureHint(op *OpDef, call string) string {
 	var pos, opt []string
 	for _, in := range op.Inputs {
 		pos = append(pos, strings.ToLower(string(in)))
@@ -1054,7 +1071,7 @@ func signatureHint(op *OpDef) string {
 	if len(opt) > 0 {
 		pos = append(pos, "{ "+strings.Join(opt, ", ")+" }")
 	}
-	return "Usage: " + op.Name + "(" + strings.Join(pos, ", ") + ")"
+	return "Usage: " + call + "(" + strings.Join(pos, ", ") + ")"
 }
 
 // isSpaceOption reports whether a is the space option Register added.

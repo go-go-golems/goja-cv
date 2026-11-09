@@ -68,14 +68,36 @@ func Reference(reg *graph.Registry) string {
 		}
 		sb.WriteString("\n")
 	}
-	sb.WriteString("## Every node\n\n")
-	sb.WriteString("- `look(label | { label, maxSide })` → look (an image you return; Image, Mask, histogram)\n")
-	sb.WriteString("- `explain()` → Value: the graph under the node, without computing pixels\n\n")
+	sb.WriteString("## Functions\n\n")
+	for _, f := range reg.Funcs() {
+		sb.WriteString(funcLine(f))
+	}
+	sb.WriteString("\n")
 	sb.WriteString("## Globals\n\n")
 	sb.WriteString("- `cv.open(path, { encoding, box, origin, as })` → Image source; `cv.help(name?)`; `cv.evaluate(node, { scale })` (number, \"preview\", \"look\", \"full\")\n")
 	sb.WriteString("- `P.slider(name, { min, max, value, step, label, unit })`, `P.toggle(name, { value })`, `P.choice(name, { options, value })`\n")
 	sb.WriteString("- `show(node, opts)` / `show(look)`; `mem` (persists); `img` (the open image)\n")
 	return sb.String()
+}
+
+func funcLine(f *graph.FuncDef) string {
+	line := "- `" + f.UsageLine() + "`"
+	if len(f.On) > 0 {
+		line += " (on " + strings.Join(f.On, ", ") + ")"
+	}
+	if doc := f.Doc; doc != "" {
+		if i := strings.Index(doc, ". "); i > 0 {
+			doc = doc[:i+1]
+		}
+		line += " — " + doc
+	}
+	line += "\n"
+	for i := range f.Args {
+		if s := &f.Args[i]; !s.Hidden {
+			line += "  - " + s.Name + ": " + graph.DescribeArgSpec(s) + "\n"
+		}
+	}
+	return line
 }
 
 func opLine(op *graph.OpDef) string {

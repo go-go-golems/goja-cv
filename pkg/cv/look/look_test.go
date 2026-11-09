@@ -15,6 +15,7 @@ import (
 	"github.com/go-go-golems/goja-cv/pkg/cv/buffer"
 	"github.com/go-go-golems/goja-cv/pkg/cv/graph"
 	"github.com/go-go-golems/goja-cv/pkg/cv/ops"
+	"github.com/go-go-golems/goja-cv/pkg/cv/text"
 )
 
 var testTIFF = filepath.Join("..", "..", "..", "testdata", "gradient-64x48-16bit.tif")
@@ -126,13 +127,13 @@ func TestLookBurnsNumberIntoGrayPNG(t *testing.T) {
 		t.Fatalf("decoded %T", m)
 	}
 	// Read the digit back from the font grid.
-	s := GlyphScale(64, 48)
-	box := NumberBox(7, 64, 48)
-	for row := 0; row < glyphH; row++ {
-		for col := 0; col < glyphW; col++ {
+	s := text.NumberScale(64, 48)
+	box := text.NumberBox(7, 64, 48)
+	for row := 0; row < text.Height(1); row++ {
+		for col := 0; col < text.Width("7", 1); col++ {
 			x, y := s+col*s+s/2, s+row*s+s/2
 			on := g.GrayAt(x, y).Y == 255
-			if want := GlyphPixel(7, col, row); on != want {
+			if want := text.Pixel('7', col, row); on != want {
 				t.Fatalf("glyph pixel (%d,%d) at (%d,%d) = %v, want %v", col, row, x, y, on, want)
 			}
 			if !on && g.GrayAt(x, y).Y != 0 {
@@ -170,12 +171,12 @@ func TestLookColourIsJPEGWithNumber(t *testing.T) {
 		t.Fatal(err)
 	}
 	lum := func(x, y int) uint8 { return color.GrayModel.Convert(m.At(x, y)).(color.Gray).Y }
-	s := GlyphScale(320, 200)
+	s := text.NumberScale(320, 200)
 	if v := lum(s/2, s/2); v > 40 {
 		t.Fatalf("box corner luminance %d, want dark", v)
 	}
-	// "1": the middle column of the first digit is lit in every row.
-	if v := lum(s+2*s+s/2, s+3*s+s/2); v < 200 {
+	// "1": the stem of the first digit (font column 1) is lit in the middle row.
+	if v := lum(s+1*s+s/2, s+3*s+s/2); v < 200 {
 		t.Fatalf("digit pixel luminance %d, want bright", v)
 	}
 	if v := lum(300, 180); v < 150 || v > 230 {

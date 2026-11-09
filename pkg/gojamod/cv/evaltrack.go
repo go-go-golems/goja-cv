@@ -3,7 +3,6 @@ package cvmod
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/dop251/goja"
 	"github.com/go-go-golems/go-go-goja/pkg/runtimebridge"
@@ -217,42 +216,25 @@ func (b *binding) evalContext() context.Context {
 	return runtimebridge.CurrentOwnerContext(b.vm)
 }
 
-var lookOptionKeys = []string{"label", "maxSide"}
-
-// __look(id, opts) → a Go-backed *look.Look. opts is a label string or
-// { label, maxSide }.
+// __look(id, opts) → a Go-backed *look.Look. opts is a label string or an
+// options object, bound against the look function's ArgSpecs.
 func (b *binding) look(c goja.FunctionCall) goja.Value {
 	n := b.nodeArg(c.Argument(0))
-	var opt look.Options
-	switch x := graph.Normalize(exportArg(c.Argument(1))).(type) {
-	case nil:
-	case string:
-		opt.Label = x
-	case map[string]any:
-		for _, k := range sortedKeys(x) {
-			if !contains(lookOptionKeys, k) {
-				e := graph.Errorf(graph.EUnknownOption, "look has no option %q. Valid options: %s.", k, strings.Join(lookOptionKeys, ", ")).WithValid(lookOptionKeys)
-				e.Fix = `node.look({ label: "after", maxSide: 1024 })`
-				b.throw(e)
-			}
-		}
-		if v, ok := x["label"]; ok {
-			s, ok := v.(string)
-			if !ok {
-				b.throw(graph.Errorf(graph.EArgType, "look label must be a string.").WithFix(`node.look({ label: "after" })`))
-			}
-			opt.Label = s
-		}
-		if v, ok := x["maxSide"]; ok {
-			f, ok := v.(float64)
-			if !ok || f != float64(int(f)) {
-				b.throw(graph.Errorf(graph.EArgType, "look maxSide must be an integer number of image px.").WithFix("node.look({ maxSide: 1024 })"))
-			}
-			opt.MaxSide = int(f)
-		}
-	default:
-		b.throw(graph.Errorf(graph.EArgType, "look takes a label string or { label, maxSide }; got %s.", c.Argument(1).String()).
-			WithFix(`node.look("after")   // or node.look({ label: "after", maxSide: 1024 })`))
+	f, ok := b.eng.Registry().Func("look")
+	if !ok {
+		b.throw(graph.Errorf(graph.EInternal, "no look function registered"))
+	}
+	var raw []any
+	if x := exportArg(c.Argument(1)); x != nil {
+		raw = []any{fromJS(x)}
+	}
+	a, _, err := graph.BindOptions(f.CallName(), f.Args, raw)
+	if err != nil {
+		b.throw(err)
+	}
+	opt, err := look.OptionsFrom(a)
+	if err != nil {
+		b.throw(err)
 	}
 	l, err := look.New(b.eng, n.ID, opt)
 	if err != nil {

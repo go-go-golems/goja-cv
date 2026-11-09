@@ -173,8 +173,15 @@ type ArgSpec struct {
 	// ValueSynonyms map words agents use for an enum value to the value they
 	// mean (scoped to this argument), for the did-you-mean hint and fix.
 	ValueSynonyms map[string]string
-	Doc           string
+	// Redirects map an unknown option name (looked up over every spec of the
+	// call) or an unknown enum value of this argument to the call that does
+	// it now: look({ box }) → crop, blend({ mode: "difference" }) → sub.
+	Redirects map[string]Redirect
+	Doc       string
 }
+
+// Redirect is the hint and literal fix for a spelling the API does not have.
+type Redirect struct{ Hint, Fix string }
 
 func (s *ArgSpec) hasUsual() bool { return s.Usual != [2]float64{} }
 
@@ -241,13 +248,14 @@ func (op *OpDef) spec(name string) *ArgSpec {
 
 // Registry is the single source of truth for every op the agent can call.
 type Registry struct {
-	mu  sync.RWMutex
-	ops map[string]*OpDef
+	mu    sync.RWMutex
+	ops   map[string]*OpDef
+	funcs map[string]*FuncDef
 }
 
 // NewRegistry returns an empty registry.
 func NewRegistry() *Registry {
-	return &Registry{ops: map[string]*OpDef{}}
+	return &Registry{ops: map[string]*OpDef{}, funcs: map[string]*FuncDef{}}
 }
 
 // Register validates def and adds it.

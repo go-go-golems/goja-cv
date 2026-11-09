@@ -8,13 +8,14 @@ import (
 	"github.com/go-go-golems/goja-cv/pkg/cv/buffer"
 	"github.com/go-go-golems/goja-cv/pkg/cv/graph"
 	"github.com/go-go-golems/goja-cv/pkg/cv/kernels"
+	"github.com/go-go-golems/goja-cv/pkg/cv/text"
 )
 
 func overlayArgs() []graph.ArgSpec {
 	return []graph.ArgSpec{
 		{Name: "color", Type: "any", Default: "red", Doc: "colour name or display [r, g, b] in [0, 1] (encoded values)"},
 		{Name: "alpha", Type: "number", Default: 0.5, Min: graph.F(0), Max: graph.F(1), Doc: "opacity of the fill (outlines are drawn opaque)"},
-		{Name: "labels", Type: "enum:none,id", Default: "none", Doc: `"id" draws each region's id next to its box (digits only)`},
+		{Name: "labels", Type: "enum:none,id", Default: "none", Doc: `"id" draws each region's id next to its box`},
 	}
 }
 
@@ -63,11 +64,11 @@ func drawRegions(ctx context.Context, img *graph.ImageValue, rv *graph.RegionsVa
 		}
 		kernels.DrawRect(out, x0, y0, x1, y1, lw, col, 1)
 		if labels {
-			ty := y0 - lw - 5*k - 1
+			ty := y0 - lw - text.Height(k) - 1
 			if ty < 0 {
 				ty = y1 + lw + 1
 			}
-			kernels.DrawDigits(out, x0, ty, strconv.Itoa(r.ID), k, col)
+			kernels.DrawText(out, x0, ty, strconv.Itoa(r.ID), k, col)
 		}
 	}
 	return graph.NewImage(out), nil

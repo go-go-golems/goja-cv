@@ -2,6 +2,7 @@ package cvmod_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/dop251/goja"
@@ -36,6 +37,25 @@ func TestLookReturnsGoBackedProvider(t *testing.T) {
 	} {
 		if _, jerr := run(t, rt, body); jerr == nil || jerr.Code != code {
 			t.Fatalf("%s: got %+v, want %s", body, jerr, code)
+		}
+	}
+}
+
+// Look options are bound like op options: synonyms, did-you-mean and
+// redirects with literal fixes (GCV-002 §7.7).
+func TestLookOptionsSynonymsAndRedirects(t *testing.T) {
+	rt := newRuntime(t)
+	for _, tc := range []struct{ body, code, hint, fix string }{
+		{`return img.look({ lable: "x" })`, graph.EUnknownOption, `Did you mean "label"?`, `node.look({ label: … })`},
+		{`return img.look({ size: 512 })`, graph.EUnknownOption, `Did you mean "maxSide"?`, `node.look({ maxSide: 512 })`},
+		{`return img.look({ box: [0, 0, 8, 8] })`, graph.EUnknownOption, "A window is content: crop the node, then look at the crop.", "node.crop([x, y, w, h]).look()"},
+		{`return img.look({ stretch: "auto" })`, graph.EUnknownOption, "A stretch is content: put levels({ auto: true }) in the chain where it should apply.", "node.levels({ auto: true }).look()"},
+		{`return img.look({ maxSide: 100.5 })`, graph.EArgType, "", "node.look({ maxSide: 100 })"},
+		{`return img.look({ label: img.stats().meanL })`, graph.EArgType, "", ""},
+	} {
+		_, jerr := run(t, rt, tc.body)
+		if jerr == nil || jerr.Code != tc.code || (tc.hint != "" && !strings.HasPrefix(jerr.Hint, tc.hint)) || jerr.Fix != tc.fix {
+			t.Errorf("%s: got %+v, want %s hint %q fix %q", tc.body, jerr, tc.code, tc.hint, tc.fix)
 		}
 	}
 }

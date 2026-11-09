@@ -20,6 +20,7 @@ func Register(r *graph.Registry) {
 	r.MustRegister(healOps()...)
 	r.MustRegister(presentOps()...)
 	r.MustRegister(metaOps()...)
+	r.MustRegisterFunc(funcDefs()...)
 }
 
 // NewRegistry returns a registry with every op registered.
