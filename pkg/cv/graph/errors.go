@@ -18,11 +18,7 @@ const (
 	EArgRange         = "E_ARG_RANGE"
 	EUnknownOption    = "E_UNKNOWN_OPTION"
 	ELazyCompare      = "E_LAZY_COMPARE"
-	EStale            = "E_STALE"
-	EReadOnly         = "E_READONLY"
-	EFragmentCapture  = "E_FRAGMENT_CAPTURE"
 	EParamRedeclare   = "E_PARAM_REDECLARE"
-	ENoModel          = "E_NO_MODEL"
 	ETimeout          = "E_TIMEOUT"
 	ECancelled        = "E_CANCELLED"
 	ENoField          = "E_NO_FIELD"    // a derived field does not exist in the evaluated value
@@ -32,7 +28,6 @@ const (
 	EPlaceholder      = "E_PLACEHOLDER" // a builder lambda's placeholder node was evaluated outside its builder
 	WUnusedNode       = "UNUSED_NODE"
 	WRange            = "RANGE"
-	WScale            = "SCALE"
 	WCut              = "CUT"
 	pathFailureMarker = "✗ "
 )

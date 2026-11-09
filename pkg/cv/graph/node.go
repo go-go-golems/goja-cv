@@ -18,7 +18,6 @@ type Node struct {
 	Args      Args     // canonical, defaults filled, lifted args as InputRef
 	Kind      Kind
 	Hash      [32]byte // sha256(op key, canonical args, input hashes)
-	Base      int      // document step the node was built on (E_STALE); -1 if none
 	DocW      int      // doc size of the result (0 for pure data)
 	DocH      int
 }
@@ -124,10 +123,7 @@ func (b *Builder) internNode(op *OpDef, args Args, inputs []*Node, nExplicit int
 		ids[i] = in.ID
 	}
 	b.next++
-	n := &Node{ID: b.next, Op: op, Inputs: ids, NExplicit: nExplicit, Args: args, Kind: op.Returns, Hash: h, Base: -1}
-	for _, in := range inputs {
-		n.Base = max(n.Base, in.Base)
-	}
+	n := &Node{ID: b.next, Op: op, Inputs: ids, NExplicit: nExplicit, Args: args, Kind: op.Returns, Hash: h}
 	if op.DocSize != nil {
 		n.DocW, n.DocH = op.DocSize(args, inputs)
 	} else {
