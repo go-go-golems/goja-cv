@@ -2,16 +2,17 @@
 
 ## TODO
 
-- [ ] Phase 1: tests first - schema property (item keys == schema for every Regions op), build-time where/sortBy errors with producer hint, box/point coercion table, throwing box/centroid accessors <!-- t:byrt -->
-- [ ] Phase 1: graph/schema.go FieldSpec + GeometryFields, Node.Fields, OpDef.RegionFields; flat Region.Data; delete RegionFields, KnownRegionFields, speckFields, FieldNames; box and point arg types; switch stats.box, mask.box/ellipse/flood/gradient, crop, annotate, sheet <!-- t:59jv -->
-- [ ] Phase 2: remove SummaryLimit and truncated; MaxRegionItems safety limit (E_TOO_MANY); YAML truncation notes point to cv.json <!-- t:zcfq -->
-- [ ] Phase 3: tests first - probe disk/annulus means equal StatsWeighted with ellipse masks; measure vs mem.probe mapping (coords +0.5, gray average/rec709); sample r=0; profile edge sigma recovery <!-- t:k557 -->
-- [ ] Phase 3: kernels/probe.go (coverage-weighted sums, weighted quantiles); sample, profile, measure ops (space linear, analysisScale 1, gray option); merge StatsWeighted wrapper <!-- t:5eka -->
-- [ ] Phase 4: regions.measure(image, {stats, channels, ring, core, prefix, space}) with tests against stats per region and measure at centroids; remove meanMask from components <!-- t:3sry -->
-- [ ] Phase 5: OpDef.Chart (bars, lines); profile line chart with pkg/cv/text labels; look.New checks Chart instead of op name <!-- t:1mn4 -->
-- [ ] Phase 6: graph.FuncDef module functions (move cvFuncs entries); pkg/cv/dataout Content provider; cv.json and cv.csv (lazy nodes, eager data, columns) <!-- t:zkad -->
-- [ ] Phase 6: look/data budgets (MaxLooks enforced in collect; transport items = looks + data; 256 KiB MCP data limit with save hint); CLI uses resultcontent.WriteFiles (delete writeLooks) <!-- t:63tz -->
-- [ ] Phase 6: node.save and content.save under --out-root (Options.OutRoot, containment with symlinks, encoding/frame metadata, CLAMP warning) with round-trip tests <!-- t:a9of -->
-- [ ] Phase 7: --prelude on eval, run, mcp (Options.Preludes, evaluated at CreateSession, FILE:LINE errors) <!-- t:r6fu -->
-- [ ] Phase 8: docs - topics 12-measuring and 13-data-out; flat fields in masks-and-regions, recipes, nodes topic; guidebook CLI flags; MCP instructions; synonyms (drop measure->stats) <!-- t:ufiy -->
-- [ ] Phase 8: gated real-tile test (hot list ring measure: gold dust median snr >= 1.5, top-30 coverage >= 70%, < 200 ms); pi harness questions-gcv-003.md before/after <!-- t:c22y -->
+- [ ] Phase 1: tests first - schema property over the registry (item/row keys == node Fields), build-time where/sortBy errors with Produces hints, RemovedFields accessors, mask.gradient point|edge <!-- t:e7sc -->
+- [ ] Phase 1: graph/schema.go (FieldSpec, GeometryFields, RemovedFields); OpDef.Fields as func, Produces, Validate(args, inputs) for every validator; Node.Fields in internNode; flat Region.Data; delete RegionFields, KnownRegionFields, speckFields, FieldNames, meanMask; __fieldNames from specs <!-- t:wefh -->
+- [ ] Phase 2: remove SummaryLimit and truncated; MaxRegionItems safety limit (E_TOO_MANY); YAML truncation notes point to cv.json <!-- t:5pch -->
+- [ ] Phase 3: tests first - DiskCoverage vs EllipseMask; probe means vs StatsWeighted exactly; measure vs mem.probe mapping (+0.5 coords, gray average/rec709); sample radius 0; profile sigma recovery; ringCoverage; OUTSIDE warning <!-- t:n2qd -->
+- [ ] Phase 3: kernels.DiskCoverage (EllipseMask uses it), kernels/probe.go; sample, profile, measure ops (points only, space linear, analysisScale 1, gray option, naming table); merge StatsWeighted <!-- t:35jx -->
+- [ ] Phase 4: regions.measure(image, {stats, channels, ring, coreRadius, prefix, gray, space}) with Region.Coverage; tests vs stats per region and measure at centroids; E_FIELD_EXISTS, E_FRAME <!-- t:d4ya -->
+- [ ] Phase 5: OpDef.Chart (bars, lines); profile line chart with pkg/cv/text axis labels <!-- t:nq0p -->
+- [ ] Phase 6: writers - tiffwrite.go (uint8/16/float32, 1|3 samples, Deflate, tag 270), PNG chunk insertion (gAMA/sRGB/tEXt), NPY (<f4/<u2); round-trip table tests; delete buffer.WriteFile and EncodeTIFF16 <!-- t:ri8o -->
+- [ ] Phase 6: save FuncDef on Image/Mask and Data handle under --out-root (Options.OutRoot, shared containment helper with symlink test, EAccess moved to graph, CLAMP warning) <!-- t:gxf9 -->
+- [ ] Phase 7: pkg/cv/dataout Data handle; cv.json and cv.csv FuncDefs with the data argument type; budgets (MaxData, MaxDataBytes for mcp, ContentLimits sum) in collect <!-- t:w0kr -->
+- [ ] Phase 7: CLI writeContent (look-N-slug names, <name>.<ext> data files, dropped reporting) and --json files list; script 83 command in docs <!-- t:w62w -->
+- [ ] Phase 8: --prelude on eval, run, mcp (Options.Preludes, evaluated at CreateSession, FILE:LINE errors) <!-- t:s5z6 -->
+- [ ] Phase 9: docs - topics 12-measuring and 13-data-out; flat fields in masks-and-regions (lines 29, 35-40), recipes, nodes topic; guidebook CLI flags; MCP instructions; synonyms (drop measure->stats) <!-- t:5a6n -->
+- [ ] Phase 9: gated real-tile test (snr/stepChroma ranges for the hand-over, top-30 coverage >= 70%), HotList benchmark >= 20x helper; pi harness questions-gcv-003.md before/after <!-- t:5bwg -->

@@ -574,3 +574,46 @@ the ones where a second mechanism appears next to an existing one: `RegionFields
 regions (P2-7), and two meanings of `x, y` (P1-4). Each has a general fix that removes a special case rather than
 adding one. The throwing accessors are a diagnostic rather than a shim; they should be generalized and
 time-limited (P3-1).
+
+## Disposition (revision 2 of the guide, 2026-11-09)
+
+Section numbers refer to revision 2 of `design-doc/01-design-and-implementation-guide.md`. "Foundations" is
+`GCV-001…/reference/05-foundations-goja-cv-for-the-gcv-guides.md`.
+
+| finding | disposition | where |
+|---|---|---|
+| P1-1 | fixed: shared Foundations chapter (kinds, intern/build time, binder, lifting, awaiting, analysisScale, mem, context block, roots, owner goroutine, result pipeline, planted scan, gold points, pi harness) with the CVJS-001 path; this guide adds the result-pipeline trace and a directories table; DoG pointer to GCV-002 §3.7 | How to read, §3.6, Foundations |
+| P1-2 | fixed: coverage is the 4 × 4 supersampled rule of `mask.ellipse`, extracted into one `DiskCoverage` used by both; decision record; tests compare exactly | §3.1, §8, §9.1, §13.1, §13.2 |
+| P1-3 | fixed: goja-cv writes the files (`writeContent` keeps look names and dropped reporting, adds `<name>.<ext>` for data via `ExtensionForMIME`); no upstream change; `--json` lists `files`; script 83 command given | §6 item 8, §7.9, §9.3 |
+| P1-4 | fixed: one naming rule — `x, y` corner, `cx, cy` point; rows name points `cx, cy`; decision record (also in GCV-001 §7.4) | §3.5, §7.2–§7.4, §7.6, §8 |
+| P1-5 | fixed: own TIFF writer (uint8/16, float32, tag 270), PNG chunk insertion (gAMA/sRGB/tEXt), NPY writer; format × depth table stating that NPY keeps values only and JPEG is sRGB-only; §4.6 mentions `buffer.WriteFile`, which is deleted | §4.6, §7.10, §12 Phase 6 |
+| P2-1 | fixed: `OpDef.Fields` becomes `func(args, inputs) []FieldSpec` for Regions and Value results; no `RegionFields` | §7.5, §8 |
+| P2-2 | fixed: `Validate(args, inputs)`; every validator updated in Phase 1 | §7.5, §12 Phase 1 |
+| P2-3 | fixed: uses GCV-002 §7.13 `EvalCtx.Warn` with cache replay (`OUTSIDE`, `CLAMP`) | §7.2, §7.10, §10 |
+| P2-4 | fixed: `MaxData`, `MaxDataBytes` (mcp only), `ContentLimits` = sum; the session applies counts and the byte limit in `collect` (written as a proposal) | §7.9 |
+| P2-5 | fixed: lazy placeholders show name and column count only; example numbers corrected (30 rows, 20 columns) | §3.6, §7.9, §9.3 |
+| P2-6 | fixed: per-region weights from `Region.Pix` or `Region.Coverage`, not `Rasterize` | §7.4, §9.2 |
+| P2-7 | fixed: `sample`/`measure` take points only; Regions → `E_WRONG_KIND` with the `regions.measure` fix; decision record | §7.2, §7.4, §8 |
+| P2-8 | fixed: default core radius clamp(round(√(area/π)), 2, 8) + 0.5; the centring difference stated; §13.4 re-measures the playbook ranges | §7.4, §13.4 |
+| P2-9 | fixed: naming table (`meanL`, `meanR/G/B`, `coreMean`, `ringMean`, `radius`/`coreRadius`/`ringRadii` options, `stepChroma`); dependency on GCV-001's chroma kernel dropped; GCV-001 §3.8 corrected | §3.3, §3.5, GCV-001 §3.8 |
+| P2-10 | fixed: one rule (ops build nodes, functions return other things) decided in GCV-002 §7.10 with a record; `FuncDef.On` includes node kinds and the `Data` handle, so `save`, `look`, `json`, `csv` register the same way; every `cvFuncs` entry has a destination | §7.9, §7.10, GCV-002 §7.10 |
+| P2-11 | fixed: `dog` defined in the example, with the reason for measuring the unstretched DoG | §7.4 |
+| P2-12 | fixed: directories table (`--root`, `--out`, `--out-root`, `--prelude`); saving disabled without `--out-root`; prelude path policy | §3.6 |
+| P2-13 | fixed: edge rule (weights over inside pixels, `ringCoverage`), outside points, test | §3.3, §7.2, §12 Phase 3 |
+| P3-1 | fixed: `RemovedFields` table used by accessors and errors; accessors on one shared prototype; decision record with a removal condition | §7.5, §8 |
+| P3-2 | fixed: cites the helper's comment (`84-cv-helpers.js:17`) and the overlap of the playbook ranges | §3.3 |
+| P3-3 | fixed: `area` ≈ 12.6 for radius 2; centring on pixel centres explained; examples use `+ 0.5` | §3.1, §7.2 |
+| P3-4 | fixed: `05-masks-and-regions.md` lines 29 and 35-40; the 9000 cap at `session.go:38-39` | §4.4, §11 |
+| P3-5 | fixed: static `Produces` list for hints | §7.5 |
+| P3-6 | fixed: `meanMask` removed in Phase 1 | §12 Phase 1 |
+| P3-7 | fixed: codes and the file each lives in; `EAccess` moves to graph; `E_FRAME` row; `E_FIELD_EXISTS` for duplicates | §6 item 12, §10 |
+| P3-8 | fixed: full-sentence bullets in §6, §11, §13.1; phase steps are complete instructions | §6, §11, §12, §13.1 |
+| P3-9 | fixed: full command with `--json`, `--image`, `polarity: "bright"`, and the `files` key | §7.9, §11 |
+| P3-10 | fixed: planted scan, gold points and harness named with paths where first used; question file location | §13.2, §13.4, §13.5 |
+| P3-11 | fixed: relative benchmark (≥ 20× the helper on the same machine, warm cache, scale 1) | §13.4 |
+| P3-12 | fixed: union rule stated (`point\|enum:…`, `Regions\|(point\|box)[]`) | §7.6 |
+| P3-13 | fixed: the `data` argument type serializes awaited data as data (edits are kept) | §7.9, §12 Phase 7 |
+| P3-14 | fixed: records for coercion/naming, accessors, budgets; module functions and evaluation warnings are recorded in GCV-002; `components({ source })` discussed under alternatives | §8, §14 |
+| P3-15 | fixed: `dataout.Data` | §7.9 |
+| P3-16 | fixed: "sortBy sorts largest first" | §7.4 |
+| P3-17 | fixed: absolute coordinates via GCV-001 `origin` in the hand-over line | §11 |
