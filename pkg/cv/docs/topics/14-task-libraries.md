@@ -14,10 +14,6 @@ return { ready, snr: m.snr > 2, scripts: cv.scripts().map(s => s.path) }
 
 Every call reads and runs the file again (no cache): a second load picks up an edited file and redefines its functions; a pipeline runs again with new `args`. Nodes are hash-consed, so a rerun costs little. A file may load others by the same path rule; loads nest up to 32 deep.
 
-```js
-const w = await cv.load("dust/thread-width.js", { a: [192, 46.5], b: [209, 46.5] })
-return { width: w.width > 3 && w.width < 8, at: w.at }
-```
 
 ## Writing a library
 
@@ -33,6 +29,34 @@ mem.probe = async (x, y, r = 3) => { // core/ring measure at (x, y): { cx, cy, s
   return m
 }
 return "dust helpers ready"
+```
+
+## A pipeline: the width of a line or thread
+
+`dust/thread-width.js` measures the full width at half height of a bright line across the segment `a → b` (both
+ends on either side of it) from a `profile`. Run it at two or three places along the thread:
+
+```js
+const w = await cv.load("dust/thread-width.js", { a: [192, 46.5], b: [209, 46.5] })
+return { width: w.width > 3 && w.width < 8, at: w.at }
+```
+
+```js fragment
+// dust/thread-width.js: the width of a bright thread across the segment a → b (doc px), full width at half height
+const p = await img.as("linear").profile(args.a, args.b, { step: 0.25, width: args.along ?? 3 })
+const v = p.rows.map(r => r.meanL), t = p.rows.map(r => r.t), n = v.length
+const base = (v[0] + v[n - 1]) / 2
+let k = 0
+for (let i = 1; i < n; i++) if (v[i] > v[k]) k = i
+const half = base + (v[k] - base) / 2
+const cross = d => { // where the profile falls below half, walking from the peak
+  let i = k
+  while (i + d >= 0 && i + d < n && v[i + d] > half) i += d
+  const j = i + d
+  return j < 0 || j >= n ? null : t[i] + (t[j] - t[i]) * (v[i] - half) / (v[i] - v[j])
+}
+const lo = cross(-1), hi = cross(1)
+return { width: lo === null || hi === null ? null : hi - lo, height: v[k] - base, at: [p.rows[k].cx, p.rows[k].cy] }
 ```
 
 ## Errors, warnings and waiting

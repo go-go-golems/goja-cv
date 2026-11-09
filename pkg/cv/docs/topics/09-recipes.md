@@ -58,7 +58,7 @@ To keep a speck that is real detail, drop it before healing: `img.heal(mem.dust.
 ```js
 const top = (await img.detect.specks()).sort((a, b) => b.area - a.area).slice(0, 2)
 return {
-  measured: (await img.measure(top)).map(r => [r.cx, r.cy, r.snr.toFixed(2)].join(" ")),
+  measured: (await img.measure(top)).map(({ cx, cy, snr }) => ({ cx, cy, snr })),
   inside: (({ meanL, area }) => ({ meanL, area }))(await img.stats({ box: top[0] })),
 }
 ```

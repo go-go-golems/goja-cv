@@ -37,8 +37,9 @@ and point to `cv.docs` and `cv.help`. They are deliberately short: some clients 
 
 - The code is the **body of an async function**: use `await`, end with `return`. The last expression is not
   returned.
-- The value comes back as **YAML**, capped at 9000 characters (`# CUT` note), followed by `warnings:` and a
-  `context:` block (open images with size and bit depth, `mem` keys).
+- The value comes back as **YAML**, capped at 9000 characters (`# CUT` note); a list of flat rows comes back as
+  a **table** (one line per row, paged), followed by `warnings:` and a `context:` block (open images, `mem` keys,
+  the functions on `mem` with their parameters, and the doc line of each new or changed one).
 - `const`/`let` do not survive between calls; `mem` is a plain object that does.
 - `img` is the open image (`img = cv.open(path)` rebinds it).
 - `await` evaluates: measurements at full resolution; an awaited Image is its summary (nothing computed);
@@ -48,7 +49,26 @@ and point to `cv.docs` and `cv.help`. They are deliberately short: some clients 
   `LOOKS` warning names the others).
 - Files: `await cv.save(path, x)` writes in the workspace (`--root`); `cv.open` reads it and the `--read`
   directories. Every save of an eval completes before it returns.
+- A node nobody awaits, looks at or saves does nothing; a promise that fails with nobody listening is an
+  `UNHANDLED` warning.
 - Errors are YAML with a literal `fix:`; the agent should apply it.
+
+## Task libraries
+
+Give agents the helpers of a task as a file, not as text to paste. In a study of 39 annotator agents on dust
+tiles, every agent pasted the same 3 KB helper file into its first eval and then worked through its functions;
+nobody opened `cv.docs` or `cv.help`. The helpers were the interface. goja-cv now runs such a file in the session:
+
+- `await cv.load("dust/helpers.js", args)` runs a `.js` file from the workspace or a `--read` directory as the body
+  of an async function of `args`, and resolves to what it returns; `cv.scripts()` lists the loadable files.
+- `goja-cv mcp --read DIR --prelude DIR/dust/helpers.js` loads it in every session before the agent's first eval.
+- The comment that opens each function's body is its doc line: the first eval's context block lists every
+  function the library defined, with its parameters and doc line.
+- Errors in the file name it (`where: dust/helpers.js:57`, `called from: line 1`).
+
+The agents' second lesson: a vision model reads coordinates off pictures badly (5–10 px off with rulers). Give it
+coordinates as data — rows of items, sheets whose captions list the ids of their cells — and let JavaScript filter
+the rows. See `goja-cv help recipes` for the playbook pattern.
 
 ## Docs from inside eval
 

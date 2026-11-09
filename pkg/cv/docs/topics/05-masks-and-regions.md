@@ -33,7 +33,7 @@ const sp = await img.detect.specks()
 const keep = sp.filter(r => r.score >= 0.5).sort((a, b) => b.area - a.area).slice(0, 3)
 const first = keep[0]
 const { meanL, area } = await img.stats({ box: first })
-return { n: sp.length, rows: keep.map(x => [x.id, x.cx, x.cy, x.area, x.score].join(" ")), around: { meanL, area } }
+return { n: sp.length, rows: keep, around: { meanL, area } }   // rows: a table
 ```
 
 Pass the array (or the node) back wherever regions go. Each item stays linked to its region's exact pixels through `filter`, `sort`, `slice` and spread (`{ ...r, note: "x" }`); a `map` that builds new objects field by field drops the link (they become plain boxes; `ITEMS` warns). Editing `x, y, w, h` of a linked item is refused ("item 3 was moved": pass a plain box). Ids are data: edit or repeat them freely. A `label` string is printed instead of the id; a text `id` is `E_ARG_TYPE`.
@@ -52,7 +52,7 @@ An array may also hold boxes `{ x, y, w, h }` or `[x, y, w, h]` and circles `{ c
 const sp = (await img.detect.specks()).filter(r => r.score >= 0.5).slice(0, 4)
 const gold = [{ cx: 200.5, cy: 46.5, r: 4, label: "star" }]
 const m = await img.as("linear").measure([...sp, ...gold])
-return m.map(x => [x.label ?? x.id, x.snr.toFixed(2)].join(" "))
+return m.map(({ id, label, snr }) => ({ id, label, snr }))
 ```
 
 ## Converting

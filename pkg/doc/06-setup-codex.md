@@ -26,6 +26,10 @@ codex mcp add cv -- goja-cv mcp --root /path/to/cv-work --read /path/to/images -
 The syntax is `codex mcp add [OPTIONS] <NAME> -- <COMMAND>...`; `--env KEY=VALUE` sets environment variables
 for the server. `codex mcp list` and `codex mcp get cv` show what is configured; `codex mcp remove cv` removes it.
 
+A task library the agent should have in every session (a file of `mem` helpers) is served with `--read DIR`
+and loaded with `--prelude DIR/lib.js`:
+`codex mcp add cv -- goja-cv mcp --root /path/to/cv-work --read /path/to/lib --prelude /path/to/lib/dust/helpers.js`.
+
 ## config.toml
 
 ```toml

@@ -1,7 +1,7 @@
 ---
 Title: goja-cv recipes
 Slug: recipes
-Short: Check and fix exposure, find and heal dust, inspect defects up close, measure inside a box, edit inside a mask, compare
+Short: Check and fix exposure, find and heal dust, inspect defects up close, measure, edit inside a mask, task libraries, thread widths, the playbook pattern
 Topics:
 - goja-cv
 - recipes
@@ -88,7 +88,7 @@ const lin = img.as("linear")
 const ranked = (await lin.measure(specks)).sort((a, b) => b.snr - a.snr)
 const [star] = await lin.measure([[200.5, 46.5]], { coreRadius: 3 })
 return {
-  rows: ranked.map(r => [r.id, r.cx, r.cy, r.step.toFixed(3), r.snr.toFixed(2)].join(" ")),
+  rows: ranked.map(({ id, cx, cy, step, snr }) => ({ id, cx, cy, step, snr })),   // a table
   star: star.snr.toFixed(2),
   table: (await cv.save("ranked.csv", lin.measure(specks))).rows,
 }
@@ -111,3 +111,68 @@ several in one look.
 const evs = [-0.5, 0, 0.5]
 return cv.compare(evs.map(ev => img.exposure(ev)), { mode: "side" }).look("ev -0.5 / 0 / +0.5")
 ```
+
+## Write a task library
+
+A task library is a file of helpers for one job, loaded instead of pasted: `await cv.load("dust/helpers.js")` in an
+eval, or `goja-cv mcp --read DIR --prelude DIR/dust/helpers.js` for every session. The file is an eval body (top-level
+`await` and `return` work, `const` stays private), so this block also runs as an eval. Start the file with a comment
+line (`cv.scripts()` shows it), keep what must survive on `mem`, and open each function's body with a comment: it is
+the function's doc line in the context block.
+
+```js
+// dust/helpers.js: helpers for annotator agents (a model task library)
+mem.lin = img.as("linear")
+
+mem.probe = async (x, y, r = 3) => { // core/ring measure at (x, y): { cx, cy, step, spread, snr }
+  const [m] = await mem.lin.measure([{ cx: x, cy: y, r }])
+  return m
+}
+
+mem.sheet = (items, size = 40) => // contact sheet of up to 15 items: image | speck view, captioned with their ids
+  cv.sheet(items.slice(0, 15), { views: [img, img.view("speck")], size, zoom: 4, stretch: "cell" })
+
+return "dust helpers ready"
+```
+
+## Measure the width of a thread
+
+`profile` samples across a line; a pipeline script turns the profile into the full width at half height above the
+baseline of its two ends. Pick the two points either side of the thread from data, and run the script at two or
+three places along it:
+
+```js fragment
+// dust/thread-width.js: the width of a bright thread across the segment a → b (doc px), full width at half height
+const p = await img.as("linear").profile(args.a, args.b, { step: 0.25, width: args.along ?? 3 })
+const v = p.rows.map(r => r.meanL), t = p.rows.map(r => r.t), n = v.length
+const base = (v[0] + v[n - 1]) / 2
+let k = 0
+for (let i = 1; i < n; i++) if (v[i] > v[k]) k = i
+const half = base + (v[k] - base) / 2
+const cross = d => { // where the profile falls below half, walking from the peak
+  let i = k
+  while (i + d >= 0 && i + d < n && v[i + d] > half) i += d
+  const j = i + d
+  if (j < 0 || j >= n) return null // the segment is too short
+  return t[i] + (t[j] - t[i]) * (v[i] - half) / (v[i] - v[j])
+}
+const lo = cross(-1), hi = cross(1)
+return { width: lo === null || hi === null ? null : hi - lo, height: v[k] - base, at: [p.rows[k].cx, p.rows[k].cy] }
+```
+
+```js
+const w = await cv.load("dust/thread-width.js", { a: [192, 46.5], b: [209, 46.5] })
+return { width: w.width > 3 && w.width < 8, at: w.at }
+```
+
+## The playbook pattern
+
+For people who write playbooks for annotator agents:
+
+1. Register the server with the task library as a prelude, so agents never paste it.
+2. Name the library's functions and what they return in the playbook; agents use what the playbook names.
+3. Give agents coordinates as data: candidates as rows from a library function, sheets of those items (their
+   captions list the ids), and the instruction "never read a coordinate off a ruler; take it from the rows".
+4. For threads: pick two points either side of the thread from a zoom's data and run
+   `await cv.load("dust/thread-width.js", { a, b })` at two or three places along it.
+5. Return rows, not strings: the result renders them as a table.

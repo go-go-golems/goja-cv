@@ -179,7 +179,7 @@ func TestMCPInstructionsAreCompactAndDocsAreResources(t *testing.T) {
 	}
 	for _, s := range []string{"body of an async function", "mem", "node.look(", "cv.explain(", "doc px", "fix",
 		"img.stats()", "img.stats({ box:", "img.levels(", "cv.compare(", "img.mask.luminance(", "img.within(", "img.detect.specks()", "img.heal(",
-		"cv.docs.search(", "cv.docs.read(", "cv.help(op)", "cv://docs/<id>", "cv://reference", "cv://guide/<slug>"} {
+		"cv.load(", "cv.scripts()", "x.dilate(r)", "does nothing", "table", "cv.docs.search(", "cv.docs.read(", "cv.help(op)", "cv://docs/<id>", "cv://reference", "cv://guide/<slug>"} {
 		if !strings.Contains(ins, s) {
 			t.Fatalf("instructions lack %q", s)
 		}
@@ -189,7 +189,7 @@ func TestMCPInstructionsAreCompactAndDocsAreResources(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, tool := range tools.Tools {
-		if tool.Name == "eval" && !strings.Contains(tool.Description, "cv.docs.search") {
+		if tool.Name == "eval" && (!strings.Contains(tool.Description, "cv.docs.search") || !strings.Contains(tool.Description, "cv.load(path, args)")) {
 			t.Fatalf("eval description %q", tool.Description)
 		}
 	}

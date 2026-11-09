@@ -29,6 +29,18 @@ writes (`cv.save`) and where `cv.open` reads relative paths first. `--read` (rep
 tool or `img = cv.open(path)`); it must lie in one of them. Add `-s project` to write the entry to the project's `.mcp.json` instead of your local config,
 or `-s user` for every project. Check with `claude mcp list`.
 
+## A task library for every session
+
+When agents do one task with a set of helpers (a JavaScript file that defines `mem` functions), serve its
+directory with `--read` and load the file with `--prelude`, so the agent never pastes it:
+
+```bash
+claude mcp add cv -- goja-cv mcp --root ~/cv-work --read /path/to/images --read ~/lib --prelude ~/lib/dust/helpers.js
+```
+
+The prelude must lie in `--root` or a `--read` directory. Agents can also load files themselves with
+`await cv.load("dust/helpers.js")`; see `goja-cv help agents`.
+
 ## Claude Code, project .mcp.json
 
 ```json
