@@ -80,6 +80,12 @@ func TestRegionMeasureRingEqualsMeasureAtCentroid(t *testing.T) {
 		rows := evalData(t, e, call(t, e, "measure", img.ID, []any{[]any{r.Centroid[0], r.Centroid[1]}}, map[string]any{"coreRadius": core}), 1).([]any)
 		row := rows[0].(map[string]any)
 		for _, f := range []string{"step", "spread", "snr", "stepChroma", "ringCoverage"} {
+			if row[f] == nil { // stepChroma below |snr| 1
+				if v, _ := r.Field(prefixed("lin", f)); v != nil {
+					t.Errorf("region %d: %s is %v, measure gives null", r.ID, f, v)
+				}
+				continue
+			}
 			nearly(t, f, r.Measures[prefixed("lin", f)], row[f].(float64), 1e-12)
 		}
 	}
@@ -126,4 +132,72 @@ func TestRegionMeasureErrors(t *testing.T) {
 	if len(mm.Items) == 0 || !(mm.Items[0].Measures["meanL"] > 0.5) {
 		t.Fatalf("mean of the mask over its components: %+v", mm.Items)
 	}
+}
+
+// TestStepChromaIsNullBelowSNR1: on a flat patch the step is 0, so
+// stepChroma is null in img.measure rows and in regions.measure with ring
+// (the field is present, its value null); sortBy puts null rows last and
+// where comparisons on null are false.
+func TestStepChromaIsNullBelowSNR1(t *testing.T) {
+	e := testEngine(t)
+	flat := testSource(t, e, "srgb", graph.Frame{W: 64, H: 48}, 0.3, 0.3, 0.3)
+	rows := evalData(t, e, call(t, e, "measure", flat.ID, []any{[]any{32.0, 24.0}}), 1).([]any)
+	row := rows[0].(map[string]any)
+	if v, ok := row["stepChroma"]; !ok || v != nil {
+		t.Fatalf("measure on a flat patch: stepChroma %v (present %v), want null", v, ok)
+	}
+	if _, ok := row["snr"].(float64); !ok {
+		t.Fatalf("snr %v", row["snr"])
+	}
+	box := call(t, e, "components", call(t, e, "mask.box", flat.ID, []any{20.0, 14.0, 8.0, 8.0}).ID)
+	meas := call(t, e, "measure", box.ID, graph.NodeArg{ID: flat.ID}, map[string]any{"ring": true})
+	rv := regionsAtScale1(t, e, meas)
+	if len(rv.Items) != 1 {
+		t.Fatalf("%d regions", len(rv.Items))
+	}
+	if v, ok := rv.Items[0].Field("stepChroma"); !ok || v != nil {
+		t.Fatalf("regions.measure ring on a flat patch: stepChroma %v (present %v), want null", v, ok)
+	}
+	rec := rv.Items[0].Data(meas.Fields)
+	if v, ok := rec.Vals["stepChroma"]; !ok || v != nil {
+		t.Fatalf("region item: stepChroma %v (present %v), want null", v, ok)
+	}
+	if n := len(regionsAtScale1(t, e, call(t, e, "where", meas.ID, map[string]any{"stepChroma": map[string]any{"lt": 1.0}})).Items); n != 0 {
+		t.Fatalf("where stepChroma < 1 kept %d null rows", n)
+	}
+
+	// planted specks: null exactly where |snr| < 1, sorted last
+	pe, img, _ := plantedEngine(t)
+	specks := call(t, pe, "measure", call(t, pe, "detect.specks", img.ID).ID, graph.NodeArg{ID: img.ID}, map[string]any{"ring": true})
+	nulls := 0
+	for _, r := range regionsAtScale1(t, pe, specks).Items {
+		v, _ := r.Field("stepChroma")
+		if (v == nil) != (math.Abs(r.Measures["snr"]) < 1) {
+			t.Errorf("region %d: snr %.3f, stepChroma %v", r.ID, r.Measures["snr"], v)
+		}
+		if v == nil {
+			nulls++
+		}
+	}
+	for _, desc := range []bool{true, false} {
+		sorted := regionsAtScale1(t, pe, call(t, pe, "sortBy", specks.ID, "stepChroma", map[string]any{"desc": desc})).Items
+		seenNull := false
+		for i, r := range sorted {
+			v, _ := r.Field("stepChroma")
+			if v == nil {
+				seenNull = true
+				continue
+			}
+			if seenNull {
+				t.Fatalf("desc %v: a number after a null at %d", desc, i)
+			}
+			if i > 0 {
+				prev, _ := sorted[i-1].Field("stepChroma")
+				if p := prev.(float64); (desc && p < v.(float64)) || (!desc && p > v.(float64)) {
+					t.Fatalf("desc %v: out of order at %d", desc, i)
+				}
+			}
+		}
+	}
+	t.Logf("planted specks: %d with null stepChroma", nulls)
 }

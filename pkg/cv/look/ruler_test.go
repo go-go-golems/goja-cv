@@ -142,3 +142,69 @@ func TestChainCaptions(t *testing.T) {
 	}
 	_ = graph.Label
 }
+
+// TestRulerLabelsKeepAGap: the label at the start of an axis is shifted
+// inwards to stay inside the image span; a neighbour it would touch is
+// dropped (a crop at x 1619 printed "16191651"). Every kept label reads back
+// and adjacent labels are at least labelGap apart, on both axes.
+func TestRulerLabelsKeepAGap(t *testing.T) {
+	ctx := context.Background()
+	e, img := newEngine(t, writeFlat(t, 1800, 64, 0.1))
+	for _, tc := range []struct {
+		name     string
+		box      []any
+		opts     Options
+		wantX    string // the x labels kept, in order
+		wantY    string
+		x0, y0   float64
+		sx       float64
+		xSp, ySp float64
+	}{
+		// ruler: true at zoom 1.5 ticks every 32 doc px (48 image px): 1651 would start 12 px inside 1619
+		{name: "field case", box: []any{1619.0, 10.0, 60.0, 40.0}, opts: Options{Zoom: 1.5, Ruler: -1}, wantX: "1619", wantY: "10,42", x0: 1619, y0: 10, sx: 1.5, xSp: 32},
+		// ruler 2 at zoom 10: y ticks 20 px apart, labels 14 px tall; 12 would touch 10 (shifted down)
+		// and 18 (shifted up at the bottom end) would touch 16
+		{name: "dense y", box: []any{1619.0, 10.0, 8.0, 8.0}, opts: Options{Zoom: 10, Ruler: 2}, wantX: "1619", wantY: "10,14,16", x0: 1619, y0: 10, sx: 10, xSp: 2},
+	} {
+		c := call(t, e, "crop", img.ID, tc.box)
+		l, err := New(e, c.ID, tc.opts)
+		if err != nil {
+			t.Fatal(err)
+		}
+		m, err := l.image(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		w, h := int(tc.box[2].(float64)*tc.sx), int(tc.box[3].(float64)*tc.sx)
+		lay := layoutRulers(axis{origin: tc.x0, scale: tc.sx, n: w}, axis{origin: tc.y0, scale: tc.sx, n: h}, tc.xSp)
+		width := func(s string) int { return text.Width(s, labelPx) }
+		lh := text.Height(labelPx)
+		xs := placeLabels(lay.xt, lay.left, lay.left, m.Bounds().Dx(), width)
+		ys := placeLabels(lay.yt, lay.top, lay.top, m.Bounds().Dy(), func(string) int { return lh })
+		var gotX, gotY []string
+		for i, p := range xs {
+			if got := readNumber(m, p.at, lay.top-tickLen-2-lh); got != p.text {
+				t.Errorf("%s: x label %q reads %q", tc.name, p.text, got)
+			}
+			if i > 0 && p.at < xs[i-1].at+width(xs[i-1].text)+labelGap {
+				t.Errorf("%s: x labels %q and %q are closer than %d px", tc.name, xs[i-1].text, p.text, labelGap)
+			}
+			gotX = append(gotX, p.text)
+		}
+		for i, p := range ys {
+			if got := readNumber(m, lay.left-tickLen-2-width(p.text), p.at); got != p.text {
+				t.Errorf("%s: y label %q reads %q", tc.name, p.text, got)
+			}
+			if i > 0 && p.at < ys[i-1].at+lh+labelGap {
+				t.Errorf("%s: y labels %q and %q are closer than %d px", tc.name, ys[i-1].text, p.text, labelGap)
+			}
+			gotY = append(gotY, p.text)
+		}
+		if g := strings.Join(gotX, ","); g != tc.wantX {
+			t.Errorf("%s: x labels %s, want %s", tc.name, g, tc.wantX)
+		}
+		if g := strings.Join(gotY, ","); g != tc.wantY {
+			t.Errorf("%s: y labels %s, want %s", tc.name, g, tc.wantY)
+		}
+	}
+}

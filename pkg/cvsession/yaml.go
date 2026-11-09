@@ -94,7 +94,7 @@ func (r *renderer) render(v goja.Value, depth int) *yaml.Node {
 	}
 	if l, ok := cvmod.LookOf(obj); ok {
 		if why, ok := r.dropped[l]; ok {
-			return str("[not delivered: " + strings.TrimSuffix(strings.TrimPrefix(l.String(), "["), "]") + " — " + why + "]")
+			return str(notDelivered(l, why))
 		}
 		return str(l.String())
 	}

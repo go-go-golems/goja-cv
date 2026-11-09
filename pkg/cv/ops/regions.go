@@ -111,6 +111,11 @@ func compare(op string, got, want any) (bool, error) {
 		}
 		return false, nil
 	}
+	if got == nil { // a null measure (stepChroma below |snr| 1) fails every numeric comparison
+		if _, ok := want.(float64); ok {
+			return false, nil
+		}
+	}
 	g, ok1 := got.(float64)
 	w, ok2 := want.(float64)
 	if !ok1 || !ok2 {
@@ -320,6 +325,9 @@ func regionOps() []graph.OpDef {
 				var ferr error
 				val := func(r *graph.Region) float64 {
 					v, ok := r.Field(key)
+					if ok && v == nil { // null (stepChroma below |snr| 1): sorted last
+						return math.NaN()
+					}
 					f, isNum := v.(float64)
 					if !ok || !isNum {
 						if ferr == nil {
@@ -331,6 +339,9 @@ func regionOps() []graph.OpDef {
 				}
 				sort.SliceStable(items, func(i, j int) bool {
 					vi, vj := val(items[i]), val(items[j])
+					if math.IsNaN(vi) || math.IsNaN(vj) {
+						return !math.IsNaN(vi) && math.IsNaN(vj)
+					}
 					if desc {
 						return vi > vj
 					}
@@ -341,7 +352,7 @@ func regionOps() []graph.OpDef {
 				}
 				return rv.With(items), nil
 			},
-			Doc: "Order the regions by a numeric field (largest first unless desc: false).",
+			Doc: "Order the regions by a numeric field (largest first unless desc: false); null values go last.",
 			See: []string{"top"},
 		},
 		{

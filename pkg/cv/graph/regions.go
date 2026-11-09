@@ -105,7 +105,8 @@ func (v *RegionsValue) NewRegion(id int, pix []int32) *Region {
 	return r
 }
 
-// Field returns a field of the region: a number, or a string for tags.
+// Field returns a field of the region: a number, a string for tags, or nil
+// (null) for a measure stored as NaN (stepChroma below |snr| 1).
 func (r *Region) Field(name string) (any, bool) {
 	switch name {
 	case "id":
@@ -126,6 +127,9 @@ func (r *Region) Field(name string) (any, bool) {
 		return r.Centroid[1], true
 	}
 	if m, ok := r.Measures[name]; ok {
+		if math.IsNaN(m) {
+			return nil, true
+		}
 		return m, true
 	}
 	if t, ok := r.Tags[name]; ok {
@@ -174,7 +178,7 @@ func (v *RegionsValue) Schema() []FieldSpec {
 // Data is the plain-data form JavaScript and data out see: the fields of
 // the schema, flat and in schema order ({ id, x, y, w, h, cx, cy, area,
 // aspect, …measures, …tags }). Geometry is rounded to 0.01 doc px, measures
-// to 4 decimals. A field the region lacks is omitted.
+// to 4 decimals. A field the region lacks is omitted; a null measure is nil.
 func (r *Region) Data(fields []FieldSpec) Record {
 	rec := Record{Keys: make([]string, 0, len(fields)), Vals: make(map[string]any, len(fields))}
 	for _, f := range fields {

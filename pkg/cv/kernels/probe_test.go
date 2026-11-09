@@ -159,3 +159,66 @@ func TestBilinearProfileRecoversEdgeSigma(t *testing.T) {
 		t.Fatalf("recovered σ %g, want %g ± 10 %%", got, sigma)
 	}
 }
+
+// spotBuffer is a 48 × 48 RGB patch of value bg with a disk of radius 3 at
+// (24, 24) of value spot; checker > 0 adds ±checker per pixel in a
+// checkerboard (grain) to every channel.
+func spotBuffer(bg, spot [3]float32, checker float32) *buffer.Buffer {
+	b := buffer.New(48, 48, 3, 1)
+	for c := 0; c < 3; c++ {
+		p := b.Plane(c)
+		for y := 0; y < 48; y++ {
+			for x := 0; x < 48; x++ {
+				v := bg[c]
+				if dx, dy := float64(x)+0.5-24, float64(y)+0.5-24; dx*dx+dy*dy <= 9 {
+					v = spot[c]
+				}
+				if (x+y)%2 == 0 {
+					v += checker
+				} else {
+					v -= checker
+				}
+				p[y*48+x] = v
+			}
+		}
+	}
+	return b
+}
+
+// TestStepChromaNeedsSNR: stepChroma is NaN (null) when |snr| < 1 (a flat
+// patch, a faint coloured step inside the grain) and attributes the colour of
+// a clear step: ≈ 0 for a neutral one, large for a coloured one.
+func TestStepChromaNeedsSNR(t *testing.T) {
+	grey := [3]float32{0.4, 0.4, 0.4}
+	o := CoreRingOptions{Core: 3, R1: 6, R2: 12, Gray: GrayRec709}
+	for _, tc := range []struct {
+		name       string
+		b          *buffer.Buffer
+		null       bool
+		lo, hi     float64 // stepChroma range when not null
+		snrAtLeast float64
+	}{
+		{name: "flat", b: spotBuffer(grey, grey, 0), null: true},
+		{name: "flat grain", b: spotBuffer(grey, grey, 0.05), null: true},
+		{name: "faint red in grain", b: spotBuffer(grey, [3]float32{0.43, 0.4, 0.4}, 0.05), null: true},
+		{name: "neutral", b: spotBuffer(grey, [3]float32{0.6, 0.6, 0.6}, 0.01), lo: 0, hi: 1e-3, snrAtLeast: 1},
+		{name: "red", b: spotBuffer(grey, [3]float32{0.8, 0.4, 0.4}, 0.01), lo: 4, hi: 5.5, snrAtLeast: 1},
+	} {
+		r, err := ProbeCoreRing(context.Background(), tc.b, [][2]float64{{24, 24}}, o)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := r[0]
+		switch {
+		case tc.null && !math.IsNaN(got.StepChroma):
+			t.Errorf("%s: snr %.3f, stepChroma %g, want NaN", tc.name, got.SNR, got.StepChroma)
+		case tc.null && math.Abs(got.SNR) >= StepChromaMinSNR:
+			t.Errorf("%s: snr %.3f, want below %g", tc.name, got.SNR, StepChromaMinSNR)
+		case !tc.null && (got.SNR < tc.snrAtLeast || !(got.StepChroma >= tc.lo && got.StepChroma <= tc.hi)):
+			t.Errorf("%s: snr %.3f, stepChroma %g, want in [%g, %g]", tc.name, got.SNR, got.StepChroma, tc.lo, tc.hi)
+		}
+		if len(got.ChanSteps) != 3 {
+			t.Errorf("%s: channel steps %v", tc.name, got.ChanSteps)
+		}
+	}
+}

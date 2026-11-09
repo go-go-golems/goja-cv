@@ -190,7 +190,7 @@ from six per task to two, every one corrected on the next call):
 - **Use `mem`** for anything needed in a later call; `const`/`let` do not survive.
 - **Return looks** to see results (`node.look("label")`, `show(node)`, `cv.compare([a, b])`), zoom into crops with
   rulers (`img.crop([x, y, 64, 64]).look({ zoom: 8, ruler: 8 })`), and back judgements with numbers:
-  `img.measure(points)` (step, spread, snr, stepChroma of a spot against its surroundings),
+  `img.measure(points)` (step, spread, snr, stepChroma of a spot against its surroundings; stepChroma is null when |snr| < 1),
   `regions.measure(img, { ring: true }).sortBy("snr")`, `img.profile(a, b).look()`.
 - **Region items are flat** (`{ id, x, y, w, h, cx, cy, area, aspect, … }`; `x, y` a corner, `cx, cy` a centre) and
   can be passed wherever a box, point or id is expected: `img.crop(item)`, `img.measure(items)`, `only(item)`.
