@@ -435,3 +435,88 @@ supports the colleague's real setup (data in several directories, gold points wi
   2. pinned versus failing stale sources;
   3. the `stepChroma` gate threshold;
   4. relative paths into `--read` directories.
+
+## Step 4: Revision 3, the user's answers to the four open questions
+
+The user accepted the coordinator's recommendations for the four open questions of revision 2. I folded them into
+the guide as a small, targeted edit (`4c9a1ac`) so that an implementer can start on the branch, and moved §17's
+questions to a "Decided in revision 3" list.
+
+### Prompt Context
+
+**User prompt (verbatim):** (from the coordinator, relaying the user's "yeah, it's fine. do it")
+
+```text
+GCV-004 revision 3: please fold the user's answers to the four new §17 questions into the guide. The user accepted all four of my recommendations ("yeah, it's fine. do it"). This is a small edit, needed quickly: an implementer starts on this branch as soon as you push.
+
+1. **stepChroma gate.** `stepChroma` is `null` when |snr| < 1, not 2. Update F11, D17 and §7, the measure fields table, the tests and Phase 5. Reason: labelled dust has a median snr of 2.17, so a gate at 2 would null the colour reading for about half the dust, and that reading is what validation needs. Below 1 the step is smaller than the local spread, so its colour cannot be attributed. Note that a v1 patch on main applies the same rule now, so the v2 rewrite keeps the behaviour.
+2. **Symlinks on save.** Keep refusing every symlink in the final path component, including links inside the workspace. It is simpler, and nobody has needed the exception.
+3. **A file that changes after `cv.open`.** Accept the pinned behaviour as designed: "file changed" before the first decode, and the old pixels after it. State that it is deliberate.
+4. **Relative `cv.open` paths.** Resolve them against the workspace (`--root`) first, then each `--read` directory in flag order; the first that exists wins. `cv.save` stays workspace-only. Reason: reopening files was the main source of the 23 E_ACCESS errors.
+
+**Also:** a separate agent is fixing the sheet badge over the first label and the colliding ruler labels on main right now, as a v1 patch, along with the stepChroma gate and a LOOKS warning when looks beyond `MaxLooks` are dropped. Add a note to Phase 0a: if main already has that patch when implementation starts, Phase 0a is done by merging origin/main into the branch (a merge commit, no rebase), and the goldens move there. Phase 2's LOOKS warning then reuses the v1 warning.
+
+**Process:**
+- Move §17 Q1–Q4 to "decided", with one line each.
+- Add a revision-history entry: revision 3.
+- Write diary step 4.
+- Commit the guide, then the diary, and push with a plain `git push`. End commit messages with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
+- Run `docmgr doctor`.
+- Report the commit hashes.
+```
+
+**Assistant interpretation:** Apply four decided answers and the Phase 0a merge note to the guide, quickly and
+precisely; record the revision; push.
+
+**Inferred user intent:** Unblock the implementer with a guide whose last open points are settled.
+
+**Commit (docs):** `4c9a1ac` — "GCV-004: guide revision 3 (…)"
+
+### What I did
+- `stepChroma` gate changed from 2 to 1 in the following places:
+  - §6.4;
+  - §7.6, with the reason and the exact field doc string for `coreRingFields`;
+  - D17's consequences;
+  - the Phase 5 test (null on a noise patch, a number at snr 1.5);
+  - Appendix A's F11 row.
+- Relative `cv.open` paths are now searched in the workspace first, then in each `--read` directory in flag order.
+  Updated §4.6, §6.7, the §7.8 resolution text and the flag table, the §10.5 `locate` pseudocode, the Phase 6 tests
+  (found in the workspace, in the second read directory, in both, in neither) and D11's cons. `cv.save` stays
+  workspace-only.
+- Made both deliberate in §7.8: the pinned behaviour for files that change after `cv.open`, and the refusal of every
+  final-component symlink.
+- Phase 0a gained step 3: when `origin/main` has the v1 patch, Phase 0a is a merge commit (no rebase). Phase 2 reuses
+  the v1 `LOOKS` warning, and Phase 5 keeps the v1 `stepChroma` rule.
+- §17's open questions became "Decided in revision 3", one line each, with no open questions left.
+- Added a revision-3 row to the revision history and updated the frontmatter and the changelog; `docmgr doctor`
+  passes.
+
+### Why
+- An implementer starts as soon as this is pushed. These four answers change behaviour the tests pin down.
+
+### What worked
+- Each edit was an exact-match replacement with a count check, so nothing was replaced twice or silently missed.
+
+### What didn't work
+- N/A
+
+### What I learned
+- The guide has no separate measure-fields table; the field list is `coreRingFields`. I put the exact field doc
+  string in §7.6 so that there is one place to copy it from.
+
+### What was tricky to build
+- Keeping the relative-path rule symmetric with saving. `cv.open` searches every root, while `cv.save` only ever
+  writes the workspace. That keeps `cv.open(saved.path)` correct, because the workspace is searched first.
+
+### What warrants a second pair of eyes
+- A relative name present in both the workspace and a read directory opens the workspace's copy. This is intended
+  (saved results shadow inputs), but it can surprise someone who expects the read directory's file.
+
+### What should be done in the future
+- reMarkable upload; implementation from Phase 0a (or the merge of the v1 patch).
+
+### Code review instructions
+- `git show 4c9a1ac -- ttmp/…/design-doc/01-design-and-implementation-guide.md`.
+
+### Technical details
+- Decided list: §17 "Decided in revision 3", items 1–4.
