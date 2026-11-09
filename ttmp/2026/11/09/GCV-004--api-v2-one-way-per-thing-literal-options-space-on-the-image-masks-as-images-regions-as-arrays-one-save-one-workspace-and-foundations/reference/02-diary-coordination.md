@@ -245,3 +245,48 @@ merged its open-question recommendations with mine, sent the writer one revision
 
 ### Code review instructions
 - Guide Appendix A (disposition) and §8 D15–D21; review `reference/04-review-read-findings.md`.
+
+## Step 6: v1 patch merged; batch 1 (phases 0a–4) verified
+
+The user accepted my §17 recommendations ("yeah, it's fine. do it"). The writer folded them into revision 3
+(`4c9a1ac`); a separate agent wrote the v1 field-fix patch on main (PR #5, merged by the user as `b42502b` after the
+auto-mode classifier refused my merge); the batch-1 implementer finished phases 0a–4.
+
+### Prompt Context
+
+**User prompt (verbatim):** "yeah, it's fine. do it" … "#5 is merged!"
+
+**Assistant interpretation:** Fold the answers in, land the v1 patch for the colleague, implement GCV-004.
+
+**Inferred user intent:** Colleague gets fixes now; v2 proceeds without waiting.
+
+### What I did
+- v1 patch (worktree, `task/v1-field-fixes`): stepChroma null when |snr| < 1, LOOKS/DATA warnings, sheet badge, ruler-label gap, a GoSec-safe lookup; only `sheet-2x2` moved. My `gh pr merge 5` was denied ("Merge Without Review"); the user merged. Reinstalled `~/go/bin/goja-cv` from `b42502b`, verified stepChroma `null` at snr 0.11 and the LOOKS warning on the real tile; updated DUST-002 `reference/08` (dust-scanning `2c4bc16`).
+- Told the implementer to merge main for Phase 0a: merge commit `4b69185`; the v1 diary moved to `reference/07-diary-v1-field-fixes.md`.
+- Batch 1 (phases 0b `2b0955f`, 0c `ceb1ec4`, 1 `01e5607`, 2 `e73cfd1`, 0a merge `4b69185`, 3 `ae53037`, 4 `cdc6326`, diaries in between; implementation diary `reference/06`, steps 1–7; deviations 1–28 in the guide).
+- Re-ran the gate (`scripts/04-gate.sh`): gofmt, build, vet, race tests, lint, logcopter, smoke all 0. Smoke-tested v2 on the real tile: `await img` returns statics (no evaluation), a mask is a one-channel image with `stats()`, literal options take awaited values, `cv.explain` shows the inserted `toGray`, a bare `look()` is delivered.
+
+### Why
+- Verify before batch 2 builds on it.
+
+### What worked
+- Goldens moved only where named (0a: sheet-2x2; 3: gaussian, levels-gamma, levels-stats, profile-chart; 4: none).
+
+### What didn't work
+- My PR merge was refused by the permission classifier; the user merged.
+- Three real-data tests are stale against the changed gold labels (also on main); the gate skips them, `scripts/05-real-data.sh` runs them; re-tuning is Phase 5.
+
+### What I learned
+- One luminance changes reported numbers (gradient meanL 0.295 → 0.527): downstream thresholds in DUST-002 helpers move again.
+
+### What was tricky to build
+- Three branches in flight (GCV-004 main checkout, v1 patch worktree, GCV-005 worktree) without touching each other's trees.
+
+### What warrants a second pair of eyes
+- Real-data numbers on the current gold: speck view median rank 75, 39.6 % in top 50 (was 18 / 79.6 % on the older labels); unchanged across phases, so it is the labels, but Phase 5's re-tune must look at it.
+
+### What should be done in the future
+- Batch 2: phases 5–8, pi validation, PR. Then GCV-005 merges the final GCV-004.
+
+### Code review instructions
+- `git log 4c9a1ac..80547e1`; deviations 15–28 in the guide; `scripts/04-gate.sh`.
