@@ -247,3 +247,104 @@ and report the decisions.
 
 - Table check: for each markdown table, count unescaped `|` per row and compare with the header row.
 - Guide length: 2,471 lines; sections 1–18 and Appendix A; decision records D1–D21.
+
+## Step 3: Revision 2 from the review read and the coordinator's decisions
+
+The review read found 33 issues (4 P1, 12 P2, 17 P3), and the coordinator decided the P1s, most P2s and the four open
+questions. I merged GCV-004 batch 1 into the branch, prototyped peaks in numpy on four gold tiles to put real numbers
+behind the cost and the snr default, and rewrote the guide as a whole: almost every section changed, so a rewrite
+reusing revision 1's text was cleaner than patching. Revision 2 is `47c4470` (2,455 lines); Appendix B maps every
+finding (31 fixed, 2 partly, 0 declined).
+
+The largest design change is `UNUSED_NODE`. Attribution by site (revision 1) still warned on the seven eval-1 pastes
+and missed `mem.spots(0.3)` built inside a library. The coordinator's rule, "warn when the code drops a value", is
+implemented by marking expression statements that are calls (go-go-goja's `jsparse` over goja's parser) as
+`__cv_drop(k, expr)`, which keeps line numbers and records what was dropped.
+
+### Prompt Context
+
+**User prompt (verbatim):** "GCV-005 revision 2: please revise the guide in the GCV-005 worktree using the review findings and the coordinator decisions below. Run `git pull` first. The review is `reference/04-review-read-findings.md` (33 findings: 4 P1, 12 P2, 17 P3) [… merge origin/task/gcv-004-api-v2; decisions on P1s: delete CROP_FIRST, disk convention distance ≤ r, preludes do not consume docs, tables exempt from caps and evidence corrected; decisions on P2s: corrected counts, doc line as first token with method shorthand, docs when name new or source changed, __cv_run waits for loads and one generic rejection-tracker warning, load depth on the chain, UNUSED_NODE for dropped nodes or promises via the eval source and go-go-goja's AST tooling, phase dependencies, peaks snr default 1 with a validation sweep, peaks in row bands with a time budget, morphology disk cap with van Herk lines, only erode and dilate with help concept entries, terms defined; open questions Q1–Q4 settled; process: revision entry, Appendix B, diary step 3, commits, doctor, report …]"
+
+**Assistant interpretation:** Apply the decisions and fix the remaining findings, merge GCV-004 batch 1, update Appendix
+A, add Appendix B, and report dispositions and new open questions.
+
+**Inferred user intent:** A revision-2 guide that the GCV-005 implementer can follow once GCV-004 batch 2 lands, with
+no known wrong statement left.
+
+### What I did
+
+- `git pull`; `git fetch origin && git merge origin/task/gcv-004-api-v2` (merge commit `6bb71a8`, 130 files).
+- Read the review findings in full and GCV-004 deviations 15–28; refreshed every citation that moved
+  (`processor.go` functions moved by about 50 lines, `session.go` by about 5, `native.go` by 25, `views.go`, `ops/mask.go`).
+- Checked the tooling the coordinator pointed at: go-go-goja's `pkg/jsparse` (`Analyze` over `goja/parser`, an `Index`
+  of `NodeRecord{Kind, Start, End, StartLine}`), unused by goja-cv so far; goja's `SetPromiseRejectionTracker`
+  (`builtin_promise.go:668`), unused anywhere in go-go-goja or goja-cv.
+- Checked `order.go`: `CROP_FIRST` is the only reader of `OpDef.Halo` and applies to every op `On: Image`, including a
+  Regions-returning `peaks`.
+- Wrote `scripts/02-peaks-prototype.py` (numpy/scipy, digital disks): step map, NMS, ring snr, merge over radii [2, 4, 8],
+  gold coverage. Ran it on `7edbfe9c3e7ab7d6_512_1024`, `af8640d7f21ec5ce_1024_3072`, `c71dd0f2de533739_512_1536`,
+  `1d955ef4b27d3d88_1536_1536`.
+- Rewrote the guide (four writes of the whole text); fixed one unescaped pipe the table check found; swept for stale
+  revision-1 terms; updated `tasks.md`, `index.md`, `changelog.md`; `docmgr doctor` passed.
+
+### Why
+
+- The prototype was the only way to state a time budget and discuss the snr default with real numbers before any Go
+  exists; the coordinator asked for a budget "measured on a real tile".
+
+### What worked
+
+- The prototype numbers: 25,449 / 5,371 / 1,034 NMS candidates at r = 2 / 4 / 8 on one tile; at snr ≥ 1, 105–1,000
+  peaks per tile and 101 of 102 dust points covered; at 1.4, 20–156 peaks and 77 of 102. They support keeping 1 as a
+  recall-first default and show why the validation must also count peaks not near gold.
+- `jsparse` gives exactly the expression-statement spans the drop lint needs, so the lint is a text insertion, not an
+  instrumentation of every call.
+
+### What didn't work
+
+- The first prototype run failed: `ValueError: operands could not be broadcast together with shapes (11,11) (7,7)`
+  (the ring as the difference of two disk masks of different sizes); fixed by embedding the inner disk in the outer
+  frame.
+- `cp … GCV-005*/scripts/…` failed under zsh globbing (`no matches found`); resolved the directory with `ls -d` first.
+
+### What I learned
+
+- The review's recount changes the story of the caps: the agents never reached the 9,000 cap; the item cap (40 evals)
+  and the string cap (their joined rows) did. Tables only help if they are exempt from both.
+- The derived-promise trick (`return inner.then(v => v)`) lets `__cv_run` wait on the inner promise while the rejection
+  tracker still sees whether the caller handled the outer one.
+
+### What was tricky to build
+
+- **Waiting versus reporting.** If `__cv_run` waited on the same promise the agent got, its `allSettled` handler would
+  mark every rejection handled and the tracker would report nothing. Separating the inner promise (waited for) from the
+  returned one (the agent's) keeps both properties.
+- **The drop lint and line numbers.** Inserting `__cv_drop(k, ` and `)` on the same lines keeps every line number; only
+  columns on marked lines shift, and no location the user sees uses columns. The original text is kept for `where:`.
+- **Sheet captions.** The caption text is written into the YAML before looks render, so cell ids are known only for
+  arrays (static `items` entries), not for a Regions node passed directly; recorded as open question 2.
+
+### What warrants a second pair of eyes
+
+- D10's consequence: an unused variable holding a node is no longer reported (the one correct warning of the study
+  becomes silent).
+- Open question 1: replsession stores the marked eval text as the cell source.
+- The time budget (0.5 s per tile) is an estimate from prototype candidate counts and the reviewer's `measure` timings,
+  not a Go measurement; B2's benchmark must confirm it.
+
+### What should be done in the future
+
+- reMarkable upload of revision 2; implementation after GCV-004 batch 2.
+
+### Code review instructions
+
+- Read Appendix B first, then §6.6/§7.6/§10.5 (the drop lint), §7.4/§10.6 (settled evals, `UNHANDLED`), §6.9/§10.9–10.11
+  (morphology), §3.6/§7.8/§10.7 (peaks numbers and bands), §13 (dependencies).
+- Verify: `docmgr doctor --ticket GCV-005`; the table check; `python3 -I scripts/02-peaks-prototype.py 7edbfe9c3e7ab7d6_512_1024`.
+
+### Technical details
+
+- Prototype output on `7edbfe9c3e7ab7d6_512_1024` (52 dust points): `r=2: … candidates 25449 … kept at snr>= {0.5: 2963, 1: 100, 1.4: 47, 2: 23}`;
+  merged: `snr>=1: peaks 105, gold covered 51/52, peaks not near gold 54`.
+- Instructions draft for revision 2: 3,458 bytes (scratchpad `instructions2.txt`).
+- Appendix B totals: 31 fixed, 2 partly fixed (F22 superseded by linting loaded files; F24 kept with bounds), 0 declined.
