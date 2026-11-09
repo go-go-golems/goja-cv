@@ -1325,3 +1325,72 @@ need one.
 
 `git diff --stat 1c1acf3 3b3e685 -- pkg cmd internal README.md`: 41 files changed, 178 insertions(+), 433
 deletions(-); non-test Go and JavaScript: 20 files changed, 68 insertions(+), 318 deletions(-).
+
+## Step 11: Phase 8 — documentation sweep, removed-names test, exact goldens
+
+Each phase already updated the docs it broke (the docs tests run every block), so the sweep is small: the last
+stale strings, the agents page's eval contract, the errors topic's warnings and help forms, a CI test that keeps
+removed names out of the sources, and an exact golden harness.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 8) — Phase 8; "Golden tolerances: batch 1 kept the optional GCV-001 golden
+tolerance classes and the `-golden.tolerant` flag; guide §14.3 allows deleting them. Delete them if nothing still
+needs them."
+
+**Assistant interpretation:** Guide §12 (documents, the strings test) and §13 Phase 8 step 1; the pi validation
+(step 2) is Step 12.
+
+**Inferred user intent:** Nothing an agent reads still teaches v1, and CI keeps it that way.
+
+**Commit (code):** `0319ac9` — "GCV-004 Phase 8: documentation sweep, removed-names test, exact goldens"
+
+### What I did
+
+- `pkg/doc/strings_test.go`: `TestNoRemovedNamesInSources` fails when a non-test `.go` or `.js` file under `pkg`,
+  `cmd` or `internal` contains `{ space`, `toMask`, `cv.csv`, `cv.json`, `out-root`, `P.slider`, `show(`,
+  `cv.evaluate`, `regions.measure`, `sortBy(`, `node.save`, `cv.describe` or `cv.isNode`. It found two comments and
+  one goroutine task name (`cv.evaluate.settle` → `cv.await.settle`); a planted `cv.json` comment made it fail.
+- Golden harness: the GCV-001 tolerance classes, the `class` field and `-golden.tolerant` are deleted; the comparison
+  is exact (the speck overlay still checks its speck count from `counts.json`).
+- Docs: `08-errors` (warnings `LOOKS`, `ITEMS`, `UNHANDLED`; help forms with concepts and `save`), guidebook
+  `04-agents` (the eval contract: arrays, literal options, the workspace and saves), op docs that still said
+  "working space (linear by default)" (`gaussian`, `detect.specks` and its `contrast` field, the histogram's
+  `space` field).
+
+### Why
+
+- Guide §12, §14.3.
+
+### What worked
+
+- Gate `gate=0`; goldens exact without classes.
+
+### What didn't work
+
+- N/A
+
+### What I learned
+
+- The docs tests made the per-phase doc work cheap to verify: every stale block failed in the phase that broke it.
+
+### What was tricky to build
+
+- Nothing.
+
+### What warrants a second pair of eyes
+
+- The removed-names list is literal substrings; a future legitimate use (say a comment about `show(` in another
+  sense) would need a reword.
+
+### What should be done in the future
+
+- N/A
+
+### Code review instructions
+
+- `pkg/doc/strings_test.go`, `pkg/cv/look/golden_test.go`.
+
+### Technical details
+
+`git diff --stat 3b3e685 0319ac9 -- pkg cmd internal`: 11 files changed.

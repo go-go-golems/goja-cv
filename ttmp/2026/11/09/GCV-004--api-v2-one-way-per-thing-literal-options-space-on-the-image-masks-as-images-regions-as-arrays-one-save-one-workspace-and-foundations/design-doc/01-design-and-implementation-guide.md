@@ -2898,3 +2898,6 @@ order found; the phase is in brackets.
     `memberFixes` keeps `cv.info` (pi run 3) and `cv.meta`: help entries for typed names, not alias tables.
 48. [7] `cv.open`'s `as` → `name` (D21) was done here (with the session's `asSynonyms`); the bare module's hint says
     names exist only in sessions; the MCP `open` tool's field is `name`.
+49. [8] The removed-names test also lists `regions.measure`, `sortBy(`, `node.save`, `cv.describe` and `cv.isNode`,
+    and scans comments too (whole lines of non-test sources). The golden tolerance classes and `-golden.tolerant`
+    are deleted (§14.3).
