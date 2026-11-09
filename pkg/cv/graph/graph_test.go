@@ -446,3 +446,24 @@ func TestHelp(t *testing.T) {
 		t.Fatal("help did-you-mean")
 	}
 }
+
+func TestCancelledEvaluation(t *testing.T) {
+	e, _ := newTestEngine(t)
+	src := mustCall(t, e, "fill", 0, 1.0)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := e.Evaluate(ctx, mustCall(t, e, "scale", src.ID, 2).ID, EvalOptions{Scale: 1})
+	if ce := codeOf(t, err); ce.Code != ECancelled {
+		t.Fatalf("cancelled: %+v", ce)
+	}
+	tctx, tcancel := context.WithTimeout(context.Background(), time.Nanosecond)
+	defer tcancel()
+	time.Sleep(time.Millisecond)
+	_, err = e.Evaluate(tctx, src.ID, EvalOptions{Scale: 1})
+	if ce := codeOf(t, err); ce.Code != ETimeout {
+		t.Fatalf("timeout: %+v", ce)
+	}
+	if e.Evaluator().TotalRuns() != 0 {
+		t.Fatal("cancelled evaluation ran ops")
+	}
+}

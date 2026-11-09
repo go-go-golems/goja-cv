@@ -1,4 +1,4 @@
-.PHONY: all test test-race vet fmt lint build testdata check
+.PHONY: all test test-race vet fmt lint staticcheck build testdata check
 
 all: check
 
@@ -16,6 +16,9 @@ fmt:
 
 lint:
 	GOWORK=off golangci-lint run -v
+
+staticcheck:
+	go run honnef.co/go/tools/cmd/staticcheck@2025.1.1 ./...
 
 build:
 	go build ./...
