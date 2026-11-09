@@ -121,7 +121,12 @@ var walkSamples = map[string]func(w walkNodes) []any{
 	"add": func(walkNodes) []any { return []any{1} }, "sub": func(walkNodes) []any { return []any{1} },
 	"mul": func(walkNodes) []any { return []any{2} }, "div": func(walkNodes) []any { return []any{2} },
 	"min": func(walkNodes) []any { return []any{0} }, "max": func(walkNodes) []any { return []any{0} },
-	"distance":       func(walkNodes) []any { return []any{0.18} },
+	"distance": func(walkNodes) []any { return []any{0.18} },
+	"sample": func(walkNodes) []any {
+		return []any{[]any{[]any{10.5, 10.5}, []any{30.0, 20.0}}, map[string]any{"radius": 2}}
+	},
+	"measure":        func(walkNodes) []any { return []any{[]any{[]any{20.5, 20.5}}} },
+	"profile":        func(walkNodes) []any { return []any{[]any{2.0, 24.0}, []any{60.0, 24.0}} },
 	"mask.luminance": func(walkNodes) []any { return []any{map[string]any{"above": 0.4}} },
 	"mask.color":     func(walkNodes) []any { return []any{map[string]any{"hue": 30}} },
 	"mask.box":       func(walkNodes) []any { return []any{[]any{4, 4, 20, 10}} },

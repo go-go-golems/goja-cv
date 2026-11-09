@@ -26,7 +26,15 @@ var Synonyms = map[string]string{
 	"average":       "stats",
 	"statistics":    "stats",
 	"stat":          "stats",
-	"measure":       "stats",
+	"probe":         "measure",
+	"ring":          "measure",
+	"contrastAt":    "measure",
+	"valueAt":       "sample",
+	"pixel":         "sample",
+	"at":            "sample",
+	"lineProfile":   "profile",
+	"line":          "profile",
+	"trace":         "profile",
 	"hist":          "histogram",
 	"histo":         "histogram",
 	"clone":         "heal",
@@ -194,7 +202,7 @@ func (r *Registry) UnknownMethod(k Kind, name string, path []string) *Error {
 		}
 	}
 	for _, op := range r.Ops() {
-		if op.On == k && op.Returns == KindValue && contains(FieldNames(op.DocFields()), name) {
+		if op.On == k && op.Returns == KindValue && !needsArgs(op) && contains(FieldNames(op.DocFields()), name) {
 			e.Hint = fmt.Sprintf("%q is a field of the Value returned by %s().", name, op.Name)
 			e.Fix = fmt.Sprintf("%s.%s().%s   // or (await %s.%s()).%s for the number", receiverVar(k), op.Name, name, receiverVar(k), op.Name, name)
 			return e
@@ -308,4 +316,15 @@ func NoField(field string, keys []string) *Error {
 		e.Hint = "Fields: " + strings.Join(keys, ", ") + "."
 	}
 	return e
+}
+
+// needsArgs reports whether op has a required argument (so op() alone is
+// not a call the agent can copy).
+func needsArgs(op *OpDef) bool {
+	for _, a := range op.Args {
+		if !a.Hidden && a.Default == nil && !a.Optional && !a.Variadic {
+			return true
+		}
+	}
+	return false
 }

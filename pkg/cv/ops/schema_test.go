@@ -23,6 +23,15 @@ var schemaCalls = map[string]func(s schemaNodes) (graph.NodeID, []any){
 	"Image:stats":         func(s schemaNodes) (graph.NodeID, []any) { return s.img.ID, nil },
 	"Image:histogram":     func(s schemaNodes) (graph.NodeID, []any) { return s.img.ID, []any{map[string]any{"bins": 16}} },
 	"Mask:components":     func(s schemaNodes) (graph.NodeID, []any) { return s.mask.ID, nil },
+	"Image:sample": func(s schemaNodes) (graph.NodeID, []any) {
+		return s.img.ID, []any{[]any{[]any{10.5, 10.5}, []any{-5.0, 3.0}, map[string]any{"cx": 100.0, "cy": 50.0}}, map[string]any{"radius": 2}}
+	},
+	"Image:measure": func(s schemaNodes) (graph.NodeID, []any) {
+		return s.img.ID, []any{[]any{[]any{200.5, 46.5}, []any{1.0, 1.0}, []any{-40.0, 10.0}}}
+	},
+	"Image:profile": func(s schemaNodes) (graph.NodeID, []any) {
+		return s.img.ID, []any{[]any{190.0, 46.5}, []any{212.0, 46.5}, map[string]any{"width": 3}}
+	},
 	"Regions:where": func(s schemaNodes) (graph.NodeID, []any) {
 		return s.specks.ID, []any{map[string]any{"score": map[string]any{"gte": 0.2}}}
 	},

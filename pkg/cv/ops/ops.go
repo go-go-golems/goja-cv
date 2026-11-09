@@ -15,6 +15,7 @@ func Register(r *graph.Registry) {
 	r.MustRegister(channelOps()...)
 	r.MustRegister(filterOps()...)
 	r.MustRegister(measureOps()...)
+	r.MustRegister(measurementOps()...)
 	r.MustRegister(valueOps()...)
 	r.MustRegister(maskMakerOps()...)
 	r.MustRegister(maskOps()...)

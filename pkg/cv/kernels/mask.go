@@ -168,21 +168,33 @@ func EllipseMask(ctx context.Context, w, h int, scale, x, y, bw, bh float64) (*b
 	err := parallel.Rows(ctx, h, func(y0, y1 int) {
 		for j := y0; j < y1; j++ {
 			for i := 0; i < w; i++ {
-				n := 0
-				for sy := 0; sy < 4; sy++ {
-					for sx := 0; sx < 4; sx++ {
-						dx := (float64(i) + (float64(sx)+0.5)/4 - cx) / rx
-						dy := (float64(j) + (float64(sy)+0.5)/4 - cy) / ry
-						if dx*dx+dy*dy <= 1 {
-							n++
-						}
-					}
-				}
-				m[j*w+i] = float32(n) / 16
+				m[j*w+i] = EllipseCoverage(i, j, cx, cy, rx, ry)
 			}
 		}
 	})
 	return out, err
+}
+
+// EllipseCoverage is the fraction of buffer pixel (i, j) (which covers
+// [i, i+1) × [j, j+1)) inside the ellipse centred at (cx, cy) with radii rx,
+// ry (buffer px), by 4×4 supersampling: a multiple of 1/16. It is the one
+// coverage rule of mask.ellipse and of every measurement (sample, measure,
+// profile, regions.measure), so their numbers agree.
+func EllipseCoverage(i, j int, cx, cy, rx, ry float64) float32 {
+	if rx <= 0 || ry <= 0 {
+		return 0
+	}
+	n := 0
+	for sy := 0; sy < 4; sy++ {
+		for sx := 0; sx < 4; sx++ {
+			dx := (float64(i) + (float64(sx)+0.5)/4 - cx) / rx
+			dy := (float64(j) + (float64(sy)+0.5)/4 - cy) / ry
+			if dx*dx+dy*dy <= 1 {
+				n++
+			}
+		}
+	}
+	return float32(n) / 16
 }
 
 // EdgeGradientMask is 1 at an image edge ("top", "bottom", "left",
