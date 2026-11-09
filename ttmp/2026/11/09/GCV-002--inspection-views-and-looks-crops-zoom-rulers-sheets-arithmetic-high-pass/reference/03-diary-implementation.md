@@ -16,10 +16,14 @@ RelatedFiles:
       Note: FuncDef, RegisterFunc, BindOptions (Phase 1)
     - Path: repo://pkg/cv/graph/order.go
       Note: CROP_FIRST and DECORATION_FIRST (Phase 3)
+    - Path: repo://pkg/cv/graph/regions.go
+      Note: Raster and Rasterize to any target (Phase 6)
     - Path: repo://pkg/cv/graph/render.go
       Note: render path above scale 1 (Phase 2)
     - Path: repo://pkg/cv/look/ruler.go
       Note: rulers and grid (Phase 3)
+    - Path: repo://pkg/cv/ops/annotate.go
+      Note: annotate (Phase 6)
     - Path: repo://pkg/cv/ops/arith.go
       Note: signed image arithmetic (Phase 4)
     - Path: repo://pkg/cv/ops/funcs.go
@@ -28,6 +32,8 @@ RelatedFiles:
       Note: crop (Phase 3)
     - Path: repo://pkg/cv/ops/present.go
       Note: cv.compare module op, picture frame (Phase 4)
+    - Path: repo://pkg/cv/ops/sheet.go
+      Note: cv.sheet (Phase 6)
     - Path: repo://pkg/cv/ops/tone.go
       Note: levels auto (Phase 5)
     - Path: repo://pkg/cv/ops/views.go
@@ -40,6 +46,7 @@ LastUpdated: 2026-11-09T05:54:43.150917-05:00
 WhatFor: Reviewing and continuing the GCV-002 implementation on branch task/gcv-002-inspection-views (stacked on task/gcv-001-image-model).
 WhenToUse: Before reviewing a GCV-002 commit, or when picking up GCV-003 on top of it.
 ---
+
 
 
 
@@ -363,3 +370,63 @@ Gaussian widths to `sigma` and distances to `radius`, so no option is called `r`
 
 ### Technical details
 - `explain()` of `img.view("speck")`: view → levels(black 0, white #…) → dog(1, 4, polarity "bright") → max(0) → sub → gaussian(1)/gaussian(4) → toGray("average"), plus the stats → .p99 → mul(5) → max(0.0001) chain for the white point.
+
+## Step 6: Phase 6 - decorations and sheets
+
+Phase 6 puts the render path to its intended use. `overlay` becomes a decoration, so its outlines stay one image px and
+its ids readable in a zoomed crop, and regions found on the whole image can be drawn on a crop. `annotate` draws marks
+given as data. `cv.sheet` lays out many magnified crops in one picture, each cell rendered by `Evaluator.Render` exactly
+as a look would be. Looks get the `format` option with the `auto` rule that keeps zoomed, small and sheet looks lossless.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 1)
+
+**Assistant interpretation:** Implement guide Phase 6: overlay as a decoration with `Rasterize` to a target, containing-frame inputs, annotate with goldens, the sheet layout op (static size, labels, groups, edges, truncation warning, max errors, picture frame), the format rule.
+
+**Inferred user intent:** One eval returns a sheet of the 36 best candidates and zoomed crops with thin outlines, instead of 36 evals or a Python script.
+
+**Commit (code):** 802aa0e - "GCV-002 Phase 6: overlay and annotate as decorations, cv.sheet, the format rule"
+
+### What I did
+- `graph/regions.go`: `Raster{OX, OY, SX, SY, W, H}`, `RasterOf(image value)`, `FrameRaster(frame, scale)`; `Rasterize(ctx, Raster)` maps source pixels through doc px onto any target (a render window at zoom 8, a crop, a preview), skipping what falls outside. Callers (stats, heal, toMask, overlay, the m3 test) ported.
+- `ops/present.go`: overlays are `Class: Decoration` with explicit `DocFrame` (the image's frame); `drawRegions` uses the image's raster, `decorationWidth` (1 px, 2 px from 1024 px), ids at font size 2, skips boxes outside; `containsFrame` accepts regions/masks whose frame contains the image's; `tint` cuts a larger mask like the image (`cropValue`).
+- `ops/annotate.go`: `parseMarks` (exactly one shape key of circle/point/box/polyline/text; `at` for text; `color`, `label`; GCV-001 box/point object forms; did-you-mean with key synonyms), `pen` (square brush dots, lines, rings of `width` px), `drawMarks`; default colour yellow.
+- `ops/sheet.go`: `layoutSheet` (cell = size·zoom, groups with 2 px inner gap, 6 px gaps, cols/rows within 1568, cells = list length, `top(n)` bound or fit; `max` checks), `listItems`, `runSheet` (Lazy, `AnalysisScale` 1: renders each view per item in an integer-origin window of side max(size, w, h) at cell/side, edge grey outside the image, optional per-cell stretch, labels `id (cx, cy) ×s (edge)` in a dark box, `SHEET_TRUNCATED` via `EvalCtx.Warn`), `sheetOp` (module op, picture frame, display result, fixed encoded space so views are converted like a look's, `Lossless`).
+- `OpDef.Lossless`, `OpDef.MaxItems` (top(n)); `ShortCall` writes nested lists as `[n items]`.
+- Look: `format` option (auto | png | jpeg, value synonyms lossless/jpg); the auto rule (mask/gray, zoom > 1, `Lossless` op, ≤ 512 × 512) decided in `New`; pictures refuse zoom, ruler and grid (E_WRONG_KIND).
+- Tests: `pkg/cv/ops/sheet_test.go` (36-cell and 18-item frames, max 40 fix, literal list frame, bad item, missing views, crop of a sheet refused; cell contents: star window, edge grey, gap, label box, scale 1 whatever the asked scale; SHEET_TRUNCATED on two evaluations; box cell; label sizing; top(8) gives two rows; overlay outlines and an annotate circle are 1 px wide at zoom 1 and 8, measured as the shortest lime run; annotate errors and the `line` → `polyline` hint); `TestLookFormatRule`; goldens.
+
+### Why
+- Guide §6 items 7, 8, §7.8, §7.9, §7.7 (format), §9.2, §9.3 and Phase 6.
+
+### What worked
+- Golden check before `-update`: only `specks-overlay` moved ("expected change: largest difference 245 codes, 15565 of 147456 samples differ (10.556 %)": the ids are now drawn at font size 2 instead of 1); the speck count stayed 41; every other look byte-identical. New goldens `overlay-crop-zoom8`, `annotate-crop-zoom4`, `sheet-2x2`.
+- End to end: `cv.sheet(spots.sortBy("area").top(6), { views: [img, img.view("speck")], size: 32, zoom: 4 })` gives a 1314 × 262 PNG with six labelled groups.
+
+### What didn't work
+- The first end-to-end sheet of `top(12)` was 1314 × 1468, mostly empty: by default a Regions input is laid out for every cell that fits. A `top(n)` input now bounds the layout statically (`OpDef.MaxItems`).
+- `TestSheetCellsLabelsEdgesAndTruncation`: "star cell centre 0.727" (I sampled one pixel off the star's peak) and "small cell label \"7\" at 2" (the misc-fixed digits are 5 px per character at size 1, so `7 (1337, 131)` needs 69 px and only fits from a 96 px cell). Tests adjusted to the font.
+- I committed this phase once with a red gate: `gate.sh … | tail -3 && git commit` took `tail`'s status, and `registry.go` was not gofmt'ed. The commit was not pushed; I fixed the formatting, re-ran the gate with its own exit status (`gate=0`) and amended. From here on the gate's exit status is checked on its own before committing.
+
+### What I learned
+- Viewing goldens scaled down makes 1 px red lines look grey; the pixel values (255, 26, 26) confirmed the outlines.
+
+### What was tricky to build
+- Sheet evaluation: a sheet must not evaluate its views whole at its own scale; it needs the view nodes to render window by window. It is a `Lazy` op whose `Run` reads its inputs' node ids from the canonical args (InputRefs) and calls `Evaluator.Render` for the regions (data, scale 1) and for every cell; render warnings are forwarded into the sheet's `EvalCtx.Warn`, so they are cached and replayed with the sheet.
+- The sheet's size must be known when the node is built (frames are static), but the number of regions is not: lists give their length, `top(n)` its bound, anything else the fit.
+
+### What warrants a second pair of eyes
+- `cellLabel` sizes labels with this font (5 px per character at size 1), so labels with coordinates need wider cells than the guide's estimate.
+- The look number is burned over the first sheet label's corner.
+- `annotate`'s `point` is a 4-arm cross with a 2 px gap around the point.
+
+### What should be done in the future
+- GCV-003: flat region items make `{ box: item }`, `{ point: item }` and `cv.sheet(items)` with item objects work directly.
+
+### Code review instructions
+- `pkg/cv/ops/sheet.go`, `annotate.go`, `present.go` (`drawRegions`, `containsFrame`), `graph/regions.go` (`Raster`, `Rasterize`), `look/look.go` (format rule, picture refusal).
+- `go test ./pkg/cv/ops -run 'Sheet|OverlayAndAnnotate' -v`; `go test ./pkg/cv/look -run 'Golden|Format' -v`.
+
+### Technical details
+- Layout at the defaults (size 64, zoom 4): cell 256, one view → 6 × 6 = 36 cells, 1566 × 1566 px; two views → groups of 514 px, 3 × 6 = 18 items, 1554 × 1566 px.
