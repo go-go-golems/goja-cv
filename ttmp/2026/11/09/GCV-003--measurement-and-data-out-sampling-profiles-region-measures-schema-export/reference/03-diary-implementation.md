@@ -152,3 +152,68 @@ array. The caps that protect the model's context stay in the YAML renderer, and 
 
 ### Technical details
 - Memory: one awaited item is a JavaScript object of ~9-15 numbers; 100 000 items is tens of MB, the bound the limit sets.
+
+## Step 3: Phase 3 - probe kernel and the measurement ops
+
+Phase 3 adds the numbers the colleague's agents back their decisions with: `img.sample(points, { radius })`,
+`img.measure(points, { coreRadius, ringRadii })` (core versus ring: step, spread, snr, channel steps, stepChroma,
+ringCoverage) and `img.profile(a, b, { width })`. All run on one probe kernel that reads a small window per point and
+weights pixels with the coverage rule of `mask.ellipse`, so `measure` returns what the helper `mem.probe` computed
+with two masks and two whole-image `stats` calls.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 1)
+
+**Assistant interpretation:** Guide Phase 3 (§3.1-§3.3, §7.2-§7.4 for points, §9.1, §13.2) plus open items 3 (measurement ops on GCV-001's types) and 7 (stepChroma, which the guide defines in §3.3).
+
+**Inferred user intent:** Replace `mem.probe` and its 56 `stats` calls per hot list by one native op with the same numbers.
+
+**Commit (code):** 5ddd78a - "GCV-003 Phase 3: probe kernel (EllipseCoverage, core/ring, bilinear) and the sample, measure, profile ops"
+
+### What I did
+- `kernels.EllipseCoverage(i, j, cx, cy, rx, ry) float32`: the 4 × 4 rule extracted from `EllipseMask`, which now calls it (rx ≠ ry still works).
+- `pkg/cv/kernels/probe.go`: `annulus` selects pixels with weight `cov(r2) − cov(r1)` in row-major order and records the weight inside the buffer and of the whole shape; `measureSel` measures a selection by gathering the gray plane into an n × 1 buffer and calling `StatsWeighted`, and per-channel means with the same sum order; `SamplePoints`, `ProbeCoreRing`, `Bilinear`.
+- `StatsWeighted` is the exported function itself (the `statsWeighted` wrapper is gone, guide §6 item 6).
+- `pkg/cv/ops/measurement.go`: ops `sample`, `measure`, `profile` (Value results; `Space: linear`; `analysisScale` 1; `gray: rec709|average`). Points are `Regions|point[]`: the Regions alternative exists only so `validatePoints` can refuse it with the fix `regions.measure(img, { ring: true })` (or `{ stats: ["mean"] }` for sample). Ring radii are checked (`coreRadius < r1 < r2`, fix with the default ring); a profile is at most 4096 samples (fix with a larger step).
+- Schemas: rows `cx, cy, coreMean, ringMean, step, spread, snr, stepR, stepG, stepB, stepChroma, ringCoverage` (channel fields optional unless `channels` is given: channel counts are not node statics), `outside` optional; sample rows `cx, cy, meanL, meanR, meanG, meanB, area`; the profile object `from, to, step, width, t, cx, cy, meanL, meanR, meanG, meanB`.
+- Points outside the frame: a row with `outside: true` and null values, and an `OUTSIDE` evaluation-time warning naming the rows.
+- `binding.resultToJS` orders awaited Value objects and rows by the node's schema (`inSchemaOrder`), so rows read `cx, cy, …` instead of alphabetically.
+- Synonyms: ops `probe`, `ring`, `contrastAt` → measure, `valueAt`, `pixel`, `at` → sample, `lineProfile`, `line`, `trace` → profile; removed `measure → stats`; options `r`/`radius` → coreRadius (after sigma, radius), `core`, `annulus`, `background`, `ring`, `ringRadius` → ringRadii, `thickness` → width, `fields` → columns, `bits` → depth.
+- `measure`'s Doc states the helper mapping.
+- Tests: `kernels/probe_test.go` (`TestEllipseCoverageIsEllipseMask` bit for bit over 50 random ellipses, `TestProbeEqualsStatsWeighted` within 1e-9 including corner points and ringCoverage, `TestSampleRadiusZeroIsThePixel`, `TestBilinearProfileRecoversEdgeSigma`), `cvsession/measure_test.go` (`TestMeasureMatchesTheHelper` on 15 points of the planted scan through `testdata/probe.js`, `TestMeasurementOps`), registry-walk and schema-property entries.
+
+### Why
+- Guide §6 item 6, §7.1-§7.4, §9.1, §10, Phase 3; open items 3 and 7.
+
+### What worked
+- Measuring a selection by handing the gathered pixels to `StatsWeighted` (instead of re-implementing weighted means and quantiles) made the probe equal to `stats({ mask: mask.ellipse })` on the first run: the selected pixels arrive in the same row-major order, so the sums and the sort of the weighted quantile see the same sequence.
+- `TestMeasureMatchesTheHelper` passed first time: step, channel steps and stepChroma with `gray: "average"`, spread with rec709, all within 1e-6 of the helper on 15 points (12 planted specks, the star, two corner points).
+
+### What didn't work
+- `TestMeasurementOps` first asserted `e.meanR > s.meanR` (encoded > linear) at the star, but its red channel is clipped at 1 in both spaces; the test uses blue.
+- `TestDiagnostics` (gojamod): `img.meanL` started to hint `"meanL" is a field of the Value returned by profile()` because profile sorts before stats; `UnknownMethod` now prefers Value ops that need no argument (`needsArgs`).
+- Rows came back alphabetical (`coreMean,cx,cy,ringCoverage,…`) because `toJS` sorts map keys; fixed with `inSchemaOrder`.
+
+### What I learned
+- `mask.minus` is `min(a, 1 − b)`, which equals `a − b` for the helper's rings: the inner and outer edges are 6 px apart, so no pixel is partly inside both. The probe's `cov(r2) − cov(r1)` is therefore the helper's ring weight exactly.
+- The helper's `step` uses equal channel weights while its `spread` uses Rec. 709 luminance; one call of `measure` uses one gray plane, so the equivalence holds per field as the guide's §13.2 says.
+
+### What was tricky to build
+- Exactness against `stats` without sharing a code path for the whole image: the weighted quantile depends on the order of tied values after `sort.Slice`, which is not stable. The fix was not a stable sort but the same input sequence: gather in row-major order, skip zero weights, and call the same function.
+- Refusing Regions with a useful fix: a plain `point[]` argument would make the binder say "wants a list, got a Regions node" with a hint about Value nodes. Declaring `Regions|point[]` lets the union lift the node, and the validator then sees a Regions input and returns `E_WRONG_KIND` with the regions.measure call.
+
+### What warrants a second pair of eyes
+- Rows outside the frame keep every required key with null values plus `outside: true` (the guide says "no values"); the property test treats `outside` as an optional field.
+- `profile`'s `width` averages only when every across-line position is inside the frame (otherwise the sample is null); a line along the image edge with width 3 is all null.
+
+### What should be done in the future
+- N/A
+
+### Code review instructions
+- `pkg/cv/kernels/probe.go` (`annulus`, `measureSel`, `probeOne`), `pkg/cv/kernels/mask.go` (`EllipseCoverage`), `pkg/cv/ops/measurement.go`, `pkg/gojamod/cv/binding.go` (`inSchemaOrder`).
+- `go test ./pkg/cv/kernels -run 'Ellipse|Probe|Sample|Bilinear' -v`; `go test ./pkg/cvsession -run 'Measure' -v`.
+
+### Technical details
+- Mapping (in `measure`'s Doc): `mem.probe(x, y, r)` = `img.measure([[x + 0.5, y + 0.5]], { coreRadius: r + 0.5, ringRadii: [r + 3.5, r + 9.5], gray: "average" })`.
+- `img.measure([[200.5, 46.5], [-20, 4]], { coreRadius: 2.5 })` → warning `OUTSIDE: measure: 1 of 2 points lie outside the frame [0, 0, 256, 192] (rows 1 have outside: true and null values).`
