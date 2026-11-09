@@ -155,3 +155,48 @@ committed the evidence script and reference (`286947d`), and started the design 
 
 ### Code review instructions
 - `ttmp/2026/11/09/GCV-004--…/` on branch `task/gcv-004-api-v2`.
+
+## Step 4: #2–#4 merged; binary installed; colleague onboarding; guide drafted
+
+The user merged PRs #2–#4 (main `b847520`) and asked for a getting-started message for the colleague
+(validating gold dust points with the fundamental ops, not `detect.specks`) and an install of the new binary.
+Meanwhile the design writer finished the GCV-004 guide (`903846f` … `9c672d6`, 2,170 lines, D1–D14).
+
+### Prompt Context
+
+**User prompt (verbatim):** "merged all 3. you can pull and rebase. I also want my colleague to start working with what we have, they will be able to surface more bugs. What should I tell them to get started, they should not use the speck detection but more the fundamental options to help them along with validating a dataset of dust specs on negatives. Point them towards the tools and mcp and updates since ⏺ /Users/manuel/code/wesen/2026-11-07--dust-scanning/ttmp/2026/11/07/DUST-002--film-dust-detector-model-exploration/reference/07-goja-cv-handover-issues.md and maybe install the binary with the new features as well."
+
+**Assistant interpretation:** Install goja-cv from main; write a tested onboarding note for gold-point validation mapping the 23 handover issues to what shipped; give a paste-ready message; keep GCV-004 moving.
+
+**Inferred user intent:** Put v1 in a real user's hands now so they find bugs while v2 is designed.
+
+### What I did
+- Built from a separate worktree of `origin/main` (the writer was using the main checkout) and `go install ./cmd/goja-cv` → `~/go/bin/goja-cv` (the user-scope MCP `cv` points there). No rebase of GCV-004: its base `454a836` is an ancestor of main (merge commits), so the branch already sits on main; no force push needed.
+- Read `~/dustds/gold/*.json` (absolute raw-scan x, y, r; r covers the object) and the tile sidecars (`origin_x/y`); ran every snippet of the note against tile `1d955ef4b27d3d88_1536_1536`.
+- Wrote DUST-002 `reference/08-goja-cv-v1-getting-started-for-gold-point-validation.md` (dust-scanning `52b44f1`): issue status table (17/23 done; 11, 12, 18, 19 not), setup (binary, MCP re-registration command for the user to run, CLI, docs), the loop (open at origin, speck view + gold circles, sheet, ruled zoom, measure sized from r, profile, CSV), reading the numbers, retiring `84-cv-helpers.js`, known issues, coming GCV-004 changes, how to report bugs.
+
+### Why
+- The colleague should validate with the primitives they asked for, and their bug reports feed GCV-004.
+
+### What worked
+- Sizing the measure from the gold radius: snr 0.12 (coreRadius 3) → 0.56 (coreRadius 63, ringRadii [95, 160]); the ruled zoom shows the labelled object as a faint vertical streak.
+
+### What didn't work
+- First run of the note's loop delivered no looks: bare `x.look()` statements are dropped silently. Second run delivered 4 of 5: `MaxLooks` = 4 per eval, extras listed as `[look: …]` without a number and no warning. Fixed the note (`show(...)`, ≤ 4 looks).
+- `84-cv-helpers.js` (DUST-002) no longer runs: removed blend modes, `centroid`.
+
+### What I learned
+- Bugs found by using v1 on real data: silent look drops (bare look, > MaxLooks), `stepChroma` unstable when step ≈ 0 (3.25 at snr 0.12), sheet badge covers item 0's label, ruler labels collide at the axis start ("16191651").
+
+### What was tricky to build
+- Keeping the writer's working tree untouched: worktree for main, diary commit deferred until the writer finished.
+
+### What warrants a second pair of eyes
+- The MCP re-registration (adds `--out-root ~/dustdet/cv_out`) is left to the user; GCV-004 D-records change those flags again (one `--root` workspace).
+
+### What should be done in the future
+- Feed the five v1 bugs into the GCV-004 revision (the writer's "every look is queued" decision already covers the bare-look drop; MaxLooks needs a warning; stepChroma needs gating).
+- Review read of the guide, revision, reMarkable upload.
+
+### Code review instructions
+- dust-scanning `52b44f1`; re-run the note's two JS blocks with `goja-cv eval --out DIR -e "…"`.
