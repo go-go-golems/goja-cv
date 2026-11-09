@@ -84,3 +84,24 @@ func TestMCPOpenToolWithNameAndEncoding(t *testing.T) {
 	out, _, _ = callEval(t, cs, `return (await v.stats({ space: "encoded" })).w`)
 	mustContain(t, out, "256")
 }
+
+// TestSpaceVocabulary: synonyms, value synonyms and help entries for the
+// GCV-001 vocabulary.
+func TestSpaceVocabulary(t *testing.T) {
+	app, sid := newApp(t, cvsession.Options{Image: tiffPath})
+	for code, want := range map[string][]string{
+		`return img.levels({ workingSpace: "encoded" })`:                   {"code: E_UNKNOWN_OPTION", `Did you mean "space"?`, `fix: 'levels({ space: …`},
+		`return cv.open(` + quote(pngPath) + `, { colorSpace: "linear" })`: {"code: E_UNKNOWN_OPTION", `Did you mean "encoding"?`, `fix: 'cv.open(path, { encoding: … })'`},
+		`return img.exposure(0.3, { space: "display" })`:                   {"code: E_ARG_TYPE", `Did you mean "encoded"?`, `fix: 'exposure({ space: "encoded" })'`},
+		`return cv.open(` + quote(pngPath) + `, { encoding: "lin" })`:      {"code: E_ARG_TYPE", `fix: 'cv.open(path, { encoding: "linear" })'`},
+		`return img.lab()`:     {"code: E_UNKNOWN_METHOD", `Did you mean "toLab"?`},
+		`return img.heatmap()`: {"code: E_UNKNOWN_METHOD", `Did you mean "colormap"?`},
+	} {
+		out := text(eval(t, app, sid, code))
+		mustContain(t, out, want...)
+	}
+	out := text(eval(t, app, sid, `return [cv.help("space"), cv.help("encoding"), cv.help("frame"), cv.help("names")].map(h => h.found !== false)`))
+	mustContain(t, out, "[true, true, true, true]")
+	out = text(eval(t, app, sid, `return cv.help("space")`))
+	mustContain(t, out, "encodings-and-spaces")
+}

@@ -134,7 +134,17 @@ const SpaceArg = "space"
 // spaceOption is the option Register appends to every op with a working
 // space that is not fixed.
 var spaceOption = ArgSpec{Name: SpaceArg, Type: "enum:linear,encoded", Optional: true, Static: true,
-	Doc: "working space: linear (the encoding undone) or encoded (the file's values, what looks show)"}
+	Doc:           "working space: linear (the encoding undone) or encoded (the file's values, what looks show)",
+	ValueSynonyms: SpaceValueSynonyms}
+
+// SpaceValueSynonyms and EncodingValueSynonyms are the value synonyms of the
+// space option and of encoding arguments.
+var (
+	SpaceValueSynonyms = map[string]string{"file": "encoded", "stored": "encoded", "code": "encoded", "display": "encoded",
+		"perceptual": "encoded", "srgb": "encoded", "sRGB": "encoded", "lin": "linear", "light": "linear", "physical": "linear"}
+	EncodingValueSynonyms = map[string]string{"sRGB": "srgb", "SRGB": "srgb", "gamma": "srgb", "perceptual": "srgb",
+		"lin": "linear", "raw": "linear", "identity": "linear", "none": "linear"}
+)
 
 // ArgSpec declares one argument of an op.
 //
@@ -160,7 +170,10 @@ type ArgSpec struct {
 	Min, Max   *float64   // hard limits: violation is E_ARG_RANGE
 	Usual      [2]float64 // soft range (zero value = none): violation is a RANGE warning
 	Options    []ArgSpec  // for "object": the allowed keys (unknown keys are E_UNKNOWN_OPTION)
-	Doc        string
+	// ValueSynonyms map words agents use for an enum value to the value they
+	// mean (scoped to this argument), for the did-you-mean hint and fix.
+	ValueSynonyms map[string]string
+	Doc           string
 }
 
 func (s *ArgSpec) hasUsual() bool { return s.Usual != [2]float64{} }

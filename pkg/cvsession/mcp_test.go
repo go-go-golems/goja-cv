@@ -93,7 +93,7 @@ func TestMCPServerToolsResourcesPrompt(t *testing.T) {
 		t.Fatal(err)
 	}
 	ref := res.Contents[0].Text
-	for _, n := range []string{"## Image methods", "`exposure(ev)` → Image", "`levels(black, white, gamma)`", "`cv.open(path)`"} {
+	for _, n := range []string{"## Image methods", "`exposure(ev)` → Image", "`levels(black, white, gamma)`", "`cv.open(path, { encoding, box, origin, as })`"} {
 		if !strings.Contains(ref, n) {
 			t.Fatalf("reference lacks %q:\n%s", n, ref)
 		}

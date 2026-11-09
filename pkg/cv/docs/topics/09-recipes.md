@@ -89,3 +89,24 @@ return { side: cv.compare([img, blurred]).look("side"), diff: cv.compare([img, b
 ## Not yet
 
 The document layer (history, `doc.apply`, `doc.propose`, undo, export, recipes over many files) is not available. Describe the edit you would apply and show it as looks.
+
+## Open scientific data
+
+Linear data (float TIFF, `.npy`, a DNG raw scan, density stored as plain codes) opens with `encoding: "linear"` (implied for float TIFF, `.npy` and DNG); then linear and encoded spaces coincide and every number is in file units. A window of a large scan keeps the scan's coordinates.
+
+```js
+const v = cv.open("planted-linear.tif", { encoding: "linear", as: "v" })
+const s = await v.stats()
+return { encoding: (await v).encoding, p01: s.p01, p99: s.p99, look: v.levels({ black: s.p01, white: s.p99 }).look("stretched") }
+```
+
+## Neutral or coloured?
+
+`img.chroma({ relative: true })` is 0 where the channels agree. Measure it inside a spot to tell neutral dust from coloured grain, and look at it in false colour.
+
+```js
+const spots = img.detect.specks().where({ score: { gte: 0.5 } }).top(5)
+const c = img.chroma({ relative: true })
+return { spotChroma: await c.stats({ mask: spots }).pick("meanL"), look: c.colormap("viridis").look("chroma") }
+```
+

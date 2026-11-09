@@ -99,7 +99,7 @@ func sourceOps() []graph.OpDef {
 			Name: "open", On: graph.KindNone, Returns: graph.KindImage, Result: sourceEnc,
 			Args: []graph.ArgSpec{
 				{Name: "path", Type: "string", Positional: true, Doc: "image file: " + buffer.SupportedFormats},
-				{Name: "encoding", Type: "enum:srgb,linear", Optional: true,
+				{Name: "encoding", Type: "enum:srgb,linear", Optional: true, ValueSynonyms: graph.EncodingValueSynonyms,
 					Doc: "how to read the file's values: srgb (photographs) or linear (scientific data, raw scans, density maps); omit it to use what the file says"},
 				{Name: "box", Type: "box", Static: true, Optional: true,
 					Doc: "read only this window [x, y, w, h] of the file (file px); the image keeps the file's coordinates"},

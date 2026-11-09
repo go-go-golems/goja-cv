@@ -13,7 +13,7 @@ return { meanL: await fixed.stats().meanL, before: img.look("before"), after: fi
 ```
 
 ```yaml
-meanL: 0.27479
+meanL: 0.39417
 before: '[look 1: before (256×192, 1 image px = 1.0 doc px)]'
 after: '[look 2: after (256×192, 1 image px = 1.0 doc px)]'
 ```
@@ -32,9 +32,13 @@ return { meanL: s.meanL }
 
 `look 3: specks (1568×1045, 1 image px = 4.0 doc px)`: the number (also burned into the top-left corner, so you can refer to it later), the label, the size, and the scale. Multiply coordinates read off the look by the doc-px factor to get document coordinates for `mask.box`, `mask.flood` and friends.
 
+## What a look shows
+
+A look shows **encoded** values: an sRGB photo looks as usual, a linear-encoded image (`cv.open(path, { encoding: "linear" })`, `.npy`, DNG) shows its stored values directly, a mask shows its weight (0.5 is mid-grey), and a derived image (`chroma`, `toLab`) shows its value as grey level. `img.encode("srgb")` makes a linear photograph look normal. See `cv.docs.read("encodings-and-spaces")`.
+
 ## What can be looked at
 
-- Image and Mask nodes (masks and gray images arrive as PNG, colour as JPEG);
+- Image and Mask nodes (masks and gray images arrive as PNG, colour as JPEG); one-channel maps in false colour with `colormap("viridis")`;
 - `histogram()` Value nodes render as a bar chart;
 - Regions: draw them with `img.overlay(regions, { labels: "id" })`;
 - several images side by side: `cv.compare([a, b], { mode: "side" | "split" | "diff" })`.

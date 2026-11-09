@@ -486,7 +486,9 @@ func (b *binder) check(s *ArgSpec, typ string, v any, where string) (any, error)
 			}
 		}
 		e := Errorf(EArgType, "%s = %q is not one of %s.", where, str, quoteList(allowed)).WithValid(allowed)
-		if sug := closest(str, allowed); sug != "" {
+		if sug, ok := s.ValueSynonyms[str]; ok {
+			e.Hint = fmt.Sprintf("Did you mean %q?", sug)
+		} else if sug := closest(str, allowed); sug != "" {
 			e.Hint = fmt.Sprintf("Did you mean %q?", sug)
 		}
 		return nil, e
@@ -777,7 +779,9 @@ var OptionSynonyms = map[string][]string{
 	"low": {"black", "below"}, "lo": {"black", "below"}, "blackPoint": {"black"}, "shadows": {"black", "below"},
 	"high": {"white", "above"}, "hi": {"white", "above"}, "whitePoint": {"white"}, "highlights": {"white", "above"},
 	"midtones": {"gamma"}, "mid": {"gamma"}, "quantiles": {"percentiles"}, "percentile": {"percentiles"},
-	"region": {"mask"}, "regions": {"mask"}, "selection": {"mask"}, "rect": {"box"}, "rectangle": {"box"}, "roi": {"box", "mask"},
+	"region": {"mask", "box"}, "regions": {"mask"}, "selection": {"mask"}, "rect": {"box"}, "rectangle": {"box"}, "roi": {"box", "mask"},
+	"window": {"box"}, "crop": {"box"}, "colorSpace": {"encoding"}, "colorspace": {"encoding"}, "transfer": {"encoding"},
+	"gamma": {"encoding"}, "workingSpace": {"space"}, "working_space": {"space"}, "offset": {"origin"},
 	"amount": {"amount", "ev", "opacity"}, "stops": {"ev"}, "exposure": {"ev"},
 }
 
@@ -933,7 +937,12 @@ func bind(op *OpDef, hasReceiver bool, raw []any, trusted map[string]any, kindOf
 			return nil, Errorf(EArgType, "%s takes at most %d positional argument(s); got %d.", call, len(op.Inputs)+len(positional), len(raw)).
 				WithHint(signatureHint(op))
 		}
-		fix := func(sug string) string { return fmt.Sprintf("%s({ %s: %s })", call, sug, fmtFixValue(opts, sug)) }
+		fix := func(sug string) string {
+			if call == "cv.open" {
+				return fmt.Sprintf("cv.open(path, { %s: %s })", sug, fmtFixValue(opts, sug))
+			}
+			return fmt.Sprintf("%s({ %s: %s })", call, sug, fmtFixValue(opts, sug))
+		}
 		if err := checkKeys(op.Args, opts, call, fix); err != nil {
 			return nil, err
 		}
