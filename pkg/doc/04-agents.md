@@ -30,7 +30,7 @@ designed to be reachable through that one tool, because many clients only show t
 | resource | `cv://guide/<slug>` | these guidebook pages |
 | prompt | `cv-agent` | the instructions followed by the full reference |
 
-The server **instructions** (sent at initialize, about 2.7 KB) state the eval contract and the most used calls,
+The server **instructions** (sent at initialize, under 4 KB) state the eval contract and the most used calls,
 and point to `cv.docs` and `cv.help`. They are deliberately short: some clients truncate or hide them.
 
 ## The eval contract
@@ -41,9 +41,13 @@ and point to `cv.docs` and `cv.help`. They are deliberately short: some clients 
   `context:` block (open images with size and bit depth, `mem` keys).
 - `const`/`let` do not survive between calls; `mem` is a plain object that does.
 - `img` is the open image (`img = cv.open(path)` rebinds it).
-- `await` evaluates: measurements at full resolution; an awaited Image is its summary (nothing computed).
+- `await` evaluates: measurements at full resolution; an awaited Image is its summary (nothing computed);
+  awaited regions are a plain array of items, filtered and sorted with JavaScript and passed back to ops.
+- Options are literal values: a measurement that feeds an option is awaited first.
 - Images come back as **looks** (`node.look()`): every look created in an eval is delivered, at most four (a
   `LOOKS` warning names the others).
+- Files: `await cv.save(path, x)` writes in the workspace (`--root`); `cv.open` reads it and the `--read`
+  directories. Every save of an eval completes before it returns.
 - Errors are YAML with a literal `fix:`; the agent should apply it.
 
 ## Docs from inside eval

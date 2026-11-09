@@ -44,8 +44,8 @@ func Shown(n *Node) *Node {
 	return n
 }
 
-// Label is the short name of a node used in paths: "open(scan.tif)",
-// "P.slider(ev)", or the op name.
+// Label is the short name of a node used in paths: "open(scan.tif)" or
+// the op name.
 func Label(n *Node) string {
 	n = Shown(n)
 	if n.Op.On == KindNone {

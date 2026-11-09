@@ -24,7 +24,7 @@ var geometryFields = fixedFields(graph.GeometryFields)
 
 // speckFields is the schema of detect.specks.
 var speckFields = graph.WithFields(graph.GeometryFields,
-	numField("contrast", graph.Level, "peak contrast against the local background, levels of the working space"),
+	numField("contrast", graph.Level, "peak contrast against the local background, in levels of the image's space"),
 	numField("localNoise", graph.Level, "noise (σ) of the background around the speck"),
 	numField("sharpness", graph.Unitless, "how compact the peak is (soft round blobs such as stars are low)"),
 	numField("score", graph.Unitless, "dust likelihood in [0, 1]; ≥ 0.5 counts as dust"),
@@ -62,7 +62,7 @@ func statsFields(a graph.Args) []graph.FieldSpec {
 var histogramFields = []graph.FieldSpec{
 	numField("bins", graph.Unitless, "number of bins"),
 	strField("channel", "L, r, g or b"),
-	strField("space", "working space of the levels"),
+	strField("space", "the space of the levels (encoded or linear)"),
 	numField("under", graph.Unitless, "pixels below 0"),
 	numField("over", graph.Unitless, "pixels above 1"),
 	numField("total", graph.Unitless, "pixels counted"),

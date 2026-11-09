@@ -151,7 +151,7 @@ var (
 // Types: "number", "string", "bool", "enum:a,b,c", "number[]", "string[]",
 // "box" ([x, y, w, h] or an object with x, y, w, h), "point" ([x, y] or an
 // object with cx, cy), "data" (a node or plain data, kept as given: the
-// argument of cv.json and cv.csv), unions such as "point|number", "object"
+// x of cv.save), unions such as "point|number", "object"
 // (with Options as the allowed keys), "any", and node types such as
 // "Mask" (an Image with one channel), "Regions|Mask" or "Image[]": a node
 // argument is its own input of

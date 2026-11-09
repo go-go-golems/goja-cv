@@ -267,7 +267,7 @@ func (b *binding) evaluate(c goja.FunctionCall) goja.Value {
 		if callCtx.Err() != nil {
 			settleCtx = svc.Lifetime() // still reject, so awaiting code sees E_CANCELLED
 		}
-		_ = svc.PostWithCustomContext(settleCtx, "cv.evaluate.settle", func(_ context.Context, vm *goja.Runtime) {
+		_ = svc.PostWithCustomContext(settleCtx, "cv.await.settle", func(_ context.Context, vm *goja.Runtime) {
 			if err != nil {
 				_ = reject(errorObject(vm, err))
 				return

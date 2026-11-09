@@ -12,7 +12,7 @@ func speckArgs(maxArea, minContrast float64) []graph.ArgSpec {
 		{Name: "maxArea", Type: "number", Unit: graph.DocPx2, Default: maxArea, Min: graph.F(1), Max: graph.F(1e6), Usual: [2]float64{4, 5000},
 			Doc: "largest speck in doc px²"},
 		{Name: "minContrast", Type: "number", Default: minContrast, Min: graph.F(0.001), Max: graph.F(1), Usual: [2]float64{0.01, 0.3},
-			Doc: "smallest peak contrast against the local background, in levels of the working space (encoded by default)"},
+			Doc: "smallest peak contrast against the local background, in levels of the image's space"},
 		{Name: "polarity", Type: "enum:both,dark,bright", Default: "both", Doc: "dark specks (dust on a positive), bright ones, or both"},
 		analysisScaleArg,
 	}

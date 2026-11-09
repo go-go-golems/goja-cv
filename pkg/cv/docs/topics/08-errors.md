@@ -50,7 +50,9 @@ return await img.mask.luminance({ min: 0.99 }).coverage()   // hint: Did you mea
 
 - `RANGE line N: …` an argument is outside its usual range (it still runs). The same warning from a loop is listed once with `(×N)`.
 - `UNUSED_NODE line N: …` a node was built and discarded (see `cv.docs.read("nodes-and-evaluation")`).
-- `LOOKS: …` / `DATA: …` more than 4 looks (or 4 data items) in one eval: the extra ones, named by label, were not delivered. Split the work over several calls, or return fewer (one `cv.sheet` of many crops, one table with every row).
+- `LOOKS line N: …` more than 4 looks in one eval: the extra ones, named by line, were not rendered. Split the work over several calls, or return one `cv.sheet` of many crops.
+- `ITEMS line N: …` objects that look like region items lost their link (a `map` that built new objects); they are used as plain boxes.
+- `UNHANDLED: …` a promise was rejected and nothing handled it (an unawaited call that failed); await it or add `.catch`. An unawaited `cv.save` that fails fails the eval instead.
 
 ```js warns=RANGE
 const loud = img.exposure(4)
@@ -59,10 +61,10 @@ return (await loud.stats()).meanL
 
 ## Help
 
-`cv.help(name)` never throws, so you can ask for several names in one eval. It takes an op (`"levels"`, `"detect.specks"`: arguments with units, defaults, usual ranges and limits), a kind (`"Regions"`: its methods with one line each), `Kind.method` (`"Regions.filter"`) or a cv function (`"evaluate"`, `"compare"`, `"docs"`, `"show"`). An unknown name returns `{ found: false, name, didYouMean, hint }`.
+`cv.help(name)` never throws, so you can ask for several names in one eval. It takes an op (`"levels"`, `"detect.specks"`: arguments with units, defaults, usual ranges and limits), a kind (`"Image"`: its methods with one line each), `Kind.method` (`"Image.overlay"`), a concept (`"mask"`, `"regions"`, `"space"`) or a cv function (`"save"`, `"compare"`, `"docs"`, `"look"`). An unknown name returns `{ found: false, name, didYouMean, hint }`.
 
 ```js
-const names = ["detect.specks", "Regions", "Regions.filter", "evaluate", "mask.stats"]
+const names = ["detect.specks", "regions", "Regions.filter", "save", "mask.stats"]
 return names.map(n => {
   const h = cv.help(n)
   return h.found === false ? { n, didYouMean: h.didYouMean, hint: h.hint } : { n, keys: Object.keys(h) }

@@ -708,7 +708,7 @@ func t2noun(t string) string {
 // check validates and canonicalizes v against type typ of spec s. A node is
 // accepted only for an argument of node type (it becomes an input).
 func (b *binder) check(s *ArgSpec, typ string, v any, where string) (any, error) {
-	if typ == "data" { // a node or plain data, kept as given (cv.json, cv.csv)
+	if typ == "data" { // a node or plain data, kept as given (cv.save's x)
 		return v, nil
 	}
 	if takesItems(typ) {
