@@ -602,3 +602,14 @@ I spot-checked every P2 marked "fixed" against revision 2. Each one is addressed
 The only qualification is P2-8. The stamping design that fixes it introduces N5.
 
 **Correction to my own finding P2-10.** `NewRegion` does exist, as the method `(*RegionsValue).NewRegion` at `pkg/cv/graph/regions.go:67`. My grep pattern `func NewRegion` did not match methods. The Disposition note is right, and the corresponding row of the verification table above is wrong.
+
+### Disposition of the re-check (revision 3 of the guide)
+
+| finding | disposition | where |
+|---|---|---|
+| P1-1 (remaining gaps) | fixed through N3 and N4 | §7.5 |
+| N1 | fixed: the two measured causes are stated; rule: `levels` and mask looks change, others ≤ 1 code on ≤ 1 % of samples, identical speck counts; then regenerate with `-update` in one commit | §13.3, §12 Phase 3 step 4 |
+| N2 | fixed: test-only source op `graphtest.RegisterSource` (hidden `enc`, `frame`, `fill`) in Phase 2; `open` nodes are `enc srgb · space linear` until Phase 4 | §12 Phases 2 and 3 |
+| N3 | fixed: `Gray` returns the positions of luminance inputs (`refine` → `[1]`); test with a colour guide | §7.5 step 2, §9.2, §12 Phase 3 |
+| N4 | fixed: `meanL` of `detect.specks` listed as a change on sRGB images, with its consequence for `where` thresholds | §7.5 defaults and text, §12 after-state, §13.3 |
+| N5 | fixed: the evaluator stamps a shallow copy when the returned value is an input's (identity short-circuit, 1-channel `toGray`, macro nodes); macro-node statics are the last input's, computed in `internNode` | §7.2, §7.5 table, §7.8 |

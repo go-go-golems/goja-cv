@@ -62,6 +62,7 @@ WhenToUse: "Read before touching buffer IO, op spaces, the open op, channels or 
 |---|---|---|
 | 2026-11-09 | 1 | First version (commit 7b3bb16). |
 | 2026-11-09 | 2 | Revised from the review read (`reference/03-review-read-findings.md`, disposition table at its end). Foundations moved to a shared chapter (`reference/05-foundations-goja-cv-for-the-gcv-guides.md`). `perceptual` dropped: two spaces. Luminance is computed from linear light (decision record). Node statics are computed in `internNode`; placeholders inherit them. Phases reordered so every phase ends green, with a golden-look harness in Phase 0. TIFF primer and one TIFF decoder with its own decompression. `box`/`point` argument types, macro nodes, saved-file metadata (`Info.Origin`, PNG `tEXt`), and five new decision records. |
+| 2026-11-09 | 3 | Revised from the re-check (section "Re-check (revision 2)" of the findings, rows N1–N5 in the disposition). Golden-look tolerance and regeneration rule; a test-only source op so Phase 2 and 3 tests have linear and non-zero-origin inputs; the grey-input rule covers every luminance input (`refine`); `detect.specks`' `meanL` listed as a change; the evaluator stamps copies, never another node's value; macro nodes take their expansion's statics. |
 
 ## How to read this guide
 
@@ -566,6 +567,12 @@ Evaluated values carry the same statics so that `Run` functions can read their i
 `Run` never sets them: it returns `graph.NewImage(buf)` (or `NewMask(buf)`), and the evaluator stamps `Frame` and
 `Enc` from the node after `Run` returns. `RegionsValue` swaps `DocW, DocH` for `Frame` the same way.
 
+The evaluator stamps only values that `Run` created. Several paths return a value that belongs to another node: the
+`Identity` short-circuit returns its receiver's value (`pkg/cv/graph/eval.go:291-293`), `toGray` returns its input for
+a 1-channel image (`pkg/cv/ops/tone.go:81-83`), and a macro node returns its expansion's value. When the returned
+value is one of the inputs' values, the evaluator stamps a shallow copy (a new `ImageValue` sharing the same `Buf`),
+so no cached value of another node is ever rewritten.
+
 ### 7.3 Decoders
 
 #### A TIFF primer
@@ -751,7 +758,7 @@ type OpDef struct {
     // … Name, On, Inputs, Args, Returns, Identity, Halo, Global, NoCache, Lazy, Fields, Validate, AnalysisScale, Builders, Run, Doc, See …
     Space    SpaceRule
     Result   ResultEnc                                   // nil = KeepEnc
-    Gray     func(args Args) bool                        // the op reads one luminance plane (§3.5)
+    Gray     func(args Args) []int                       // positions of the Image inputs the op reads as luminance (§3.5)
     DocFrame func(args Args, inputs []*Node) Frame       // the result's frame; nil = the first input with a non-empty frame
     Expand   ExpandFunc                                  // macros (§7.8); exactly one of Run and Expand is set
     Internal bool                                        // not callable from JavaScript, not listed in help (convert)
@@ -774,9 +781,11 @@ graph.ArgSpec{Name: "space", Type: "enum:linear,encoded", Optional: true, Static
 
 1. **Space.** `s := args.space` if given, else `op.Space.Default`. When `s` is not `SpaceNone`, `s` is stored in
    the canonical args, so the hash and the cache signature include it.
-2. **Grey input.** If `op.Gray(args)` is true and the receiver has three channels, the receiver is replaced by
-   `toGray(receiver, "rec709")` interned in `linear` space (§3.5). Its result is linear luminance with the
-   receiver's encoding.
+2. **Grey input.** For each position that `op.Gray(args)` returns, a 3-channel Image input at that position is
+   replaced by `toGray(input, "rec709")` interned in `linear` space (§3.5); its result is linear luminance with the
+   input's encoding. Positions count over the op's inputs in order (receiver, `Inputs`, kind-typed arguments):
+   `mask.luminance` and `detect.specks` return `[0]` (the receiver), `refine` returns `[1]` (its guide image, an
+   `Inputs` entry, `pkg/cv/ops/mask.go:353`), and `histogram` returns `[0]` only for channel `"L"`.
 3. **Conversions.** If `s` is not `SpaceNone`, every Image input that is not in `s` and for which
    `!Identity(input.Enc, input.Space, s)` is replaced by `convert(input, s)` (interned, so shared). The Image
    inputs come from three places, all covered: the receiver, the explicit `Inputs` (`bd.inputs`), and lifted
@@ -798,6 +807,7 @@ today at `node.go:131-140`); `Enc` and `Space` from `op.Result` and `s`:
 | Image, `DisplayEnc` | srgb | encoded |
 | Mask, Regions | none | none |
 | Value | the measured image's (first Image input's) | `s` when the op reports levels, else none; `field` nodes inherit their receiver's |
+| any, macro node (§7.8) | its last input's (the expansion's output) | its last input's |
 
 Because statics depend only on the hash inputs, a hash hit returns a node with exactly the statics a new node would
 get. Nothing sets fields on a node after it is published, so `Node` stays immutable (`node.go:12`).
@@ -825,7 +835,7 @@ Each default answers one of the two questions of §3.4. For sRGB images, every o
 | `histogram` | encoded | visible | bins over the scale a look shows; channel `"L"` uses the grey-input rule |
 | `mask.luminance`, `refine` | encoded | visible | grey-input rule |
 | `mask.color`, `mask.flood` | encoded | visible | hue and tolerance of displayed colour |
-| `detect.specks`, `check.dust` | encoded | visible | grey-input rule; `MeanL` is reported in the same space |
+| `detect.specks`, `check.dust` | encoded | visible | grey-input rule; `meanL` is reported in the same space, which changes it on sRGB images (below) |
 | `overlay` colours | encoded | visible | colours are display values |
 
 `levels` is the one visible change on sRGB images: the remap now happens in linear space and the gamma is applied
@@ -841,8 +851,10 @@ Measured over v ∈ (0, w], in 8-bit codes:
 | 0.5 | 4.5 | 2.5 |
 | 0.3 | 8.5 | 4.9 |
 
-With `black > 0` shadows come out slightly darker. Mask looks also change (§3.6). These are the only expected
-differences in the golden-look diff (§13.3).
+With `black > 0` shadows come out slightly darker. Two other changes are expected. Mask looks change (§3.6). The
+`meanL` field of `detect.specks` items, linear luminance today (`pkg/cv/kernels/specks.go:175`), becomes
+sRGB_encode of that luminance on sRGB images, because detection runs in encoded space and reports its numbers there;
+`specks.where({ meanL: … })` thresholds move accordingly. Golden-look tolerances are in §13.3.
 
 **Cost.** The source is linear, so on an sRGB file every encoded-default op, and every look of a linear-space node,
 needs one `convert(→ encoded)` of its input, cached per scale: 12 MB for a 1024² RGB tile at scale 1. This is what
@@ -941,7 +953,8 @@ how many nodes `Expand` returns:
 - **One node** (highpass, dog, view): the builder interns a **macro node** whose op is the macro's own `OpDef`,
   whose inputs are the receiver and then the expansion's output, and whose args are the macro's canonical args.
   Evaluating a macro node evaluates its last input and returns that value, with no compute and no separate cache
-  entry. The macro node gives `img.highpass(3)` its own identity and label (GCV-002's captions show `highpass(3)`),
+  entry. Its statics are its last input's, computed in `internNode` (§7.5), so a derived expansion (highpass) gives
+  a derived macro node whatever the macro's own `Result` says. The macro node gives `img.highpass(3)` its own identity and label (GCV-002's captions show `highpass(3)`),
   while the expansion's nodes are exactly the nodes of the hand-written chain and are shared with it through
   hash-consing. `explain()` shows the macro node with its expansion indented below it.
 - **Several nodes** (split): no macro node; the call returns the nodes.
@@ -1064,9 +1077,9 @@ The key points:
   vs 0.471.
 - **Options considered:** (a) accept luma in encoded space and list the change; (b) compute Y from linear channels
   and express it in the op's space, through a graph rule.
-- **Decision:** (b), with the `Gray` flag: the builder feeds such ops `toGray(receiver, "rec709")` in linear space,
+- **Decision:** (b), with the `Gray` rule: the builder feeds each luminance input of such ops `toGray(input, "rec709")` in linear space,
   then converts to the op's space.
-- **Rationale:** (b) is photometrically correct, keeps today's numbers for sRGB images exactly, and keeps kernels
+- **Rationale:** (b) is photometrically correct, keeps today's luminance numbers for sRGB images (up to the 1-code flips of §13.3), and keeps kernels
   space-agnostic because the graph does the work.
 - **Consequences:** Luminance ops on colour images get one extra cached node; `toGray` is part of their graph and
   visible in `explain()`.
@@ -1231,8 +1244,8 @@ Intern(op, receiver, raw):
       if len(nodes) == 1: return internNode(op, args, [receiver, nodes[0]])   // macro node
       return nodes
   inputs := [receiver] + explicit inputs + lifted inputs
-  if op.Gray != nil and op.Gray(args) and receiver has 3 channels:
-      inputs[0] = Intern(toGray, inputs[0], ["rec709", {space: linear}])
+  for i in op.Gray(args) where inputs[i] has 3 channels:
+      inputs[i] = Intern(toGray, inputs[i], ["rec709", {space: linear}])
   if s != none:
       for each Image input i (including Image[] elements):
           if i.Space != s and !Identity(i.Enc, i.Space, s): replace i by Intern(convert, i, [s])
@@ -1374,10 +1387,14 @@ After Phase 0, behaviour is unchanged and the goldens record it.
 After Phase 1, nothing uses the new types yet.
 
 **Phase 2 — frames and coordinate types.**
-1. Write tests: `Frame` replaces sizes with no behaviour change (the goldens pass); `box` and `point` accept arrays
-   and the object forms and refuse `{ x, y }` as a point; `Args.XY` shifts by a non-zero origin.
-2. Replace `DocW/DocH` with `Frame` on nodes, values and Regions (`grep -rn DocW pkg cmd` lists the sites);
-   `DocSize` becomes `DocFrame`; values are stamped by the evaluator; add `box`/`point` types and switch
+1. Add a test-only source op, `graphtest.RegisterSource(reg)` in a new package `pkg/cv/graph/graphtest`, with hidden
+   `enc`, `frame` and `fill` arguments that produce a fixed buffer with any encoding and frame origin. Phases 2 and 3
+   use it for linear-encoded and non-zero-origin inputs, which `open` cannot produce before Phase 4 (`encoding`,
+   `box`, `origin`) and Phase 5 (`encode`).
+2. Write tests: `Frame` replaces sizes with no behaviour change (the goldens pass); `box` and `point` accept arrays
+   and the object forms and refuse `{ x, y }` as a point; `Args.XY` shifts by a non-zero origin (test source).
+3. Replace `DocW/DocH` with `Frame` on nodes, values and Regions (`grep -rn DocW pkg cmd` lists the sites);
+   `DocSize` becomes `DocFrame`; values are stamped by the evaluator (copies for returned inputs); add `box`/`point` types and switch
    `stats.box`, `mask.box`, `mask.ellipse`, `mask.flood` and `mask.gradient`'s point form to them.
 
 After Phase 2, every frame has origin (0, 0) and all goldens pass unchanged.
@@ -1385,19 +1402,24 @@ After Phase 2, every frame has origin (0, 0) and all goldens pass unchanged.
 **Phase 3 — spaces in the graph.**
 1. Write `pkg/cv/graph/space_test.go`: defaults per op (table-driven over §7.5); explicit `{ space }` changes the
    hash; a conversion node is inserted once and shared by two consumers (`Evaluator.Runs`); no conversion for
-   linear-encoded inputs; the grey-input rule gives today's numbers for pure red; `DerivedEnc` reinterprets;
+   linear-encoded inputs (test source); the grey-input rule gives today's numbers for pure red, for `mask.luminance`
+   and for `refine` with a colour guide; `DerivedEnc` reinterprets; an identity short-circuit and a macro node do not
+   change their input's cached value's statics;
    `within` lambdas build the same inner graph as direct calls on sRGB and linear images; `compare([a, b])` with
    inputs in different spaces converts each; `SPACE` fires across spaces on sRGB and not on linear-encoded data;
    `ENCODING` fires on mixed encodings.
 2. Replace `OpDef.Space string` with `SpaceRule`; add `Result`, `Gray`, `Internal`; `Register` appends the `space`
    option; `Intern` resolves spaces and inserts `toGray`/`convert`; `internNode` computes `Enc`/`Space`; the
-   placeholder copies statics; the `Level` unit and the warnings.
+   placeholder copies statics; the `Level` unit and the warnings. Until Phase 4, `open` nodes are `enc srgb · space
+   linear`, which is what every file means today.
 3. Port the kernels in §4.3: remove the private conversions; `PerceptualLuminance` is deleted (the grey-input rule
    replaces it); `DetectSpecks` reports `MeanL` in its working space; enable the guard test.
 4. `look.Render` renders encoded values through `convert` and `Quantize`; `WriteFile` writes `convert(→ encoded)`
-   values for sRGB images; delete `ToImage`. Regenerate goldens and check that only `levels` and mask looks differ.
+   values for sRGB images; delete `ToImage`. Run the golden test with the tolerance rule of §13.3, inspect the
+   reported differences, then regenerate the goldens with `-update` in one commit.
 
-After Phase 3, sRGB images behave as before except `levels` and mask display, and every op accepts `{ space }`.
+After Phase 3, sRGB images behave as before except `levels`, mask display and `detect.specks`' `meanL`, up to the
+1-code flips of §13.3, and every op accepts `{ space }`.
 
 **Phase 4 — decoders and opening.**
 1. Extend `internal/testimage` with writers for the planted scan's float buffer as 16-bit linear TIFF, float32 TIFF,
@@ -1459,9 +1481,22 @@ into the same temporary directory, and the docs refer to them by relative names 
 
 ### 13.3 Golden looks
 
-The Phase 0 golden test is the regression guard for "sRGB images look as before". After Phase 3 its expected
-differences are exactly the `levels` looks and the mask looks; any other difference is a bug in the defaults table
-or the grey-input rule.
+The Phase 0 golden test is the regression guard for "sRGB images look as before". It cannot stay byte-identical
+across Phase 3, for two measured reasons: display used to round sRGB_encode(v) in float64, while the new path stores
+encoded values as float32 and then quantizes, which flips 22 of 3 million 8-bit codes; and kernels used the
+interpolated LUT (error up to 2e-5, `color.go:58-60`) where `Convert` uses the exact functions, which flips about
+0.26 % of codes in `contrast`, `compare` and histogram bins and can move borderline specks.
+
+The rule is therefore:
+
+- `levels` looks and mask looks are expected to change; they are inspected by eye and regenerated.
+- Every other look may differ by at most 1 code on at most 1 % of its samples; the test reports the largest
+  difference and the fraction.
+- `detect.specks` overlays must have the same number of specks; their `meanL` values are expected to change (§7.5).
+- Anything beyond that is a bug in the defaults table or the grey-input rule.
+
+After the check passes, the goldens are regenerated with `-update` in one commit, and from then on the test is
+byte-exact again.
 
 ### 13.4 Real data (gated)
 
