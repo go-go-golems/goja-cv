@@ -2,6 +2,8 @@ package cvsession_test
 
 import (
 	"context"
+	"fmt"
+	"sync"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -288,4 +290,33 @@ func TestCrossKindErrorsHaveALiteralFixAndGrammar(t *testing.T) {
 	}
 	// derived fields that share a name with a method of another kind still work
 	mustContain(t, text(eval(t, app, sid, `return await img.check.dust().count`)), "0")
+}
+
+// TestConcurrentEvalsKeepTheirOwnSource: agents (pi) issue parallel tool
+// calls; each eval's error must quote its own line, not another eval's.
+func TestConcurrentEvalsKeepTheirOwnSource(t *testing.T) {
+	app, sid := newApp(t, cvsession.Options{Image: tiffPath})
+	const n = 12
+	var wg sync.WaitGroup
+	outs := make([]string, n)
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			code := fmt.Sprintf("const x%d = await img.stats()\nreturn x%d.nope%d.y", i, i, i)
+			resp, err := app.Evaluate(context.Background(), sid, code)
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			outs[i] = text(resp)
+		}(i)
+	}
+	wg.Wait()
+	for i, out := range outs {
+		want := fmt.Sprintf("where: 'line 2: return x%d.nope%d.y'", i, i)
+		if !strings.Contains(out, want) {
+			t.Fatalf("eval %d: want %q in\n%s", i, want, out)
+		}
+	}
 }

@@ -152,8 +152,9 @@ func NewRuntimeFactory(opts Options) (*engine.RuntimeFactory, error) {
 // async function body); everything else is replapi's.
 type App struct {
 	*replapi.App
-	opts   Options
-	states sync.Map // session id → *state
+	opts      Options
+	states    sync.Map // session id → *state
+	evalLocks sync.Map // session id → *sync.Mutex
 }
 
 // New builds a cv session app owned by ctx.
@@ -198,7 +199,15 @@ func Wrap(body string) string { return WrapPrefix + body + WrapSuffix }
 
 // Evaluate runs agent code (the body of an async function) in session
 // sessionID.
+//
+// Evaluations of one session are serialized here (replapi serializes them
+// too, but in lock order, not call order): the agent code handed to the
+// runtime state must belong to the eval that runs next, or line numbers and
+// source text in errors and warnings would come from a concurrent eval.
 func (a *App) Evaluate(ctx context.Context, sessionID string, body string) (*replsession.EvaluateResponse, error) {
+	mu, _ := a.evalLocks.LoadOrStore(sessionID, &sync.Mutex{})
+	mu.(*sync.Mutex).Lock()
+	defer mu.(*sync.Mutex).Unlock()
 	if st, err := a.stateFor(ctx, sessionID); err == nil {
 		st.setPending(body)
 	}
