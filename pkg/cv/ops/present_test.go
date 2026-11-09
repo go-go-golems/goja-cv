@@ -57,6 +57,15 @@ func TestOverlayAndCompare(t *testing.T) {
 	if half := evalValue(t, e, side, 0.5).(*graph.ImageValue).Buf; half.W != 258 || half.H != 96 {
 		t.Fatalf("side at 0.5: %v", half)
 	}
+	// The same image twice: the binder lifts it once, the layout still has two
+	// panels (review of PR #3).
+	twice := call(t, e, "compare", 0, []any{graph.NodeArg{ID: img.ID}, graph.NodeArg{ID: img.ID}})
+	if twice.Frame.W != 2*256+compareGap {
+		t.Fatalf("compare([img, img]) frame %d px wide", twice.Frame.W)
+	}
+	if tb := evalValue(t, e, twice, 1).(*graph.ImageValue).Buf; tb.W != 516 || tb.Pix[260] != src.Pix[0] {
+		t.Fatalf("compare([img, img]): %d px wide, second panel %g want %g", tb.W, tb.Pix[260], src.Pix[0])
+	}
 	split := evalValue(t, e, call(t, e, "compare", 0, pair, map[string]any{"mode": "split"}), 1).(*graph.ImageValue).Buf
 	if split.W != 256 || split.Pix[10] != src.Pix[10] || split.Pix[200] != hb.Pix[200] {
 		t.Fatal("split")
