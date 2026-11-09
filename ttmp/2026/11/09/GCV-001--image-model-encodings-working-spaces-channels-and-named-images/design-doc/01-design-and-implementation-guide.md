@@ -1627,3 +1627,10 @@ Recorded while implementing on branch `task/gcv-001-image-model` (details and re
     refused; a name is free when the table defined it or `globalThis` has no such property. `checkName` runs before
     the file is opened, so a bad name fails fast. The MCP `open` tool without `as` binds `img` (as before). The context
     block names a float format `float32 NPY` and a window `file [x,y,w,h] (16-bit DNG, linear)`.
+18. **Agent harness** (§13.5): besides `IMAGE` and `QUESTIONS`, `run.sh` takes `IMAGE_EXTRA` (more files copied into
+    the session root) and substitutes `$IMG_DIR` in the question file, so question 2 can name the reference file by
+    path. The v tile is made from the real tile by this ticket's `scripts/01-make-v-tile.py` (which also prints the
+    expected answers); the run directories keep only `calls.txt`, `goja-cv.commit`, `session.jsonl` and
+    `transcript.html`, like the earlier runs.
+19. **Extra legacy cleanup**: `buffer.Pyramid.DocW/DocH` are renamed `FullW/FullH` (sizes of the full-resolution
+    level, not doc sizes); usage lines and `goja-cv ops` omit the `space` option (deviation 7).

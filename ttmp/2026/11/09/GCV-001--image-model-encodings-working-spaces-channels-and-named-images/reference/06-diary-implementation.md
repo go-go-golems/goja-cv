@@ -420,3 +420,63 @@ with its file, frame, format and encoding. Names stay in the session layer; the 
 
 ### Technical details
 - Context example: `images: img = gradient-64x48-16bit.tif (64×48, 16-bit TIFF, srgb), ref = gradient-64x48-8bit.png (64×48, 8-bit PNG, srgb), scan = raw.dng [10,20,64,48] (16-bit DNG, linear), (unnamed) tile.npy (256×192, float32 NPY, linear)`.
+
+## Step 8: Phase 7 - documentation, help, synonyms, real data, agent harness
+
+Phase 7 makes the new model reachable for agents: a docs topic on encodings and spaces, the frames/names/looks
+changes in the other topics and the guidebook, help entries for the new concepts, synonyms for the words agents use,
+and one line in the MCP instructions. It also adds the gated real-data tests (run locally against the real tile and
+raw0027.dng) and the pi-harness overrides and question file in the dust-scanning repository.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 1)
+
+**Assistant interpretation:** Implement Phase 7: §10/§11 docs and help, the §13.4 gated tests, and the §13.5 harness edits with two runs per build.
+
+**Inferred user intent:** An agent can discover and use encodings, spaces, frames and names without reading code, and the colleague's real files are covered by tests.
+
+**Commit (code):** 29de785 - "GCV-001 Phase 7: docs, help, synonyms, MCP instructions; gated real-data tests"; follow-ups ba9c8ff (cv.kinds from graph.Kinds, legacy item 11), 91a14c0 (cv.help() sources), fe87334 (gosec annotations), a9ea5d6 (ENCODING names source files)
+
+### What I did
+- `pkg/cv/docs/topics/10-encodings-and-spaces.md` (new; runs `js` and `js warns=SPACE` blocks against `planted-linear.tif` and `planted.npy`, which the docs harness now writes next to the planted scan, with the session's BaseDir set to that directory).
+- `02-units-and-scales.md`: "Frames" and a short "Working spaces" pointer replace "Linear and perceptual"; `01-getting-started.md`: names in the globals table, SPACE and the context line; `06-looks.md`: "What a look shows", levels example `meanL: 0.39417` (was 0.27479; levels now remaps in linear space); `05-masks-and-regions.md`: "Neutral or coloured?"; `09-recipes.md`: "Open scientific data" and "Neutral or coloured?"; `04-lambdas.md` wording.
+- Guidebook `pkg/doc/02-concepts.md` (Image row, "Encodings and working spaces"), `01-what-is-goja-cv.md`; MCP `Instructions` (the guide's one line on spaces, cv.open options) and the reference's globals; `cv.help()` sources.
+- `cv.help` entries `encoding`, `space`, `frame`, `names`; option synonyms (colorSpace/colorspace/transfer/gamma → encoding, window/region → box, workingSpace → space, offset → origin); per-enum value synonyms (`ArgSpec.ValueSynonyms`: display/file/stored/code/perceptual → encoded, lin/light → linear; sRGB/gamma → srgb, lin/raw/identity → linear); op synonyms (lab, saturation, channelSpread, falseColor, lut, heatmap, reencode, channels). Unknown-option and enum fixes for cv.open read `cv.open(path, { … })`.
+- `cv.kinds` comes from `graph.Kinds` via `__kinds` (legacy item 11).
+- `pkg/cv/ops/realdata_test.go`: `TestRealTileReEncodedAsLinear`, `TestRealTileAbsoluteCoordinates` (GOJACV_TILES, default ~/dustdet/cv_tiles), `TestRealDNGWindow` (GOJACV_DNG, GOJACV_DNG_FULL).
+- Tests: `TestSpaceVocabulary` (synonyms, value synonyms, help entries), `TestKindsComeFromTheGraph`, docs topic list.
+- dust-scanning repo (left uncommitted for the coordinator): `run.sh` gains `IMAGE`, `IMAGE_EXTRA` and `QUESTIONS` (with `$IMG_DIR` substitution); `questions-gcv-001.md`; runs 07-10 and the README table. The v tile is made by this ticket's `scripts/01-make-v-tile.py` (which also prints the expected answers).
+
+### Why
+- Guide §10, §11, §12 Phase 7, §13.4, §13.5.
+
+### What worked
+- Real data (local): `GOJACV_DNG=…/raw0027.dng GOJACV_DNG_FULL=1 go test ./pkg/cv/ops -run TestReal -v`: tile stats meanL 0.33567, p01 0.00854, p99 0.91793 (equal for the re-encoded linear tile, buffers within 1/65535, masks within 1e-3); 779 specks with raw-scan centroids (first at 2161.2, 1668.0); raw0027.dng probes 7256×7326 16-bit dng linear with notes [camera RGB primaries (DNG)]; the 1024² window opened and decoded in 17.6 ms and equals the window of the full decode.
+
+### What didn't work
+- My first docs-edit script died on a Python escape (`SyntaxError: unexpected character after line continuation character`) before writing anything; rewritten with single-quoted strings.
+- `TestMCPServerToolsResourcesPrompt`: "reference lacks `cv.open(path)`" - the usage line now shows the options; expectation updated.
+- `pkg/cv/ops/realdata_test.go`: "image already declared through import of package image" (ops has an `image()` helper); aliased the import.
+- gosec (CI's dependency-scanning job) reported 7 G115 findings in the TIFF reader (signed SSHORT/SLONG/SRATIONAL, PackBits headers) and the LZW fixture writer; annotated with reasons.
+
+- pi runs (two per build, `lunaroute/deepseek-4.1-flash`, recorded in the dust-scanning repo's `CVJS-001/various/pi-runs/README.md`, runs 07-10): before GCV-001 (3cbff7a) 48 and 41 calls; Q1/Q2 answered only by inverting the sRGB decode through 1×1-box stats or bisection ("22 option shapes ignored" trying to open raw), `ref` kept in `mem`. After (29de785, a9ea5d6) 26 and 23 calls; Q1 in the 4th call with `cv.open(path, { encoding: "linear", as: "img" })`, Q2 with `{ as: "ref" }` and a diff in encoded space; errors were two TypeErrors on awaited Regions data and `only({ id: 3 })` with an item object (GCV-003 territory), none from a missing GCV-001 capability. Q3's numbers agree across all runs (per-channel steps ≈ 0.07-0.09, spread/mean 0.08-0.15); two runs call it neutral, two "slightly coloured" - the question gives no threshold.
+
+### What I learned
+- The agent in the after-build runs found `encoding: "linear"` in the new topic in its second call and had file-unit p01/p99 by its fourth.
+
+### What was tricky to build
+- Docs blocks run in one session per topic with the planted scan as `img`; new blocks need linear fixtures reachable by relative name, so the harness writes them and sets the session's BaseDir.
+
+### What warrants a second pair of eyes
+- The value synonym `srgb → encoded` for `space` (agents may mean the encoding); it only produces a did-you-mean, never an implicit choice.
+
+### What should be done in the future
+- GCV-003: `stepChroma` for the neutrality question (question 3 needs per-channel steps by hand today).
+
+### Code review instructions
+- Docs: `pkg/cv/docs/topics/10-encodings-and-spaces.md` and the diffs of 01, 02, 05, 06, 09; `pkg/doc/02-concepts.md`; `pkg/cvsession/reference.go`.
+- `go test ./pkg/cvsession -run 'Docs|Guide|SpaceVocabulary'`; real data as above.
+
+### Technical details
+- Expected answers for `questions-gcv-001.md` (from `01-make-v-tile.py` and goja-cv): Q1 encoding srgb as read by default (must be opened `linear`), p01 0.00854, p99 0.91794; Q2 same frame [0, 0, 1024, 1024], largest |stored(ref) − stored(v)| 0.28713; Q3 the blob at (30.0, 394.4) has per-channel density steps 0.0741, 0.0792, 0.0800 (spread/mean 0.075): neutral.

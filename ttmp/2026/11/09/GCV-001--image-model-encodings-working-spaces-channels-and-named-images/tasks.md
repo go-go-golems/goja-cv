@@ -18,8 +18,8 @@
 - [x] Phase 5: macros (Expand, Expander, macro node for one-node results, CallResult, array return in binding/prelude) with tests <!-- t:pqq3 -->
 - [x] Phase 5: channel ops channel, split, toLab (+PRIMARIES warning), chroma, colormap (kernels/colormap.go), encode; remove toGray rec601 <!-- t:hadh -->
 - [x] Phase 6: named images (session name table, init.js wrapper with as and synonyms, E_NAME, unnamed opens in context block, MCP open encoding/as, bare module rejects as) <!-- t:lvq2 -->
-- [ ] Phase 7: docs (topic 10-encodings-and-spaces, units/frames, getting-started, looks, recipes, guidebook, README), help concept entries, scoped value synonyms, MCP instructions <!-- t:6dl3 -->
-- [ ] Phase 7: gated real-data tests (GOJACV_TILES re-encoded tile, GOJACV_DNG window) <!-- t:7kb7 -->
-- [ ] Phase 7: pi harness IMAGE/QUESTIONS overrides and questions-gcv-001.md in the dust-scanning repo; two runs per build; record results <!-- t:t65h -->
+- [x] Phase 7: docs (topic 10-encodings-and-spaces, units/frames, getting-started, looks, recipes, guidebook, README), help concept entries, scoped value synonyms, MCP instructions <!-- t:6dl3 -->
+- [x] Phase 7: gated real-data tests (GOJACV_TILES re-encoded tile, GOJACV_DNG window) <!-- t:7kb7 -->
+- [x] Phase 7: pi harness IMAGE/QUESTIONS overrides and questions-gcv-001.md in the dust-scanning repo; two runs per build; record results <!-- t:t65h -->
 - [x] Phase 2: graphtest.RegisterSource test-only source op (hidden enc, frame, fill) for linear and non-zero-origin inputs in Phases 2-3 <!-- t:g4kg -->
 - [x] Phase 3: golden tolerance rule (levels/mask looks change; others <=1 code on <=1% samples; equal speck counts), then regenerate with -update; evaluator stamps copies for returned inputs; macro nodes take expansion statics; Gray positions incl. refine <!-- t:k7bx -->
