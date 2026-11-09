@@ -29,6 +29,9 @@ type EvalCtx struct {
 	Params map[string]any // param values snapshotted at the start of the evaluation
 }
 
+// InputNode is the node of input i (its statics: frame, encoding, space).
+func (ec *EvalCtx) InputNode(i int) *Node { return ec.Eval.node(ec.Node.Inputs[i]) }
+
 // Callbacks runs JavaScript data lambdas for ops such as Regions.filter.
 // The binding implements it by scheduling onto the runtime owner goroutine;
 // evaluation never runs on that goroutine, so the call can be served.
@@ -225,6 +228,10 @@ func (r *evalRun) eval(ctx context.Context, id NodeID) (Value, error) {
 		return nil, ctxError(err)
 	}
 	n := r.e.node(id)
+	if n.Op.Expand != nil {
+		// a macro node is its expansion's output: no compute, no cache entry
+		return r.eval(ctx, n.Inputs[len(n.Inputs)-1])
+	}
 	if fs := r.scaleFor(n); fs != r.scale {
 		return r.at(fs).eval(ctx, id)
 	}
@@ -289,7 +296,7 @@ func (r *evalRun) compute(ctx context.Context, n *Node, sig Signature) (Value, e
 		}
 	}
 	if n.Op.Identity != nil && n.NExplicit > 0 && n.Op.Identity(args) {
-		return ins[0], nil // neutral args: the receiver itself, not a copy; not cached twice
+		return stamp(n, ins[0], ins), nil // neutral args: the receiver's value (a stamped copy); not cached twice
 	}
 	ec := &EvalCtx{Eval: r.e, Node: n, Scale: r.scale, Params: r.params}
 	out, err := safeRun(ctx, n.Op, ec, ins[:n.NExplicit], args)
@@ -299,11 +306,45 @@ func (r *evalRun) compute(ctx context.Context, n *Node, sig Signature) (Value, e
 	if out == nil {
 		return nil, r.e.wrapWithPath(Errorf(EInternal, "%s returned no value", n.Op.Name), n)
 	}
+	out = stamp(n, out, ins)
 	r.e.countRun(n.ID)
 	if !n.Op.NoCache {
 		r.e.cache.Put(sig, out)
 	}
 	return out, nil
+}
+
+// stamp sets node n's statics (frame, encoding) on v, the value its Run returned. Run
+// only creates values; the evaluator is the one place that gives them their
+// node's statics. A value that belongs to one of the inputs (the identity
+// short-circuit, an op that returns its input unchanged) is copied first, so
+// the cached value of another node is never rewritten.
+func stamp(n *Node, v Value, ins []Value) Value {
+	isInput := func(v Value) bool {
+		for _, in := range ins {
+			if in == v {
+				return true
+			}
+		}
+		return false
+	}
+	switch x := v.(type) {
+	case *ImageValue:
+		if isInput(v) {
+			c := *x
+			x = &c
+		}
+		x.Frame, x.Enc = n.Frame, n.Enc
+		return x
+	case *RegionsValue:
+		if isInput(v) {
+			c := *x
+			x = &c
+		}
+		x.Frame = n.Frame
+		return x
+	}
+	return v
 }
 
 func safeRun(ctx context.Context, op *OpDef, ec *EvalCtx, in []Value, args Args) (v Value, err error) { //nolint:nonamedreturns // recover needs named results

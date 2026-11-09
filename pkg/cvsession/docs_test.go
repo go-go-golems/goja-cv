@@ -31,7 +31,16 @@ func planted(t *testing.T) string {
 			return
 		}
 		plantedPath = filepath.Join(dir, testimage.PlantedTIFF)
-		_, plantedErr = testimage.WritePlanted(context.Background(), plantedPath)
+		if _, plantedErr = testimage.WritePlanted(context.Background(), plantedPath); plantedErr != nil {
+			return
+		}
+		// linear fixtures the encodings topic opens by relative name: the
+		// planted scan's linear values as a plain 16-bit TIFF and as .npy
+		lin, _ := testimage.PlantedScan()
+		if plantedErr = testimage.WriteTIFF(filepath.Join(dir, "planted-linear.tif"), lin, testimage.TIFFOptions{Bits: 16}); plantedErr != nil {
+			return
+		}
+		plantedErr = testimage.WriteNPY(filepath.Join(dir, "planted.npy"), lin, "<f4")
 	})
 	if plantedErr != nil {
 		t.Fatal(plantedErr)
@@ -113,7 +122,7 @@ func TestGuideCodeBlocksRun(t *testing.T) {
 // "js error=CODE" must fail with that code, "js fragment" is skipped.
 func runCodeBlocks(t *testing.T, img, name, md string) int {
 	t.Helper()
-	app, sid := newApp(t, cvsession.Options{Image: img})
+	app, sid := newApp(t, cvsession.Options{Image: img, BaseDir: filepath.Dir(img)})
 	n := 0
 	for _, b := range jsBlocks(md) {
 		if strings.Contains(b.info, "fragment") {

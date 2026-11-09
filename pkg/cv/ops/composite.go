@@ -12,27 +12,27 @@ import (
 func compositeOps() []graph.OpDef {
 	return []graph.OpDef{
 		{
-			Name: "within", On: graph.KindImage, Inputs: []graph.Kind{graph.KindMask, graph.KindImage}, Returns: graph.KindImage, Space: "linear",
+			Name: "within", On: graph.KindImage, Inputs: []graph.Kind{graph.KindMask, graph.KindImage}, Returns: graph.KindImage, Space: graph.SpaceRule{Default: buffer.SpaceLinear},
 			Builders: []int{1},
 			Run: func(ctx context.Context, _ *graph.EvalCtx, in []graph.Value, _ graph.Args) (graph.Value, error) {
 				base, m, edited := image(in[0]), mask(in[1]), image(in[2])
-				if err := sameSize("within", base, m); err != nil {
+				if err := sameFrame("within", base, m); err != nil {
 					return nil, err
 				}
-				if err := sameSize("within", base, edited); err != nil {
+				if err := sameFrame("within", base, edited); err != nil {
 					return nil, err
 				}
 				out, err := kernels.MaskMix(ctx, base.Buf, edited.Buf, m.Buf, 1)
 				if err != nil {
 					return nil, err
 				}
-				return graph.NewImage(out, base.DocW, base.DocH), nil
+				return graph.NewImage(out), nil
 			},
-			Doc: "Apply an edit inside a mask: within(mask, i => i.exposure(-0.4)). The function runs once while the graph is built, with a placeholder for this image; its result is blended in linear light through the mask, so params inside it are tracked like any other.",
+			Doc: "Apply an edit inside a mask: within(mask, i => i.exposure(-0.4)). The function runs once while the graph is built, with a placeholder for this image; its result is blended through the mask in the working space (linear by default), so params inside it are tracked like any other.",
 			See: []string{"blend", "mask.luminance", "feather"},
 		},
 		{
-			Name: "blend", On: graph.KindImage, Inputs: []graph.Kind{graph.KindImage}, Returns: graph.KindImage, Space: "linear",
+			Name: "blend", On: graph.KindImage, Inputs: []graph.Kind{graph.KindImage}, Returns: graph.KindImage, Space: graph.SpaceRule{Default: buffer.SpaceLinear},
 			Args: []graph.ArgSpec{
 				{Name: "mode", Type: "enum:" + joinModes(), Default: "normal"},
 				{Name: "opacity", Type: "number", Default: 1.0, Min: graph.F(0), Max: graph.F(1)},
@@ -41,13 +41,13 @@ func compositeOps() []graph.OpDef {
 			Identity: func(a graph.Args) bool { return a.Number("opacity") == 0 },
 			Run: func(ctx context.Context, _ *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
 				base, top := image(in[0]), image(in[1])
-				if err := sameSize("blend", base, top); err != nil {
+				if err := sameFrame("blend", base, top); err != nil {
 					return nil, err
 				}
 				var m *buffer.Buffer
 				if v := a.Node("mask"); v != nil {
 					mb := mask(v)
-					if err := sameSize("blend", base, mb); err != nil {
+					if err := sameFrame("blend", base, mb); err != nil {
 						return nil, err
 					}
 					m = mb.Buf
@@ -56,9 +56,9 @@ func compositeOps() []graph.OpDef {
 				if err != nil {
 					return nil, err
 				}
-				return graph.NewImage(out, base.DocW, base.DocH), nil
+				return graph.NewImage(out), nil
 			},
-			Doc: "Blend another image over this one in linear light: out = a + (mode(a, b) − a) · opacity · mask.",
+			Doc: "Blend another image over this one in the working space (linear by default): out = a + (mode(a, b) − a) · opacity · mask.",
 			See: []string{"within"},
 		},
 	}
@@ -71,8 +71,8 @@ func targetMask(ctx context.Context, op string, v graph.Value, base *graph.Image
 	var thr float32 = 0.5
 	switch x := v.(type) {
 	case *graph.RegionsValue:
-		if x.DocW != base.DocW || x.DocH != base.DocH {
-			return nil, graph.Errorf(graph.EWrongKind, "%s: the regions belong to a %d×%d image, this one is %d×%d.", op, x.DocW, x.DocH, base.DocW, base.DocH)
+		if err := graph.SameFrame(op, x.Frame, base.Frame); err != nil {
+			return nil, err
 		}
 		var err error
 		if m, err = x.Rasterize(ctx, base.Buf.W, base.Buf.H, base.Buf.Scale); err != nil {
@@ -80,7 +80,7 @@ func targetMask(ctx context.Context, op string, v graph.Value, base *graph.Image
 		}
 		thr = 1e-3
 	case *graph.ImageValue:
-		if err := sameSize(op, base, x); err != nil {
+		if err := sameFrame(op, base, x); err != nil {
 			return nil, err
 		}
 		m = x.Buf
@@ -98,7 +98,7 @@ func targetMask(ctx context.Context, op string, v graph.Value, base *graph.Image
 func healOps() []graph.OpDef {
 	return []graph.OpDef{
 		{
-			Name: "heal", On: graph.KindImage, Inputs: []graph.Kind{"Regions|Mask"}, Returns: graph.KindImage, Space: "linear",
+			Name: "heal", On: graph.KindImage, Inputs: []graph.Kind{"Regions|Mask"}, Returns: graph.KindImage, Space: graph.SpaceRule{Default: buffer.SpaceLinear},
 			Args: []graph.ArgSpec{
 				{Name: "radius", Type: "number", Unit: graph.DocPx, Default: 3.0, Min: graph.F(0), Max: graph.F(200), Usual: [2]float64{0.5, 20},
 					Doc: "margin in doc px: each target is grown by this much before it is replaced"},
@@ -116,13 +116,13 @@ func healOps() []graph.OpDef {
 				if err != nil {
 					return nil, err
 				}
-				return graph.NewImage(out, base.DocW, base.DocH), nil
+				return graph.NewImage(out), nil
 			},
 			Doc: "Replace each target (regions, or a mask ≥ 0.5) with texture from its surroundings: patch search over clean nearby offsets, then seam correction; or a smooth harmonic fill.",
 			See: []string{"inpaint", "detect.specks", "check.dust"},
 		},
 		{
-			Name: "inpaint", On: graph.KindImage, Inputs: []graph.Kind{graph.KindMask}, Returns: graph.KindImage, Space: "linear",
+			Name: "inpaint", On: graph.KindImage, Inputs: []graph.Kind{graph.KindMask}, Returns: graph.KindImage, Space: graph.SpaceRule{Default: buffer.SpaceLinear},
 			Args: []graph.ArgSpec{{Name: "method", Type: "enum:diffuse,patch", Default: "diffuse"}},
 			Halo: func(graph.Args) float64 { return 64 },
 			Run: func(ctx context.Context, _ *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
@@ -135,7 +135,7 @@ func healOps() []graph.OpDef {
 				if err != nil {
 					return nil, err
 				}
-				return graph.NewImage(out, base.DocW, base.DocH), nil
+				return graph.NewImage(out), nil
 			},
 			Doc: "Fill the mask (≥ 0.5) from its boundary: a smooth harmonic (membrane) fill, or a patch with seam correction.",
 			See: []string{"heal"},

@@ -24,7 +24,7 @@ func m3Engine(t *testing.T) *Engine {
 						m.Pix[y*m.W+x] = 1
 					}
 				}
-				return NewMask(m, src.DocW, src.DocH), nil
+				return NewMask(m), nil
 			}},
 		OpDef{Name: "blobs", On: KindImage, Returns: KindRegions,
 			Args: []ArgSpec{
@@ -35,7 +35,7 @@ func m3Engine(t *testing.T) *Engine {
 			AnalysisScale: func(a Args) float64 { return a.Raw("analysisScale").(float64) },
 			Run: func(_ context.Context, ec *EvalCtx, in []Value, a Args) (Value, error) {
 				src := in[0].(*ImageValue)
-				rv := NewRegions(src.Buf.W, src.Buf.H, ec.Scale, src.DocW, src.DocH)
+				rv := NewRegions(src.Buf.W, src.Buf.H, ec.Scale, src.Frame)
 				b := a.Lengths("box", ec.Scale)
 				var pix []int32
 				for y := int(b[1]); y < int(b[1]+b[3]); y++ {
@@ -58,7 +58,7 @@ func m3Engine(t *testing.T) *Engine {
 						out.Pix[i] = out.Pix[i]*(1-w) + float32(a.Number("v"))*w
 					}
 				}
-				return NewImage(out, src.DocW, src.DocH), nil
+				return NewImage(out), nil
 			}},
 		OpDef{Name: "pred", On: KindImage, Returns: KindValue,
 			Args: []ArgSpec{{Name: "p", Type: "any", Positional: true}},
@@ -95,16 +95,16 @@ func TestKindTypedArgsStaticLenValidate(t *testing.T) {
 		t.Fatalf("paint through mask: %v %v", b.Pix[0], b.Pix[b.W-1])
 	}
 	// wrong kind for a kind-typed arg
-	_, _, err = e.Call("paint", src.ID, []any{map[string]any{"mask": NodeArg{src.ID}}})
+	_, err = e.Call("paint", src.ID, []any{map[string]any{"mask": NodeArg{src.ID}}})
 	if ce := codeOf(t, err); ce.Code != EWrongKind || !strings.Contains(ce.Hint, "mask.luminance") {
 		t.Fatalf("image as mask: %+v", ce)
 	}
-	_, _, err = e.Call("paint", src.ID, []any{map[string]any{"mask": 0.5}})
+	_, err = e.Call("paint", src.ID, []any{map[string]any{"mask": 0.5}})
 	if ce := codeOf(t, err); ce.Code != EWrongKind {
 		t.Fatalf("number as mask: %+v", ce)
 	}
 	// Len
-	_, _, err = e.Call("blobs", src.ID, []any{[]any{1, 2, 3}})
+	_, err = e.Call("blobs", src.ID, []any{[]any{1, 2, 3}})
 	if ce := codeOf(t, err); ce.Code != EArgType || !strings.Contains(ce.Hint, "[x, y, w, h]") {
 		t.Fatalf("box len: %+v", ce)
 	}
@@ -113,12 +113,12 @@ func TestKindTypedArgsStaticLenValidate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _, err = e.Call("blobs", src.ID, []any{[]any{0, 0, 4, 4}, map[string]any{"analysisScale": NodeArg{par.ID}}})
+	_, err = e.Call("blobs", src.ID, []any{[]any{0, 0, 4, 4}, map[string]any{"analysisScale": NodeArg{par.ID}}})
 	if ce := codeOf(t, err); ce.Code != EArgType || !strings.Contains(ce.Message, "literal") {
 		t.Fatalf("static: %+v", ce)
 	}
 	// Validate runs at build time
-	_, _, err = e.Call("pred", src.ID, []any{3})
+	_, err = e.Call("pred", src.ID, []any{3})
 	if ce := codeOf(t, err); ce.Code != EArgType {
 		t.Fatalf("validate: %+v", ce)
 	}
@@ -171,7 +171,7 @@ func TestAnalysisScaleMakesRegionsScaleFree(t *testing.T) {
 // TestRasterizeKeepsAreaAtAnyScale: regions found at one scale rasterize to
 // masks whose sum (in target px²) is the doc area times scale².
 func TestRasterizeKeepsAreaAtAnyScale(t *testing.T) {
-	rv := NewRegions(100, 60, 1, 100, 60)
+	rv := NewRegions(100, 60, 1, Frame{W: 100, H: 60})
 	var pix []int32
 	for y := 7; y < 20; y++ {
 		for x := 13; x < 30; x++ {

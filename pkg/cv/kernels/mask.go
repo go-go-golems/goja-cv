@@ -38,31 +38,17 @@ func smoothstep(e0, e1, x float64) float64 {
 	return t * t * (3 - 2*t)
 }
 
-// PerceptualLuminance returns the sRGB-encoded (perceptual) luminance plane
-// of b: ToPerceptual of the linear Rec.709 luminance.
-func PerceptualLuminance(ctx context.Context, b *buffer.Buffer) ([]float32, error) {
-	lin := b.Luminance()
-	out := make([]float32, len(lin))
-	err := parallel.Rows(ctx, b.H, func(y0, y1 int) {
-		for i := y0 * b.W; i < y1*b.W; i++ {
-			out[i] = buffer.ToPerceptual(lin[i])
-		}
-	})
-	return out, err
-}
-
-// LuminanceMask selects pixels by perceptual luminance: above and/or below a
-// threshold, with a smoothstep ramp of total width softness centred on it.
-// A nil bound is not applied.
+// LuminanceMask selects pixels by luminance: above and/or below a threshold,
+// with a smoothstep ramp of total width softness centred on it. A nil bound
+// is not applied. b is normally one channel (the graph feeds luminance in
+// the op's working space); for three channels the Rec. 709 weighted sum of
+// the given values is used.
 func LuminanceMask(ctx context.Context, b *buffer.Buffer, above, below *float64, softness float64) (*buffer.Buffer, error) {
-	L, err := PerceptualLuminance(ctx, b)
-	if err != nil {
-		return nil, err
-	}
+	L := b.Luminance()
 	out := buffer.New(b.W, b.H, 1, b.Scale)
 	m := out.Plane(0)
 	h := softness / 2
-	err = parallel.Rows(ctx, b.H, func(y0, y1 int) {
+	err := parallel.Rows(ctx, b.H, func(y0, y1 int) {
 		for i := y0 * b.W; i < y1*b.W; i++ {
 			v := 1.0
 			l := float64(L[i])
@@ -93,8 +79,8 @@ func b2f(b bool) float64 {
 	return 0
 }
 
-// HueSat returns hue (degrees, [0, 360)) and HSV saturation of a
-// perceptual RGB triple.
+// HueSat returns hue (degrees, [0, 360)) and HSV saturation of an RGB
+// triple.
 func HueSat(r, g, b float64) (float64, float64) {
 	mx := math.Max(r, math.Max(g, b))
 	mn := math.Min(r, math.Min(g, b))
@@ -118,7 +104,7 @@ func HueSat(r, g, b float64) (float64, float64) {
 	return h, d / mx
 }
 
-// ColorMask selects pixels whose perceptual hue is within tol degrees of hue
+// ColorMask selects pixels whose hue is within tol degrees of hue
 // (soft over a further tol/4) and whose saturation is at least minSat (soft
 // over [minSat/2, minSat]). A 1-channel image selects nothing.
 func ColorMask(ctx context.Context, b *buffer.Buffer, hue, tol, minSat float64) (*buffer.Buffer, error) {
@@ -131,7 +117,7 @@ func ColorMask(ctx context.Context, b *buffer.Buffer, hue, tol, minSat float64) 
 	soft := math.Max(tol/4, 1)
 	err := parallel.Rows(ctx, b.H, func(y0, y1 int) {
 		for i := y0 * b.W; i < y1*b.W; i++ {
-			h, s := HueSat(float64(buffer.ToPerceptual(R[i])), float64(buffer.ToPerceptual(G[i])), float64(buffer.ToPerceptual(B[i])))
+			h, s := HueSat(float64(R[i]), float64(G[i]), float64(B[i]))
 			d := math.Abs(math.Mod(h-hue+540, 360) - 180)
 			wh := math.Max(0, math.Min(1, (tol+soft-d)/soft))
 			ws := 1.0
@@ -247,7 +233,7 @@ func PointGradientMask(ctx context.Context, w, h int, scale, x0, y0, x1, y1 floa
 }
 
 // FloodMask selects the 4-connected area around (x, y) (buffer px) whose
-// perceptual colour differs from the seed's by at most tol in every channel.
+// colour differs from the seed's by at most tol in every channel.
 func FloodMask(ctx context.Context, b *buffer.Buffer, x, y int, tol float64) (*buffer.Buffer, error) {
 	out := buffer.New(b.W, b.H, 1, b.Scale)
 	m := out.Plane(0)
@@ -259,11 +245,11 @@ func FloodMask(ctx context.Context, b *buffer.Buffer, x, y int, tol float64) (*b
 	seed := make([]float64, b.C)
 	si := y*W + x
 	for c := range seed {
-		seed[c] = float64(buffer.ToPerceptual(planes[c][si]))
+		seed[c] = float64(planes[c][si])
 	}
 	ok := func(i int) bool {
 		for c := range planes {
-			if math.Abs(float64(buffer.ToPerceptual(planes[c][i]))-seed[c]) > tol {
+			if math.Abs(float64(planes[c][i])-seed[c]) > tol {
 				return false
 			}
 		}

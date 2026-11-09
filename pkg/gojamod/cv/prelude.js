@@ -117,7 +117,8 @@
   }
 
   function callOp(t, op, args) {
-    return nodeFor(native.__call(op, t.__id, args.map(marshal)));
+    const h = native.__call(op, t.__id, args.map(marshal));
+    return Array.isArray(h) ? h.map(nodeFor) : nodeFor(h); // a macro may build several nodes (split)
   }
 
   // Builder lambdas (within(mask, i => …)) run here, once, while the graph
@@ -304,10 +305,11 @@
 
   const cv = {
     version: native.__version,
-    kinds: ["Image", "Mask", "Regions", "Value", "Param"],
+    kinds: native.__kinds(), // graph.Kinds
     P: P,
-    open(path) {
-      return nodeFor(native.__open(path));
+    // open(path, { encoding, box, origin }) → Image
+    open(path, opts) {
+      return nodeFor(native.__open(path, opts === undefined ? null : marshal(opts)));
     },
     help(name) {
       return native.__help(name === undefined ? null : name);

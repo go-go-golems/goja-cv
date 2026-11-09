@@ -34,7 +34,11 @@ var cvFuncs = map[string]cvFunc{
 	"look":     {"node.look(label) · node.look({ label, maxSide })", "An image of the node to return in the result (Image, Mask, histogram). Numbered, with the scale in its caption.", []string{"show", "compare", "overlay"}},
 	"show":     {"show(node, opts) · show(look)", "Create a look, queue it and return it; queued looks are delivered even if the eval throws later.", []string{"look"}},
 	"mem":      {"mem.name = value", "A plain object that persists between evals (const/let do not).", nil},
-	"img":      {"img · img = cv.open(path)", "The open image (an Image node); assigning a cv.open node rebinds it.", []string{"open"}},
+	"img":      {"img · img = cv.open(path)", "The open image (an Image node); assigning a cv.open node rebinds it. More images: cv.open(path, { as: \"ref\" }).", []string{"open", "names"}},
+	"encoding": {"cv.open(path, { encoding: \"srgb\" | \"linear\" }) · (await img).encoding · img.encode(\"srgb\")", "How a file's values relate to the quantity: srgb (photographs) or linear (float TIFF, DNG, .npy, density data). Decoders report it; cv.open's option overrides it. Read cv.docs.read(\"encodings-and-spaces\").", []string{"open", "encode", "space"}},
+	"space":    {"op({ space: \"linear\" | \"encoded\" })", "The working space of a pixel op: linear (the encoding undone: exposure, blur, blend, stats, levels) or encoded (what looks show: thresholds, contrast, histogram, specks). explain() shows the conversions. Read cv.docs.read(\"encodings-and-spaces\").", []string{"stats", "levels", "encoding"}},
+	"frame":    {"(await img).frame · cv.open(path, { box, origin })", "The rectangle an image covers in doc px, [x, y, w, h]; boxes, points and region geometry are absolute in it. Read cv.docs.read(\"units-and-scales\", { section: \"Frames\" }).", []string{"open"}},
+	"names":    {"cv.open(path, { as: \"ref\" })", "Several images per session: as binds a global that persists between evals (img is the first); the context block lists every name with file, frame and encoding. Read cv.docs.read(\"encodings-and-spaces\", { section: \"Frames and names\" }).", []string{"open", "img"}},
 	"doc":      {"doc", "The document layer (history, apply, propose, undo, export) is not available yet; any use throws E_NO_DOCUMENT.", nil},
 	"P":        {"P.slider(name, { min, max, value, step, label, unit }) · P.toggle(name, { value }) · P.choice(name, { options, value }) · P.set(name, v) · P.list()", "Params: named values the person can move. They are nodes and go anywhere a number goes.", []string{"where"}},
 	"slider":   {"P.slider(name, { min, max, value, step, label, unit })", "A numeric param.", []string{"P"}},
@@ -49,9 +53,9 @@ var helpRedirects = map[string][2]string{
 	"Regions.stats": {"stats", "Measure inside regions with img.stats({ mask: regions.toMask() })."},
 	"mask.mean":     {"stats", "img.stats({ mask: m }).meanL is the mean inside a mask."},
 	"crop":          {"stats", "There is no crop; measure a box with img.stats({ box: [x, y, w, h] }) and look at it with img.mask.box(box).overlay(img).look()."},
-	"metadata":      {"open", "Await the image for its metadata: (await img) has file, format, bitDepth, channels, colorSpace."},
-	"meta":          {"open", "Await the image for its metadata: (await img) has file, format, bitDepth, channels, colorSpace."},
-	"info":          {"open", "Await the image for its metadata: (await img) has file, format, bitDepth, channels, colorSpace."},
+	"metadata":      {"open", "Await the image for its metadata: (await img) has file, format, bitDepth, sample, fileChannels, encoding, frame and notes."},
+	"meta":          {"open", "Await the image for its metadata: (await img) has file, format, bitDepth, sample, fileChannels, encoding, frame and notes."},
+	"info":          {"open", "Await the image for its metadata: (await img) has file, format, bitDepth, sample, fileChannels, encoding, frame and notes."},
 }
 
 // Help returns cv.help(name) data; it never fails.
@@ -60,7 +64,7 @@ func Help(reg *graph.Registry, name string) map[string]any {
 	if name == "" {
 		h, _ := reg.Help("")
 		h["params"] = "P.slider(name, { min, max, value, step, label, unit }), P.toggle(name, { value }), P.choice(name, { options, value })"
-		h["sources"] = toAny([]string{"cv.open(path)"})
+		h["sources"] = toAny([]string{"cv.open(path, { encoding, box, origin, as })"})
 		h["functions"] = toAny([]string{"cv.evaluate", "cv.compare", "cv.describe", "cv.docs", "cv.isNode", "show", "mem", "node.look"})
 		h["docs"] = "Guides: cv.docs.list(), cv.docs.search(text), cv.docs.read(id, { section }). Start with cv.docs.read(\"getting-started\")."
 		h["topics"] = toAny(docs.IDs())

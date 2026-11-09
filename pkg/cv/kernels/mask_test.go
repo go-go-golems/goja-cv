@@ -151,7 +151,7 @@ func TestFloodAndGuidedFilter(t *testing.T) {
 			p[y*40+x] = float32(math.Max(0, math.Min(1, (float64(x)-14)/12)))
 		}
 	}
-	L, _ := PerceptualLuminance(ctx, b)
+	L := b.Luminance()
 	q, err := GuidedFilter(ctx, L, p, 40, 20, 4, 1e-4)
 	if err != nil {
 		t.Fatal(err)

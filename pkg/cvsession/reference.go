@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/go-go-golems/goja-cv/pkg/cv/buffer"
 	"github.com/go-go-golems/goja-cv/pkg/cv/graph"
 )
 
@@ -22,11 +23,12 @@ Eval contract
 - Errors are YAML with code, message, where (your line), path, hint and a literal fix: apply the fix.
 - The document layer (doc.apply, propose, undo, export) is not available yet: describe edits and show them as looks.
 
-Globals: img (the open image; img = cv.open(path) rebinds it; await img gives its size, file, format, bitDepth), cv, P, mem, show.
+Globals: img (the open image; img = cv.open(path) rebinds it; await img gives its file, format, bitDepth, encoding, frame), cv, P, mem, show. cv.open(path, { encoding, box, origin, as }): encoding "linear" for linear data in integer files; box reads a window and keeps file coordinates; as: "ref" binds another global name.
 
 Most used calls
-- await img.stats() → { meanL, p01, p99, clipLow, clipHigh, … } (linear light); img.stats({ box: [x, y, w, h] }) or img.stats({ mask }) measures only there (+ area, coverage); img.histogram().look()
-- img.exposure(ev), img.levels({ black, white, gamma }) (black/white are linear levels like stats), img.contrast(a), img.gaussian(r), img.toGray()
+- Numbers are in the op's space: linear (exposure, blur, blend, stats, levels) or encoded (what looks show: thresholds, contrast, histogram, specks); pass { space } to change it; cv.docs.read("encodings-and-spaces").
+- await img.stats() → { meanL, p01, p99, clipLow, clipHigh, … }; img.stats({ box: [x, y, w, h] }) or img.stats({ mask }) measures only there (+ area, coverage); img.histogram().look()
+- img.exposure(ev), img.levels({ black, white, gamma }) (black/white in stats' space), img.contrast(a), img.gaussian(r), img.toGray(), img.chroma(), node.colormap("viridis")
 - node.look("label") or node.look({ label, maxSide }) inside the returned value attaches an image; show(node, opts) queues one that survives a later throw. Captions give the scale: 1 image px = S doc px.
 - cv.compare([a, b], { mode: "side" | "split" | "diff" }) to see before/after.
 - Masks: img.mask.luminance({ above, below }), mask.box([x, y, w, h]), mask.gradient({ from: "top", to: 0.5 }), mask.color, mask.flood; a.and(b), a.or(b), a.minus(b), a.not(), m.feather(r), m.grow(r), m.coverage().
@@ -70,7 +72,7 @@ func Reference(reg *graph.Registry) string {
 	sb.WriteString("- `look(label | { label, maxSide })` → look (an image you return; Image, Mask, histogram)\n")
 	sb.WriteString("- `explain()` → Value: the graph under the node, without computing pixels\n\n")
 	sb.WriteString("## Globals\n\n")
-	sb.WriteString("- `cv.open(path)` → Image source; `cv.help(name?)`; `cv.evaluate(node, { scale })` (number, \"preview\", \"look\", \"full\")\n")
+	sb.WriteString("- `cv.open(path, { encoding, box, origin, as })` → Image source; `cv.help(name?)`; `cv.evaluate(node, { scale })` (number, \"preview\", \"look\", \"full\")\n")
 	sb.WriteString("- `P.slider(name, { min, max, value, step, label, unit })`, `P.toggle(name, { value })`, `P.choice(name, { options, value })`\n")
 	sb.WriteString("- `show(node, opts)` / `show(look)`; `mem` (persists); `img` (the open image)\n")
 	return sb.String()
@@ -82,6 +84,10 @@ func opLine(op *graph.OpDef) string {
 	for i := range op.Args {
 		s := &op.Args[i]
 		if s.Hidden {
+			continue
+		}
+		if s.Name == graph.SpaceArg && op.Space.Default != buffer.SpaceNone {
+			details = append(details, fmt.Sprintf("space: \"linear\" | \"encoded\", default %q. working space (the option is not part of the usage line)", op.Space.Default.String()))
 			continue
 		}
 		args = append(args, s.Name)

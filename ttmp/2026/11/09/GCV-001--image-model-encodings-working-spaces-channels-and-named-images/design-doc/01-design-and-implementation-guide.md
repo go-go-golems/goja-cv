@@ -1567,3 +1567,70 @@ decoders read back.
 - CVJS-001 intern guide (design that preceded goja-cv): `/Users/manuel/code/wesen/2026-11-07--dust-scanning/ttmp/2026/11/08/CVJS-001--js-eval-cv-api-for-agents-compare-9-implementations/design-doc/` (Part 2 §2, Part 3 §15.1 and §15.3; `06-integration-surfaces…` for file format tiers).
 - TIFF 6.0 specification (Adobe, 1992); DNG specification 1.6 (Adobe); NumPy `.npy` format (NEP 1); sRGB: IEC 61966-2-1; CIE L*a*b* with D65: CIE 15:2004.
 - Next tickets: GCV-002 and GCV-003, `design-doc/01-design-and-implementation-guide.md` in each.
+
+## Implementation notes (deviations)
+
+Recorded while implementing on branch `task/gcv-001-image-model` (details and reasons in
+`reference/06-diary-implementation.md`). The guide above is unchanged; these notes say where the code differs.
+
+1. **`ResultEnc` is a struct, not a func type** (§7.5). `ResultEnc{Enc, Space}` holds two functions, and `OpDef.Result`
+   is a `*ResultEnc`. A func value cannot be compared, so `internNode` could not tell `DerivedEnc` (space linear) from
+   `KeepEnc` (space = the op's), and `convert` (space = its `to` argument), sources and the placeholder need their own
+   space rule. `KeepEnc`, `DerivedEnc` and `DisplayEnc` keep their names and meaning.
+2. **The grey-input rule always inserts `toGray`** (§7.5 step 2). Channel counts are not node statics, so the builder
+   cannot know at intern time that an input has three channels. `toGray` on a one-channel image returns its input (a
+   stamped copy), so the result is the same; `explain()` shows the extra `toGray` node for grey images.
+3. **`Identity(e, from, to)` is also true when either space is `none` or the encoding is not `srgb`** (§7.2): masks
+   and derived values are never converted.
+4. **Golden tolerance classes** (§13.3): besides levels and mask looks, two classes may change in the Phase 3 commit:
+   histogram charts (a bin count that flips by one moves a bar edge by a whole pixel: up to 215 codes on ≤ 0.006 % of
+   samples) and overlays (`overlay` runs in encoded space per §7.5, so mask and region tints are composited on display
+   values; tinted pixels change by up to 74 codes). Every other look stayed within 1 code on ≤ 0.006 % of its samples
+   and the speck count stayed 41. The `compare` side-by-side background is the encoded constant 0.1517
+   (sRGB_encode(0.02)), which keeps that look unchanged.
+5. **`stats` has no grey-input rule.** It reports per-channel numbers next to `meanL`, so its input stays three
+   channels; in encoded space `meanL`/`p01`/`p99` are the Rec. 709 weighted sum of encoded channels (luma). The default
+   (linear) is photometric as before.
+6. **Boxes and points outside the frame** (§3.7, §10): checked at intern time for arguments declared `InFrame`
+   (`stats.box`, `mask.box`, `mask.ellipse`, `mask.flood`). A box is refused only when it does not overlap the frame
+   (a zero-area box passes when its corner lies in the closed frame); gradient points may lie outside. The fix is a
+   literal call with the nearest valid value, e.g. `img.stats({ box: [100, 50, 10, 10] })`.
+7. **Usage lines omit the `space` option** (`signatureHint`, `goja-cv ops`, the reference's usage line); `cv.help(op)`
+   lists it under `args` and as `space: "<default> (default; …)"`, and unknown-option errors list it as valid.
+8. **Enum errors carry a literal fix** `op({ name: "value" })`: `mask.gradient.from` is now checked by the binder (type
+   `point|enum:top,bottom,left,right`) before the op's own validation could add its fix.
+9. **`box` on a file with a recorded origin** (§7.4): the frame origin is the recorded origin plus the box corner (a
+   window of a window keeps the scan's coordinates); without a recorded origin it is the box corner, as written.
+10. **Decoder extras**: the TIFF reader also accepts big-endian files, `SampleFormat` 3 with LZW/Deflate (no float
+    predictor), one-channel LinearRaw, and two/four samples per pixel with the extra sample dropped; the NPY reader
+    also accepts `>f8`. Before allocating, both check that the file can hold the declared data (a malformed header
+    cannot ask for gigabytes). `Info` keeps an unexported `scaled` flag so that `Linearize` uses the exact integer
+    tables only for plain codes (not after DNG black/white levels).
+11. **Source store key**: `SourceStore.Load(ctx, SourceKey{Path, Stamp, Box, Enc})`, so a window and an encoding
+    override are separate sources (§9.1 sketches `Load(abs, stamp, box)`).
+12. **Enum fix for `cv.open`**: `cv.open(path, { encoding: "srgb" })` (the first valid value or the did-you-mean
+    suggestion), following deviation 8.
+13. **Macro node inputs** (§7.8): a macro node's inputs are all of the call's inputs (receiver, explicit inputs,
+    lifted arguments) followed by the expansion's output, not only the receiver and the output, so that lifted
+    arguments keep their `InputRef` positions in the canonical args (hash and `Describe`). `Expander.Arg(args, name)`
+    turns a lifted argument back into a node argument for the inner calls. `Builder.Call` (and `Engine.Call`) return
+    the `CallResult`; `Builder.Intern` stays for single-node calls; `CallResult.Node()` is the single node or nil.
+14. **`OpDef.Warn`** is a build-time warning hook (used by `toLab` for `PRIMARIES`, found by walking the inputs to the
+    opened files' notes).
+15. **`channel` canonical form**: `channel(2)` and `channel("b")` are different nodes (the argument is hashed as given);
+    `split()` uses the names. The channel count is not static, so "g"/"b" on a one-channel image is an `E_ARG_RANGE`
+    at evaluation, and `colormap` on three channels an `E_WRONG_KIND` at evaluation, both with the guide's fixes.
+16. **Colormap tables** are generated: viridis and magma from Matt Zucker's CC0 degree-6 polynomial fits (within
+    about 0.01 of matplotlib), diverging from five ColorBrewer RdBu anchors (blue–white–red), gray linear.
+17. **Names** (§7.10): the table is `order`, `nodes` and `defined` (the globals it defined, `img` from the start).
+    Besides the listed reserved names, JavaScript keywords and `undefined`/`NaN`/`Infinity`/`eval`/`arguments` are
+    refused; a name is free when the table defined it or `globalThis` has no such property. `checkName` runs before
+    the file is opened, so a bad name fails fast. The MCP `open` tool without `as` binds `img` (as before). The context
+    block names a float format `float32 NPY` and a window `file [x,y,w,h] (16-bit DNG, linear)`.
+18. **Agent harness** (§13.5): besides `IMAGE` and `QUESTIONS`, `run.sh` takes `IMAGE_EXTRA` (more files copied into
+    the session root) and substitutes `$IMG_DIR` in the question file, so question 2 can name the reference file by
+    path. The v tile is made from the real tile by this ticket's `scripts/01-make-v-tile.py` (which also prints the
+    expected answers); the run directories keep only `calls.txt`, `goja-cv.commit`, `session.jsonl` and
+    `transcript.html`, like the earlier runs.
+19. **Extra legacy cleanup**: `buffer.Pyramid.DocW/DocH` are renamed `FullW/FullH` (sizes of the full-resolution
+    level, not doc sizes); usage lines and `goja-cv ops` omit the `space` option (deviation 7).

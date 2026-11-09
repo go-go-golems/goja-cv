@@ -3,6 +3,8 @@ package graph
 import (
 	"fmt"
 	"strings"
+
+	"github.com/go-go-golems/goja-cv/pkg/cv/buffer"
 )
 
 // Help renders the registry as plain data. With an empty name it returns an
@@ -74,8 +76,12 @@ func (r *Registry) Help(name string) (map[string]any, error) {
 		"usage":   strings.TrimPrefix(signatureHint(op), "Usage: "),
 		"doc":     op.Doc,
 	}
-	if op.Space != "" {
-		entry["space"] = op.Space
+	if d := op.Space.Default; d != buffer.SpaceNone {
+		if op.Space.Fixed {
+			entry["space"] = d.String() + " (fixed)"
+		} else {
+			entry["space"] = d.String() + " (default; { space: \"linear\" | \"encoded\" } changes it)"
+		}
 	}
 	if args := describeArgs(op.Args); len(args) > 0 {
 		entry["args"] = args
@@ -128,10 +134,25 @@ func DescribeArgSpec(s *ArgSpec) string {
 		parts = append(parts, "fraction of width/height")
 	case s.Type == "number" && s.Unit == DocPx2:
 		parts = append(parts, "area (doc px²)")
-	case s.Type == "number[]" && s.Unit == DocPx && s.Len == 4:
-		parts = append(parts, "box [x, y, w, h] (doc px)")
-	case s.Type == "number[]" && s.Unit == DocPx && s.Len == 2:
-		parts = append(parts, "point [x, y] (doc px)")
+	case s.Type == "box" || s.Type == "point" || isUnionType(s.Type):
+		var alts []string
+		for _, t := range strings.Split(s.Type, "|") {
+			switch {
+			case t == "box":
+				alts = append(alts, "box [x, y, w, h] or { x, y, w, h }")
+			case t == "point":
+				alts = append(alts, "point [x, y] or { cx, cy }")
+			case strings.HasPrefix(t, "enum:"):
+				alts = append(alts, strings.Join(quoteSplit(strings.TrimPrefix(t, "enum:")), " | "))
+			default:
+				alts = append(alts, t)
+			}
+		}
+		d := strings.Join(alts, " | ")
+		if s.Unit == DocPx {
+			d += " (doc px)"
+		}
+		parts = append(parts, d)
 	case isKindType(s.Type):
 		parts = append(parts, s.Type+" node")
 	case s.Type == "object":

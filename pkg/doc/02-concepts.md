@@ -23,7 +23,7 @@ Every node has one kind, and every op says which kinds it takes and returns.
 
 | kind | what it evaluates to | made by |
 |---|---|---|
-| Image | float32 pixels in linear light (await gives a summary, never pixels) | `img`, `exposure`, `levels`, `within`, `heal`, `overlay` |
+| Image | float32 pixels with an encoding (srgb or linear) and a frame (await gives a summary, never pixels) | `img`, `exposure`, `levels`, `within`, `heal`, `overlay` |
 | Mask | one channel of weights in [0, 1] | `img.mask.luminance`, `img.mask.box`, `regions.toMask()` |
 | Regions | discrete areas with id, box, area, centroid and measures | `img.detect.specks()`, `mask.components()` |
 | Value | plain data: numbers, objects, arrays | `stats`, `histogram`, `coverage`, `count` |
@@ -50,8 +50,19 @@ thrown away produces an `UNUSED_NODE` warning, and comparing a node with `<` is 
 Lengths, boxes and points are in **doc px** (pixels of the original image) at every scale; areas in doc px².
 `await` evaluates at a preview scale (long side about 1600 px), looks at a look scale (at most 1568 px); the
 engine rescales radii and boxes so a preview and a full-size result agree. Region detection runs at a fixed
-`analysisScale`, so region ids and boxes are the same everywhere. Pixels are linear light; ops that work in
-perceptual space (levels' gamma, contrast, histogram bins, `mask.luminance` thresholds) convert themselves.
+`analysisScale`, so region ids and boxes are the same everywhere. Coordinates are absolute in the image's
+**frame** (a window read with `cv.open(path, { box })` keeps the scan's coordinates).
+
+## Encodings and working spaces
+
+Every image has an **encoding**: `srgb` (photographs: the sRGB curve undone gives light) or `linear` (float
+TIFF, DNG raw scans, `.npy`, density maps: the stored value is the quantity). `cv.open(path, { encoding })`
+overrides what the file implies. Every pixel op has a **working space**: `linear` (exposure, blur, blend, stats,
+levels: physical steps count equally) or `encoded` (thresholds, contrast, histogram, specks: visible steps count
+equally), changed per call with `{ space }`. The graph inserts cached conversion nodes (`explain()` shows them),
+luminance is always computed from linear light, and a look shows encoded values; masks and derived images
+(`chroma`, `toLab`) show their values directly. Several images can be open under names:
+`cv.open(path, { as: "ref" })`.
 
 ## Masks and regions
 

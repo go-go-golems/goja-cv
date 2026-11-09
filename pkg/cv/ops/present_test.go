@@ -10,6 +10,17 @@ import (
 	"github.com/go-go-golems/goja-cv/pkg/cv/graph"
 )
 
+// encodedOf evaluates the encoded values of node n (what a look shows) at scale 1.
+func encodedOf(t *testing.T, e *graph.Engine, n *graph.Node) *buffer.Buffer {
+	t.Helper()
+	id, err := e.Display(n.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	shown, _ := e.Node(id)
+	return evalValue(t, e, shown, 1).(*graph.ImageValue).Buf
+}
+
 func TestOverlayAndCompare(t *testing.T) {
 	e, img, _ := plantedEngine(t)
 	specks := call(t, e, "where", call(t, e, "detect.specks", img.ID).ID, map[string]any{"score": map[string]any{"gte": DustScore}})
@@ -19,7 +30,7 @@ func TestOverlayAndCompare(t *testing.T) {
 	if sb := evalValue(t, e, same, 1).(*graph.ImageValue).Buf; len(sb.Pix) != len(ob.Pix) || sb.Pix[1234] != ob.Pix[1234] {
 		t.Fatal("regions.overlay(img) differs from img.overlay(regions)")
 	}
-	src := evalValue(t, e, img, 1).(*graph.ImageValue).Buf
+	src := encodedOf(t, e, img) // overlays and compare run in encoded space
 	// box outlines are drawn in red: count strongly red pixels that were not
 	red := buffer.ToLinear(1)
 	var n int
@@ -33,11 +44,11 @@ func TestOverlayAndCompare(t *testing.T) {
 	}
 	healed := call(t, e, "heal", img.ID, graph.NodeArg{ID: specks.ID})
 	side := call(t, e, "compare", img.ID, []any{graph.NodeArg{ID: healed.ID}})
-	if side.DocW != 2*256+compareGap || side.DocH != 192 {
-		t.Fatalf("side doc size %d×%d", side.DocW, side.DocH)
+	if side.Frame.W != 2*256+compareGap || side.Frame.H != 192 {
+		t.Fatalf("side doc size %d×%d", side.Frame.W, side.Frame.H)
 	}
 	sv := evalValue(t, e, side, 1).(*graph.ImageValue)
-	hb := evalValue(t, e, healed, 1).(*graph.ImageValue).Buf
+	hb := encodedOf(t, e, healed)
 	if sv.Buf.W != 516 || sv.Buf.Pix[0] != src.Pix[0] || sv.Buf.Pix[260] != hb.Pix[0] {
 		t.Fatalf("side: %v", sv.Buf)
 	}
@@ -59,10 +70,10 @@ func TestOverlayAndCompare(t *testing.T) {
 	if nz == 0 || nz > len(db.Pix)/5 {
 		t.Fatalf("diff non-zero samples %d of %d", nz, len(db.Pix))
 	}
-	if _, _, err := e.Call("compare", img.ID, []any{[]any{graph.NodeArg{ID: healed.ID}, graph.NodeArg{ID: img.ID}}, map[string]any{"mode": "diff"}}); err == nil {
+	if _, err := e.Call("compare", img.ID, []any{[]any{graph.NodeArg{ID: healed.ID}, graph.NodeArg{ID: img.ID}}, map[string]any{"mode": "diff"}}); err == nil {
 		t.Fatal("diff of three images accepted")
 	}
-	if _, _, err := e.Call("compare", img.ID, []any{[]any{graph.NodeArg{ID: specks.ID}}}); err == nil {
+	if _, err := e.Call("compare", img.ID, []any{[]any{graph.NodeArg{ID: specks.ID}}}); err == nil {
 		t.Fatal("regions accepted as an image to compare")
 	}
 	// for looking at the results by hand: CV_LOOK_DIR=/tmp/x go test ./pkg/cv/ops -run OverlayAndCompare

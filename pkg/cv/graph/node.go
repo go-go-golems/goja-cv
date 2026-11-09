@@ -3,7 +3,10 @@ package graph
 import (
 	"crypto/sha256"
 	"encoding/binary"
+	"fmt"
 	"sync"
+
+	"github.com/go-go-golems/goja-cv/pkg/cv/buffer"
 )
 
 // NodeID is a node handle; 0 is never a valid node.
@@ -17,23 +20,25 @@ type Node struct {
 	NExplicit int      // number of leading inputs passed to Run as in[]
 	Args      Args     // canonical, defaults filled, lifted args as InputRef
 	Kind      Kind
-	Hash      [32]byte // sha256(op key, canonical args, input hashes)
-	Base      int      // document step the node was built on (E_STALE); -1 if none
-	DocW      int      // doc size of the result (0 for pure data)
-	DocH      int
+	Hash      [32]byte        // sha256(op key, canonical args, input hashes)
+	Frame     Frame           // the rectangle the result covers in doc px (empty for pure data)
+	Enc       buffer.Encoding // Image: its encoding; Value: the encoding of the image it measured; else EncNone
+	Space     buffer.Space    // Image: the space of its values; Value: of its level-valued numbers; else SpaceNone
 }
 
 // Builder interns nodes: structurally identical calls return the same node.
+// It looks up the ops it inserts itself (toGray, convert) in reg.
 type Builder struct {
+	reg   *Registry
 	mu    sync.Mutex
 	byKey map[[32]byte]*Node
 	nodes map[NodeID]*Node
 	next  NodeID
 }
 
-// NewBuilder returns an empty builder.
-func NewBuilder() *Builder {
-	return &Builder{byKey: map[[32]byte]*Node{}, nodes: map[NodeID]*Node{}}
+// NewBuilder returns an empty builder over reg.
+func NewBuilder(reg *Registry) *Builder {
+	return &Builder{reg: reg, byKey: map[[32]byte]*Node{}, nodes: map[NodeID]*Node{}}
 }
 
 // Node returns the node with id.
@@ -60,30 +65,51 @@ func (b *Builder) kindOf(id NodeID) (Kind, bool) {
 }
 
 // Intern checks raw call arguments against op (types, units, hard limits,
-// unknown option keys), lifts node-valued arguments into inputs, and returns
-// the existing node with the same structure or a new one. receiver is 0 for
-// source ops. trusted holds Go-side values for hidden arguments. Warnings
-// (RANGE) are returned alongside the node.
+// unknown option keys), lifts node-valued arguments into inputs, resolves
+// the op's working space and inserts the toGray and convert nodes its inputs
+// need, and returns the existing node with the same structure or a new one.
+// receiver is 0 for source ops. trusted holds Go-side values for hidden
+// arguments. Warnings (RANGE, SPACE, ENCODING) are returned alongside the
+// node.
 func (b *Builder) Intern(op *OpDef, receiver NodeID, raw []any, trusted map[string]any) (*Node, []Warning, error) {
+	r, err := b.Call(op, receiver, raw, trusted)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(r.Nodes) != 1 {
+		return nil, nil, Errorf(EInternal, "%s returns %d nodes; use Builder.Call", op.Name, len(r.Nodes))
+	}
+	return r.Nodes[0], r.Warnings, nil
+}
+
+// CallResult is what one call builds: one node, or several for a macro
+// such as split(), with the warnings of the call and its expansion.
+type CallResult struct {
+	Nodes    []*Node
+	Warnings []Warning
+}
+
+// Call is Intern for any op, including macros that return several nodes.
+func (b *Builder) Call(op *OpDef, receiver NodeID, raw []any, trusted map[string]any) (CallResult, error) {
 	var recv *Node
 	if receiver != 0 {
 		var ok bool
 		if recv, ok = b.Node(receiver); !ok {
-			return nil, nil, Errorf(EInternal, "unknown receiver node #%d", receiver)
+			return CallResult{}, Errorf(EInternal, "unknown receiver node #%d", receiver)
 		}
 		if !accepts(op.On, recv.Kind) {
-			return nil, nil, Errorf(EWrongKind, "%s is %s method; the receiver is %s.", op.Name, A(string(op.On)), A(string(recv.Kind)))
+			return CallResult{}, Errorf(EWrongKind, "%s is %s method; the receiver is %s.", op.Name, A(string(op.On)), A(string(recv.Kind)))
 		}
 	} else if op.On != KindNone {
-		return nil, nil, Errorf(EInternal, "%s needs %s receiver", op.Name, A(string(op.On)))
+		return CallResult{}, Errorf(EInternal, "%s needs %s receiver", op.Name, A(string(op.On)))
 	}
 	raw, err := b.resolveBuilt(raw, receiver)
 	if err != nil {
-		return nil, nil, err
+		return CallResult{}, err
 	}
 	bd, err := bind(op, recv != nil, raw, trusted, b.kindOf)
 	if err != nil {
-		return nil, nil, err
+		return CallResult{}, err
 	}
 	var all []NodeID
 	if recv != nil {
@@ -97,17 +123,33 @@ func (b *Builder) Intern(op *OpDef, receiver NodeID, raw []any, trusted map[stri
 	for i, id := range all {
 		in, ok := b.Node(id)
 		if !ok {
-			return nil, nil, Errorf(EInternal, "unknown input node #%d", id)
+			return CallResult{}, Errorf(EInternal, "unknown input node #%d", id)
 		}
 		inputs[i] = in
 	}
 	args := Args{op: op, vals: bd.args}
 	if op.Validate != nil {
 		if err := op.Validate(args); err != nil {
-			return nil, nil, err
+			return CallResult{}, err
 		}
 	}
-	return b.internNode(op, args, inputs, nExplicit), bd.warnings, nil
+	if recv != nil {
+		if err := checkInFrame(op, args, recv.Frame); err != nil {
+			return CallResult{}, err
+		}
+	}
+	if op.Expand != nil {
+		return b.expand(op, args, recv, inputs, nExplicit, bd.warnings)
+	}
+	inputs, ws, err := b.resolveSpace(op, args, inputs)
+	if err != nil {
+		return CallResult{}, err
+	}
+	ws = append(bd.warnings, ws...)
+	if op.Warn != nil {
+		ws = append(ws, op.Warn(b, args, inputs)...)
+	}
+	return CallResult{Nodes: []*Node{b.internNode(op, args, inputs, nExplicit)}, Warnings: ws}, nil
 }
 
 // internNode returns the node for (op, canonical args, inputs), creating it
@@ -124,22 +166,83 @@ func (b *Builder) internNode(op *OpDef, args Args, inputs []*Node, nExplicit int
 		ids[i] = in.ID
 	}
 	b.next++
-	n := &Node{ID: b.next, Op: op, Inputs: ids, NExplicit: nExplicit, Args: args, Kind: op.Returns, Hash: h, Base: -1}
-	for _, in := range inputs {
-		n.Base = max(n.Base, in.Base)
+	n := &Node{ID: b.next, Op: op, Inputs: ids, NExplicit: nExplicit, Args: args, Kind: op.Returns, Hash: h}
+	n.Frame = nodeFrame(op, args, inputs)
+	n.Enc, n.Space = nodeStatics(op, args, inputs)
+	b.byKey[h], b.nodes[n.ID] = n, n
+	return n
+}
+
+// checkInFrame refuses literal boxes that miss frame and points outside it,
+// for arguments declared InFrame (E_ARG_RANGE with the nearest valid value).
+func checkInFrame(op *OpDef, args Args, frame Frame) error {
+	if frame.Empty() {
+		return nil
 	}
-	if op.DocSize != nil {
-		n.DocW, n.DocH = op.DocSize(args, inputs)
-	} else {
-		for _, in := range inputs {
-			if in.DocW > 0 {
-				n.DocW, n.DocH = in.DocW, in.DocH
-				break
+	for i := range op.Args {
+		s := &op.Args[i]
+		if !s.InFrame {
+			continue
+		}
+		l, ok := args.vals[s.Name].([]any)
+		if !ok {
+			continue
+		}
+		f := make([]float64, len(l))
+		for j, e := range l {
+			v, ok := e.(float64)
+			if !ok {
+				return nil // a lifted coordinate: checked when evaluated
+			}
+			f[j] = v
+		}
+		where := op.Name + "." + s.Name
+		switch len(f) {
+		case 4:
+			if !frame.OverlapsBox(f[0], f[1], f[2], f[3]) {
+				nb := frame.NearestBox(f[0], f[1], f[2], f[3])
+				return Errorf(EArgRange, "%s = [%s, %s, %s, %s] is outside the image's frame %s ([x, y, w, h], doc px).", where, fmtNum(f[0]), fmtNum(f[1]), fmtNum(f[2]), fmtNum(f[3]), frame).
+					WithHint("Coordinates are absolute: in the frame of the file the image came from.").
+					WithFix(argFix(op, s, fmt.Sprintf("[%s, %s, %s, %s]", fmtNum(nb[0]), fmtNum(nb[1]), fmtNum(nb[2]), fmtNum(nb[3]))))
+			}
+		case 2:
+			if !frame.ContainsPoint(f[0], f[1]) {
+				np := frame.NearestPoint(f[0], f[1])
+				return Errorf(EArgRange, "%s = [%s, %s] is outside the image's frame %s ([x, y, w, h], doc px).", where, fmtNum(f[0]), fmtNum(f[1]), frame).
+					WithHint("Coordinates are absolute: in the frame of the file the image came from.").
+					WithFix(argFix(op, s, fmt.Sprintf("[%s, %s]", fmtNum(np[0]), fmtNum(np[1]))))
 			}
 		}
 	}
-	b.byKey[h], b.nodes[n.ID] = n, n
-	return n
+	return nil
+}
+
+// argFix renders a call of op with value for argument s, as a literal fix:
+// img.mask.flood([32, 24]) or img.stats({ box: [0, 0, 10, 10] }).
+func argFix(op *OpDef, s *ArgSpec, value string) string {
+	recv := map[Kind]string{KindImage: "img.", KindMask: "mask.", KindRegions: "regions.", KindValue: "value."}[op.On]
+	if s.Positional {
+		return fmt.Sprintf("%s%s(%s)", recv, op.Name, value)
+	}
+	return fmt.Sprintf("%s%s({ %s: %s })", recv, op.Name, s.Name, value)
+}
+
+// nodeFrame is the frame of a node: op.DocFrame, or the first input with a
+// non-empty frame. It depends only on the hash inputs, so a hash hit has the
+// frame a new node would get.
+func nodeFrame(op *OpDef, args Args, inputs []*Node) Frame {
+	if op.Expand != nil && len(inputs) > 0 { // a macro node: its expansion's output
+		return inputs[len(inputs)-1].Frame
+	}
+	if op.DocFrame != nil {
+		return op.DocFrame(args, inputs)
+	}
+	for _, in := range inputs {
+		if !in.Frame.Empty() {
+			return in.Frame
+		}
+	}
+	return Frame{}
 }
 
 // BuiltArg is the result of a builder lambda in a raw call: the node the

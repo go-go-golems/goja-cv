@@ -1,7 +1,6 @@
 package ops
 
 import (
-	"context"
 	"math"
 	"testing"
 
@@ -11,14 +10,21 @@ import (
 	"github.com/go-go-golems/goja-cv/pkg/cv/kernels"
 )
 
+// perceptualLuminance is sRGB_encode of the Rec. 709 luminance of linear b.
+func perceptualLuminance(b *buffer.Buffer) []float32 {
+	L := b.Luminance()
+	out := make([]float32, len(L))
+	for i, v := range L {
+		out[i] = float32(buffer.LinearToSRGB(float64(v)))
+	}
+	return out
+}
+
 // speckDeviation is, for each planted speck, |mean perceptual luminance
 // over the speck − mean over the true background there|.
 func speckDeviation(t *testing.T, b *buffer.Buffer, p testimage.Planted) []float64 {
 	t.Helper()
-	L, err := kernels.PerceptualLuminance(context.Background(), b)
-	if err != nil {
-		t.Fatal(err)
-	}
+	L := perceptualLuminance(b)
 	trueL := func(x, y float64) float64 {
 		c := testimage.PlantedBackground(x, y)
 		lin := buffer.LumR*buffer.SRGBToLinear(c[0]) + buffer.LumG*buffer.SRGBToLinear(c[1]) + buffer.LumB*buffer.SRGBToLinear(c[2])
@@ -79,14 +85,14 @@ func TestHealRemovesPlantedSpecks(t *testing.T) {
 			t.Fatalf("%s: check.dust after heal: %v", method, cd)
 		}
 		// heal at preview scale is consistent (same regions, rasterized at 0.5)
-		if v := evalValue(t, e, healed, 0.5).(*graph.ImageValue); v.Buf.W != 128 || v.DocW != 256 {
+		if v := evalValue(t, e, healed, 0.5).(*graph.ImageValue); v.Buf.W != 128 || v.Frame.W != 256 {
 			t.Fatalf("%s at 0.5: %v", method, v.Buf)
 		}
 	}
 	// patch keeps grain: the residual noise inside healed specks is near σ
 	grain := func(method string) float64 {
 		hb := evalValue(t, e, call(t, e, "heal", img.ID, graph.NodeArg{ID: keep.ID}, map[string]any{"radius": 1.5, "method": method}), 1).(*graph.ImageValue).Buf
-		L, _ := kernels.PerceptualLuminance(context.Background(), hb)
+		L := perceptualLuminance(hb)
 		var vals []float32
 		for _, s := range p.Specks {
 			for y := int(s.Y - s.RY); y <= int(s.Y+s.RY); y++ {

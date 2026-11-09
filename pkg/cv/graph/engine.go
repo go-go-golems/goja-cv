@@ -48,7 +48,7 @@ type Engine struct {
 // NewEngine creates an engine over reg.
 func NewEngine(reg *Registry, opts EngineOptions) *Engine {
 	opts = opts.withDefaults()
-	b := NewBuilder()
+	b := NewBuilder(reg)
 	par := NewParamStore()
 	ev := NewEvaluator(b, par, NewCache(opts.CacheBytes), NewSourceStore(opts.PyramidMinLong))
 	return &Engine{opts: opts, reg: reg, b: b, par: par, ev: ev}
@@ -62,32 +62,35 @@ func (e *Engine) Evaluator() *Evaluator        { return e.ev }
 func (e *Engine) Cache() *Cache                { return e.ev.cache }
 func (e *Engine) Node(id NodeID) (*Node, bool) { return e.b.Node(id) }
 
-// Call interns op name on receiver (0 for source ops) with raw arguments.
-// An unknown name yields E_UNKNOWN_METHOD / E_NAMESPACE with suggestions.
-func (e *Engine) Call(name string, receiver NodeID, raw []any) (*Node, []Warning, error) {
+// Call interns op name on receiver (0 for source ops) with raw arguments:
+// one node, or several for a macro such as split(). An unknown name yields
+// E_UNKNOWN_METHOD / E_NAMESPACE with suggestions.
+func (e *Engine) Call(name string, receiver NodeID, raw []any) (CallResult, error) {
 	kind := KindNone
 	if receiver != 0 {
 		n, ok := e.b.Node(receiver)
 		if !ok {
-			return nil, nil, Errorf(EInternal, "unknown node #%d", receiver)
+			return CallResult{}, Errorf(EInternal, "unknown node #%d", receiver)
 		}
 		kind = n.Kind
 	}
 	op, ok := e.reg.Lookup(kind, name)
-	if !ok {
+	if !ok || op.Internal {
 		var path []string
 		if receiver != 0 {
 			path = e.ev.Path(receiver)
 		}
-		return nil, nil, e.reg.UnknownMethod(kind, name, path)
+		return CallResult{}, e.reg.UnknownMethod(kind, name, path)
 	}
-	return e.b.Intern(op, receiver, raw, nil)
+	return e.b.Call(op, receiver, raw, nil)
 }
 
-// Open interns a source node for an image file. The header is read now (for
-// the doc size); pixels are decoded on first evaluation. The node identity
-// includes the absolute path and the file's size and modification time.
-func (e *Engine) Open(path string) (*Node, error) {
+// Open interns a source node for an image file with the options of
+// cv.open(path, { encoding, box, origin }) (raw may be nil). The header is
+// read now (for the frame and the encoding); pixels are decoded on first
+// evaluation. The node identity includes the absolute path, the file's size
+// and modification time, and the options.
+func (e *Engine) Open(path string, raw map[string]any) (*Node, error) {
 	op, ok := e.reg.Lookup(KindNone, "open")
 	if !ok {
 		return nil, Errorf(EInternal, "no source op registered")
@@ -108,14 +111,32 @@ func (e *Engine) Open(path string) (*Node, error) {
 	if err != nil {
 		return nil, Errorf(EArgType, "cannot open %q: %v", path, err)
 	}
-	info, err := buffer.DecodeConfigFile(abs)
+	info, err := buffer.ProbeFile(abs)
 	if err != nil {
+		if fe, ok := buffer.IsFormatError(err); ok {
+			return nil, Errorf(EFormat, "cv.open(%q): %s.", path, fe.Feature).WithHint("Supported: " + buffer.SupportedFormats + ".")
+		}
 		return nil, Errorf(EArgType, "cannot read %q as an image: %v", path, errors.Cause(err)).
-			WithHint("Supported formats: PNG, JPEG, TIFF (8/16-bit).")
+			WithHint("Supported: " + buffer.SupportedFormats + ".")
 	}
 	stamp := fmt.Sprintf("%d-%d", st.Size(), st.ModTime().UnixNano())
-	n, _, err := e.b.Intern(op, 0, []any{abs}, map[string]any{"stamp": stamp, "w": info.W, "h": info.H,
-		"format": info.Format, "bits": info.Bits, "channels": info.Channels})
+	trusted := map[string]any{"stamp": stamp, "w": info.W, "h": info.H, "format": info.Format, "bits": info.Bits,
+		"channels": info.Channels, "sample": info.Sample, "fileEncoding": info.Encoding.String()}
+	if info.Origin != nil {
+		trusted["recordedOrigin"] = []any{float64(info.Origin[0]), float64(info.Origin[1])}
+	}
+	if len(info.Notes) > 0 {
+		notes := make([]any, len(info.Notes))
+		for i, n := range info.Notes {
+			notes[i] = n
+		}
+		trusted["notes"] = notes
+	}
+	call := []any{abs}
+	if len(raw) > 0 {
+		call = append(call, raw)
+	}
+	n, _, err := e.b.Intern(op, 0, call, trusted)
 	return n, err
 }
 
@@ -136,8 +157,27 @@ func (e *Engine) Placeholder(receiver NodeID) (*Node, error) {
 	if r.Kind != op.Returns {
 		return nil, Errorf(EWrongKind, "builder lambdas take %s; the receiver is %s.", A(string(op.Returns)), A(string(r.Kind)))
 	}
-	n, _, err := e.b.Intern(op, 0, nil, map[string]any{"for": float64(receiver), "w": r.DocW, "h": r.DocH})
+	n, _, err := e.b.Intern(op, 0, nil, map[string]any{"for": float64(receiver), "frame": r.Frame.Data(),
+		"enc": r.Enc.String(), "space": r.Space.String()})
 	return n, err
+}
+
+// Display returns the node a look of node id renders: id itself, or
+// convert(id → encoded) when its values are not already the encoded values
+// a look shows (masks and linear-encoded images are shown as they are).
+func (e *Engine) Display(id NodeID) (NodeID, error) {
+	n, ok := e.b.Node(id)
+	if !ok {
+		return 0, Errorf(EInternal, "unknown node #%d", id)
+	}
+	if n.Kind != KindImage || buffer.Identity(n.Enc, n.Space, buffer.SpaceEncoded) {
+		return id, nil
+	}
+	c, _, err := e.b.internOp(ConvertOp, n, buffer.SpaceEncoded.String())
+	if err != nil {
+		return 0, err
+	}
+	return c.ID, nil
 }
 
 // DeclareParam declares (or re-declares) a param and returns its node.
@@ -163,7 +203,7 @@ func (e *Engine) ScaleForLong(id NodeID, long int) float64 {
 	if !ok {
 		return 1
 	}
-	l := max(n.DocW, n.DocH)
+	l := max(n.Frame.W, n.Frame.H)
 	if l <= 0 || l <= long {
 		return 1
 	}

@@ -3,6 +3,7 @@ package ops
 import (
 	"context"
 
+	"github.com/go-go-golems/goja-cv/pkg/cv/buffer"
 	"github.com/go-go-golems/goja-cv/pkg/cv/graph"
 	"github.com/go-go-golems/goja-cv/pkg/cv/kernels"
 )
@@ -14,7 +15,7 @@ func speckArgs(maxArea, minContrast float64) []graph.ArgSpec {
 		{Name: "maxArea", Type: "number", Unit: graph.DocPx2, Default: maxArea, Min: graph.F(1), Max: graph.F(1e6), Usual: [2]float64{4, 5000},
 			Doc: "largest speck in doc px²"},
 		{Name: "minContrast", Type: "number", Default: minContrast, Min: graph.F(0.001), Max: graph.F(1), Usual: [2]float64{0.01, 0.3},
-			Doc: "smallest peak contrast against the local background, perceptual units"},
+			Doc: "smallest peak contrast against the local background, in levels of the working space (encoded by default)"},
 		{Name: "polarity", Type: "enum:both,dark,bright", Default: "both", Doc: "dark specks (dust on a positive), bright ones, or both"},
 		analysisScaleArg,
 	}
@@ -27,7 +28,7 @@ func runSpecks(ctx context.Context, ec *graph.EvalCtx, src *graph.ImageValue, a 
 	if err != nil {
 		return nil, nil, err
 	}
-	rv := graph.NewRegions(src.Buf.W, src.Buf.H, ec.Scale, src.DocW, src.DocH)
+	rv := graph.NewRegions(src.Buf.W, src.Buf.H, ec.Scale, src.Frame)
 	for i, s := range res.Specks {
 		r := rv.NewRegion(i+1, s.Pix)
 		r.Measures["contrast"] = s.Contrast
@@ -52,7 +53,7 @@ const DustScore = 0.5
 func detectOps() []graph.OpDef {
 	return []graph.OpDef{
 		{
-			Name: "detect.specks", On: graph.KindImage, Returns: graph.KindRegions, Space: "analysis", Global: true,
+			Name: "detect.specks", On: graph.KindImage, Returns: graph.KindRegions, Space: graph.SpaceRule{Default: buffer.SpaceEncoded}, Global: true,
 			Args:          speckArgs(200, 0.03),
 			AnalysisScale: analysisScale,
 			Run: func(ctx context.Context, ec *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
@@ -62,7 +63,8 @@ func detectOps() []graph.OpDef {
 				}
 				return rv, nil
 			},
-			Doc: "Find small dark/bright specks (dust): perceptual luminance minus a morphological background, " +
+			Gray: func(graph.Args) []int { return []int{0} },
+			Doc: "Find small dark/bright specks (dust): luminance in the working space (encoded by default) minus a morphological background, " +
 				"thresholded at max(minContrast, 4σ noise) with hysteresis, labelled, at most maxArea. " +
 				"Each region has contrast, localNoise, sharpness (soft round blobs like stars are low) and score in [0, 1]; " +
 				"keep real dust with .where({ score: { gte: 0.5 } }). Regions are analysed at analysisScale (default 1), so ids and boxes are the same in preview and export.",
@@ -70,10 +72,11 @@ func detectOps() []graph.OpDef {
 			See:    []string{"heal", "check.dust", "where", "overlay"},
 		},
 		{
-			Name: "check.dust", On: graph.KindImage, Returns: graph.KindValue, Space: "analysis", Global: true,
+			Name: "check.dust", On: graph.KindImage, Returns: graph.KindValue, Space: graph.SpaceRule{Default: buffer.SpaceEncoded}, Global: true,
 			Args:          speckArgs(200, 0.03),
 			AnalysisScale: analysisScale,
 			Fields:        []string{"verdict", "count", "candidates", "maxArea", "coverage", "noise"},
+			Gray:          func(graph.Args) []int { return []int{0} },
 			Run: func(ctx context.Context, ec *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
 				src := image(in[0])
 				rv, res, err := runSpecks(ctx, ec, src, a)
@@ -99,7 +102,7 @@ func detectOps() []graph.OpDef {
 				}
 				out := map[string]any{
 					"verdict": verdict, "count": float64(count), "candidates": float64(len(rv.Items)),
-					"maxArea": maxArea, "coverage": area / float64(src.DocW*src.DocH), "noise": res.Noise,
+					"maxArea": maxArea, "coverage": area / float64(src.Frame.W*src.Frame.H), "noise": res.Noise,
 				}
 				if count > 0 {
 					out["hint"] = "img.heal(img.detect.specks().where({ score: { gte: 0.5 } }), { radius: 3 })"

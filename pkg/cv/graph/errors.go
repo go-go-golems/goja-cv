@@ -18,11 +18,7 @@ const (
 	EArgRange         = "E_ARG_RANGE"
 	EUnknownOption    = "E_UNKNOWN_OPTION"
 	ELazyCompare      = "E_LAZY_COMPARE"
-	EStale            = "E_STALE"
-	EReadOnly         = "E_READONLY"
-	EFragmentCapture  = "E_FRAGMENT_CAPTURE"
 	EParamRedeclare   = "E_PARAM_REDECLARE"
-	ENoModel          = "E_NO_MODEL"
 	ETimeout          = "E_TIMEOUT"
 	ECancelled        = "E_CANCELLED"
 	ENoField          = "E_NO_FIELD"    // a derived field does not exist in the evaluated value
@@ -30,9 +26,10 @@ const (
 	EEval             = "E_EVAL"        // a kernel or IO failure during evaluation
 	EInternal         = "E_INTERNAL"    // a bug: an op panicked
 	EPlaceholder      = "E_PLACEHOLDER" // a builder lambda's placeholder node was evaluated outside its builder
+	EFrame            = "E_FRAME"       // images combined by one op cover different frames
+	EFormat           = "E_FORMAT"      // a file feature goja-cv does not read
 	WUnusedNode       = "UNUSED_NODE"
 	WRange            = "RANGE"
-	WScale            = "SCALE"
 	WCut              = "CUT"
 	pathFailureMarker = "✗ "
 )

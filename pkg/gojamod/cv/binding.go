@@ -94,6 +94,7 @@ func (b *binding) object() *goja.Object {
 	set := func(name string, fn func(goja.FunctionCall) goja.Value) { _ = o.Set(name, fn) }
 	_ = o.Set("__version", Version)
 	set("__registry", b.registry)
+	set("__kinds", b.kinds)
 	set("__call", b.call)
 	set("__open", b.open)
 	set("__evaluate", b.evaluate)
@@ -212,6 +213,15 @@ func (b *binding) registry(goja.FunctionCall) goja.Value {
 	return toJS(b.vm, out)
 }
 
+// __kinds() → ["Image", "Mask", …]: graph.Kinds in display order.
+func (b *binding) kinds(goja.FunctionCall) goja.Value {
+	out := make([]any, len(graph.Kinds))
+	for i, k := range graph.Kinds {
+		out[i] = string(k)
+	}
+	return toJS(b.vm, out)
+}
+
 // __builders() → { "Image:within": [1], … }: argument positions that take
 // builder lambdas.
 func (b *binding) builders(goja.FunctionCall) goja.Value {
@@ -238,7 +248,8 @@ func (b *binding) placeholder(c goja.FunctionCall) goja.Value {
 	return handle(b.vm, n)
 }
 
-// __call(op, receiverId, args[]) → {id, kind}
+// __call(op, receiverId, args[]) → {id, kind}, or an array of them for a
+// macro that builds several nodes (split)
 func (b *binding) call(c goja.FunctionCall) goja.Value {
 	name := c.Argument(0).String()
 	recv := jsNodeID(c.Argument(1))
@@ -247,22 +258,48 @@ func (b *binding) call(c goja.FunctionCall) goja.Value {
 		list, _ := fromJS(a.Export()).([]any)
 		raw = list
 	}
-	n, ws, err := b.eng.Call(name, recv, raw)
+	r, err := b.eng.Call(name, recv, raw)
 	if err != nil {
 		b.throw(err)
 	}
-	b.addWarnings(ws)
-	b.noteCall(n.ID, ws)
-	return handle(b.vm, n)
+	b.addWarnings(r.Warnings)
+	if len(r.Nodes) == 1 {
+		b.noteCall(r.Nodes[0].ID, r.Warnings)
+		return handle(b.vm, r.Nodes[0])
+	}
+	hs := make([]any, len(r.Nodes))
+	for i, n := range r.Nodes {
+		ws := r.Warnings
+		if i > 0 {
+			ws = nil
+		}
+		b.noteCall(n.ID, ws)
+		hs[i] = handle(b.vm, n)
+	}
+	return b.vm.NewArray(hs...)
 }
 
-// __open(path) → {id, kind}
+// __open(path, opts|null) → {id, kind}
 func (b *binding) open(c goja.FunctionCall) goja.Value {
 	p := c.Argument(0)
 	if goja.IsUndefined(p) || p.ExportType() == nil || p.ExportType().Kind().String() != "string" {
 		b.throw(graph.Errorf(graph.EArgType, "cv.open needs a file path string.").WithFix(`cv.open("scan.tif")`))
 	}
-	n, err := b.eng.Open(p.String())
+	var opts map[string]any
+	if o := c.Argument(1); !goja.IsUndefined(o) && !goja.IsNull(o) {
+		m, ok := fromJS(o.Export()).(map[string]any)
+		if !ok {
+			b.throw(graph.Errorf(graph.EArgType, "cv.open options must be an object, got %s.", o.String()).
+				WithFix(`cv.open("scan.tif", { encoding: "linear" })`))
+		}
+		opts = m
+		if _, ok := m["as"]; ok {
+			b.throw(graph.Errorf(graph.EUnknownOption, "cv.open has no option \"as\" here: names exist only in eval sessions.").
+				WithHint("In a goja-cv eval session (CLI eval/run, the MCP server) cv.open(path, { as: \"ref\" }) binds a global; here keep the node in a variable.").
+				WithFix(fmt.Sprintf("const ref = cv.open(%q)", p.String())))
+		}
+	}
+	n, err := b.eng.Open(p.String(), opts)
 	if err != nil {
 		b.throw(err)
 	}
@@ -343,14 +380,14 @@ func resultToJS(vm *goja.Runtime, v graph.Value, n *graph.Node) goja.Value {
 	return goja.Undefined()
 }
 
-// __describe(id) → {id, kind, op, call, label, docW, docH, path}
+// __describe(id) → {id, kind, op, call, label, frame, path}
 func (b *binding) describe(c goja.FunctionCall) goja.Value {
 	n := b.nodeArg(c.Argument(0))
 	scale := b.eng.PreviewScale(n.ID)
 	d := map[string]any{
 		"id": float64(n.ID), "kind": string(n.Kind), "op": n.Op.Name, "label": graph.Label(n),
-		"call": graph.Describe(b.eng.Builder(), n, scale, b.eng.Params().Snapshot()),
-		"docW": float64(n.DocW), "docH": float64(n.DocH),
+		"call":  graph.Describe(b.eng.Builder(), n, scale, b.eng.Params().Snapshot()),
+		"frame": n.Frame.Data(),
 		"path":  toAny(b.eng.Path(n.ID)),
 		"scale": scale,
 	}

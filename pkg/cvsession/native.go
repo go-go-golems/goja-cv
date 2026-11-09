@@ -25,8 +25,11 @@ func (n *native) object() *goja.Object {
 	o := n.vm.NewObject()
 	_ = o.Set("checkPath", n.checkPath)
 	_ = o.Set("queue", n.queue)
-	_ = o.Set("getImg", n.getImg)
-	_ = o.Set("setImg", n.setImg)
+	_ = o.Set("checkName", n.checkName)
+	_ = o.Set("bindName", n.bindName)
+	_ = o.Set("getName", n.getName)
+	_ = o.Set("setName", n.setName)
+	_ = o.Set("asKey", n.asKey)
 	_ = o.Set("noDoc", n.noDoc)
 	_ = o.Set("fail", n.fail)
 	_ = o.Set("unknownMember", n.unknownMember)
@@ -114,20 +117,6 @@ func (n *native) queue(c goja.FunctionCall) goja.Value {
 		}
 	}
 	n.st.shows = append(n.st.shows, l)
-	return goja.Undefined()
-}
-
-func (n *native) getImg(goja.FunctionCall) goja.Value {
-	if n.st.img == nil || goja.IsUndefined(n.st.img) {
-		n.throw(graph.Errorf(ENoImage, "No image is open, so img is not defined.").
-			WithHint("Open one first; it stays bound to img for the next evals.").
-			WithFix(`img = cv.open("scan.tif")`))
-	}
-	return n.st.img
-}
-
-func (n *native) setImg(c goja.FunctionCall) goja.Value {
-	n.st.img = c.Argument(0)
 	return goja.Undefined()
 }
 

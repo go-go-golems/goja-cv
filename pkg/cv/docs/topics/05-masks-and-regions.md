@@ -4,7 +4,7 @@ A Mask is a soft field of weights in [0, 1] (selections, feathered edges); Regio
 
 ## Making masks
 
-All on an Image: `mask.luminance({ above, below, softness })` (perceptual luminance), `mask.color({ hue, tol, minSat })`, `mask.box([x, y, w, h])`, `mask.ellipse([x, y, w, h])`, `mask.gradient({ from: "top", to: 0.45 })` (or two points), `mask.flood([x, y], { tol })` (magic wand). Coordinates in doc px.
+All on an Image: `mask.luminance({ above, below, softness })` (luminance levels in the working space: encoded by default, the scale a look shows), `mask.color({ hue, tol, minSat })`, `mask.box([x, y, w, h])`, `mask.ellipse([x, y, w, h])`, `mask.gradient({ from: "top", to: 0.45 })` (or two points), `mask.flood([x, y], { tol })` (magic wand). Coordinates in doc px.
 
 ```js
 const bright = img.mask.luminance({ above: 0.6 })
@@ -26,7 +26,7 @@ return { coverage: await sel.coverage(), look: sel.overlay(img, { color: "lime" 
 
 ## Regions
 
-`detect.specks()` and `mask.components()` make Regions. Awaiting gives `{ count, items: [{ id, box, area, centroid, … }], docW, docH, … }`. Narrow them with:
+`detect.specks()` and `mask.components()` make Regions. Awaiting gives `{ count, items: [{ id, box, area, centroid, … }], frame, … }` (box and centroid are absolute doc px in the image's frame). Narrow them with:
 
 - `where({ field: { lt, lte, gt, gte, eq, ne, in } })` or `{ field: value }` (data, runs in Go, values may be params);
 - `without([ids])`, `only([ids])`, `sortBy("contrast", { desc })`, `top(n)`, `count()`;
@@ -52,4 +52,15 @@ return { masked: await m.coverage(), blobs: await blobs.count() }
 
 ## Looking at selections
 
-`img.overlay(regions | mask, { color, alpha, labels: "id" })` draws them over the image (colours: any CSS name such as `"lime"`, `"#ff8800"`, `"#f80"` or perceptual `[r, g, b]`) (`regions.overlay(img)` and `mask.overlay(img)` work too). A Regions node itself has no look: return `img.overlay(regions).look()`.
+`img.overlay(regions | mask, { color, alpha, labels: "id" })` draws them over the image (colours: any CSS name such as `"lime"`, `"#ff8800"`, `"#f80"` or display `[r, g, b]` in [0, 1]) (`regions.overlay(img)` and `mask.overlay(img)` work too). A Regions node itself has no look: return `img.overlay(regions).look()`.
+
+## Neutral or coloured?
+
+Dust on colour film is neutral: it raises all three channels alike, while colour grain and scene detail do not. `chroma()` is the per-pixel channel spread (0 for grey); a mask of low chroma keeps neutral areas.
+
+```js
+const c = img.chroma({ relative: true })
+const neutral = c.mask.luminance({ below: 0.1 })
+return { neutralShare: await neutral.coverage(), look: c.colormap("magma").look("chroma") }
+```
+

@@ -6,7 +6,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/go-go-golems/goja-cv/pkg/cv/buffer"
 	"github.com/go-go-golems/goja-cv/pkg/cv/graph"
 )
 
@@ -68,24 +67,23 @@ func TestMaskArgumentErrors(t *testing.T) {
 		{"mask.gradient", []any{map[string]any{"from": "top", "to": 1.5}}, graph.EArgRange},
 		{"mask.gradient", []any{map[string]any{"from": []any{0, 0}, "to": 0.5}}, graph.EArgType},
 	} {
-		_, _, err := e.Call(tc.op, img.ID, tc.raw)
+		_, err := e.Call(tc.op, img.ID, tc.raw)
 		if ce, ok := graph.AsError(err); !ok || ce.Code != tc.code {
 			t.Fatalf("%s %v: %v", tc.op, tc.raw, err)
 		}
 	}
 	m := call(t, e, "mask.box", img.ID, []any{0, 0, 10, 10})
-	_, _, err := e.Call("overlay", m.ID, []any{graph.NodeArg{ID: img.ID}, map[string]any{"color": "purpleish"}})
+	_, err := e.Call("overlay", m.ID, []any{graph.NodeArg{ID: img.ID}, map[string]any{"color": "purpleish"}})
 	if ce, ok := graph.AsError(err); !ok || ce.Code != graph.EArgType || len(ce.Valid) == 0 {
 		t.Fatalf("bad colour: %v", err)
 	}
-	_, _, err = e.Call("and", m.ID, []any{graph.NodeArg{ID: img.ID}})
+	_, err = e.Call("and", m.ID, []any{graph.NodeArg{ID: img.ID}})
 	if ce, ok := graph.AsError(err); !ok || ce.Code != graph.EWrongKind {
 		t.Fatalf("image as mask input: %v", err)
 	}
 }
 
 func TestParseColorAcceptsCSSNamesAndHex(t *testing.T) {
-	lin := func(v float64) float32 { return buffer.ToLinear(float32(v)) }
 	for in, want := range map[any][3]float64{
 		"lime":          {0, 1, 0},
 		"Lime":          {0, 1, 0},
@@ -101,8 +99,8 @@ func TestParseColorAcceptsCSSNamesAndHex(t *testing.T) {
 			t.Fatalf("%v: %v", in, err)
 		}
 		for i := range got {
-			if math.Abs(float64(got[i]-lin(want[i]))) > 1e-6 {
-				t.Fatalf("%v: %v, want perceptual %v", in, got, want)
+			if math.Abs(float64(got[i])-want[i]) > 1e-6 { // display (encoded) values: overlays run in encoded space
+				t.Fatalf("%v: %v, want %v", in, got, want)
 			}
 		}
 	}

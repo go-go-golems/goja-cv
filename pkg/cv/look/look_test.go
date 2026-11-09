@@ -22,7 +22,7 @@ var testTIFF = filepath.Join("..", "..", "..", "testdata", "gradient-64x48-16bit
 func newEngine(t *testing.T, path string) (*graph.Engine, *graph.Node) {
 	t.Helper()
 	e := graph.NewEngine(ops.NewRegistry(), graph.EngineOptions{})
-	img, err := e.Open(path)
+	img, err := e.Open(path, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -31,7 +31,8 @@ func newEngine(t *testing.T, path string) (*graph.Engine, *graph.Node) {
 
 func call(t *testing.T, e *graph.Engine, name string, recv graph.NodeID, raw ...any) *graph.Node {
 	t.Helper()
-	n, _, err := e.Call(name, recv, raw)
+	cr, err := e.Call(name, recv, raw)
+	n := cr.Node()
 	if err != nil {
 		t.Fatalf("%s: %v", name, err)
 	}
@@ -46,7 +47,11 @@ func writeFlat(t *testing.T, w, h int, v float32) string {
 		b.Pix[i] = v
 	}
 	p := filepath.Join(t.TempDir(), "flat.png")
-	if err := buffer.WriteFile(context.Background(), p, b, "png8"); err != nil {
+	enc, err := buffer.Convert(context.Background(), b, buffer.EncSRGB, buffer.SpaceLinear, buffer.SpaceEncoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := buffer.WriteFile(context.Background(), p, enc, "png8"); err != nil {
 		t.Fatal(err)
 	}
 	return p
@@ -136,11 +141,15 @@ func TestLookBurnsNumberIntoGrayPNG(t *testing.T) {
 		}
 	}
 	// Outside the box the image is the plain gray rendering.
-	v, err := e.Evaluate(context.Background(), gray.ID, graph.EvalOptions{Scale: 1})
+	shown, err := e.Display(gray.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	ref, _ := buffer.ToImage(context.Background(), v.(*graph.ImageValue).Buf, 8)
+	v, err := e.Evaluate(context.Background(), shown, graph.EvalOptions{Scale: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref, _ := buffer.Quantize(context.Background(), v.(*graph.ImageValue).Buf, 8)
 	for _, p := range []image.Point{{box.Max.X, 0}, {0, box.Max.Y}, {63, 47}, {30, 30}} {
 		if got, want := g.GrayAt(p.X, p.Y), ref.(*image.Gray).GrayAt(p.X, p.Y); got != want {
 			t.Fatalf("pixel %v = %v, want %v", p, got, want)

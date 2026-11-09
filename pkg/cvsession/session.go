@@ -274,7 +274,7 @@ type state struct {
 	shows      []*look.Look
 	failure    *failure
 	lookSeq    int
-	img        goja.Value
+	names      *nameTable // named images (img first)
 	lastParams map[string]any
 	broken     bool // the VM can no longer run promise jobs (see probePromises)
 	watchdog   *watchdog
@@ -425,7 +425,7 @@ func (i *Initializer) InitRuntime(ctx *engine.RuntimeInitializationContext) erro
 	if !ok {
 		return errors.Errorf("cvsession: %s is %T", cvmod.EngineValueKey, engVal)
 	}
-	st := &state{opts: i.opts, eng: eng, img: goja.Undefined()}
+	st := &state{opts: i.opts, eng: eng, names: newNameTable()}
 	states.Store(vm, st)
 	if svc, ok := runtimebridge.Lookup(vm); ok {
 		context.AfterFunc(svc.Lifetime(), func() { states.CompareAndDelete(vm, st) })
@@ -451,7 +451,7 @@ func (i *Initializer) InitRuntime(ctx *engine.RuntimeInitializationContext) erro
 		if err != nil {
 			return errors.Wrapf(err, "open --image %s", i.opts.Image)
 		}
-		st.img = node
+		st.names.set("img", node)
 	}
 	return nil
 }

@@ -39,8 +39,17 @@ func Gradient() *buffer.Buffer {
 // Write writes all test images into dir.
 func Write(ctx context.Context, dir string) error {
 	b := Gradient()
-	if err := buffer.WriteFile(ctx, filepath.Join(dir, TIFF16), b, "tiff16"); err != nil {
+	if err := writeSRGB(ctx, filepath.Join(dir, TIFF16), b, "tiff16"); err != nil {
 		return err
 	}
-	return buffer.WriteFile(ctx, filepath.Join(dir, PNG8), b, "png8")
+	return writeSRGB(ctx, filepath.Join(dir, PNG8), b, "png8")
+}
+
+// writeSRGB writes linear-light b as an sRGB-encoded file.
+func writeSRGB(ctx context.Context, path string, b *buffer.Buffer, format string) error {
+	enc, err := buffer.Convert(ctx, b, buffer.EncSRGB, buffer.SpaceLinear, buffer.SpaceEncoded)
+	if err != nil {
+		return err
+	}
+	return buffer.WriteFile(ctx, path, enc, format)
 }

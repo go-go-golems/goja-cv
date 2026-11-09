@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/go-go-golems/goja-cv/pkg/cv/buffer"
 	"github.com/pkg/errors"
 )
 
@@ -46,6 +47,7 @@ const (
 	DocPx         // length or coordinate in original-image pixels; scaled per evaluation
 	Fraction      // 0..1 of width/height
 	DocPx2        // area in original-image pixels²; scaled by scale² per evaluation
+	Level         // a value on the scale of the op's working space (levels.black, mask.luminance.above)
 )
 
 func (u Unit) String() string {
@@ -58,14 +60,98 @@ func (u Unit) String() string {
 		return "unitless"
 	case DocPx2:
 		return "doc px²"
+	case Level:
+		return "level"
 	}
 	return "unknown"
 }
 
+// SpaceRule is an op's working space: the space its kernel's numbers are in.
+type SpaceRule struct {
+	// Default is the working space when the call passes no { space };
+	// SpaceNone means the op does not read levels (geometry, masks, data).
+	Default buffer.Space
+	// Fixed: the op only works in Default (toLab, encode); no space option.
+	Fixed bool
+}
+
+// ResultEnc computes the encoding and space of an Image result. s is the
+// op's resolved working space (SpaceNone for ops without one). The three
+// named rules cover every op but sources, convert and encode.
+type ResultEnc struct {
+	Enc   func(args Args, inputs []*Node) buffer.Encoding
+	Space func(args Args, s buffer.Space, inputs []*Node) buffer.Space
+}
+
+// firstImage is the first Image input (receiver, then Inputs, then
+// kind-typed arguments), or nil.
+func firstImage(inputs []*Node) *Node {
+	for _, in := range inputs {
+		if in.Kind == KindImage {
+			return in
+		}
+	}
+	return nil
+}
+
+var (
+	// KeepEnc: the encoding of the first Image input; the space is the op's
+	// working space, or the first Image input's for ops without one.
+	KeepEnc = &ResultEnc{
+		Enc: func(_ Args, inputs []*Node) buffer.Encoding {
+			if in := firstImage(inputs); in != nil {
+				return in.Enc
+			}
+			return buffer.EncNone
+		},
+		Space: func(_ Args, s buffer.Space, inputs []*Node) buffer.Space {
+			if s != buffer.SpaceNone {
+				return s
+			}
+			if in := firstImage(inputs); in != nil {
+				return in.Space
+			}
+			return buffer.SpaceLinear
+		},
+	}
+	// DerivedEnc: a new quantity (chroma, Lab; GCV-002's sub, highpass). The
+	// values are reinterpreted as linear-encoded: their stored value is their
+	// value, so what is measured is what is seen.
+	DerivedEnc = &ResultEnc{
+		Enc:   func(Args, []*Node) buffer.Encoding { return buffer.EncLinear },
+		Space: func(Args, buffer.Space, []*Node) buffer.Space { return buffer.SpaceLinear },
+	}
+	// DisplayEnc: display colours (colormap), sRGB-encoded values.
+	DisplayEnc = &ResultEnc{
+		Enc:   func(Args, []*Node) buffer.Encoding { return buffer.EncSRGB },
+		Space: func(Args, buffer.Space, []*Node) buffer.Space { return buffer.SpaceEncoded },
+	}
+)
+
+// SpaceArg is the name of the working-space option Register adds.
+const SpaceArg = "space"
+
+// spaceOption is the option Register appends to every op with a working
+// space that is not fixed.
+var spaceOption = ArgSpec{Name: SpaceArg, Type: "enum:linear,encoded", Optional: true, Static: true,
+	Doc:           "working space: linear (the encoding undone) or encoded (the file's values, what looks show)",
+	ValueSynonyms: SpaceValueSynonyms}
+
+// SpaceValueSynonyms and EncodingValueSynonyms are the value synonyms of the
+// space option and of encoding arguments.
+var (
+	SpaceValueSynonyms = map[string]string{"file": "encoded", "stored": "encoded", "code": "encoded", "display": "encoded",
+		"perceptual": "encoded", "srgb": "encoded", "sRGB": "encoded", "lin": "linear", "light": "linear", "physical": "linear"}
+	EncodingValueSynonyms = map[string]string{"sRGB": "srgb", "SRGB": "srgb", "gamma": "srgb", "perceptual": "srgb",
+		"lin": "linear", "raw": "linear", "identity": "linear", "none": "linear"}
+)
+
 // ArgSpec declares one argument of an op.
 //
 // Types: "number", "string", "bool", "enum:a,b,c", "number[]", "string[]",
-// "object" (with Options as the allowed keys), "any", and node kinds such as
+// "box" ([x, y, w, h] or an object with x, y, w, h), "point" ([x, y] or an
+// object with cx, cy), unions of these such as "point|number", "object"
+// (with Options as the allowed keys), "any", and node kinds such as
 // "Mask", "Regions|Mask" or "Image[]": a kind-typed argument holds a node of
 // that kind (lifted into the node's inputs like a Value argument); Run reads
 // its evaluated value with Args.Node / Args.Nodes.
@@ -79,11 +165,15 @@ type ArgSpec struct {
 	Variadic   bool       // a positional "...[]" argument that takes all remaining positional values
 	Hidden     bool       // set by Go only (e.g. a source file stamp); not settable or listed
 	Static     bool       // must be a literal: a node (Value/Param) is rejected
-	Len        int        // for list types: the exact number of elements (4 for a box, 2 for a point)
+	Len        int        // for list types: the exact number of elements
+	InFrame    bool       // "box"/"point": a box must overlap, a point lie in, the receiver's frame (E_ARG_RANGE)
 	Min, Max   *float64   // hard limits: violation is E_ARG_RANGE
 	Usual      [2]float64 // soft range (zero value = none): violation is a RANGE warning
 	Options    []ArgSpec  // for "object": the allowed keys (unknown keys are E_UNKNOWN_OPTION)
-	Doc        string
+	// ValueSynonyms map words agents use for an enum value to the value they
+	// mean (scoped to this argument), for the did-you-mean hint and fix.
+	ValueSynonyms map[string]string
+	Doc           string
 }
 
 func (s *ArgSpec) hasUsual() bool { return s.Usual != [2]float64{} }
@@ -103,14 +193,22 @@ type OpDef struct {
 	Inputs   []Kind // extra node inputs beyond the receiver, passed positionally first
 	Args     []ArgSpec
 	Returns  Kind
-	Space    string                                     // "linear" | "perceptual" | "geometry" | "analysis" | "source" | "data"
-	Identity func(args Args) bool                       // neutral arguments: the receiver is returned unchanged
-	Halo     func(args Args) float64                    // doc px of border a tile needs (for tiled export; unused in M1)
-	Global   bool                                       // needs the whole image (stats, histogram)
-	NoCache  bool                                       // never cached (explain reads cache state)
-	Lazy     bool                                       // inputs are not evaluated before Run (explain)
-	DocSize  func(args Args, inputs []*Node) (int, int) // doc size of the result; default: first input's
-	Fields   []string                                   // documented fields of a Value result (help, hints)
+	Space    SpaceRule             // working space (SpaceNone: the op does not read levels)
+	Result   *ResultEnc            // encoding and space of an Image result; nil = KeepEnc
+	Gray     func(args Args) []int // positions of the Image inputs read as luminance (fed toGray rec709 in linear space)
+	Internal bool                  // not callable from JavaScript, not listed in help (convert)
+	// Expand makes the op a macro: a graph of other ops built at intern
+	// time (exactly one of Run and Expand is set). See ExpandFunc.
+	Expand ExpandFunc
+	// Warn adds build-time warnings for a call (toLab on camera RGB).
+	Warn     func(b *Builder, args Args, inputs []*Node) []Warning
+	Identity func(args Args) bool                  // neutral arguments: the receiver is returned unchanged
+	Halo     func(args Args) float64               // doc px of border a tile needs (for tiled export; unused in M1)
+	Global   bool                                  // needs the whole image (stats, histogram)
+	NoCache  bool                                  // never cached (explain reads cache state)
+	Lazy     bool                                  // inputs are not evaluated before Run (explain)
+	DocFrame func(args Args, inputs []*Node) Frame // the result's frame; nil: the first input with a non-empty frame
+	Fields   []string                              // documented fields of a Value result (help, hints)
 	// Validate checks bound args at build time (after defaults and types);
 	// lifted values are still InputRefs. Errors fail the call.
 	Validate func(args Args) error
@@ -157,8 +255,8 @@ func (r *Registry) Register(def OpDef) error {
 	if def.Name == "" {
 		return errors.New("op without name")
 	}
-	if def.Run == nil {
-		return errors.Errorf("op %s has no Run", def.Name)
+	if (def.Run == nil) == (def.Expand == nil) {
+		return errors.Errorf("op %s must have exactly one of Run and Expand", def.Name)
 	}
 	if def.Returns == KindNone {
 		return errors.Errorf("op %s has no Returns kind", def.Name)
@@ -186,6 +284,12 @@ func (r *Registry) Register(def OpDef) error {
 		}
 	}
 	d := def
+	if d.Space.Default != buffer.SpaceNone && !d.Space.Fixed {
+		if d.spec(SpaceArg) != nil {
+			return errors.Errorf("op %s declares its own %s argument", def.Name, SpaceArg)
+		}
+		d.Args = append(append([]ArgSpec(nil), d.Args...), spaceOption)
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if _, ok := r.ops[d.Key()]; ok {
@@ -229,13 +333,16 @@ func (r *Registry) Lookup(on Kind, name string) (*OpDef, bool) {
 	return nil, false
 }
 
-// Ops returns all ops sorted by receiver kind and name.
+// Ops returns all ops callable from JavaScript (not Internal ones), sorted
+// by receiver kind and name.
 func (r *Registry) Ops() []*OpDef {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	out := make([]*OpDef, 0, len(r.ops))
 	for _, op := range r.ops {
-		out = append(out, op)
+		if !op.Internal {
+			out = append(out, op)
+		}
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].On != out[j].On {

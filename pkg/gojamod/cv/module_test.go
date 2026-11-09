@@ -173,7 +173,7 @@ func TestHelp(t *testing.T) {
 	if got["kinds"] != "Image,Mask,Regions,Value,Param" || !strings.Contains(got["image"].(string), "gaussian") {
 		t.Fatalf("help: %v", got)
 	}
-	if got["ev"] != "number in [-10, 10], usual [-3, 3], required, positional. stops: linear values are multiplied by 2^ev" || got["usage"] != "exposure(ev)" {
+	if got["ev"] != "number in [-10, 10], usual [-3, 3], required, positional. stops: values are multiplied by 2^ev" || got["usage"] != "exposure(ev)" {
 		t.Fatalf("help exposure: %#v", got)
 	}
 	// cv.help never throws (agents batch help calls): unknown names return
@@ -222,9 +222,9 @@ func TestPart2Section3NodesAndEvaluation(t *testing.T) {
 	lines := mustRun(t, rt, `return img.exposure(0.3).gaussian(2).explain()`).([]any)
 	if len(lines) != 3 ||
 		!strings.HasPrefix(lines[0].(string), "#3 gaussian(r: 2 px)") ||
-		!strings.HasSuffix(lines[0].(string), "Image 64×48") || // never evaluated
+		!strings.HasSuffix(lines[0].(string), "Image 64×48           enc srgb · space linear") || // never evaluated
 		!strings.HasPrefix(lines[1].(string), "  #2 exposure(ev: 0.3)") ||
-		!strings.HasSuffix(lines[1].(string), "Image 64×48  cached") || // awaited above
+		!strings.HasSuffix(lines[1].(string), "Image 64×48  cached   enc srgb · space linear") || // awaited above
 		!strings.HasPrefix(lines[2].(string), "    #1 source gradient-64x48-16bit.tif") {
 		t.Fatalf("explain: %q", lines)
 	}
@@ -247,7 +247,7 @@ func TestPart2Section4Ops(t *testing.T) {
 	near(t, "levels p99", after[1], 1, 2e-3)
 
 	e := mustFail(t, rt, "E_UNKNOWN_OPTION", `return img.levels({ blak: 0.02 })`)
-	if strings.Join(e.Valid, ", ") != "black, white, gamma" || e.Hint != `Did you mean "black"?` || e.Fix != "levels({ black: 0.02 })" {
+	if strings.Join(e.Valid, ", ") != "black, white, gamma, space" || e.Hint != `Did you mean "black"?` || e.Fix != "levels({ black: 0.02 })" {
 		t.Fatalf("unknown option: %+v", e)
 	}
 	mustFail(t, rt, "E_ARG_TYPE", `return img.exposure("bright")`)
@@ -327,7 +327,7 @@ func TestParamsRecomputeOnlyDownstream(t *testing.T) {
 		t.Fatalf("param state: %v", got)
 	}
 	eng := engineOf(t, rt)
-	img, _ := eng.Open(tiffPath)
+	img, _ := eng.Open(tiffPath, nil)
 	if eng.Evaluator().Runs(img.ID) != 1 {
 		t.Fatalf("source decoded/resampled %d times", eng.Evaluator().Runs(img.ID))
 	}
@@ -383,5 +383,40 @@ func TestRegistrarAndNamespaces(t *testing.T) {
 	mustFail(t, rt, "E_UNKNOWN_METHOD", `return img.info.sise()`)
 	if eng, _ := cvmod.EngineFor(rt.VM); eng.Registry() != reg {
 		t.Fatal("EngineFor returned another engine")
+	}
+}
+
+// TestSplitReturnsNodes: a macro that builds several nodes returns an array
+// of node proxies in JavaScript.
+func TestSplitReturnsNodes(t *testing.T) {
+	rt := newRuntime(t)
+	got := mustRun(t, rt, `
+		const [r, g, b] = img.split()
+		const s = await b.stats()
+		return { kinds: [r, g, b].map(n => cv.isNode(n)).join(","), same: g === img.channel("g"), ch: (await g).channels, enc: (await img.chroma()).encoding, p99: s.p99 }`).(map[string]any)
+	if got["kinds"] != "true,true,true" || got["same"] != true || got["enc"] != "linear" {
+		t.Fatalf("split: %v", got)
+	}
+}
+
+// TestBareModuleRejectsAs: names exist only in eval sessions.
+func TestBareModuleRejectsAs(t *testing.T) {
+	rt := newRuntime(t)
+	e := mustFail(t, rt, "E_UNKNOWN_OPTION", fmt.Sprintf(`return cv.open(%q, { as: "ref" })`, tiffPath))
+	if !strings.Contains(e.Message, "names exist only in eval sessions") || !strings.HasPrefix(e.Fix, "const ref = cv.open(") {
+		t.Fatalf("as in a bare module: %+v", e)
+	}
+}
+
+// TestKindsComeFromTheGraph: cv.kinds is graph.Kinds, not a hand-written list.
+func TestKindsComeFromTheGraph(t *testing.T) {
+	rt := newRuntime(t)
+	got := mustRun(t, rt, `return cv.kinds.join(",")`)
+	var want []string
+	for _, k := range graph.Kinds {
+		want = append(want, string(k))
+	}
+	if got != strings.Join(want, ",") {
+		t.Fatalf("cv.kinds = %v, want %v", got, want)
 	}
 }

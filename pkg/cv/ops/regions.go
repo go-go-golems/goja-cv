@@ -196,7 +196,7 @@ func validateIDs(a graph.Args) error {
 
 func idFilterOp(name string, keep bool, doc string) graph.OpDef {
 	return graph.OpDef{
-		Name: name, On: graph.KindRegions, Returns: graph.KindRegions, Space: "data",
+		Name: name, On: graph.KindRegions, Returns: graph.KindRegions,
 		Args:     []graph.ArgSpec{{Name: "ids", Type: "any", Positional: true, Doc: "a region id or a list of ids"}},
 		Validate: validateIDs,
 		Run: func(_ context.Context, _ *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
@@ -221,7 +221,7 @@ func idFilterOp(name string, keep bool, doc string) graph.OpDef {
 func regionOps() []graph.OpDef {
 	return []graph.OpDef{
 		{
-			Name: "components", On: graph.KindMask, Returns: graph.KindRegions, Space: "analysis", Global: true,
+			Name: "components", On: graph.KindMask, Returns: graph.KindRegions, Global: true,
 			Args: []graph.ArgSpec{
 				{Name: "minArea", Type: "number", Unit: graph.DocPx2, Default: 1.0, Min: graph.F(0), Doc: "smallest region kept, in doc px²"},
 				{Name: "threshold", Type: "number", Default: 0.5, Min: graph.F(0), Max: graph.F(1), Doc: "mask values above this are selected"},
@@ -240,7 +240,7 @@ func regionOps() []graph.OpDef {
 				if err != nil {
 					return nil, err
 				}
-				rv := graph.NewRegions(m.Buf.W, m.Buf.H, ec.Scale, m.DocW, m.DocH)
+				rv := graph.NewRegions(m.Buf.W, m.Buf.H, ec.Scale, m.Frame)
 				minPx := a.Area("minArea", ec.Scale)
 				for _, pix := range comps {
 					if float64(len(pix)) < minPx {
@@ -262,7 +262,7 @@ func regionOps() []graph.OpDef {
 			See:    []string{"toMask", "where"},
 		},
 		{
-			Name: "where", On: graph.KindRegions, Returns: graph.KindRegions, Space: "data",
+			Name: "where", On: graph.KindRegions, Returns: graph.KindRegions,
 			Args: []graph.ArgSpec{{Name: "pred", Type: "any", Positional: true,
 				Doc: "{ field: { lt, lte, gt, gte, eq, ne, in } } or { field: value }; values may be Value or Param nodes"}},
 			Validate: validatePredicate,
@@ -287,7 +287,7 @@ func regionOps() []graph.OpDef {
 		idFilterOp("without", false, "Drop the regions with these ids."),
 		idFilterOp("only", true, "Keep only the regions with these ids."),
 		{
-			Name: "sortBy", On: graph.KindRegions, Returns: graph.KindRegions, Space: "data",
+			Name: "sortBy", On: graph.KindRegions, Returns: graph.KindRegions,
 			Args: []graph.ArgSpec{
 				{Name: "key", Type: "string", Positional: true, Doc: "a region field (area, score, contrast, …)"},
 				{Name: "desc", Type: "bool", Default: true, Doc: "largest first"},
@@ -335,7 +335,7 @@ func regionOps() []graph.OpDef {
 			See: []string{"top"},
 		},
 		{
-			Name: "top", On: graph.KindRegions, Returns: graph.KindRegions, Space: "data",
+			Name: "top", On: graph.KindRegions, Returns: graph.KindRegions,
 			Args: []graph.ArgSpec{{Name: "n", Type: "number", Positional: true, Min: graph.F(0)}},
 			Run: func(_ context.Context, _ *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
 				rv := regions(in[0])
@@ -346,14 +346,14 @@ func regionOps() []graph.OpDef {
 			See: []string{"sortBy"},
 		},
 		{
-			Name: "count", On: graph.KindRegions, Returns: graph.KindValue, Space: "data",
+			Name: "count", On: graph.KindRegions, Returns: graph.KindValue,
 			Run: func(_ context.Context, _ *graph.EvalCtx, in []graph.Value, _ graph.Args) (graph.Value, error) {
 				return data(float64(len(regions(in[0]).Items))), nil
 			},
 			Doc: "The number of regions.",
 		},
 		{
-			Name: "toMask", On: graph.KindRegions, Returns: graph.KindMask, Space: "selection",
+			Name: "toMask", On: graph.KindRegions, Returns: graph.KindMask,
 			Args: []graph.ArgSpec{{Name: "grow", Type: "number", Unit: graph.DocPx, Default: 0.0, Min: graph.F(0), Max: graph.F(500),
 				Doc: "dilate each region by this many doc px"}},
 			Run: func(ctx context.Context, ec *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
@@ -367,13 +367,13 @@ func regionOps() []graph.OpDef {
 						return nil, err
 					}
 				}
-				return graph.NewMask(m, rv.DocW, rv.DocH), nil
+				return graph.NewMask(m), nil
 			},
 			Doc: "The regions as a Mask at the evaluation scale (exact area coverage), optionally grown.",
 			See: []string{"components", "grow"},
 		},
 		{
-			Name: "filter", On: graph.KindRegions, Returns: graph.KindRegions, Space: "data",
+			Name: "filter", On: graph.KindRegions, Returns: graph.KindRegions,
 			Args: []graph.ArgSpec{{Name: "fn", Type: "func", Positional: true, Doc: "data lambda r => bool, called with each region's data"}},
 			Run: func(ctx context.Context, ec *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
 				rv := regions(in[0])
@@ -401,7 +401,7 @@ func regionOps() []graph.OpDef {
 
 // rasterize draws rv at the buffer size of scale.
 func rasterize(ctx context.Context, rv *graph.RegionsValue, scale float64) (*buffer.Buffer, error) {
-	w, h := buffer.ScaledSize(rv.DocW, rv.DocH, scale)
+	w, h := buffer.ScaledSize(rv.Frame.W, rv.Frame.H, scale)
 	return rv.Rasterize(ctx, w, h, scale)
 }
 

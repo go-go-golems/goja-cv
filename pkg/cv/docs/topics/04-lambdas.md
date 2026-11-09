@@ -4,7 +4,7 @@ There are two kinds of function you can pass to cv: builder lambdas (within) run
 
 ## Builder lambdas: within
 
-`img.within(mask, i => …)` applies an edit inside a mask. The function runs **once, immediately**, with a placeholder Image `i`; the nodes it returns become part of the graph and are blended in linear light through the mask. Capturing variables is fine: only the returned nodes are kept, and params used inside are tracked like any other.
+`img.within(mask, i => …)` applies an edit inside a mask. The function runs **once, immediately**, with a placeholder Image `i`; the nodes it returns become part of the graph and are blended through the mask in linear space (within's working space). Capturing variables is fine: only the returned nodes are kept, and params used inside are tracked like any other.
 
 ```js
 const top = img.mask.gradient({ from: "top", to: 0.45 })

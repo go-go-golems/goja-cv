@@ -1,6 +1,6 @@
 # Units, coordinates and scales
 
-Every length, box and point is in doc px (pixels of the original image) at every scale; pixels are linear-light float32; evaluation happens at preview scale; region detection runs at a fixed analysisScale.
+Every length, box and point is in doc px (pixels of the file, absolute in the image's frame) at every scale; evaluation happens at preview scale; region detection runs at a fixed analysisScale; numbers are in the op's working space.
 
 ## Doc px
 
@@ -22,7 +22,7 @@ return { coverage: await soft.coverage(), explain: soft.explain() }
 | a look | look scale: long side at most 1568 px, or `maxSide` |
 | `cv.evaluate(node, { scale })` | a number in (0, 1], `"preview"`, `"look"` or `"full"` |
 
-An awaited Image gives a summary, never pixels: `{ kind, w, h, channels, scale, docW, docH }`; an opened file adds `file`, `format`, `bitDepth` (8 or 16 bits per sample in the file), `fileChannels` and `colorSpace` (sRGB is assumed; ICC profiles are not read). Statistics are computed at the scale they are evaluated at; for exact full-size numbers use `cv.evaluate(node, { scale: "full" })`.
+An awaited Image gives a summary, never pixels: `{ kind, w, h, channels, scale, frame }` (`w`, `h` are buffer px at that scale; `frame` is `[x, y, w, h]` in doc px); an opened file adds `file`, `format`, `bitDepth` (8, 16, 32 or 64 bits per sample in the file), `sample` (`uint` or `float`), `fileChannels`, `encoding` (`srgb` or `linear`, see `encodings-and-spaces`; ICC profiles are not read) and `notes`. Statistics are computed at the scale they are evaluated at; for exact full-size numbers use `cv.evaluate(node, { scale: "full" })`.
 
 ```js
 const s = img.stats()
@@ -40,10 +40,15 @@ const fast = img.detect.specks({ analysisScale: 0.5 })
 return { full: await img.detect.specks().count(), half: await fast.count() }
 ```
 
-## Linear and perceptual
+## Frames
 
-Pixels are linear-light float32: 0 is black, 1 is white, values above 1 can occur while editing. Ops declare their space and convert themselves:
+An image's **frame** is the rectangle it covers in doc px, `[x, y, w, h]`: `(await img).frame`. A whole file starts at (0, 0). A window read with `cv.open(path, { box: [x, y, w, h] })` keeps the file's coordinates, and `cv.open(path, { origin: [x, y] })` declares where a file that is itself a window starts. Boxes and points you pass and region boxes and centroids you read are absolute in that frame; a box outside it is `E_ARG_RANGE` with the nearest valid box as the fix. Images, masks and regions combined by one op must share a frame (`E_FRAME`).
 
-- linear: `exposure` (×2^ev), `gaussian`, `blend`, `within`, `heal`, `stats` (meanL, p01, p99 are linear).
-- perceptual (sRGB-encoded): `levels` midtones and `gamma`, `contrast`, `histogram` bins, `mask.luminance` thresholds.
-- `levels({ black, white })` takes **linear** input levels, the same space as `stats()`, so `img.levels({ black: s.p01, white: s.p99 })` works directly.
+```js
+const f = (await img).frame
+return { frame: f, inside: await img.stats({ box: [f[0] + 10, f[1] + 10, 32, 32] }).pick("meanL", "area") }
+```
+
+## Working spaces
+
+Numbers are in the op's working space: `linear` (the encoding undone: exposure, blur, blend, stats, levels) or `encoded` (what looks show: thresholds, contrast, histogram, specks). Pass `{ space }` to change it; `cv.docs.read("encodings-and-spaces")` explains encodings, spaces and looks.

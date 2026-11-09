@@ -181,8 +181,8 @@ func median3(a, b, c float32) float32 {
 	return b
 }
 
-// HistogramResult counts samples in equal bins of the perceptual
-// (sRGB-encoded) scale over [0, 1]. Under/Over count samples below 0 and
+// HistogramResult counts samples in equal bins over [0, 1] of the space
+// the values are in. Under/Over count samples below 0 and
 // above 1.
 type HistogramResult struct {
 	Counts      []int
@@ -190,7 +190,9 @@ type HistogramResult struct {
 	Total       int
 }
 
-// Histogram bins channel ("L" = linear luminance, or "r", "g", "b") of b.
+// Histogram bins channel ("L" = luminance: the only plane of a 1-channel
+// buffer, else the Rec. 709 weighted sum; or "r", "g", "b") of b over
+// [0, 1] of the space its values are in.
 func Histogram(ctx context.Context, b *buffer.Buffer, bins int, channel string) (*HistogramResult, error) {
 	if bins < 1 {
 		return nil, errors.Errorf("bins = %d", bins)
@@ -213,7 +215,7 @@ func Histogram(ctx context.Context, b *buffer.Buffer, bins int, channel string) 
 		if i%65536 == 0 && ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		p := buffer.ToPerceptual(v)
+		p := v
 		switch {
 		case p < 0:
 			res.Under++

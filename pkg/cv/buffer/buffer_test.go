@@ -62,26 +62,28 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		enc  func(*bytes.Buffer) error
+		dec  Decoder
 		bits int
 		tol  float64
 	}{
-		{"png16", func(w *bytes.Buffer) error { return EncodePNG(ctx, w, src, 16) }, 16, 1e-4},
-		{"png8", func(w *bytes.Buffer) error { return EncodePNG(ctx, w, src, 8) }, 8, 1.0 / 60},
-		{"tiff16", func(w *bytes.Buffer) error { return EncodeTIFF16(ctx, w, src) }, 16, 1e-4},
+		{"png16", func(w *bytes.Buffer) error { return EncodePNG(ctx, w, src, 16) }, pngDecoder{}, 16, 0.5/65535 + 1e-7},
+		{"png8", func(w *bytes.Buffer) error { return EncodePNG(ctx, w, src, 8) }, pngDecoder{}, 8, 0.5/255 + 1e-7},
+		{"tiff16", func(w *bytes.Buffer) error { return EncodeTIFF16(ctx, w, src) }, tiffDecoder{}, 16, 0.5/65535 + 1e-7},
 	} {
 		var bb bytes.Buffer
 		if err := tc.enc(&bb); err != nil {
 			t.Fatalf("%s: %v", tc.name, err)
 		}
-		got, info, err := Decode(ctx, &bb)
+		got, info, err := tc.dec.Decode(ctx, bytes.NewReader(bb.Bytes()), DecodeOptions{})
 		if err != nil {
 			t.Fatalf("%s decode: %v", tc.name, err)
 		}
-		if info.Bits != tc.bits || got.W != 13 || got.H != 7 || got.C != 3 {
+		if info.Bits != tc.bits || got.W != 13 || got.H != 7 || got.C != 3 || info.Encoding != EncSRGB {
 			t.Fatalf("%s: info %+v buf %v", tc.name, info, got)
 		}
 		for i := range src.Pix {
-			if d := math.Abs(float64(got.Pix[i] - src.Pix[i])); d > tc.tol {
+			// files hold the encoded values written, quantized
+			if d := math.Abs(float64(got.Pix[i]) - float64(src.Pix[i])); d > tc.tol {
 				t.Fatalf("%s: pixel %d off by %g", tc.name, i, d)
 			}
 		}
@@ -91,8 +93,8 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 	if err := EncodePNG(ctx, &bb, gray, 16); err != nil {
 		t.Fatal(err)
 	}
-	got, info, err := Decode(ctx, &bb)
-	if err != nil || got.C != 1 || info.Bits != 16 {
+	got, info, err := pngDecoder{}.Decode(ctx, bytes.NewReader(bb.Bytes()), DecodeOptions{})
+	if err != nil || got.C != 1 || info.Bits != 16 || info.Channels != 1 {
 		t.Fatalf("gray16: %v %+v %v", err, info, got)
 	}
 }

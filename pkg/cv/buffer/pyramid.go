@@ -36,11 +36,11 @@ func NewPyramid(ctx context.Context, full *Buffer, minLong int) (*Pyramid, error
 	return p, nil
 }
 
-// DocW is the full-resolution width.
-func (p *Pyramid) DocW() int { return p.Levels[0].W }
+// FullW is the full-resolution width.
+func (p *Pyramid) FullW() int { return p.Levels[0].W }
 
-// DocH is the full-resolution height.
-func (p *Pyramid) DocH() int { return p.Levels[0].H }
+// FullH is the full-resolution height.
+func (p *Pyramid) FullH() int { return p.Levels[0].H }
 
 // Bytes is the memory held by all levels.
 func (p *Pyramid) Bytes() int64 {
@@ -64,7 +64,7 @@ func (p *Pyramid) AtScale(ctx context.Context, scale float64) (*Buffer, error) {
 	if scale <= 0 || scale > 1 {
 		return nil, errors.Errorf("scale %g out of range (0, 1]", scale)
 	}
-	w, h := ScaledSize(p.DocW(), p.DocH(), scale)
+	w, h := ScaledSize(p.FullW(), p.FullH(), scale)
 	src := p.Levels[0]
 	for _, l := range p.Levels[1:] {
 		if l.W >= w && l.H >= h {

@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/go-go-golems/goja-cv/pkg/cv/buffer"
 )
 
 // NodeArg is a node passed as an argument value in a raw call (from JS).
@@ -115,17 +117,34 @@ func (a Args) Lengths(name string, scale float64) []float64 {
 	return out
 }
 
-// XY reads a DocPx list of coordinates and sizes ([x, y], [x, y, w, h])
-// converted to buffer px with per-axis scales: even elements are multiplied
-// by sx, odd ones by sy. Use it with AxisScales of the buffer the
-// coordinates refer to (rounded buffer sizes make sx and sy differ slightly
-// from the nominal scale). It returns nil when the value is not a list.
-func (a Args) XY(name string, sx, sy float64) []float64 {
+// XY reads a "box" or "point" argument (or the point alternative of a union
+// such as "point|number") as buffer px of image value v: the frame origin of
+// v is subtracted from the coordinates (x, y of a point, the corner of a box;
+// sizes are not shifted), then even elements are multiplied by v's x scale
+// and odd ones by its y scale (AxisScales: rounded buffer sizes make them
+// differ slightly from the nominal scale). It returns nil when the value is
+// not a list.
+func (a Args) XY(name string, v *ImageValue) []float64 {
+	s := a.mustSpec(name)
+	if s.Unit != DocPx {
+		panic(fmt.Sprintf("cv: %s.%s is not a doc-px box or point", a.op.Name, name))
+	}
 	l := a.Lengths(name, 1)
+	if l == nil {
+		return nil
+	}
+	sx, sy := AxisScales(v)
+	ox, oy := float64(v.Frame.X), float64(v.Frame.Y)
 	for i := range l {
 		if i%2 == 0 {
+			if i < 2 {
+				l[i] -= ox
+			}
 			l[i] *= sx
 		} else {
+			if i < 2 {
+				l[i] -= oy
+			}
 			l[i] *= sy
 		}
 	}
@@ -135,7 +154,7 @@ func (a Args) XY(name string, sx, sy float64) []float64 {
 // AxisScales are the effective buffer-px-per-doc-px scales of an image
 // value along x and y.
 func AxisScales(v *ImageValue) (float64, float64) {
-	return float64(v.Buf.W) / float64(max(1, v.DocW)), float64(v.Buf.H) / float64(max(1, v.DocH))
+	return float64(v.Buf.W) / float64(max(1, v.Frame.W)), float64(v.Buf.H) / float64(max(1, v.Frame.H))
 }
 
 // Func reads a "func" argument.
@@ -383,6 +402,10 @@ func t2noun(t string) string {
 		return "string"
 	case t == "number[]" || t == "string[]":
 		return "list"
+	case t == "box":
+		return "box [x, y, w, h]"
+	case t == "point":
+		return "point [x, y]"
 	}
 	return t
 }
@@ -422,6 +445,8 @@ func (b *binder) check(s *ArgSpec, typ string, v any, where string) (any, error)
 		return nil, Errorf(EInternal, "%s: unresolved input reference", where)
 	}
 	switch {
+	case isUnionType(typ):
+		return b.checkUnion(s, typ, v, where)
 	case typ == "number":
 		f, ok := v.(float64)
 		if !ok {
@@ -461,7 +486,9 @@ func (b *binder) check(s *ArgSpec, typ string, v any, where string) (any, error)
 			}
 		}
 		e := Errorf(EArgType, "%s = %q is not one of %s.", where, str, quoteList(allowed)).WithValid(allowed)
-		if sug := closest(str, allowed); sug != "" {
+		if sug, ok := s.ValueSynonyms[str]; ok {
+			e.Hint = fmt.Sprintf("Did you mean %q?", sug)
+		} else if sug := closest(str, allowed); sug != "" {
 			e.Hint = fmt.Sprintf("Did you mean %q?", sug)
 		}
 		return nil, e
@@ -484,6 +511,10 @@ func (b *binder) check(s *ArgSpec, typ string, v any, where string) (any, error)
 			out[i] = c
 		}
 		return out, nil
+	case typ == "box":
+		return b.checkBox(s, v, where)
+	case typ == "point":
+		return b.checkPoint(s, v, where)
 	case typ == "object":
 		m, ok := v.(map[string]any)
 		if !ok {
@@ -494,6 +525,154 @@ func (b *binder) check(s *ArgSpec, typ string, v any, where string) (any, error)
 		return b.checkAny(v, where)
 	}
 	return nil, Errorf(EInternal, "%s: unknown arg type %q", where, typ)
+}
+
+// isUnionType reports whether typ is a union of value types such as
+// "point|number" (kind unions such as "Regions|Mask" are kind types).
+func isUnionType(typ string) bool {
+	return strings.Contains(typ, "|") && !isKindType(typ)
+}
+
+// checkUnion checks v against the alternative of typ that fits its shape:
+// strings against string and enum alternatives, numbers against "number",
+// lists and objects against the others.
+func (b *binder) checkUnion(s *ArgSpec, typ string, v any, where string) (any, error) {
+	alts := strings.Split(typ, "|")
+	if _, isNode := v.(NodeArg); isNode {
+		return b.check(s, "number", v, where) // a lifted Value: checked again after substitution
+	}
+	pick := func(match func(alt string) bool) (string, bool) {
+		for _, alt := range alts {
+			if match(alt) {
+				return alt, true
+			}
+		}
+		return "", false
+	}
+	var alt string
+	var ok bool
+	switch v.(type) {
+	case string:
+		alt, ok = pick(func(a string) bool { return a == "string" || strings.HasPrefix(a, "enum:") })
+	case float64:
+		alt, ok = pick(func(a string) bool { return a == "number" })
+	default:
+		alt, ok = pick(func(a string) bool { return a != "number" && a != "string" && !strings.HasPrefix(a, "enum:") })
+	}
+	if !ok {
+		names := make([]string, len(alts))
+		for i, a := range alts {
+			names[i] = t2noun(a)
+		}
+		return nil, Errorf(EArgType, "%s must be %s, got %s.", where, strings.Join(names, " or "), describeRaw(v))
+	}
+	return b.check(s, alt, v, where)
+}
+
+// boxKeys and pointKeys are the object forms of the box and point types:
+// x, y is always a corner, cx, cy always a point or a centre.
+var (
+	boxKeys   = []string{"x", "y", "w", "h"}
+	pointKeys = []string{"cx", "cy"}
+)
+
+func hasNumericKeys(m map[string]any, keys []string) bool {
+	for _, k := range keys {
+		switch m[k].(type) {
+		case float64, NodeArg, InputRef:
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// isCoordinateObject reports whether v is the object form of a box or point
+// (so a positional box or point can be an object without being taken for an
+// options object).
+func isCoordinateObject(typ string, v any) bool {
+	m, ok := v.(map[string]any)
+	if !ok {
+		return false
+	}
+	for _, alt := range strings.Split(typ, "|") {
+		switch alt {
+		case "box":
+			if hasNumericKeys(m, boxKeys) {
+				return true
+			}
+		case "point":
+			if hasNumericKeys(m, pointKeys) || hasNumericKeys(m, boxKeys[:2]) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// coords checks the elements of a box or point list (numbers or lifted
+// Values) and returns the canonical list.
+func (b *binder) coords(s *ArgSpec, list []any, where string) (any, error) {
+	out := make([]any, len(list))
+	for i, e := range list {
+		c, err := b.check(s, "number", e, fmt.Sprintf("%s[%d]", where, i))
+		if err != nil {
+			return nil, err
+		}
+		out[i] = c
+	}
+	return out, nil
+}
+
+// checkBox accepts [x, y, w, h] or an object with numeric x, y, w, h (other
+// keys are ignored, so a region item works) and returns [x, y, w, h].
+func (b *binder) checkBox(s *ArgSpec, v any, where string) (any, error) {
+	switch x := v.(type) {
+	case []any:
+		if len(x) != 4 {
+			return nil, Errorf(EArgType, "%s must be a box [x, y, w, h], got a list of %d values.", where, len(x)).
+				WithHint(lenHint(4))
+		}
+		return b.coords(s, x, where)
+	case map[string]any:
+		if !hasNumericKeys(x, boxKeys) {
+			return nil, Errorf(EArgType, "%s must be a box: [x, y, w, h] or an object with numeric x, y, w, h.", where).
+				WithHint("x, y is the box corner, w, h its size, in doc px.")
+		}
+		return b.coords(s, []any{x["x"], x["y"], x["w"], x["h"]}, where)
+	}
+	return nil, Errorf(EArgType, "%s must be a box [x, y, w, h] (doc px), got %s.", where, describeRaw(v)).WithHint(lenHint(4))
+}
+
+// checkPoint accepts [x, y] or an object with numeric cx, cy and returns
+// [x, y]. An object with only x, y is refused: x, y names a box corner.
+func (b *binder) checkPoint(s *ArgSpec, v any, where string) (any, error) {
+	switch x := v.(type) {
+	case []any:
+		if len(x) != 2 {
+			return nil, Errorf(EArgType, "%s must be a point [x, y], got a list of %d values.", where, len(x)).
+				WithHint(lenHint(2))
+		}
+		return b.coords(s, x, where)
+	case map[string]any:
+		if hasNumericKeys(x, pointKeys) {
+			return b.coords(s, []any{x["cx"], x["cy"]}, where)
+		}
+		if hasNumericKeys(x, boxKeys[:2]) {
+			return nil, Errorf(EArgType, "%s: x, y is a box corner; a point is [x, y] or an object with cx, cy.", where).
+				WithHint("Region items and measurement rows name their centre cx, cy and their box corner x, y; pass the centre, or the corner as a list if you mean it.").
+				WithFix(fmt.Sprintf("[%s, %s]   // [obj.x, obj.y]; or { cx: obj.cx, cy: obj.cy } for the centre", fmtCoord(x["x"]), fmtCoord(x["y"])))
+		}
+		return nil, Errorf(EArgType, "%s must be a point: [x, y] or an object with numeric cx, cy.", where)
+	}
+	return nil, Errorf(EArgType, "%s must be a point [x, y] (doc px), got %s.", where, describeRaw(v)).WithHint(lenHint(2))
+}
+
+func fmtCoord(v any) string {
+	if f, ok := v.(float64); ok {
+		return fmtNum(f)
+	}
+	return "…"
 }
 
 func (b *binder) checkAny(v any, where string) (any, error) {
@@ -600,7 +779,9 @@ var OptionSynonyms = map[string][]string{
 	"low": {"black", "below"}, "lo": {"black", "below"}, "blackPoint": {"black"}, "shadows": {"black", "below"},
 	"high": {"white", "above"}, "hi": {"white", "above"}, "whitePoint": {"white"}, "highlights": {"white", "above"},
 	"midtones": {"gamma"}, "mid": {"gamma"}, "quantiles": {"percentiles"}, "percentile": {"percentiles"},
-	"region": {"mask"}, "regions": {"mask"}, "selection": {"mask"}, "rect": {"box"}, "rectangle": {"box"}, "roi": {"box", "mask"},
+	"region": {"mask", "box"}, "regions": {"mask"}, "selection": {"mask"}, "rect": {"box"}, "rectangle": {"box"}, "roi": {"box", "mask"},
+	"window": {"box"}, "crop": {"box"}, "colorSpace": {"encoding"}, "colorspace": {"encoding"}, "transfer": {"encoding"},
+	"gamma": {"encoding"}, "workingSpace": {"space"}, "working_space": {"space"}, "offset": {"origin"},
 	"amount": {"amount", "ev", "opacity"}, "stops": {"ev"}, "exposure": {"ev"},
 }
 
@@ -744,7 +925,7 @@ func bind(op *OpDef, hasReceiver bool, raw []any, trusted map[string]any, kindOf
 			given[s.Name] = rest
 			continue
 		}
-		if isOptionsObject(raw[i]) && !typeAcceptsObject(s.Type) {
+		if isOptionsObject(raw[i]) && !typeAcceptsObject(s.Type) && !isCoordinateObject(s.Type, raw[i]) {
 			break
 		}
 		given[s.Name] = raw[i]
@@ -756,7 +937,12 @@ func bind(op *OpDef, hasReceiver bool, raw []any, trusted map[string]any, kindOf
 			return nil, Errorf(EArgType, "%s takes at most %d positional argument(s); got %d.", call, len(op.Inputs)+len(positional), len(raw)).
 				WithHint(signatureHint(op))
 		}
-		fix := func(sug string) string { return fmt.Sprintf("%s({ %s: %s })", call, sug, fmtFixValue(opts, sug)) }
+		fix := func(sug string) string {
+			if call == "cv.open" {
+				return fmt.Sprintf("cv.open(path, { %s: %s })", sug, fmtFixValue(opts, sug))
+			}
+			return fmt.Sprintf("%s({ %s: %s })", call, sug, fmtFixValue(opts, sug))
+		}
 		if err := checkKeys(op.Args, opts, call, fix); err != nil {
 			return nil, err
 		}
@@ -793,12 +979,31 @@ func bind(op *OpDef, hasReceiver bool, raw []any, trusted map[string]any, kindOf
 		}
 		c, err := b.check(s, s.Type, v, call+"."+s.Name)
 		if err != nil {
-			return nil, err
+			return nil, withEnumFix(err, call, s)
 		}
 		out[s.Name] = c
 	}
 	res.args, res.lifted, res.warnings = out, b.lifted, b.warnings
 	return res, nil
+}
+
+// withEnumFix gives an enum error without a fix the literal fix
+// call({ name: "value" }), with the suggested value or the first valid one.
+func withEnumFix(err error, call string, s *ArgSpec) error {
+	ce, ok := AsError(err)
+	if !ok || ce.Code != EArgType || ce.Fix != "" || len(ce.Valid) == 0 || !strings.Contains(s.Type, "enum:") {
+		return err
+	}
+	v := ce.Valid[0]
+	if strings.HasPrefix(ce.Hint, "Did you mean ") {
+		v = strings.Trim(strings.TrimSuffix(strings.TrimPrefix(ce.Hint, "Did you mean "), "?"), `"`)
+	}
+	if call == "cv.open" {
+		ce.Fix = fmt.Sprintf("cv.open(path, { %s: %q })", s.Name, v)
+	} else {
+		ce.Fix = fmt.Sprintf("%s({ %s: %q })", call, s.Name, v)
+	}
+	return ce
 }
 
 // fmtFixValue renders the value the agent passed under the misspelled key
@@ -819,7 +1024,12 @@ func trimUndefined(raw []any) []any {
 	return raw
 }
 
-func callName(op *OpDef) string { return op.Name }
+func callName(op *OpDef) string {
+	if op.On == KindNone && op.Name == "open" {
+		return "cv.open"
+	}
+	return op.Name
+}
 
 // signatureHint renders "exposure(ev)" style usage.
 func signatureHint(op *OpDef) string {
@@ -828,8 +1038,8 @@ func signatureHint(op *OpDef) string {
 		pos = append(pos, strings.ToLower(string(in)))
 	}
 	for _, a := range op.Args {
-		if a.Hidden {
-			continue
+		if a.Hidden || isSpaceOption(op, &a) {
+			continue // the working-space option is on every pixel op; help and errors explain it
 		}
 		if a.Positional {
 			n := a.Name
@@ -845,6 +1055,11 @@ func signatureHint(op *OpDef) string {
 		pos = append(pos, "{ "+strings.Join(opt, ", ")+" }")
 	}
 	return "Usage: " + op.Name + "(" + strings.Join(pos, ", ") + ")"
+}
+
+// isSpaceOption reports whether a is the space option Register added.
+func isSpaceOption(op *OpDef, a *ArgSpec) bool {
+	return a.Name == SpaceArg && op.Space.Default != buffer.SpaceNone && !op.Space.Fixed
 }
 
 // resolveArgs substitutes lifted inputs with their evaluated data and

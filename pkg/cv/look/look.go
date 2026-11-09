@@ -47,6 +47,7 @@ type Options struct {
 type Look struct {
 	eng   *graph.Engine
 	node  graph.NodeID
+	root  graph.NodeID // what is rendered: node, or convert(node → encoded)
 	kind  graph.Kind
 	label string
 	scale float64 // buffer px per doc px; 1 for charts
@@ -80,10 +81,16 @@ func New(eng *graph.Engine, id graph.NodeID, opt Options) (*Look, error) {
 	if l.label == "" {
 		l.label = graph.Label(n)
 	}
+	l.root = id
 	switch n.Kind {
 	case graph.KindImage, graph.KindMask:
+		root, err := eng.Display(id)
+		if err != nil {
+			return nil, err
+		}
+		l.root = root
 		l.scale = eng.ScaleForLong(id, maxLong)
-		l.w, l.h = buffer.ScaledSize(n.DocW, n.DocH, l.scale)
+		l.w, l.h = buffer.ScaledSize(n.Frame.W, n.Frame.H, l.scale)
 	case graph.KindValue:
 		if n.Op.Name != "histogram" {
 			return nil, lookKindError(n)
@@ -179,33 +186,38 @@ func (l *Look) ResultContent(ctx context.Context) ([]resultcontent.Content, erro
 
 // Render evaluates and encodes the look, returning the bytes and MIME type.
 func (l *Look) Render(ctx context.Context) ([]byte, string, error) {
-	v, err := l.eng.Evaluate(ctx, l.node, graph.EvalOptions{Scale: l.scale})
+	m, err := l.image(ctx)
 	if err != nil {
 		return nil, "", err
 	}
-	var m draw.Image
+	BurnNumber(m, l.Number())
+	return Encode(m, l.chart)
+}
+
+// image evaluates the look's node and returns its 8-bit image, before the
+// look number is burned in and before encoding. A look shows encoded values:
+// images are rendered through convert(node → encoded) (no node when the
+// values already are encoded), masks and derived images as they are.
+func (l *Look) image(ctx context.Context) (draw.Image, error) {
+	v, err := l.eng.Evaluate(ctx, l.root, graph.EvalOptions{Scale: l.scale})
+	if err != nil {
+		return nil, err
+	}
 	switch x := v.(type) {
 	case *graph.ImageValue:
-		img, err := buffer.ToImage(ctx, x.Buf, 8)
+		img, err := buffer.Quantize(ctx, x.Buf, 8)
 		if err != nil {
-			return nil, "", errors.Wrap(err, "look: convert")
+			return nil, errors.Wrap(err, "look: convert")
 		}
 		dm, ok := img.(draw.Image)
 		if !ok {
-			return nil, "", errors.Errorf("look: unexpected image type %T", img)
+			return nil, errors.Errorf("look: unexpected image type %T", img)
 		}
-		m = dm
+		return dm, nil
 	case *graph.DataValue:
-		cm, err := renderChart(x.Data, l.w, l.h)
-		if err != nil {
-			return nil, "", err
-		}
-		m = cm
-	default:
-		return nil, "", errors.Errorf("look: unexpected value %T", v)
+		return renderChart(x.Data, l.w, l.h)
 	}
-	BurnNumber(m, l.Number())
-	return Encode(m, l.chart)
+	return nil, errors.Errorf("look: unexpected value %T", v)
 }
 
 // Encode writes m as JPEG q85, or PNG for single-channel images and when

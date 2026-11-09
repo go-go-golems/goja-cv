@@ -12,13 +12,19 @@ import (
 )
 
 // SourceInfo is the file metadata of an open() source node (ok false for
-// other nodes): file (basename), format, bitDepth, channels in the file and
-// the assumed colour space.
+// other nodes): file (basename), format, bitDepth, sample, channels in the
+// file, encoding, frame and notes.
 func SourceInfo(n *Node) (map[string]any, bool) {
 	if n.Op.On != KindNone || n.Op.Name != "open" {
 		return nil, false
 	}
-	info := map[string]any{"file": filepath.Base(n.Args.String("path")), "colorSpace": "sRGB (assumed; ICC profiles are not read)"}
+	info := map[string]any{"file": filepath.Base(n.Args.String("path")), "encoding": n.Enc.String(), "frame": n.Frame.Data()}
+	if n.Args.Has("sample") {
+		info["sample"] = n.Args.String("sample")
+	}
+	if n.Args.Has("notes") {
+		info["notes"] = n.Args.Raw("notes")
+	}
 	if n.Args.Has("format") {
 		info["format"] = n.Args.String("format")
 	}
@@ -69,6 +75,9 @@ func Describe(b *Builder, n *Node, scale float64, params map[string]any) string 
 	if n.Op.On == KindValue && n.Op.Name == "field" {
 		return "." + n.Args.String("name")
 	}
+	if n.Op.Name == ConvertOp && n.Op.Internal {
+		return "convert(→ " + n.Args.String("to") + ")"
+	}
 	var parts []string
 	for i := range n.Op.Args {
 		s := &n.Op.Args[i]
@@ -78,6 +87,9 @@ func Describe(b *Builder, n *Node, scale float64, params map[string]any) string 
 		v := n.Args.Raw(s.Name)
 		if s.Default != nil && reflect.DeepEqual(v, normalize(s.Default)) {
 			continue
+		}
+		if s.Name == SpaceArg && v == n.Op.Space.Default.String() {
+			continue // the op's default space
 		}
 		parts = append(parts, s.Name+": "+describeArg(b, n, s, v, scale))
 	}
@@ -128,7 +140,7 @@ func describeArg(b *Builder, n *Node, s *ArgSpec, v any, scale float64) string {
 // It computes no pixels. Nodes reached twice are printed once.
 func (e *Evaluator) Explain(id NodeID, scale float64) []string {
 	root := e.newRun(scale)
-	type row struct{ left, right string }
+	type row struct{ left, right, statics string }
 	var rows []row
 	seen := map[NodeID]bool{}
 	var walk func(run *evalRun, id NodeID, depth int)
@@ -136,7 +148,7 @@ func (e *Evaluator) Explain(id NodeID, scale float64) []string {
 		n := e.node(id)
 		indent := strings.Repeat("  ", depth)
 		if seen[id] {
-			rows = append(rows, row{fmt.Sprintf("%s#%d (see above)", indent, id), ""})
+			rows = append(rows, row{left: fmt.Sprintf("%s#%d (see above)", indent, id)})
 			return
 		}
 		seen[id] = true
@@ -144,7 +156,7 @@ func (e *Evaluator) Explain(id NodeID, scale float64) []string {
 		run = run.at(run.scaleFor(n))
 		right := string(n.Kind)
 		if n.Kind == KindImage || n.Kind == KindMask {
-			w, h := buffer.ScaledSize(n.DocW, n.DocH, run.scale)
+			w, h := buffer.ScaledSize(n.Frame.W, n.Frame.H, run.scale)
 			right += fmt.Sprintf(" %d×%d", w, h)
 		}
 		if !n.Op.NoCache && e.cache.Contains(run.sig(id)) {
@@ -153,15 +165,22 @@ func (e *Evaluator) Explain(id NodeID, scale float64) []string {
 		if run.scale != parentScale {
 			right += fmt.Sprintf("  (analysed at scale %s)", fmtNum(run.scale))
 		}
-		rows = append(rows, row{fmt.Sprintf("%s#%d %s", indent, id, Describe(e.b, n, run.scale, run.params)), right})
+		rows = append(rows, row{fmt.Sprintf("%s#%d %s", indent, id, Describe(e.b, n, run.scale, run.params)), right, Statics(n)})
+		if n.Op.Expand != nil { // a macro: its expansion below it
+			walk(run, n.Inputs[len(n.Inputs)-1], depth+1)
+			return
+		}
 		for _, in := range n.Inputs {
 			walk(run, in, depth+1)
 		}
 	}
 	walk(root, id, 0)
-	width := 0
+	width, rwidth := 0, 0
 	for _, r := range rows {
 		width = max(width, len([]rune(r.left)))
+		if r.statics != "" {
+			rwidth = max(rwidth, len([]rune(r.right)))
+		}
 	}
 	out := make([]string, len(rows))
 	for i, r := range rows {
@@ -170,6 +189,9 @@ func (e *Evaluator) Explain(id NodeID, scale float64) []string {
 			continue
 		}
 		out[i] = r.left + strings.Repeat(" ", width-len([]rune(r.left))+2) + r.right
+		if r.statics != "" {
+			out[i] += strings.Repeat(" ", rwidth-len([]rune(r.right))+3) + r.statics
+		}
 	}
 	return out
 }

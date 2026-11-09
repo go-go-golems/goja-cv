@@ -25,17 +25,18 @@ type Region struct {
 // one source raster. The list order is meaningful (sortBy changes it); items
 // are shared between values and must not be modified.
 type RegionsValue struct {
-	Items      []*Region
-	W, H       int     // source raster size in buffer px
-	Scale      float64 // scale of the source raster (buffer px per doc px)
-	DocW, DocH int
+	Items []*Region
+	W, H  int     // source raster size in buffer px
+	Scale float64 // scale of the source raster (buffer px per doc px)
+	Frame Frame   // the frame the raster covers; region geometry is absolute in it
 }
 
 var _ Value = &RegionsValue{}
 
-// NewRegions returns an empty Regions value over a w×h raster at scale.
-func NewRegions(w, h int, scale float64, docW, docH int) *RegionsValue {
-	return &RegionsValue{W: w, H: h, Scale: scale, DocW: docW, DocH: docH}
+// NewRegions returns an empty Regions value over a w×h raster at scale
+// covering frame (the frame of the image or mask the regions are found in).
+func NewRegions(w, h int, scale float64, frame Frame) *RegionsValue {
+	return &RegionsValue{W: w, H: h, Scale: scale, Frame: frame}
 }
 
 func (v *RegionsValue) Kind() Kind { return KindRegions }
@@ -58,12 +59,12 @@ func (v *RegionsValue) With(items []*Region) *RegionsValue {
 // axisScales are the effective per-axis scales of the source raster (buffer
 // sizes are rounded, so they differ slightly from Scale).
 func (v *RegionsValue) axisScales() (float64, float64) {
-	return float64(v.W) / float64(max(1, v.DocW)), float64(v.H) / float64(max(1, v.DocH))
+	return float64(v.W) / float64(max(1, v.Frame.W)), float64(v.H) / float64(max(1, v.Frame.H))
 }
 
 // NewRegion builds a region from pixel indices of the source raster and
-// fills its doc-px geometry (box, area, centroid) and the aspect measure
-// (ratio of the principal axes, ≥ 1).
+// fills its doc-px geometry (box, area, centroid; absolute: the frame origin
+// is added) and the aspect measure (ratio of the principal axes, ≥ 1).
 func (v *RegionsValue) NewRegion(id int, pix []int32) *Region {
 	sx, sy := v.axisScales()
 	r := &Region{ID: id, Pix: pix, Measures: map[string]float64{}, Tags: map[string]string{}}
@@ -92,9 +93,10 @@ func (v *RegionsValue) NewRegion(id int, pix []int32) *Region {
 	tr, det := cxx+cyy, cxx*cyy-cxy*cxy
 	disc := math.Sqrt(math.Max(0, tr*tr/4-det))
 	l1, l2 := tr/2+disc, math.Max(tr/2-disc, 1e-9)
-	r.Box = [4]float64{float64(minX) / sx, float64(minY) / sy, float64(maxX+1-minX) / sx, float64(maxY+1-minY) / sy}
+	ox, oy := float64(v.Frame.X), float64(v.Frame.Y)
+	r.Box = [4]float64{ox + float64(minX)/sx, oy + float64(minY)/sy, float64(maxX+1-minX) / sx, float64(maxY+1-minY) / sy}
 	r.Area = n / (sx * sy)
-	r.Centroid = [2]float64{(mx + 0.5) / sx, (my + 0.5) / sy}
+	r.Centroid = [2]float64{ox + (mx+0.5)/sx, oy + (my+0.5)/sy}
 	r.Measures["aspect"] = math.Sqrt(l1 / l2)
 	return r
 }
@@ -187,12 +189,12 @@ func (v *RegionsValue) Summary(limit int) map[string]any {
 	}
 	return map[string]any{
 		"kind": string(KindRegions), "count": float64(len(v.Items)), "items": items,
-		"truncated": len(v.Items) > n, "scale": v.Scale, "docW": v.DocW, "docH": v.DocH,
+		"truncated": len(v.Items) > n, "scale": v.Scale, "frame": v.Frame.Data(),
 	}
 }
 
 // Rasterize draws the regions into a 1-channel w×h mask covering the doc
-// (normally buffer.ScaledSize(DocW, DocH, scale)). Each source pixel adds
+// (normally buffer.ScaledSize(Frame.W, Frame.H, scale)). Each source pixel adds
 // its exact area overlap with each target pixel, so a region keeps its doc
 // area at any scale and is soft-edged when the target is coarser than the
 // source. Values are clamped to [0, 1].
@@ -200,7 +202,7 @@ func (v *RegionsValue) Rasterize(ctx context.Context, w, h int, scale float64) (
 	out := buffer.New(w, h, 1, scale)
 	pl := out.Plane(0)
 	sx, sy := v.axisScales()
-	rx, ry := float64(w)/float64(max(1, v.DocW))/sx, float64(h)/float64(max(1, v.DocH))/sy
+	rx, ry := float64(w)/float64(max(1, v.Frame.W))/sx, float64(h)/float64(max(1, v.Frame.H))/sy
 	same := w == v.W && h == v.H
 	for k, r := range v.Items {
 		if k%64 == 0 {

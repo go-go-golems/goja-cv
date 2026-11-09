@@ -28,7 +28,7 @@ with measurements instead of guesses.
   `check.dust`, `detect.specks` (regions with id, box, area, contrast, sharpness, a dust score), `coverage`.
 - **Select.** Masks from luminance, colour, boxes, ellipses, gradients and flood fill; set algebra and
   morphology; regions from masks; declarative `where` filters.
-- **Edit.** `exposure` (linear light), `levels`, `contrast`, `gaussian`, `blend`, `within(mask, …)`, `heal`
+- **Edit.** `exposure` (in linear space), `levels`, `contrast`, `gaussian`, `blend`, `within(mask, …)`, `heal`
   (patch-based dust removal), `inpaint`.
 - **Look.** `node.look("label")` returns an image the agent sees, with its number burned in and its scale in the
   caption; `cv.compare` puts images side by side; `overlay` draws regions and masks.

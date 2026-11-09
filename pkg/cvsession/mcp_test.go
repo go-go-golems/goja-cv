@@ -93,7 +93,7 @@ func TestMCPServerToolsResourcesPrompt(t *testing.T) {
 		t.Fatal(err)
 	}
 	ref := res.Contents[0].Text
-	for _, n := range []string{"## Image methods", "`exposure(ev)` → Image", "`levels(black, white, gamma)`", "`cv.open(path)`"} {
+	for _, n := range []string{"## Image methods", "`exposure(ev)` → Image", "`levels(black, white, gamma)`", "`cv.open(path, { encoding, box, origin, as })`"} {
 		if !strings.Contains(ref, n) {
 			t.Fatalf("reference lacks %q:\n%s", n, ref)
 		}
@@ -128,7 +128,7 @@ func TestMCPOpenTool(t *testing.T) {
 	if isErr || len(images) != 1 {
 		t.Fatalf("open: isErr=%v images=%d\n%s", isErr, len(images), text)
 	}
-	mustContain(t, text, "kind: Image", "look 1: opened", "images: img = gradient-64x48-8bit.png (64×48, 8-bit PNG)")
+	mustContain(t, text, "kind: Image", "look 1: opened", "images: img = gradient-64x48-8bit.png (64×48, 8-bit PNG, srgb)")
 	text, _, _ = callEval(t, cs, `return (await img.stats()).w`)
 	mustContain(t, text, "64")
 }
@@ -160,7 +160,7 @@ return await fixed.stats().pick("meanL", "clipLow", "clipHigh")`)
 	if isErr || len(images) != 2 {
 		t.Fatalf("correction: isErr=%v images=%d\n%s", isErr, len(images), text)
 	}
-	mustContain(t, text, "meanL: 0.5059", "clipLow:", "clipHigh:",
+	mustContain(t, text, "meanL: 0.50822", "clipLow:", "clipHigh:",
 		"shown:", "look 1: before / after (132×48, 1 image px = 1.0 doc px)", "look 2: histogram (512×204 chart)")
 	if images[0].MIMEType != "image/jpeg" || images[1].MIMEType != "image/png" {
 		t.Fatalf("mimes %s %s", images[0].MIMEType, images[1].MIMEType)
