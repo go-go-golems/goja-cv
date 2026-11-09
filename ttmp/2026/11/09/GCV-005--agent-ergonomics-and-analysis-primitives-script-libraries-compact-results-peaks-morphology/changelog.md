@@ -20,3 +20,8 @@ Phase B1 implemented: erode/dilate (disk <= 64 via chords grouped by half-width 
 
 Merged GCV-004 final (a42c9d1, batch 2 Phases 5-8) into the branch: 10 conflicts resolved toward batch 2 with B1's deletions kept (commit 259df82); diary step 2
 
+
+## 2026-11-09
+
+Phase A1: cv.load (JS load stack, file:line locations, no cache), cv.scripts (bounded walk), --prelude as a load inside a root, pending loads and saves on one list, UNHANDLED located by stack (commit c0ad935); deviations 11-20; diary step 3
+

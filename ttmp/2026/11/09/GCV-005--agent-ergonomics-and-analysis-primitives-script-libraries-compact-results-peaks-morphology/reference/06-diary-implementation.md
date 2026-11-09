@@ -319,3 +319,136 @@ keeping B1's deletions, gate, push, and record the resolution.
 - `git diff --stat 17dbcb1 259df82`: 138 files, +4,844 / −4,192 (batch 2 itself). Against batch 2
   (`git diff --stat origin/task/gcv-004-api-v2 259df82 -- pkg cmd README.md`): 37 files, +1,027 / −213, i.e. B1 on top
   of v2.
+
+## Step 3: Phase A1 — task libraries: cv.load, cv.scripts, preludes as loads
+
+A1 lets an agent run a JavaScript file in its session instead of pasting it. `await cv.load("dust/helpers.js", args)`
+finds the file like `cv.open` finds images (the workspace, then each `--read` directory), runs it as the body of an
+async function of `args` on the file's own line numbers, and resolves to what it returns; `cv.scripts()` lists what can
+be loaded; `--prelude FILE` is now that load at session start, with the file inside a root. Errors and warnings from a
+file name it (`where: dust/helpers.js:6`, `called from: line 2`), and an eval never ends with a load or save still
+running.
+
+Most of the runtime half already existed: GCV-004 Phase 6 made `__cv_run` wait for saves and wired an `UNHANDLED`
+warning to goja's rejection tracker. A1 generalized that pending list instead of adding a second one.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 2)
+
+**Assistant interpretation:** implement guide §13 Phase A1 (§6.1–6.3, §7.2–7.4, §10.1–10.2, §10.6) on top of the merged
+GCV-004, reusing its pending saves and `UNHANDLED`, with the listed tests, docs and help.
+
+**Inferred user intent:** agents stop pasting helper files; a library is loaded by name, and its errors point into it.
+
+**Commit (code):** c0ad935 — "GCV-005 A1: cv.load and cv.scripts; --prelude is a load inside a root"
+
+### What I did
+
+- `pkg/gojamod/cv/prelude.js`: `cv.load` (a JavaScript load stack, depth 32, `__compile` → `f.run(args)` →
+  `__pending(inner)` → `inner.then(v => v)`) and `cv.scripts`.
+- `pkg/gojamod/cv/load.go` (new): `__compile` (name and path checks, `Workspace.Open`, 1 MiB limit, `goja.Compile` of
+  `"(async function (args) {" + text + "\n})"`, the file registry), `syntaxMessage`, `__pending`, `__tooDeep`,
+  `__scripts`, `FileLine`, `StackFrames` (frames in `<eval>` or a loaded file, innermost first).
+- `pkg/gojamod/cv/save.go`: `track.pending` holds loads and saves; `Pending` and `Settled` replace `SavesPending` and
+  `SaveFailure`; unhandled rejections are kept in rejection order and become `UNHANDLED` warnings with a site from the
+  reason's stack.
+- `pkg/cv/graph/scripts.go` (new): `LoadableName`, `Workspace.ScriptName` (`read<N>:` for shadowed files),
+  `Workspace.Scripts` (bounded walk), `firstComment`.
+- `pkg/cvsession`: `init.js` waits until no new pending promise appears; `native.go` reads every stack frame
+  (`Source`, `CalledFrom`); `processor.go` renders `where: file:line: text` and `called from: line N: text`, and tags
+  warnings and LOOKS names with `file:line` (`siteTag`, `evalWhere`); `session.go` checks preludes against the roots
+  and runs `await cv.load("<abs path>")` for each, mapping failures to `prelude name:line: message`.
+- `cmd/goja-cv`: `checkRoots` checks `--prelude` like `--image` (usage error naming `--read`); flag help says "loaded".
+- Help: `load`, `scripts` (`pkg/cv/ops/funcs.go`). Docs: new topic `14-task-libraries.md`, `01-getting-started`,
+  `08-errors`, `pkg/doc/03-cli.md`. `make smoke` loads a two-line prelude.
+- Tests: `pkg/cvsession/load_test.go` (new; the old `prelude_test.go` is folded into `TestPreludesAreLoads`),
+  `pkg/cv/graph/scripts_test.go` (new), `cmd/goja-cv/main_test.go` `TestPreludeFlag` (eval, run, mcp),
+  `pkg/xgoja/providers/cv/cv_test.go` (a load from the runtime's root), `TestLookQueue` (its prelude in the workspace).
+- Deviations 11–20 in the guide.
+
+### Why
+
+- One pending list and one rejection tracker: the coordinator asked to reuse GCV-004's `UNHANDLED`, and loads and saves
+  are the same problem (a promise the eval must not outlive).
+- The waiting loop: a pending load may start another load or save after the body settled; waiting for one snapshot
+  would let it leak into the next eval (the case §7.4 exists for).
+- `UNHANDLED`'s location is computed where the warning is built (cvmod), so it needs no session state.
+
+### What worked
+
+- goja names compiled programs in stack frames exactly as `goja.Compile(name, …)` was given, so `([^\s()]+):(\d+):(\d+)`
+  finds file frames, including `read2:twin.js`.
+- Wrapping the text on the file's first line kept every line number equal to the file's.
+- 40 parallel loads, nested loads and the self-loading file behaved as §6.1 says on the first run.
+
+### What didn't work
+
+- `goja.Compile`'s syntax error is a `*goja.CompilerSyntaxError` with `File == nil` and the message
+  `a.js: Line 1:33 Unexpected token ) (and 2 more errors)`; my first version read `File.Position` and printed
+  `dust/syntax.js: dust/syntax.js: Line 3:1 Unexpected token } (and 4 more errors)`. Now parsed from the message.
+- `TestLoadErrors` expected `called from` for an error thrown after an `await` in the file; the stack of an async
+  continuation has no eval frame (deviation 15).
+- The docs tests copy `dust/helpers.js` into the planted scan's read directory, which then shadowed the load tests'
+  own `dust/helpers.js` (`Object has no member 'f'`); the load tests use `tl/`.
+- `TestLookQueue` failed (`prelude … is outside the workspace … add --read …`): its prelude was in a temporary
+  directory outside the roots, now refused.
+- Gate: `gofmt=1 pkg/cvsession/load_test.go` once.
+
+### What I learned
+
+- replsession's eval in xgoja does not await a returned promise (`[Promise]`); the xgoja test reads the load's value in
+  a second eval.
+- Rejection tracking only records while an eval is active; a load's own promise always has the derived promise's
+  handler, so only the caller's promise can be "unhandled", which is what §7.2 intends.
+
+### What was tricky to build
+
+- **Two promises per load.** `__cv_run` must wait on the file's promise without marking the agent's promise handled,
+  or an unawaited failing load would never be `UNHANDLED`. `cv.load` returns `inner.then(v => v)`; the runner waits on
+  `inner` (already handled by that `.then`), and the tracker sees only the derived promise.
+- **Lock order.** `Settled` collects the rejected promises under the binding's lock, releases it, then locates each
+  through `StackFrames`, which takes the lock again to read the file registry.
+
+### What warrants a second pair of eyes
+
+- `cv.load` throws synchronously for path and syntax errors (deviation 13); an unawaited `cv.load("missing.js")` fails
+  the eval at its line rather than producing `UNHANDLED`.
+- `cvsession.Options.Preludes` must now lie in a root; embedders that passed arbitrary paths break (alpha, by design).
+- `session.go`'s `whereFile` regexp reads the rendered YAML to build the prelude message, as before.
+
+### What should be done in the future
+
+- A2: function docs in the context block, and `inPrelude` (the state's `prelude` flag already exists) for `fnSeen`;
+  the first agent eval after a prelude must list the prelude's functions' docs (an A1 test item that needs A2).
+- B3: replace the model library in `testdata/scripts/dust/helpers.js` and the topic's example with §12.3's peaks version.
+
+### Code review instructions
+
+- Start with `pkg/gojamod/cv/prelude.js` (`load`), `pkg/gojamod/cv/load.go`, then `pkg/gojamod/cv/save.go`
+  (`Pending`, `Settled`, `rejection`), `pkg/cvsession/init.js`, `pkg/cvsession/native.go` (`readFailure`),
+  `pkg/cvsession/processor.go` (`errorNode`, `siteTag`), `pkg/cvsession/session.go` (`withDefaults`, `runPreludes`).
+- Tests: `go test ./pkg/cvsession -run 'TestLoad|TestScripts|TestPreludes|TestUnawaited' -count=1`,
+  `go test ./pkg/cv/graph -run TestScripts`, `go test ./cmd/goja-cv -run TestPreludeFlag`, `go test ./pkg/xgoja/...`.
+- Gate: `GATE_LOG=<scratch> bash ttmp/2026/11/09/GCV-004--*/scripts/04-gate.sh` → `gate=0`.
+
+### Technical details
+
+`git diff --stat b21d9a3 c0ad935`: 28 files, +1,008 / −204. Deleted: `prelude_test.go` (folded into the load tests),
+reading prelude files in `runPreludes`, the "not subject to roots" prelude path, `stackPos`, `whereLine`,
+`SavesPending`/`SaveFailure`.
+
+What an agent sees:
+
+```yaml
+error:
+  code: ReferenceError
+  message: nope is not defined
+  where: 'dust/helpers.js:6: return nope.y'
+  called from: 'line 2: return mem.bad()'
+```
+
+```yaml
+warnings:
+  - 'UNHANDLED dust/late.js:3: a promise was rejected and never handled: late boom. fix: await the call that returned it'
+```

@@ -2429,3 +2429,37 @@ details and numbers.
    (the 4,000-character cap); "(crop last; …)" in them is left for A4 / GCV-004 Phase 8.
 10. **CROP_FIRST and `OpDef.Halo` are a separate commit** (`5c26122`) inside B1, as §9 and §13 place them; the
     coordinator's brief had said they go in their own phases, so the commit can be reverted alone.
+
+### Phase A1 (commit `c0ad935`)
+
+11. **The pending list is GCV-004's, generalized.** GCV-004 Phase 6 already had `__cv_run` wait for saves and an
+    `UNHANDLED` warning from goja's rejection tracker (its deviation 43). A1 does not add a second mechanism: the eval
+    trace keeps one `pending` list (each load's own promise, each save's settling promise); `cvmod.Pending` and
+    `cvmod.Settled` replace `SavesPending` and `SaveFailure`. `__cv_run` waits until no new promise has joined the list
+    (a load started by a pending load is waited for too), where §7.4's sketch waits once.
+12. **`UNHANDLED` is located in cvmod**, from the rejection reason's stack (`cvmod.StackFrames`: the innermost frame in
+    eval code or a loaded file), and reads `UNHANDLED dust/x.js:3: a promise was rejected and never handled: <message>.
+    fix: await the call that returned it` (§6.6's text). An unawaited `cv.save` that fails still fails the eval
+    (GCV-004 deviation 43).
+13. **Path and compile errors are thrown synchronously by `cv.load`** (§7.2's sketch calls `__compile` before any
+    promise exists): a missing file, a name without `.js`, `E_ACCESS` or a `SyntaxError` fail the eval at the line of
+    the `cv.load` call, awaited or not. Only what the file does at run time goes through the promise.
+14. **Syntax errors**: goja reports `name: Line L:C message (and N more errors)` as a `CompilerSyntaxError` without a
+    file position; the message is parsed, the "(and N more errors)" dropped, line 1's column corrected for the wrapper,
+    and an error on the wrapper's closing line (the file ended inside a bracket, string or comment) reads
+    `name:N: … at the end of the file (an unclosed bracket, string or comment?)`.
+15. **`called from` needs the eval's frame on the stack**: an error thrown in a file after an `await` (an async
+    continuation) has `where: file:line` only.
+16. **The JavaScript hints** ("const/let do not survive between evals", "a value is undefined") are not given for errors
+    inside a loaded file; they are about the agent's own code.
+17. **Prelude checks**: `cvsession.New` refuses a prelude outside the roots ("… add --read DIR"), and the CLI's
+    `checkRoots` (eval, run, mcp) turns the same into a usage error. A prelude's name is its script name relative to
+    the root it lies in (`lib/dust/helpers.js` when the workspace holds `lib/`). A prelude that fails without a file
+    location (a syntax error) reads `prelude syntax.js:1:11: …`, the location taken from the message.
+18. **`cv.scripts`** lists regular files with loadable names only (no symlinks, no names with spaces); "four directory
+    levels" is the root and three below it (`a/b/c/f.js`).
+19. **Help for `load` and `scripts`** are function definitions in `pkg/cv/ops/funcs.go` (like `save`), not `cvFuncs`
+    entries, so `cv.help("load")` lists their arguments.
+20. **The task-libraries topic** loads `dust/helpers.js` and `dust/thread-width.js` from `pkg/cvsession/testdata/scripts`,
+    which the docs tests copy into the planted scan's read directory. The model library uses `measure` and the speck
+    view, not `peaks`, until B2/B3 replace it with §12.3's.
