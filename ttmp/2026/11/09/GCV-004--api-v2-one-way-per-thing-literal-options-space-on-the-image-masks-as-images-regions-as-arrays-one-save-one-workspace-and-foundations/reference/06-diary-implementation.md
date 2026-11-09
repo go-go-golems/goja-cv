@@ -1239,3 +1239,89 @@ lives, and an agent's forgotten `await` cannot lose a file silently.
 deletions(-); non-test Go and JavaScript: 35 files changed, 1347 insertions(+), 1252 deletions(-).
 
 Goldens: none moved. Real data: identical to Step 8.
+
+## Step 10: Phase 7 — names agents typed
+
+Phase 7 shrinks did-you-mean to the names agents demonstrably typed in the pi runs, each with its literal fix, and
+edit distance for everything else. It also renames `cv.open`'s binding option from `as` to `name` (D21), which
+batch 1 and Phase 6 had left for here because it lived among the session's synonym tables.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 8) — Phase 7 of the guide.
+
+**Assistant interpretation:** Guide §7.13 and §9 item 13: keep the typed table keys and typed method names, delete
+every other synonym and redirect table; the table-driven test; run `scripts/02-pi-names-typed.py` on the tree.
+
+**Inferred user intent:** No untested guesses to maintain; agents get a literal fix where the evidence says they
+need one.
+
+**Commit (code):** `3b3e685` — "GCV-004 Phase 7: names agents typed"
+
+### What I did
+
+- `pkg/cv/graph/suggest.go`: `Synonyms` deleted; `MethodRedirects` is export, store, write, save, persist, download,
+  toFile, writeTiff (`await cv.save("x.tif", node)`), zoom, resample, meta; `UnknownMethod` lost its synonym step.
+  `args.go`: `OptionSynonyms` and `optionSynonym` deleted (unknown options: a `Redirect` of the call, else edit
+  distance); enum errors: edit distance only. `ArgSpec.ValueSynonyms` and `EncodingValueSynonyms` deleted.
+- Ops: `Redirects` kept for `mask.luminance` `min` (new on `above`: fix `img.mask.luminance({ above: 0.99 })`), look
+  `box`/`crop`/`scale` (`scale` new: fix `node.look({ zoom: 8 })`), `components` `maxArea`; deleted: look `stretch`,
+  `levels` `box`, the `compare` `diff` redirect, `blendRedirects`, the view and polarity value synonyms, the look
+  format synonyms, `markKeySynonyms`.
+- Help: the synonym step of `suggest` and `UnknownMember`; `helpRedirects` keeps `mask.stats` (deviation 27), `meta`
+  and `info`; `memberFixes` keeps `cv.info` and `cv.meta`.
+- `cv.open(path, { name })`: `init.js` reads `name`; `asSynonyms`, `asKey`, `containsString` deleted; the bare
+  module's hint and `E_NAME` errors say `name`; the MCP `open` tool's field is `name`; docs (`01`, `09`, `10`
+  topics, guidebook `02`), help entries and the instructions.
+- Tests: `TestTypedNames` (every kept name's fix; `brightness`/`blur` give nothing, `gausian`/`exposre` give the
+  edit-distance suggestion; `radius` on gaussian nothing, `sigm` sigma; no typed name is an op) replaces
+  `TestOptionSynonyms` and `TestOpSynonymsDoNotShadowOps`; tests that used untyped synonyms now use misspellings.
+- Docs: `08-errors`, guidebook `03-cli`, `10-troubleshooting`.
+
+### Why
+
+- Guide §7.13, D12; D21 for `name`.
+
+### What worked
+
+- Gate: `gofmt=0 build=0 vet=0 test=0 lint=0 logcopter=0 smoke=0 gate=0`; goldens unchanged.
+- `02-pi-names-typed.py <pi-runs> .` on the tree: `typed: MethodRedirects:download, export, meta, persist, resample,
+  save, store, toFile, write, writeTiff, zoom, Redirects:maxArea, min, lookRedirects:box, crop, scale` and
+  `never typed (0)`.
+
+### What didn't work
+
+- Twenty-odd tests asserted untyped synonyms (`img.blur`, `img.brightness`, `look({ size })`, `view("dust")`,
+  `blend({ mode: "difference" })`, `compare({ mode: "diff" })`, `annotate([{ line }])`, `levels({ box })`); each now
+  asserts edit distance on a misspelling, or the plain error.
+- `make lint`: `func containsString is unused` after `asKey` went.
+
+### What I learned
+
+- The guide's typed list includes `scale` for look, which had no redirect before (only the general `scale` option
+  synonym); it is now a look redirect.
+
+### What was tricky to build
+
+- Nothing structural; keeping help's concept entries (documentation, D12's "not aliases") apart from deleted alias
+  tables.
+
+### What warrants a second pair of eyes
+
+- `helpRedirects`/`memberFixes`: the script does not scan them; `info` and `meta` are kept on the evidence of pi run
+  3 call 1 (`cv.info`) and §7.13 (`meta`).
+
+### What should be done in the future
+
+- Re-run `02-pi-names-typed.py` on the after-runs (Phase 8) to see which wrong names v2 agents type.
+
+### Code review instructions
+
+- `pkg/cv/graph/suggest.go` (`MethodRedirects`), `args.go` (`checkKeys`), `pkg/cv/ops/funcs.go`
+  (`lookRedirects`), `mask.go`, `pkg/cvsession/init.js` (`cv.open`), `names.go`; `TestTypedNames`.
+- Validate: `scripts/04-gate.sh`; `go test ./pkg/cv/ops -run TestTypedNames -v`.
+
+### Technical details
+
+`git diff --stat 1c1acf3 3b3e685 -- pkg cmd internal README.md`: 41 files changed, 178 insertions(+), 433
+deletions(-); non-test Go and JavaScript: 20 files changed, 68 insertions(+), 318 deletions(-).

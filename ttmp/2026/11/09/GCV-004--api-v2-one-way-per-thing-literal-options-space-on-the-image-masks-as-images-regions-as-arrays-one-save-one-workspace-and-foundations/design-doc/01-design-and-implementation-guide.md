@@ -2893,3 +2893,8 @@ order found; the phase is in brackets.
 45. [6] A relative `cv.open` name that exists in the workspace as an escaping or dangling link is `E_ACCESS`; the
     lookup does not fall through to the read directories.
 46. [6] `cv.open`'s `as` → `name` rename (§6.6, D21) is done with the names in Phase 7.
+47. [7] `look({ scale })` became a redirect of `look` (fix `node.look({ zoom: 8 })`); before it only reached zoom
+    through the general option synonyms. `helpRedirects` keeps `mask.stats` (deviation 27), `meta` and `info`, and
+    `memberFixes` keeps `cv.info` (pi run 3) and `cv.meta`: help entries for typed names, not alias tables.
+48. [7] `cv.open`'s `as` → `name` (D21) was done here (with the session's `asSynonyms`); the bare module's hint says
+    names exist only in sessions; the MCP `open` tool's field is `name`.
