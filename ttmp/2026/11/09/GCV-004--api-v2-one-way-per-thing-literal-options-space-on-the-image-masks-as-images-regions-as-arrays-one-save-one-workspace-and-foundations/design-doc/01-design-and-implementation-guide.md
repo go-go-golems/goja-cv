@@ -27,7 +27,7 @@ RelatedFiles:
     - Path: pkg/cv/graph/params.go
       Note: the param store; deleted
     - Path: pkg/cv/graph/eval.go
-      Note: evaluator; params leave the signature, stamp turns NaN into null, recover on every goroutine
+      Note: evaluator; params leave the signature, await evaluates at scale 1, recover on every goroutine
     - Path: pkg/cv/graph/render.go
       Note: Render; one exit enforces ScaledSize(window, scale); fitScale deleted
     - Path: pkg/cv/graph/schema.go
@@ -664,7 +664,9 @@ functions called from JavaScript (`binding.object`, `binding.go:104-137`), in `E
 (`engine.go:117`), in the binder and build-time functions, in the evaluator's goroutines outside `Run`
 (`eval.go:358-370`, `render.go:178-195`), or in look and data rendering. goja turns a panic whose value is a JavaScript
 value into an exception; any other panic unwinds out of the VM and, on a goroutine nobody recovers, ends the
-process — the MCP server with it.
+process — the MCP server with it. A scratch program (`scripts/03-goja-panic-and-spread.go.txt`) confirms both halves: a native function that panics with
+`vm.NewTypeError(…)` is caught by a JavaScript `try`, while one that indexes past a slice is not caught by `try` and
+escapes `RunString` as a Go panic.
 
 ### 5.13 `cv.open`'s hidden arguments
 
@@ -742,8 +744,9 @@ Rules:
   `detect.specks`, `check.dust`, `refine`), `toLab` and `encode` are physical: computed in linear light, returned in the
   receiver's space. `view("speck")` and `view("speckColor")` compute in linear light (the GCV-003 ranking result) and
   return a derived picture.
-- There is no `{ space }` option. `img.gaussian(2, { space: "linear" })` is `E_UNKNOWN_OPTION` whose fix is
-  `img.as("linear").gaussian(2)`.
+- There is no `{ space }` option. `img.gaussian(2, { space: "linear" })` is `E_UNKNOWN_OPTION` with the list of valid
+  options, like any unknown key; the docs teach `img.as("linear").gaussian(2)`. No migration hint is kept for it
+  (an agent only types `space` if a document told it to, and none will).
 
 ### 6.3 A mask is a one-channel image
 
@@ -827,8 +830,8 @@ Rules:
 
 - `await node` is the only evaluation, always at scale 1. There is no preview scale for data.
 - `node.look(opts)` is the only display call. It creates a look and queues it; queued looks are delivered after the
-  eval, in creation order, up to the budget of four, also when the eval throws later. Returning a look puts its
-  placeholder in the result; not returning it still delivers it.
+  eval (looks found in the returned value first, then the others in creation order), up to the budget of four, also
+  when the eval throws later. Returning a look puts its placeholder in the result; not returning it still delivers it.
 - `cv.explain(node)` replaces both `cv.describe(node)` and `node.explain()`; it is synchronous and evaluates nothing.
 - `show`, `cv.evaluate`, `cv.describe`, `cv.isNode`, `cv.warnings`, `cv.kinds` and the `doc` stub are gone.
 
@@ -943,11 +946,11 @@ The layers of §2.1 stay. What changes inside them:
                    space: Follows | Physical (bracketed by as) | Display; statics: Frame Enc Space Channels Fields
         │
         ▼
- graph.Evaluator   scale 1 for data; stamp (frame, enc, NaN → nil for data); recover on every goroutine
+ graph.Evaluator   scale 1 for data; stamp (frame, enc); recover on every goroutine
  graph.Render      one exit: image result == ScaledSize(window, scale)
         │
         ▼
- dataout           cv.save: image writers | JSON (encoding/json, Record.MarshalJSON) | CSV (rows only)
+ dataout           cv.save: image writers | JSON (encoding/json, Record.MarshalJSON) | CSV (rows only); plain(): NaN → null
  graph.Workspace   one os.Root: Open (cv.open, decoders) and WriteFile (cv.save)
 ```
 
@@ -1080,6 +1083,11 @@ ENCODING warning: unchanged (encoded work space, inputs of different encodings, 
 So `img.exposure(1)` on an srgb file in encoded space builds `as(exposure(as(img, linear), 1), encoded)`. The caption
 chain already hides inserted conversions (GCV-002 deviation 9); `cv.explain` shows them. The SPACE warning
 disappears with lifting: no option can carry a number from another space any more.
+
+One case needs care. A derived image's `Space` is `linear` (`DerivedEnc`, `registry.go:134-137`), so a following op
+whose receiver is derived converts a photographic second input to linear: `d.add(img)` adds `img`'s linear values,
+while `img.add(d)` works in file units. The receiver decides, as everywhere else; the arithmetic docs say to put the
+photograph first.
 
 **The output-space rule**, stated once for the docs and the tests:
 
@@ -1227,7 +1235,7 @@ under the same budget. `show`, `native.queue`, `state.shows`, the `shown:` YAML 
 `106-109`) and `FuncDef.Global` go.
 
 **Lazy data fails loudly.** On a Value or Regions node the prelude's `lookup` (`prelude.js:210-267`) answers `then`,
-`look` (Value only), `toString`, `toJSON`, `Symbol.toStringTag` and the identity fields; every other property, and
+`look` (Value only), `toString`, `toJSON`, `Symbol.toStringTag`, the identity fields and the probe names (`prelude.js:43`); every other string-keyed property, and
 `Symbol.toPrimitive`/`valueOf`, calls `native.__notAwaited(id, prop)`, which throws:
 
 ```yaml
@@ -1449,12 +1457,11 @@ The tables shrink to one `MethodRedirects` map and a few per-argument `Redirects
 |---|---|---|
 | `save`, `write`, `export`, `store`, `persist`, `download`, `toFile`, `writeTiff` | a method on a node | `E_UNKNOWN_METHOD`, fix `await cv.save("x.tif", node)` |
 | `zoom` | a method on a node | fix `node.crop([x, y, w, h]).look({ zoom: 8 })` |
-| `evaluate` | `cv.evaluate` | fix `await node` |
 | `min` | option of `mask.luminance` | fix `img.mask.luminance({ above: 0.99 })` |
 | `scale`, `box`, `crop` | options of `look` | fixes `look({ zoom: 8 })`, `node.crop([x, y, w, h]).look()` |
 | `maxArea` | option of `components` | fix `(await m.components()).filter(r => r.area <= 200)` |
 | `ringRadii` | option of `measure` | fix `img.measure(items, { ring: [6, 12] })` |
-| `Mask`, `Mask.coverage`, `Regions.filter` | `cv.help(name)` | `found: false` with "a mask is a one-channel Image" or "await regions: an array" |
+| `Mask.coverage`, `Regions.filter` | `cv.help(name)` | `found: false`, with the concept entries `mask` (a one-channel image) and `regions` (awaited: an array) as `didYouMean`; these are documentation entries, not aliases |
 
 Edit distance (`closest`, `suggest.go:137-153`) and the namespace rule (`img.luminance` → `img.mask.luminance`,
 `suggest.go:170-179`) stay: they cost no table. Deleted: `Synonyms`, `OptionSynonyms`, every other `ValueSynonyms`
@@ -1476,3 +1483,688 @@ CLI reports instead:
 
 `jq` is present on the CI runners and on the development machines; if that changes, a ten-line
 `internal/smokecheck` program does the same.
+
+## 8. Decision records
+
+Each record states the context, the options considered, the decision, its rationale and its consequences.
+
+### D1. Options are literals; data dependencies go through `await`
+
+- **Context:** Params and value lifting let an option be a node. They cost a store, a kind, a lifting path in the
+  binder, a substitution and re-check at evaluation, eleven Value ops, derived-field proxies, SPACE warnings and an
+  opt-in `Static` flag; the review's `encoding` bug lived in that path. Agents used params 0 times and lifting 4 times.
+- **Options considered:** (a) keep lifting and make every argument static unless marked liftable; (b) keep params
+  only, as a typed source op; (c) literal options, with `await` for data dependencies.
+- **Decision:** (c).
+- **Rationale:** (a) keeps the machinery for four uses and still needs two accessor families. (b) keeps a feature no
+  agent used. With (c) every option is known at build time, so every static is computable, every accessor can be
+  strict, and no evaluation-time re-check exists. The cost, an `await` before a dependent call, is what agents already
+  write in 1139 places.
+- **Consequences:** `P`, `Param`, the store, lifting, `InputRef` for values, `Static`, the Value ops and SPACE go
+  (§9). The speck view needs an internal `levelsAt` op (§7.4).
+- **Status:** accepted.
+
+### D2. Space is a property of the image; images open in file units
+
+- **Context:** GCV-001 decided that "encoding is a property of the data, space a property of the op" and that
+  `levels` and `stats` default to linear (GCV-001 guide §8). Agents then wrote 198 `{ space }` options, 80 of them to
+  get `stats` in file units, and every explicit `gaussian` space was `encoded`. Agents think in the numbers a look
+  shows them.
+- **Options considered:** (a) keep the per-op option with all defaults switched to encoded; (b) a session-wide space;
+  (c) the space of the image, chosen with `as`, file units at `cv.open`, physical ops converting internally.
+- **Decision:** (c). This reverses the two GCV-001 decisions named above.
+- **Rationale:** GCV-001's reasoning was that the right space depends on what an op does. That remains true for a
+  few physical ops, which keep it internally (D3). For everything else, the evidence says the right space is the one
+  the agent is looking at, and that it is chosen once per image, not per call: the 80 `stats` overrides were on the
+  same images as the `levels` and `gaussian` overrides. (a) still makes every call carry an option and keeps a
+  per-op table to remember. (b) breaks when two images in a session need different spaces (the GCV-001 v tile and
+  its reference). (c) puts the choice where it is made: `img.as("linear")` once, and every op downstream follows.
+- **Consequences:** Defaults change for `stats`, `levels`, `gaussian`, `blend`, `within` and the measurements on
+  srgb files (encoded instead of linear); four golden looks move (§14.3); the DUST-002 helpers must add
+  `as("linear")` to keep density units (§16). The `space` option and its synonyms go.
+- **Status:** accepted.
+
+### D3. Physical ops bracket themselves; gaussian and blend follow
+
+- **Context:** With D2, each op must either follow its receiver's space or require one.
+- **Options considered:** (a) every op follows, including exposure; (b) a list of physical ops that convert to linear
+  and back; (c) physical ops that return linear results.
+- **Decision:** (b) with `exposure`, `heal`, `inpaint`, `toGray("rec709")`, `toLab`, `encode` physical; `gaussian`,
+  `blend` and `within` follow.
+- **Rationale:** `exposure` means stops of light, Rec. 709 luminance and Lab are defined on linear light, and seam
+  correction in `heal`/`inpaint` is additive, which is right for density and light, not for sRGB codes. For these a
+  following version would compute something with a different meaning under the same name. `gaussian` is a smoothing
+  step in analysis chains (DoG, thresholds) where agents asked for encoded values every time they chose; `blend` was
+  overridden to encoded 7 of 8 times. (c) would make `img.exposure(1).stats()` silently report linear numbers,
+  breaking the output-space rule. Agents asked for encoded `exposure` 11 of 17 times: they wanted a gain on file
+  values, which is `mul(2 ** ev)`; the op's documentation says so.
+- **Consequences:** The builder inserts a closing `as` after physical ops on encoded receivers (§7.4); captions hide it.
+- **Status:** accepted; open question 1 in §17 asks the reviewer to confirm `gaussian`.
+
+### D4. A mask is a one-channel image; the channel count is a static
+
+- **Context:** The Mask kind duplicates ops (`crop`, `overlay`) and hides image ops from masks (`mask.stats`), which
+  agents tripped over. Its one benefit is the build-time check that an argument is a mask.
+- **Options considered:** (a) keep the kind and register every image op on it too; (b) merge the kind and check
+  "one channel" when the op runs; (c) merge the kind and make the channel count a node static.
+- **Decision:** (c).
+- **Rationale:** (a) doubles the registry. (b) moves an error from build time, where it has the agent's line and a
+  literal fix, to evaluation. (c) keeps the check and generalizes it: the same static moves `channel("g")` on a grey
+  image and `colormap` on colour from evaluation to build time (GCV-001 deviation 15) and lets the grey-input rule
+  skip `toGray` on grey images (GCV-001 deviation 2).
+- **Consequences:** Every op that changes the channel count declares it (§7.5), checked by a property test.
+- **Status:** accepted.
+
+### D5. Regions nodes have no methods; region consumers are image methods
+
+- **Context:** Awaited regions become arrays (the brief). If Regions nodes kept methods (`toMask`, `measure`), an
+  agent who filtered an array would find that `array.toMask()` does not exist: a new class of "works on the node,
+  fails on the array" errors.
+- **Options considered:** (a) keep methods on nodes and attach the same methods to awaited arrays; (b) a JavaScript
+  `Array` subclass with methods; (c) no methods on Regions nodes; every consumer is an image method or a `cv` function
+  that takes items.
+- **Decision:** (c), with `img.measure(items)` and `img.mask.regions(items)` replacing `regions.measure(img)` and
+  `regions.toMask()`.
+- **Rationale:** (a) fails as soon as `filter` returns a new array. (b) is lost the same way (`filter` on a subclass
+  returns the subclass in modern engines, but `map`, spread and `JSON` round trips do not, and agents build arrays
+  with all of them). (c) makes nodes and arrays interchangeable by construction: there is nothing a node can do that
+  an array cannot. It also removes the last reverse aliases.
+- **Consequences:** Three renamed calls (§6.6); the docs teach "regions are arguments".
+- **Status:** accepted.
+
+### D6. The item link is an enumerable symbol property; arrays become internal `items` nodes
+
+- **Context:** An array passed back to an op must recover each item's exact pixels.
+- **Options considered:** (a) a `WeakMap` from item objects to nodes; (b) a non-enumerable property; (c) an
+  enumerable symbol-keyed property; (d) ids only, resolved against "the last awaited set".
+- **Decision:** (c), with arrays interned as an internal `items` op over at most one source node.
+- **Rationale:** (a) and (b) are lost when an agent spreads an item into a new object (`{ ...r, note }`), a common
+  pattern. Object spread copies enumerable symbol properties, and JSON, `Object.keys` and the YAML renderer ignore
+  them, so (c) survives spreads without showing up anywhere. (d) is ambiguous across evals. Restricting a list to one
+  source node keeps one raster per `RegionsValue`; mixing sets is rare and has a literal fix (two calls).
+- **Consequences:** goja (the version in `go.mod`) copies symbol-keyed properties in object spread and leaves them out of
+  `Object.keys` and `JSON.stringify`: `scripts/03-goja-panic-and-spread.go.txt` printed `7:1:{"a":1}` for `c[s] + ":" +
+  Object.keys(c).length + ":" + JSON.stringify(c)` with `c = { ...o }`, `o = { a: 1, [s]: 7 }`. A Phase 5 test keeps
+  that true across goja upgrades.
+- **Status:** accepted.
+
+### D7. One `measure` for items and points
+
+- **Context:** `img.measure({ points })` (rows) and `regions.measure(img, …)` (regions with fields) share a kernel
+  (`kernels.ProbePoint`) and field names, but differ in receiver, option names (`ringRadii` versus `ring: [r1, r2]`)
+  and result kind; agents typed `ringRadii` on the wrong one.
+- **Options considered:** (a) keep both, moving `regions.measure` to an image receiver under a new name; (b) one op
+  that takes items, with points as literal items.
+- **Decision:** (b), returning Regions, `ring` defaulting to `true`.
+- **Rationale:** Points are items with a centre. One op, one option set, one result shape; the awaited result is an
+  array either way.
+- **Consequences:** Point results gain `id` and become a Regions node; `sample` and `profile` stay Value ops (they
+  are not about things in the image).
+- **Status:** accepted.
+
+### D8. `await` is the only evaluation, at scale 1
+
+- **Context:** `await` evaluates at the preview scale; 77 of 79 `cv.evaluate` calls in agent code asked for
+  `"full"`.
+- **Options considered:** (a) keep the preview scale for `await` and an option to change it; (b) `await` at scale 1.
+- **Decision:** (b).
+- **Rationale:** Agents want exact numbers, and an option on `await` cannot exist. Previews still serve looks, which
+  have their own scale. Region ops already evaluate at scale 1.
+- **Consequences:** Awaits on very large scans cost more (§17, risk 4); `scaleArg`, `PreviewLong` and `PreviewScale` go.
+- **Status:** accepted.
+
+### D9. `look()` is the display call, and it queues
+
+- **Context:** `x.look()` (167 uses) delivers only if returned; `show()` (87) queues and survives a later throw.
+- **Options considered:** (a) keep `show` only; (b) keep `look` only, delivered only when returned; (c) keep `look`
+  only, and every look created in the eval is queued.
+- **Decision:** (c).
+- **Rationale:** `look` is the more used and the discoverable one (a method on the node, listed by help). Queuing
+  keeps the one property `show` had (a look survives a later error) and removes a silent failure of (b): a look built
+  but not returned. Budgets already handle too many looks with a note.
+- **Consequences:** Delivery order is: returned looks first, then the others in creation order. `show` and its
+  plumbing go.
+- **Status:** accepted.
+
+### D10. `cv.save(path, x)` is the one output function
+
+- **Context:** Three functions (`node.save`, `cv.json`, `cv.csv`), Data handles, content names, a naming rule and the
+  CLI's suffix scheme produced a review bug and 10 + 11 uses.
+- **Options considered:** (a) keep Data handles as content and add `cv.save` for files; (b) one function writing a
+  file whose format comes from the extension, with duplicates refused.
+- **Decision:** (b).
+- **Rationale:** A file path is a name the agent already chose; refusing a second save of the same path in one eval
+  makes collisions impossible instead of renaming around them. Data in the conversation is what the eval returns,
+  which the YAML already carries.
+- **Consequences:** No data content in normal sessions; in read-only sessions `cv.save` delivers inline (D11).
+- **Status:** accepted.
+
+### D11. One workspace: `os.Root`, the current directory by default, writable; `--read-only` delivers inline
+
+- **Context:** Separate read roots and an out-root produced 23 `E_ACCESS` errors and a home-made containment check
+  with a P1 escape.
+- **Options considered:** (a) keep two roots but resolve both the same way; (b) one root, read-only by default,
+  writable with a flag; (c) one root, writable by default, `--read-only` to deliver saves inline instead.
+- **Decision:** (c), defaulting to the current directory for `eval`, `run` and `mcp`.
+- **Rationale:** (a) keeps the reopen failure whenever the two differ. (b) makes the common case (save, then reopen)
+  need a flag. With (c) the harness, Claude Code and the CLI all work without flags; a person who must protect a
+  directory passes `--read-only`, and the session can never overwrite an image it opened. `os.Root` does the
+  containment in the standard library, including symlinks.
+- **Consequences:** The CLI can no longer read files outside the workspace (scripts pass `--root`, §16); `--out-root`
+  goes.
+- **Status:** accepted.
+
+### D12. Keep only names agents typed
+
+- **Context:** 246 synonym and redirect keys; 14 were ever typed.
+- **Options considered:** (a) keep the tables; (b) keep typed names with literal fixes, plus edit distance.
+- **Decision:** (b).
+- **Rationale:** Untyped synonyms are untested guesses that each need maintenance when names change, and most point
+  at options or ops this ticket deletes. Edit distance covers typos at no cost.
+- **Consequences:** §7.13 lists what stays. New typed names come from future pi runs with the same script.
+- **Status:** accepted.
+
+### D13. One error for lazy data: `E_NOT_AWAITED`
+
+- **Context:** With lifting gone, reading a field of a lazy Value node has no meaning; today it builds a node.
+  `E_LAZY_COMPARE`, `E_NOT_ARRAY` and the collision hints each cover one way of using a lazy node as data.
+- **Options considered:** (a) let JavaScript return `undefined`; (b) one error for every property read and primitive
+  conversion on a Value or Regions node.
+- **Decision:** (b).
+- **Rationale:** (a) is the silent zero-value class again, in JavaScript. One rule, one code, one fix pattern.
+- **Consequences:** `E_LAZY_COMPARE` and `E_NOT_ARRAY` disappear as codes; the docs' error table changes (§11).
+- **Status:** accepted.
+
+### D14. Foundations: loud accessors, ordered node lists, one Render exit, `encoding/json`, a panic boundary, typed metadata
+
+- **Context:** The review classes of §3.1.
+- **Options considered:** for each, fixing instances (done in the review commits) versus changing the mechanism.
+- **Decision:** change each mechanism as in §7.2, 7.3, 7.9–7.12.
+- **Rationale:** Each instance fix added code that the mechanism change deletes (§9), and each mechanism change makes
+  the class unwritable rather than unlikely.
+- **Consequences:** Build-time function signatures change in every op file (mechanical); `ProbeFile` and
+  `DecodeFile` take files.
+- **Status:** accepted.
+
+## 9. Legacy and complexity to delete
+
+The checklist is ordered by phase (§13). Each item is deleted outright; nothing is kept for compatibility. Line
+counts are of non-test code on this branch, measured or estimated from the cited ranges.
+
+| # | delete | where | lines |
+|---|---|---|---|
+| 1 | the param store, `param` op, `KindParam`, `P`, param binding functions, params in signatures and the context block | `pkg/cv/graph/params.go` (180), `source.go:140-151`, `registry.go:23,33-40,406-417,448-462`, `engine.go:186-198`, `eval.go:33,173,293-296`, `prelude.js:196-208,313-330`, `binding.go:503-603`, `processor.go:512-528`, `init.js` (`P`) | ~380 |
+| 2 | lifting, `InputRef` for values, `liftIdx`, `Static`, `resolveArgs` re-check, `Expander.Arg`, Value ops, derived fields, SPACE warnings | `args.go:356-377,436-439,1138-1213`, `macro.go:38-64`, `pkg/cv/ops/value.go` (149), `prelude.js:34-39,265`, `pkg/gojamod/cv/fields.go` (62), `space.go:153-211`, `funcs.go:146-151` | ~460 |
+| 3 | the space option and its rule fields | `registry.go:69-90,145-161,370-375`, `space.go:31-45`, `views.go:141-156`, `args.go:1131-1134`, `reference.go:110-113`, `SpaceArg` in every view expansion | ~120 |
+| 4 | the Mask kind and its duplicate ops | `registry.go:20`, `value.go:52-61`, `geometry.go` (second registration), `mask.go:377-…`, `present.go:138-147`, `args.go:392-402`, look and help branches | ~80 |
+| 5 | region queries and their machinery: `where`, `sortBy`, `top`, `only`, `without`, `count`, `filter`, `truthy`, `Produces`, `producerHint`, `UnknownFieldError`, `RemovedFields`, `MaxItems`, `itemsBound`, data lambdas, `ITEM_PROTO`, `E_NOT_ARRAY` methods, collisions | `pkg/cv/ops/regions.go:37-231,272-436`, `schema.go:43-133`, `regionmeasure.go:109-122`, `pkg/cv/ops/schema.go:35-…`, `registry.go:267-270,289-292`, `sheet.go:54-72`, `args.go:17-28`, `eval.go:63-109`, `binding.go:26-102`, `prelude.js:55-70,88-116`, `evaltrack.go:300-331`, `processor.go:449-489` | ~720 |
+| 6 | `cv.evaluate`, preview scale, `show`, `cv.describe`, `explain` op, `cv.isNode`, `cv.warnings`, `cv.kinds`, `doc` stub | `prelude.js:355-378`, `binding.go:330-351,417-434,486-501`, `engine.go:200-214`, `init.js:71-90`, `native.go:100-121`, `processor.go:86-89,106-109`, `pkg/cv/ops/meta.go`, `funcs.go:56-83,114-119` | ~190 |
+| 7 | Data handles, the hand-written JSON writer, `table`, `columnArrays`, data names, `uniqueName`, data captions | `pkg/cv/dataout/data.go` (518 → ~140), `pkg/gojamod/cv/dataout.go` (236 → ~110), `cmd/goja-cv/eval.go:195-287`, `suggest.go:96-104` | ~565 |
+| 8 | home-made containment and the two roots | `pkg/cv/graph/paths.go` (102), `native.go:65-84`, `session.go:61-66,119-135`, `mcp.go:81-82`, `eval.go:35,302-311` | ~145 |
+| 9 | synonym and redirect tables except §7.13 | `suggest.go:10-86,90-105`, `args.go:812-862`, `registry.go:154-161`, `views.go:262-266`, `regionmeasure.go:31-33`, `names.go:66`, `composite.go` (`blendRedirects`), `funcs.go:21-27` (two of three) | ~200 |
+| 10 | `fitScale` and its tolerance | `render.go:249-268` | ~15 |
+| 11 | hidden arguments, `trusted`, `Hidden` | `source.go:108-117,154-159`, `engine.go:125-137`, `args.go:1022-1024`, `graphtest/source.go` | ~40 |
+
+**Estimate.** About 2,900 lines of non-test Go and JavaScript are deleted. About 800 are added: the workspace (~90),
+the `items` op and `Region.Shape` (~150), channel counts (~100 with the per-op declarations), the space rule and
+brackets (~50), `cv.save` with inline delivery (~150), `cv.explain` (~30), `E_NOT_AWAITED` (~25), `levelsAt` (~40),
+`Record.MarshalJSON` and `plain` (~40), the panic boundary (~50), typed metadata (~40), loud accessors (~40). The net
+change is about −2,100 of 23,154 non-test lines (−9 %). Tests move similarly: the param, query-op, Data-handle and
+containment tests (roughly 1,200 lines) go; the new property and regression tests (§14) add about 900. The docs lose
+`07-params.md` and most of `04-lambdas.md`. Treat these numbers as ±25 %; the implementation diary should record the
+measured totals (`git diff --stat` per phase).
+
+**Edge-case code from the review fixes that goes.** The symlink depth guard and `resolveExisting` (`paths.go:24-52`,
+from `319a6fc`), `uniqueName` (`eval.go:255-265`, `319a6fc`), the schema-less branch of `columnArrays`
+(`data.go:350-363`, `319a6fc`), `fitScale`'s `+1` (`render.go:257`, `cd5f46c`), `listInputs` (`present.go:107-119`,
+`cd5f46c`), and the two `Static: true` markings of `4c79173` (`source.go:102`, `channel.go`). The TIFF format-error
+check of `4c79173` stays: it is a correct decoder fix, and the panic boundary is the second line of defence.
+
+## 10. Pseudocode for the key flows
+
+### 10.1 Building a node
+
+```
+Builder.call(op, receiver, raw, nested):
+    recv := node(receiver)                                   // nil for module ops and sources
+    check recv.Kind == op.On, and recv.Channels == 1 if op.OneChannel      // E_WRONG_KIND with fix .toGray()
+    raw := resolveBuilt(raw, receiver)                       // builder lambdas → node arguments
+    bd  := bind(op, raw)                                     // literals; node args appended to inputs in order;
+                                                             // items lists interned as "items" nodes
+    a   := Args{op, bd.vals, meta: nil, ins: [recv] + bd.inputs}
+    op.Validate(a)                                           // panics are programming errors → E_INTERNAL
+    checkPicture, checkInFrame                               // unchanged
+    if op.Expand: return expand(op, a)                       // macros: unchanged apart from the space plumbing
+    ins, ws := resolveSpace(op, a)                           // §7.4: Gray rule, conversions to the work space
+    n := internNode(op, a with ins)                          // Frame, Enc, Space, Channels, Fields
+    if op.Space == Physical and n is an Image and !Identity(n.Enc, linear, recv.Space):
+        n = internNode(as, n, recv.Space)                    // the bracket's closing conversion
+    return n, ws
+```
+
+### 10.2 Awaiting
+
+```
+JS:   await node                      → proxy.then → native.__evaluate(id)
+Go:   binding.evaluate(id):           (owner goroutine, inside export())
+          promise := newPromise()
+          go func() {                  (evaluation goroutine)
+              defer graph.Recover(&err, "await")
+              v, err := eng.Evaluate(ctx, id, EvalOptions{Scale: 1, OnWarn: …})
+              post to owner: settle(promise, resultToJS(v))
+          }()
+      resultToJS:  Image   → summary from statics + source metadata
+                   Value   → data in schema order (Records)
+                   Regions → []Record in list order
+JS:   then(v => kind === "Regions" ? linkItems(v, node) : v)
+```
+
+JavaScript receives NaN as NaN (it is a JavaScript number); `plain()` applies only when data is encoded for a file
+or for inline content.
+
+### 10.3 Passing an array back
+
+```
+JS:   img.overlay(top)                → marshal(top) → [{x, y, …, __cvref: [17, 3]}, …]
+Go:   fromJS: lists and maps as plain data (the __cvref key stays a key)
+      bind, argument "target" of type "items|Mask":
+          list → items(list):
+              refs   := [(17, 3), (17, 9), …]    literal := []
+              sources := {17}                      // > 1 → E_ARG_TYPE
+              entries := [{id: 3}, {id: 9}, …]     // array order
+              m := internNode(items, inputs [node 17], args {entries})
+          → InputRef to m
+Eval: items.Run: src := value(17); out := [src.byID[3], src.byID[9], …]; RegionsValue over src's raster
+```
+
+### 10.4 Saving
+
+```
+JS:   await cv.save("views/speck.tif", img.view("speck"))
+Go:   binding.save(path, x, opts):                 (owner goroutine)
+          rel := ws.Rel(path)                       // E_ACCESS on escape
+          tracker.saved[rel] exists → E_DUPLICATE
+          rel ∈ opened sources       → E_ACCESS
+          kind := format(ext)                       // E_ARG_TYPE for an unknown extension
+          data := x is a node ? x.ID : exportOrdered(x)
+          go: defer Recover; bytes := encode(kind, x at scale 1 | data); ws.WriteFile(rel, bytes) | queue inline
+          resolve { path: rel, … }
+```
+
+### 10.5 Resolving a workspace path
+
+```
+Workspace.Rel(p):
+    if IsAbs(p):
+        for base in [dir, resolved]:
+            r := filepath.Rel(base, Clean(p)); if r does not start with ".." → return r
+        → E_ACCESS "outside the workspace DIR"
+    r := Clean(p)
+    if r == ".." or r starts with "../" → E_ACCESS
+    return r
+Workspace.Open(p):  rel := Rel(p); f, err := root.Open(rel); err → E_ACCESS (escape) or E_ARG_TYPE (missing)
+Workspace.WriteFile(p, data):
+    rel := Rel(p); if readOnly → caller delivers inline
+    _, statErr := root.Lstat(rel); replaced := statErr == nil
+    root.MkdirAll(Dir(rel), 0o755); root.WriteFile(rel, data, 0o644)        // escapes are errors here
+```
+
+### 10.6 Two traces
+
+**`img.exposure(1).stats()` on an srgb photograph.**
+
+```
+cv.open("photo.jpg")      open          enc srgb   space encoded  channels 3
+as(linear)                as            enc srgb   space linear            (inserted: exposure is Physical)
+exposure(ev 1)            exposure      enc srgb   space linear
+as(encoded)               as            enc srgb   space encoded           (inserted: the bracket closes)
+stats                     stats         numbers in encoded space (file units)
+```
+
+**`(await img.detect.specks()).slice(0, 5)` passed to `img.mask.regions(…, { grow: 2 })`.**
+
+```
+detect.specks             Regions  #12  (pixels at analysis scale 1)
+awaited                   [ {id 1, …, [ITEM]: 12}, … ]     slice(0, 5) keeps the objects
+items                     Regions  #20  inputs [#12]  entries [{id 1}, {id 4}, {id 2}, {id 7}, {id 3}]
+mask.regions(grow 2)      Image    #21  channels 1, frame = img's, enc linear (derived)
+```
+
+## 11. Errors and diagnostics
+
+| code | v2 meaning | example and fix |
+|---|---|---|
+| `E_ARG_TYPE` | a wrong value type; now also a node where a literal is expected, CSV of a non-list, an unknown save extension, items from two sets | `levels({ white: d.stats() })` → fix `levels({ white: (await d.stats()).p99 })` |
+| `E_WRONG_KIND` | a node of the wrong kind; now also "needs a one-channel image" | `img.within(img, …)` → fix `img.toGray()` as the mask |
+| `E_NOT_AWAITED` (new) | a property of, or a primitive from, a lazy Value or Regions node | `img.stats().p99` → fix `(await img.stats()).p99`; `regions.overlay(img)` → fix `img.overlay(regions)` |
+| `E_DUPLICATE` (new) | the same path saved twice in one eval | fix: another path, or one save |
+| `E_ACCESS` | a path outside the workspace; overwriting an opened image; a non-inline format in a read-only session | `cv.save("../x.tif", …)` → fix `cv.save("x.tif", …)` |
+| `E_UNKNOWN_METHOD`, `E_NAMESPACE` | unchanged; the redirect table is §7.13 | `node.write("x")` → fix `await cv.save("x.tif", node)` |
+| `E_UNKNOWN_OPTION` | unchanged; `space` is now an unknown key like any other | `mask.luminance({ min: 0.99 })` → fix `img.mask.luminance({ above: 0.99 })` (a typed name, §7.13) |
+| `E_INTERNAL` | any Go panic, now at every boundary | the message names the function; the hint carries the stack |
+| `E_FIELD_EXISTS`, `E_FRAME`, `E_FORMAT`, `E_TOO_MANY`, `E_ARG_RANGE`, `E_TIMEOUT`, `E_CANCELLED`, `E_EVAL`, `E_IMMUTABLE`, `E_PLACEHOLDER`, `E_NO_IMAGE` | unchanged | |
+| removed | `E_LAZY_COMPARE`, `E_NOT_ARRAY`, `E_PARAM_REDECLARE`, `E_NO_DOCUMENT`, `E_NO_FIELD` (no derived fields and no removed-field accessors) | |
+
+No error mentions a removed name (`space`, `cv.evaluate`, `where`, `P`): the brief excludes migration diagnostics, and
+an agent only types a name that some document or error showed it. The typed names of §7.13 are kept because agents
+reached for them without being shown them.
+
+Warnings: `SPACE` goes (no lifting). `RANGE`, `UNUSED_NODE`, `CUT`, `ENCODING`, `CROP_FIRST`, `DECORATION_FIRST`,
+`CLAMP`, `SHEET_TRUNCATED` and `OUTSIDE` stay.
+
+## 12. Documentation to change
+
+Every ```js block in `pkg/cv/docs/topics` and `pkg/doc` runs in the docs tests (`pkg/cvsession/docs_test.go`), so each
+phase updates the blocks it breaks in the same commit. The full rewrite is Phase 9.
+
+| document | change |
+|---|---|
+| `pkg/cv/docs/topics/01-getting-started.md` | the eval contract with `await` at full resolution, `look()` queues, `cv.save`, the workspace |
+| `02-units-and-scales.md` | no preview scale for data; looks keep theirs |
+| `03-nodes-and-evaluation.md` | literal options, data dependencies through `await`, `E_NOT_AWAITED`, `cv.explain` |
+| `04-lambdas.md` | builder lambdas only; data lambdas are JavaScript on awaited arrays |
+| `05-masks-and-regions.md` | rewritten: masks are one-channel images; regions are arrays; items and links; consumers |
+| `06-looks.md` | `look()` is the one display call and queues; `show` gone |
+| `07-params.md` | deleted |
+| `08-errors.md` | the table of §11 |
+| `09-recipes.md` | every recipe in v2 (filtering, measuring, saving) |
+| `10-encodings-and-spaces.md` | rewritten around the space of the image, `as`, the output-space rule, physical ops |
+| `11-views.md` | the speck views compute in linear light; no `space` option |
+| `12-measuring.md` | `measure(items)`, measurements in the receiver's space, `as("linear")` for physical units |
+| `13-data-out.md` | rewritten: `cv.save`, formats, CSV rows, rows plus metadata, the workspace, read-only inline delivery |
+| `pkg/doc/02-concepts.md` | kinds (Image, Regions, Value), the space of an image, items |
+| `pkg/doc/03-cli.md` | `--root`, `--read-only`, `--out`, `--image` inside the workspace; no `--out-root` |
+| `pkg/doc/04-agents.md` | the eval contract summary |
+| `pkg/doc/05-setup-claude-code.md`, `06-setup-codex.md`, `07-setup-pi.md` | MCP command lines with one `--root` |
+| `pkg/doc/08-recipes.md` | v2 recipes |
+| `pkg/doc/10-troubleshooting.md` | `E_ACCESS` (workspace), `E_NOT_AWAITED`, `E_DUPLICATE` |
+| `README.md` | the example and the flag list |
+| `pkg/cvsession/reference.go` | `Instructions` (§2.10) rewritten under 4000 characters: no `P`, `show`, `{ space }`, `cv.json`/`cv.csv`, `where`/`sortBy`/`top`; `EvalToolDescription`; the `Globals` lines of `Reference` |
+| `cmd/goja-cv/mcp.go` | the `Long` help text and flag help |
+| help (`pkg/gojamod/cv/help.go`) | the `cvFuncs` table: `save`, `explain`; no `evaluate`, `describe`, `json`, `csv`, `isNode`, `warnings`, `P`, `show`, `doc` |
+
+## 13. Implementation phases
+
+Every phase ends green on `go build ./...`, `go vet ./...`, `go test ./... -count=1 -race`, `make lint`, `make
+logcopter-check` and, from Phase 0 on, `make smoke`, and is one commit (or a few) followed by an implementation
+diary step. Write the listed tests first and watch them fail. Each phase updates the docs blocks it breaks, because the
+docs tests run every ```js block. The order puts foundations first (they do not change the API), then removes
+lifting before touching spaces (the SPACE warning depends on lifting), merges masks before regions (overlay's target
+type is `items|Mask`), and does saving after regions (saving takes awaited arrays).
+
+**Phase 0 — foundations without API change.**
+1. Tests: a test-only op whose `Validate`, `DocFrame` and `Run` panic, and a test hook that makes a binding function
+   panic, each surface as `E_INTERNAL` and the session survives the next eval; the GCV-001 empty-`BitsPerSample` TIFF
+   through `cv.open`; JSON round trips of strings with `\x00`, ` ` and quotes; `Record` key order through
+   `json.Marshal`; NaN and ±Inf become `null`; a render property test (every op class, scales 0.3, 1, 4, windows at
+   each edge) requires exactly `ScaledSize(window, scale)`; `make smoke` reads the files list.
+2. Implement: `graph.Recover`, `binding.export` (wrap the `set` helper and the docs functions), `native.object`
+   wrapping, recovers in the evaluation goroutines and errgroup bodies; `Record.MarshalJSON`, `dataout.plain`,
+   `encodeJSON` through `json.Marshal` (delete `writeJSON`, `writeString`, `writeObject`); `Render` with one exit and
+   the exact cut (delete `fitScale`); typed `SourceMeta` and `PlaceholderMeta` (delete `Hidden`, `trusted`); the smoke
+   target. No golden changes.
+
+**Phase 1 — literal options, named node arguments, loud accessors.**
+1. Tests: a node passed as an option is `E_ARG_TYPE` with the `(await …)` fix (replaces `TestEncodingArgsAreStatic`);
+   `cv.compare([img, img])` lays out two panels (keeps `TestOverlayAndCompare`'s case) and a sheet keeps repeated
+   views; each accessor panics on a wrong type and on an unguarded optional; the registry property test calls every
+   build-time function of every op with default arguments without panicking; `img.stats().p99` and `img.stats() > 1`
+   throw `E_NOT_AWAITED` with the fix; `view("speck")` is bit-identical (golden `sheet-2x2` exact).
+2. Implement: delete params (§9 item 1), lifting, `Static`, Value ops, derived fields, SPACE warnings and
+   `Expander.Arg` (item 2); turn `OpDef.Inputs` into named node `ArgSpec`s; `Args` with inputs, values and strict
+   accessors; build-time signatures `(a Args)`; delete `listInputs`, `nodeOf`, `viewNodes`, `firstImage`; add
+   `levelsAt`; `__notAwaited` in the prelude for Value and Regions nodes, deleting `__lazy` and `E_LAZY_COMPARE`. Docs:
+   delete `07-params.md`; update `03`, `08`, `09`.
+
+**Phase 2 — one way to evaluate, show and explain.**
+1. Tests: `await` evaluates at scale 1 on a fixture larger than 1600 px (the summary's `scale` is 1); a look that is
+   created but not returned is delivered; returned looks come first; a look created before a throw is delivered; the
+   fifth look gets the budget note; `cv.explain` fields; `cv.evaluate` is an unknown `cv` member like any other.
+2. Implement: delete `cv.evaluate`, `scaleArg`, `PreviewLong`, `PreviewScale`; the look queue in the eval tracker;
+   delete `show`, `native.queue`, `state.shows`, the `shown:` block, `FuncDef.Global`; add `cv.explain`; delete
+   `cv.describe`, the `explain` op, `cv.isNode`, `cv.warnings`, `cv.kinds`, the `doc` stub and `E_NO_DOCUMENT`. Docs:
+   `01`, `03`, `06`, instructions.
+
+**Phase 3 — space on the image.**
+1. Tests: `await cv.open(f)` reports `space: "encoded"`; `as` is the identity on linear-encoded and derived images;
+   the output-space property test (every op on an srgb fixture in each space: result space = receiver space, except
+   display and derived results); a physical bracket: `img.exposure(1)` equals today's linear exposure followed by
+   encoding within 1e-6; measurements in the receiver's space (`img.stats()` equals today's `stats({ space: "encoded"
+   })`); `{ space }` is `E_UNKNOWN_OPTION`; `ENCODING` still fires; the speck view is unchanged
+   (`sheet-2x2` exact; gated `TestRealViewRanking` unchanged); the gated hot-list test builds its DoG and measures on
+   `img.as("linear")` and keeps its thresholds.
+2. Implement: the `SpaceRule` enum and the resolution of §7.4 (delete item 3 of §9); the source's encoded `Run`;
+   `as` (rename `convert`); brackets; views. Regenerate the four moving goldens (`gaussian`, `levels-gamma`,
+   `levels-stats`, `profile-chart`) with `-update` in this commit and record each in the diary (§14.3). Docs: `10`,
+   `11`, `12`, recipes.
+
+**Phase 4 — masks are one-channel images.**
+1. Tests: the channel property test (`Buf.C == Node.Channels` for every op on a grey and a colour fixture); mask ops
+   on any one-channel image (`img.toGray().grow(2)`); `img.within(img, …)` is `E_WRONG_KIND` at build time with the
+   agent's line and the `toGray()` fix; `m.stats()` works; `channel("g")` on a grey image and `colormap` on colour fail
+   at build time; the grey-input rule inserts no `toGray` for a grey input (`cv.explain`).
+2. Implement: `Node.Channels`, `OpDef.Channels`, `OpDef.OneChannel`, the `Mask` type word in `accepts`; delete the
+   Mask kind (§9 item 4); one `crop`, one `overlay`. Mask goldens stay exact.
+
+**Phase 5 — regions as arrays.**
+1. Tests: an awaited `detect.specks` is an array; items stay linked after `filter`, `sort`, `slice` and object spread
+   (the goja spread check of D6); `img.overlay(array)` equals `img.overlay(node)` pixel for pixel, and a filtered
+   array equals the old `only(ids)` result; literal boxes overlay; point items are refused by `overlay` with the box
+   fix; items from two sets are refused; `img.measure(items)` equals the old `regions.measure(img, { ring: true })`
+   fields and `img.measure(points)` the old point rows (plus `id`); `img.mask.regions(items, { grow })` equals the old
+   `toMask`; a sheet over an array is sized by its length; methods on a Regions node throw `E_NOT_AWAITED` with the
+   image-method hint; `E_TOO_MANY` still applies.
+2. Implement: the `items` type and op, `Region.Shape`, `linkItems` and the `__cvref` marshal; `measure` on Image;
+   `mask.regions`; delete §9 item 5. Goldens `specks-overlay` and `sheet-2x2` stay exact. Docs: `04`, `05`, `09`, `12`.
+
+**Phase 6 — one save, one workspace.**
+1. Tests: `Workspace.Rel` and `Open`/`WriteFile` for relative and absolute paths, `..`, `/tmp` versus `/private/tmp`,
+   a symlink inside pointing inside (allowed), inside pointing outside (refused), a dangling link pointing outside
+   (refused, the P1 case), a symlinked directory outside (refused); `cv.save` for every extension; `E_DUPLICATE`;
+   overwriting an opened image is `E_ACCESS`; `cv.open(saved.path)` reopens; CSV refuses objects with the right
+   fixes; profile and histogram `rows`; read-only inline delivery over MCP (content items) and the CLI (`--out` files
+   at their relative paths); `--image` outside `--root` is a usage error; `mcp --root` once.
+2. Implement: `graph.Workspace`; decoders take files; `SourceKey` by relative path; `cv.save`; profile and histogram
+   rows and their charts; CSV records only; the flags of §7.8; delete §9 items 7 and 8. Chart goldens stay exact (same
+   pixels from `rows`). Docs: `13`, `pkg/doc/03`–`07`, README.
+
+**Phase 7 — names.**
+1. Tests: a table-driven test over §7.13 (each typed name gives its fix); a removed synonym (`brightness`) gives an
+   edit-distance suggestion or none, never a table hit.
+2. Implement: delete the tables (§9 item 9); keep §7.13. Run `scripts/02-pi-names-typed.py` on the tree: only the
+   kept keys remain.
+
+**Phase 8 — documentation sweep and validation.**
+1. The documents of §12, the regenerated reference, `goja-cv help` pages; the docs tests pass.
+2. The pi validation runs (§15); results in the implementation diary; an "Implementation notes (deviations)"
+   section appended to this guide.
+
+The key points:
+
+- Foundations come first because they change no behaviour an agent sees and make the later phases safer.
+- Lifting goes before spaces, masks before regions, regions before saving: each phase deletes what the next would
+  otherwise have to carry.
+- Only Phase 3 moves goldens.
+
+## 14. Test strategy
+
+### 14.1 Unit and property tests
+
+- **Registry property tests.** For every registered op: build-time functions run with default arguments; the result's
+  schema matches evaluated rows (the GCV-003 test, now over records); the evaluated channel count equals
+  `Node.Channels`; the output space follows the rule of §7.4.
+- **Binder.** Literal-only options; node arguments in order with repetitions; items lists with linked, literal, mixed
+  and invalid elements.
+- **Accessors.** Each accessor panics on a wrong type and on an unguarded optional.
+- **Spaces.** Brackets, `as` identities, measurements per space, the ENCODING warning.
+- **Items.** Links through JavaScript transformations, including object spread in goja; `items` op order and
+  repetition; literal box coverage equals `mask.box`.
+- **Render.** The exact-size property over op classes, scales and window positions.
+- **Data.** JSON escapes and order, NaN to null, CSV rows and refusals, profile and histogram rows.
+- **Workspace.** The path cases of Phase 6 on macOS and Linux (CI runs Linux; the `/tmp` case is macOS).
+- **Panic boundary.** One deliberate panic per kind of site.
+
+### 14.2 Documentation tests
+
+`pkg/cvsession/docs_test.go` runs every ```js block of the topics and the guidebook with the planted scan as `img`;
+blocks marked `js error=CODE` must fail with that code. The new codes get examples (`E_NOT_AWAITED`,
+`E_DUPLICATE`); the docs test session uses a temporary workspace so `cv.save` blocks run.
+
+### 14.3 Golden looks
+
+The harness (`pkg/cv/look/golden_test.go`) compares 29 looks of the planted scan exactly. Only Phase 3 may change
+them, and only these four, because their ops change default space from linear to the image's encoded space:
+
+| golden | why it moves |
+|---|---|
+| `gaussian.png` | `gaussian` blurs file values instead of linear light |
+| `levels-gamma.png`, `levels-stats.png` | `levels` (and the `stats` that feed `levels-stats`) work in file units |
+| `profile-chart.png` | `profile` samples file values |
+
+Every other golden must stay exact through all phases, including `exposure.png` and `togray.png` (physical: same values
+through the bracket, within float rounding that the 8-bit quantization removes) and `sheet-2x2.png` (the speck view
+keeps linear light through `as` and `levelsAt`). The rule: regenerate with `go test ./pkg/cv/look -run
+TestGoldenLooks -update` in the Phase 3 commit only, list the four files in the diary with a one-line reason each, and
+treat any other diff as a bug. The GCV-001 tolerance classes are no longer needed and can be deleted with the
+`-golden.tolerant` flag.
+
+### 14.4 Regression tests for the review classes
+
+| review test | becomes |
+|---|---|
+| `TestEncodingArgsAreStatic` | "a node as an option is `E_ARG_TYPE`" (Phase 1) |
+| `TestTIFFEmptyBitsPerSample` | kept; plus the panic-boundary test (Phase 0) |
+| `TestOverlayAndCompare` (`[img, img]`) | kept, reading `Args.Inputs` (Phase 1) |
+| `TestSheetCellsLabelsEdgesAndTruncation` (size below 1) | the render size property (Phase 0) |
+| `TestOutPathSymlinks` | `TestWorkspaceSymlinks` (Phase 6) |
+| `TestDataContentLazyEagerAndColumns` | `cv.save` CSV and JSON tests (Phase 6) |
+| `TestUniqueName` | `E_DUPLICATE` (Phase 6) |
+
+### 14.5 Real data (gated)
+
+`TestRealViewRanking` (142 gold points, 15 tiles) must give the same numbers (median 18, 79.6 % in the top 50): the
+speck view still computes in linear light. The hot-list test and benchmark (GCV-003 deviations 19–20) switch to
+`img.as("linear")` explicitly and keep their thresholds. Both stay gated on the environment variables of GCV-002/003.
+
+### 14.6 Smoke
+
+`make smoke` (§7.14) runs in CI on every push (`.github/workflows/push.yml:40-51`).
+
+## 15. Validation plan: pi runs before and after
+
+The harness is in the dust-scanning repository:
+`/Users/manuel/code/wesen/2026-11-07--dust-scanning/ttmp/2026/11/08/CVJS-001--js-eval-cv-api-for-agents-compare-9-implementations/scripts/06-pi-cv-agent/run.sh`
+(`[IMAGE=…] [IMAGE_EXTRA=…] [QUESTIONS=…] [OUT_ROOT=1] run.sh GOJA_CV_DIR OUT_DIR [MODEL]`), with question files
+`questions-gcv-001.md`, `questions-gcv-002.md`, `questions-gcv-003.md` beside it and results under `various/pi-runs`.
+It always starts the server with `--root OUT_DIR/img`, which in v2 is the workspace; `OUT_ROOT=1` adds `--out-root`,
+which v2 does not have, so after-runs must not set it (saved files land in `OUT_DIR/img`).
+
+**Runs.** "Before" is the pre-GCV-004 head (`454a836`, GCV-001..003 with the review fixes); "after" is the GCV-004
+head after Phase 8. Two runs per question file and build, twelve runs in all:
+
+```bash
+H=~/code/wesen/2026-11-07--dust-scanning/ttmp/2026/11/08/CVJS-001--js-eval-cv-api-for-agents-compare-9-implementations
+R=$H/various/pi-runs; Q=$H/scripts/06-pi-cv-agent
+git -C ~/code/wesen/go-go-golems/goja-cv worktree add /tmp/goja-cv-before 454a836
+TILE=~/dustdet/cv_tiles/7edbfe9c3e7ab7d6_512_1024.tif
+# GCV-001 questions: the v tile (density stored linearly) and the original tile as its reference, as for runs 09–10
+mkdir -p /tmp/v && cp ~/dustdet/cv_tiles/1d955ef4b27d3d88_1536_1536.tif /tmp/v/tile_ref.tif
+python3 ~/code/wesen/go-go-golems/goja-cv/ttmp/2026/11/09/GCV-001--image-model-encodings-working-spaces-channels-and-named-images/scripts/01-make-v-tile.py \
+  /tmp/v/tile_ref.tif /tmp/v/tile_v.tif            # also prints the expected answers
+VTILE=/tmp/v/tile_v.tif REFTILE=/tmp/v/tile_ref.tif
+IMAGE=$VTILE IMAGE_EXTRA=$REFTILE QUESTIONS=$Q/questions-gcv-001.md $Q/run.sh /tmp/goja-cv-before $R/run-19-v2-before-gcv001
+IMAGE=$TILE QUESTIONS=$Q/questions-gcv-002.md $Q/run.sh /tmp/goja-cv-before $R/run-21-v2-before-gcv002
+IMAGE=$TILE QUESTIONS=$Q/questions-gcv-003.md OUT_ROOT=1 $Q/run.sh /tmp/goja-cv-before $R/run-23-v2-before-gcv003
+# second before-run of each: run-20, run-22, run-24
+# after: the same commands with GOJA_CV_DIR = the GCV-004 checkout, runs 25–30, and never OUT_ROOT
+```
+
+**Metrics.** From `07-pi-events-summary.py` and this ticket's `01-pi-api-usage.py` and `02-pi-names-typed.py` on the
+new run directories:
+
+| metric | before (expected from runs 09–18) | target after |
+|---|---|---|
+| calls per run (median per question file) | GCV-001 ≈ 25, GCV-002 ≈ 34, GCV-003 ≈ 50 | not more than before |
+| results with `isError` | 1–7 per run | not more than before |
+| `E_ACCESS` | 1–4 per run in runs 11–18 | 0 |
+| `E_UNKNOWN_METHOD` | ≈ 2 per run | ≤ 1 per run |
+| `E_WRONG_KIND` | occasional | 0 |
+| `E_NOT_AWAITED` (new) versus `E_LAZY_COMPARE` | 7 in 18 runs | ≤ 1 per run |
+| `{ space }` / `as(` | 198 / 0 | 0 / reported |
+| answers | GCV-001 Q1 p01 0.00854, p99 0.91794 (file units); Q2 0.28713; Q3 neutral; GCV-002 ≥ 9 / 15 gold points; GCV-003 CSV and JSON rows equal the candidate count, the TIFF reopens with frame [0, 0, 1024, 1024] | unchanged |
+
+GCV-001 Q1 is the direct test of D2: with file units as the default, `await img.stats()` answers it in one call.
+Add the twelve rows to the pi-runs README in the dust-scanning repository (the coordinator's step; this guide does
+not edit that repository).
+
+## 16. Migration note: the DUST-002 helpers
+
+The colleague's helpers live in another repository and belong to the user:
+`/Users/manuel/code/wesen/2026-11-07--dust-scanning/ttmp/2026/11/07/DUST-002--film-dust-detector-model-exploration/`.
+This ticket does not edit them. What breaks, and the v2 replacement:
+
+| file and use | breaks because | v2 |
+|---|---|---|
+| `scripts/84-cv-helpers.js` throughout: "goja-cv's linear value is density … so blurs and stats are in density units" | images open in file units (sRGB_encode(density) for these tiles) | start with `const lin = img.as("linear")` and build `views`, `probe`, `_hotRegions` on `lin` |
+| `84`: `reg.items.slice(0, max)`, `reg.count` | awaited regions are arrays | `reg.slice(0, max)`, `reg.length` |
+| `84`: `s.centroid.map(Math.round)` | already removed in GCV-003 | `[Math.round(s.cx), Math.round(s.cy)]` |
+| `84`: `img.detect.specks(…).sortBy("contrast").top(n)` | query ops removed | `(await img.detect.specks(…)).sort((a, b) => b.contrast - a.contrast).slice(0, n)` |
+| `84`: `mem.probe` with two `stats({ mask })` calls | still works (masks are images), but in file units | `lin.measure([[x, y]], { coreRadius: r, ring: [r + 3, r + 9] })` gives step, spread and snr in one call |
+| `84`: `v.scene.overlay(await mem._hotRegions(k), …)` | unchanged: arrays are accepted | none |
+| `scripts/83-cv-specks-vs-gold.py`: `all.where({ id: { gte, lt } })`, `all.count()`, `r.items`, `x.centroid`, paging by 40 | query ops removed; arrays; GCV-003 names | `await cv.save("specks.csv", img.detect.specks(…))` and read the CSV: no paging |
+| `83`, `85`: `goja-cv eval --image /abs/path.tif` and `cv.open(TIF)` with absolute tile paths | the workspace defaults to the working directory | pass `--root ~/dustdet` (or run from there) |
+| `85`: `cv.open(TIF, { encoding: "linear" })` and the `gdog_manual` recipe | unchanged numbers: on a linear-encoded image file units are linear | none |
+| `85`: reading `look-*` files from `--out` | unchanged naming | none; the `--json` `files` list is the robust way |
+| `reference/04-goja-cv-dust-playbook.md`, `reference/08-…getting-started…` | code snippets use v1 calls (`where`, `sortBy`, `top`, `show`, `{ space }`, `cv.csv`) | rewrite the snippets against §6.9 |
+
+## 17. Risks, alternatives and open questions
+
+**Risks.**
+
+1. *Default space change.* Every srgb workflow's numbers change for `stats`, `levels`, `gaussian`, `blend` and the
+   measurements. Mitigation: the output-space rule is one paragraph in the docs; `as("linear")` restores physical
+   units; the DUST-002 note lists each place.
+2. *goja and symbol spread.* The item link relies on object spread copying symbol-keyed properties, which the current
+   goja does (D6). A goja upgrade that broke it would turn spread items into literal boxes; the Phase 5 test catches it.
+3. *Synonym pruning on one model.* The 14 typed names come from one model's 751 calls. Another model may type other
+   names. Mitigation: edit distance stays, and the script makes adding a typed name a one-line change backed by
+   evidence.
+4. *Full-resolution awaits.* On 7000 px scans an `await` that used to run at about scale 0.23 now runs at 1 (about 19
+   times the pixels). Mitigation: crop first; looks keep previews. If this hurts in practice, an image summary could
+   come from statics without evaluation (open question 4).
+5. *Workspace default.* Writing into the current directory by default lets an agent create files where the server
+   was started. Mitigation: `--read-only`; sources are never overwritten.
+6. *Channel declarations.* A missed `Channels` declaration gives a wrong build-time mask check. Mitigation: the
+   property test evaluates every op.
+
+**Alternatives not taken** are in the decision records (§8): keeping lifting with static-by-default arguments,
+per-op spaces with encoded defaults, a Mask kind with copied methods, methods on Regions nodes, an array subclass,
+two measure ops, a preview scale for `await`, `show` as the display call, Data handles beside `cv.save`, two roots.
+
+**Open questions for review.**
+
+1. Should `gaussian` be physical (optical blur) rather than following? The evidence (10 of 10 explicit spaces
+   encoded) says follow; image-processing convention for resampling says linear.
+2. Should `blend` and `within` be physical? Compositing light is linear; agents chose encoded 7 of 8 times.
+3. Is `ring: true` the right default for `measure`, given that `measure(items, { stats: ["mean"] })` then also adds
+   ring fields?
+4. Should awaiting an Image skip evaluation and return its statics? It would make `await img` free but move chain
+   errors from the `await` to the first look or save.
+5. Should a list of items from two region sets be accepted by giving each region its own raster, instead of refused?
+6. Is the current directory the right default workspace for `goja-cv mcp` started by Claude Code (the project
+   directory), or should MCP require `--root`?
+
+## 18. References
+
+- Coordinator diary: `reference/02-diary-coordination.md` (steps 1–3); GCV-001..003 coordination diary step 9
+  (`GCV-001…/reference/01-diary-coordination-gcv-001-003.md`).
+- Evidence: `reference/01-evidence-pi-run-api-usage.md`, `scripts/01-pi-api-usage.py`, `scripts/02-pi-names-typed.py`,
+  `scripts/03-goja-panic-and-spread.go.txt`.
+- Shared vocabulary: `GCV-001…/reference/05-foundations-goja-cv-for-the-gcv-guides.md`.
+- Earlier guides and their deviations: `GCV-001…/design-doc/01-…` (§8 decisions on spaces, deviations 1–19),
+  `GCV-002…/design-doc/01-…` (render classes, deviations 1–23), `GCV-003…/design-doc/01-…` (schema, data out,
+  deviations 1–23). Implementation diaries: GCV-001 `reference/06-…`, GCV-002 `reference/03-…`, GCV-003 `reference/03-…`.
+- Review fix commits: `4c79173` (#2), `cd5f46c` (#3), `319a6fc` (#4).
+- Go `os.Root`: `go doc os.Root` (Go 1.26: `OpenRoot`, `Open`, `OpenFile`, `Lstat`, `MkdirAll`, `WriteFile`).
+- The pi harness and runs: `CVJS-001…/scripts/06-pi-cv-agent/run.sh`, `CVJS-001…/various/pi-runs/README.md`.
+- DUST-002 helpers: `DUST-002…/scripts/84-cv-helpers.js`, `83-cv-specks-vs-gold.py`, `85-cv-views.py`.

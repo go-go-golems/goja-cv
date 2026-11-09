@@ -25,6 +25,12 @@ topics:
       description: Regions
     - slug: export
       description: Data export
+    - slug: api
+      description: The JavaScript API agents call
+    - slug: architecture
+      description: Structure of goja-cv's layers and mechanisms
+    - slug: refactor
+      description: Changes that remove or reshape existing code
 docTypes:
     - slug: design-doc
       description: Structured rationale and architecture notes

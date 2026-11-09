@@ -4,3 +4,12 @@
 
 - Initial workspace created
 
+
+## 2026-11-09
+
+Design guide written (design-doc/01, 18 sections); evidence scripts 02 (typed names) and 03 (goja panic/spread); tasks for Phases 0-8
+
+### Related Files
+
+- /Users/manuel/code/wesen/go-go-golems/goja-cv/ttmp/2026/11/09/GCV-004--api-v2-one-way-per-thing-literal-options-space-on-the-image-masks-as-images-regions-as-arrays-one-save-one-workspace-and-foundations/design-doc/01-design-and-implementation-guide.md — GCV-004 design and implementation guide
+
