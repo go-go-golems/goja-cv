@@ -14,5 +14,5 @@
 - [x] Phase 5 - regions as arrays: [node, index] item links, items op with moved-box check and ITEMS warning, Region.Shape Pixels/Box/Disk, measure(items) with radii from items and stepChroma gate, mask.regions; delete query ops, data lambdas, Produces, RemovedFields, MaxItems, item prototype, collisions; re-measure hot-list thresholds <!-- t:2oo1 -->
 - [x] Phase 6 - one save, one workspace: graph.Workspace (os.Root --root + read-only --read roots, an engine option), mcp requires --root, decoders take files, cv.save (E_DUPLICATE, no symlinks, os.SameFile protection, temp+rename), CSV rows only, profile/histogram rows; xgoja root/read; delete Data handles, cv.json/csv, node.save, paths.go, out-root, uniqueName, data budgets <!-- t:dz7m -->
 - [x] Phase 7 - names: keep only the typed names of guide 7.13; delete Synonyms, OptionSynonyms, ValueSynonyms and other redirect tables <!-- t:sxi3 -->
-- [ ] Phase 8 - documentation sweep (topics, guidebook, README, MCP instructions, reference) and pi validation runs 19-30 (guide section 15); deviations section <!-- t:umwo -->
+- [x] Phase 8 - documentation sweep (topics, guidebook, README, MCP instructions, reference) and pi validation runs 19-30 (guide section 15); deviations section <!-- t:umwo -->
 - [x] Upload the guide to reMarkable <!-- t:6tle -->

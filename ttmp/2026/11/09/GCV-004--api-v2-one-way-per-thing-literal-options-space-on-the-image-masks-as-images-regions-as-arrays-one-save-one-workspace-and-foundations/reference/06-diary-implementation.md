@@ -1394,3 +1394,100 @@ needs them."
 ### Technical details
 
 `git diff --stat 3b3e685 0319ac9 -- pkg cmd internal`: 11 files changed.
+
+## Step 12: pi validation, before and after (guide §15)
+
+Twelve pi runs with `lunaroute/deepseek-4.1-flash`: two per question file (GCV-001, -002, -003) on `main`
+(`b42502b`, the v1 field fixes) and on this branch (`0319ac9`, phases 0–8). v2 removes the `E_ACCESS` errors and
+every use of the removed API, keeps the answers right, and needs fewer calls for the inspection and measurement tasks.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 8) "After Phase 8: pi validation (guide §15). Run the pi harness before and
+after, with the model `lunaroute/deepseek-4.1-flash` and two runs each. […] "before" is `main` (`b42502b`), via a
+temporary worktree that you remove afterwards. "After" is your branch. […] the v2 server uses `--root`/`--read`
+instead of `--out-root`, and the harness's `OUT_ROOT=1` adds `--out-root`. Adapt the harness invocation […] and do not
+edit the committed harness. Where the runs go: in your scratch dir. […] Metrics: calls, errors, E_ACCESS,
+E_UNKNOWN_METHOD, and whether the answers are correct. Usage counts: use the GCV-004 `scripts/01-pi-api-usage.py`
+on the run directories, after converting them to `calls.txt` with the dust-scanning
+`scripts/07-pi-events-summary.py`."
+
+**Assistant interpretation:** Run the harness unchanged from a scratch copy (without `OUT_ROOT` it starts the server
+with `--root OUT/img`, which is exactly the v2 workspace; only the GCV-003 before-runs set `OUT_ROOT=1`), score the
+answers, count usage and errors.
+
+**Inferred user intent:** Evidence that v2 helps the cheap model, before the PR.
+
+### What I did
+
+- Inputs (the tiles changed since runs 07–18, deviation 37): `tile_v.tif` = the current tile
+  `1d955ef4b27d3d88_1536_1536` (stores v), `tile_ref.tif` = its sRGB_encode(v), and
+  `7edbfe9c3e7ab7d6_512_1024.tif` written as sRGB_encode(v), the export runs 11–18 used
+  (`scratchpad/pi/scripts/make-inputs.py`). The expected GCV-001 answers come out exactly as before: p01 0.00854,
+  p99 0.91794, largest stored difference 0.28713.
+- `scratchpad/pi/scripts/drive.sh` ran the twelve runs in parallel through a copy of `run.sh` (identical to the
+  committed one); a temporary worktree at `b42502b` for "before", removed afterwards.
+- `07-pi-events-summary.py --max 4000` → `calls.txt` per run; `metrics.py` (error codes in results), `gold002.py`
+  (GCV-002 spots within 5 px of a gold point of the tile's current 53 labels), `01-pi-api-usage.py` and
+  `02-pi-names-typed.py` on the before and after sets.
+
+### Why
+
+- Guide §15: the validation plan.
+
+### What worked
+
+| question file | build | calls | isError | E_ACCESS | E_UNKNOWN_METHOD | answers |
+|---|---|---|---|---|---|---|
+| GCV-001 | before (main) | 26 / 37 | 2 / 5 | 0 / 0 | 1 / 1 | both right: p01 0.00854, p99 0.91794 (`encoding: "linear"`), 0.28713, neutral |
+| GCV-001 | after (v2) | 34 / 24 | 2 / 3 | 0 / 0 | 0 / 0 | both right, the same numbers |
+| GCV-002 | before | 52 / 50 | 6 / 7 | 0 / 0 | 0 / 0 | 21 / 53 and 19 / 53 gold points located |
+| GCV-002 | after | 38 / 40 | 3 / 5 | 0 / 0 | 1 / 1 | 17 / 53 and 20 / 53 |
+| GCV-003 | before (`OUT_ROOT=1`) | 46 / 44 | 7 / 5 | 0 / 1 | 1 / 3 | CSV = JSON rows (328, 233); TIFF saved and reopened, frame [0, 0, 1024, 1024] |
+| GCV-003 | after | 36 / 48 | 7 / 7 | 0 / 0 | 0 / 1 | CSV = JSON rows (513, 383) via `cv.save`; TIFF reopened with `cv.open(saved.path)`, frame [0, 0, 1024, 1024] |
+
+Medians of calls: GCV-001 31.5 → 29, GCV-002 51 → 39, GCV-003 45 → 42. `E_ACCESS`: 1 → 0 (the before one is the
+GCV-003 reopen of a saved file, the class v2 removes). `E_UNKNOWN_METHOD` ≤ 1 per after-run (all four are
+`cv.info()`, answered with the fix `await img`). `E_NOT_AWAITED`: one (`img.stats().catch(…)`). No `E_WRONG_KIND`.
+
+Usage (`01-pi-api-usage.py`, 255 before calls / 220 after): `{ space }` 70 → 0, `cv.evaluate` 33 → 0, `show(` 99 → 0,
+`cv.json/cv.csv` 20 → 0, `P.*` 3 → 0, `.where/.sortBy/.top` 7 → 0, `encoding:` 11 → 35, `.look(` 68 → 90, JS
+`.filter(` 34 → 23; `as:` 8 → 3 (one typed as a `cv.open` option in v2, answered with `E_UNKNOWN_OPTION`). Error codes
+before: `E_ARG_TYPE` 9, `E_UNKNOWN_METHOD` 7, `E_ACCESS` (in results) 6, `E_NO_DOCUMENT` 3, `E_NOT_ARRAY` 1, …; after:
+`E_ARG_RANGE` 6, `E_ARG_TYPE` 6, `E_UNKNOWN_OPTION` 4, `E_UNKNOWN_METHOD` 3, `E_FIELD_EXISTS` 2, `E_NOT_AWAITED` 1
+(the after `E_ACCESS`/`E_DUPLICATE` mentions are help text, not errors).
+
+### What didn't work
+
+- GCV-002 recall did not improve (17–21 of 53 in both builds): the agent's ranking, not the API, limits it, as in
+  runs 11–14.
+- The agents' own mistakes in v2: `cv.info()` (3 runs), `img.annotate([{ cx, cy, r }])` (marks are `{ circle: […] }`),
+  `cv.save("recipes.md", …)`, a text id `"1:41"` (the `label` fix), `measure(points, { stats })` (points have no
+  area), `img.stats().catch(…)`, and sheets of 20 items that do not fit at the chosen size.
+
+### What I learned
+
+- The cheap model types `as:` and `cv.info` from habit, not from docs (no v2 document shows them).
+
+### What was tricky to build
+
+- Keeping the questions' inputs equal to runs 07–18 after the tile re-export.
+
+### What warrants a second pair of eyes
+
+- `gold002.py` parses the agents' markdown tables; it counts gold points within 5 px of any listed spot, so a run
+  that lists more spots can locate more.
+
+### What should be done in the future
+
+- For GCV-005: `.catch` on a node (thenable), `annotate` marks from items (`{ cx, cy, r }`), `cv.info` → `await img`
+  is already the fix; sheets that shrink cells to fit.
+
+### Code review instructions
+
+- Runs: `scratchpad/pi/runs/{before,after}-gcv00{1,2,3}-{a,b}/` (events.jsonl, calls.txt, session/, transcript.html);
+  `scratchpad/pi/metrics.txt`, `usage.txt`, `names-after.txt`.
+
+### Technical details
+
+Scratch root: `/private/tmp/claude-501/-Users-manuel-code-wesen-2026-11-07--dust-scanning/f3ce17c3-3866-46d2-8189-04b381055e1f/scratchpad/pi`.

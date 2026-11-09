@@ -2901,3 +2901,7 @@ order found; the phase is in brackets.
 49. [8] The removed-names test also lists `regions.measure`, `sortBy(`, `node.save`, `cv.describe` and `cv.isNode`,
     and scans comments too (whole lines of non-test sources). The golden tolerance classes and `-golden.tolerant`
     are deleted (§14.3).
+50. [8] The pi validation compares `main` (`b42502b`, v1 with the field fixes) with the branch, not `454a836`; the
+    runs live in the implementer's scratch area. The tiles were re-exported (deviation 37), so the inputs were rebuilt
+    to match runs 07–18: the v tile is the current tile, the reference and the GCV-002/003 tile are its
+    sRGB_encode(v). GCV-002 recall is counted against the tile's current 53 gold points (it had 15).
