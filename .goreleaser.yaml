@@ -1,0 +1,80 @@
+version: 2
+project_name: goja-cv
+
+before:
+  hooks:
+    - go mod tidy
+    - go generate ./...
+
+# goja-cv needs cgo: go-go-goja's replsession pulls in tree-sitter (jsdoc
+# extraction) and mattn/go-sqlite3. Linux arm64 cross-compiles with the
+# aarch64 gcc toolchain the release workflow installs; darwin builds natively
+# on a macOS runner (split build, merged by the shared publisher).
+builds:
+  - id: goja-cv-linux
+    env:
+      - CGO_ENABLED=1
+      - CC_linux_amd64=gcc
+      - CXX_linux_amd64=g++
+      - CC_linux_arm64=aarch64-linux-gnu-gcc
+      - CXX_linux_arm64=aarch64-linux-gnu-g++
+      - 'CC={{ index .Env (print "CC_" .Os "_" .Arch) }}'
+      - 'CXX={{ index .Env (print "CXX_" .Os "_" .Arch) }}'
+    main: ./cmd/goja-cv
+    binary: goja-cv
+    goos: [linux]
+    goarch: [amd64, arm64]
+  - id: goja-cv-darwin
+    env:
+      - CGO_ENABLED=1
+    main: ./cmd/goja-cv
+    binary: goja-cv
+    goos: [darwin]
+    goarch: [amd64, arm64]
+
+checksum:
+  name_template: checksums.txt
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+
+homebrew_casks:
+  - name: goja-cv
+    binaries: [goja-cv]
+    description: "Lazy image analysis and editing for agents: a Go CV engine scripted in JavaScript, with CLI and MCP server"
+    homepage: "https://github.com/go-go-golems/goja-cv"
+    repository:
+      owner: go-go-golems
+      name: homebrew-go-go-go
+      token: "{{ .Env.TAP_GITHUB_TOKEN }}"
+
+nfpms:
+  - id: packages
+    vendor: GO GO GOLEMS
+    homepage: https://github.com/go-go-golems/goja-cv
+    maintainer: Manuel Odendahl <wesen@ruinwesen.com>
+    description: "Lazy image analysis and editing for agents: a Go CV engine scripted in JavaScript, with CLI and MCP server"
+    license: MIT
+    formats: [deb, rpm]
+    release: 1
+    section: default
+    priority: extra
+    deb:
+      lintian_overrides:
+        - statically-linked-binary
+        - changelog-file-missing-in-native-package
+
+publishers:
+  - name: fury.io
+    ids: [packages]
+    dir: "{{ dir .ArtifactPath }}"
+    cmd: curl -F package=@{{ .ArtifactName }} https://{{ .Env.FURY_TOKEN }}@push.fury.io/go-go-golems/
+
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
