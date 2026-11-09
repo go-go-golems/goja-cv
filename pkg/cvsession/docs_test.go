@@ -97,6 +97,11 @@ func TestGuideCodeBlocksRun(t *testing.T) {
 	for _, p := range pages {
 		t.Run(p.Slug, func(t *testing.T) { total += runCodeBlocks(t, img, p.File, p.Body) })
 	}
+	if readme, err := os.ReadFile(filepath.Join("..", "..", "README.md")); err == nil {
+		t.Run("README", func(t *testing.T) { total += runCodeBlocks(t, img, "README.md", string(readme)) })
+	} else {
+		t.Fatal(err)
+	}
 	t.Logf("%d guide code blocks ran", total)
 	if total < 10 {
 		t.Fatalf("only %d runnable guide blocks", total)
