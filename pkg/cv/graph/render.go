@@ -68,10 +68,14 @@ func (e *Evaluator) Render(ctx context.Context, id NodeID, o RenderOptions) (Val
 			return nil, err
 		}
 		r.replayTree(id, map[NodeID]bool{})
-		if !img || win == n.Frame {
+		if !img {
 			return v, nil
 		}
-		return cutValue(v.(*ImageValue), win)
+		iv, err := cutValue(v.(*ImageValue), win)
+		if err != nil {
+			return nil, err
+		}
+		return fitScale(ctx, iv, win, s)
 	}
 	rr := &renderRun{e: e, one: e.newRun(1, o.OnWarn), s: s, interp: o.Interp}
 	v, err := rr.render(ctx, n, win)
@@ -245,6 +249,24 @@ func Intersect(a, b Frame) Frame { return intersect(a, b) }
 // cutValue cuts window win (doc px, inside v's frame) out of v at v's
 // scale. Below scale 1 the cut is aligned to buffer pixels: it covers the
 // buffer pixels the window touches.
+// fitScale resizes a result that an op computed above the requested scale
+// (AnalysisScale, e.g. a sheet composed at scale 1) down to ScaledSize(win, s),
+// so a look's size matches what its caption reports.
+func fitScale(ctx context.Context, v *ImageValue, win Frame, s float64) (*ImageValue, error) {
+	w, h := buffer.ScaledSize(win.W, win.H, s)
+	if v.Buf.W <= w+1 && v.Buf.H <= h+1 {
+		return v, nil
+	}
+	b, err := buffer.Resize(ctx, v.Buf, w, h)
+	if err != nil {
+		return nil, Errorf(EInternal, "resize %s to %d×%d: %v", win, w, h, err)
+	}
+	b.Scale = s
+	out := *v
+	out.Buf = b
+	return &out, nil
+}
+
 func cutValue(v *ImageValue, win Frame) (*ImageValue, error) {
 	if win == v.Frame {
 		return v, nil

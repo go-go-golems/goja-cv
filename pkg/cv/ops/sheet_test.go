@@ -67,6 +67,15 @@ func TestSheetCellsLabelsEdgesAndTruncation(t *testing.T) {
 	if b.W != 2*64+6 || b.H != 64 || b.Scale != 1 {
 		t.Fatalf("sheet buffer %d×%d at %g", b.W, b.H, b.Scale)
 	}
+	// Rendered for a look below scale 1, the sheet composed at scale 1 is
+	// resized to the requested size (review of PR #3).
+	r, err := e.Render(ctx, s.ID, graph.RenderOptions{Scale: 0.5})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rb := r.(*graph.ImageValue).Buf; rb.W != 67 || rb.H != 32 || rb.Scale != 0.5 {
+		t.Fatalf("sheet rendered at 0.5: %d×%d at %g", rb.W, rb.H, rb.Scale)
+	}
 	// cell 0 is the star window [192, 38, 16, 16] at ×4: its centre is bright
 	if c := b.Plane(1)[34*b.W+34]; c < 0.7 || c <= b.Plane(1)[34*b.W+60] {
 		t.Fatalf("star cell centre %g", c)

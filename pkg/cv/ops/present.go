@@ -104,11 +104,15 @@ const compareGap = 4
 // compare: sRGB_encode(0.02), a dark grey.
 const compareBackground = 0.1517
 
-func imageInputs(inputs []*graph.Node) []*graph.Node {
-	var out []*graph.Node
-	for _, n := range inputs {
-		if n.Kind == graph.KindImage {
-			out = append(out, n)
+// listInputs is the nodes a bound list argument refers to, in list order and
+// with repetitions: the binder lifts each distinct node once, so inputs alone
+// would lose cv.compare([img, img])'s second entry.
+func listInputs(a graph.Args, name string, inputs []*graph.Node) []*graph.Node {
+	list, _ := a.Raw(name).([]any)
+	out := make([]*graph.Node, 0, len(list))
+	for _, v := range list {
+		if ref, ok := v.(graph.InputRef); ok && ref.Index < len(inputs) {
+			out = append(out, inputs[ref.Index])
 		}
 	}
 	return out
@@ -158,7 +162,7 @@ func presentOps() []graph.OpDef {
 				return nil
 			},
 			DocFrame: func(a graph.Args, inputs []*graph.Node) graph.Frame {
-				ims := imageInputs(inputs)
+				ims := listInputs(a, "images", inputs)
 				f := ims[0].Frame
 				f.Picture = true
 				if a.String("mode") != "side" {
