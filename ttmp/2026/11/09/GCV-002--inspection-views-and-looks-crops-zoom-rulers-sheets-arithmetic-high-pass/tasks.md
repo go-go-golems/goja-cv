@@ -2,7 +2,7 @@
 
 ## TODO
 
-- [ ] Phase 1: pkg/cv/text 5x7 font from X11 misc-fixed 5x7.bdf (digits, letters, caption punctuation) with glyph tests; delete kernels.DrawDigits and look/font.go glyphs <!-- t:wz2z -->
+- [x] Phase 1: pkg/cv/text 5x7 font from X11 misc-fixed 5x7.bdf (digits, letters, caption punctuation) with glyph tests; delete kernels.DrawDigits and look/font.go glyphs <!-- t:wz2z -->
 - [ ] Phase 1: graph.FuncDef + RegisterFunc, graph.BindOptions, ArgSpec.Redirects; register look and show with ArgSpecs (label, zoom, interp, maxSide, ruler, grid, format); delete lookOptionKeys; synonym and redirect tests <!-- t:vvf2 -->
 - [ ] Phase 2: render_test.go (pixel op at 8 == nearest-upsampled scale-1 window; Regions/Values not upsampled; test-only decoration; memo keys scale/interp/window; Evaluate refuses >1; render >16 refused) <!-- t:yxkk -->
 - [ ] Phase 2: Engine.Render with RenderOptions{Scale, Interp, Window}, OpDef.Class (pixel, geometric, decoration), macro-node dispatch, buffer.Upsample, EvalCtx.Warn with cache replay; look zoom/interp and captions below scale 1 <!-- t:h78y -->
