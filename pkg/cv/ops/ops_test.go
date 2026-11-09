@@ -132,15 +132,19 @@ var walkSamples = map[string]func(w walkNodes) []any{
 	"shrink":         func(walkNodes) []any { return []any{2} },
 	"refine":         func(w walkNodes) []any { return []any{nodeArg(w.img), map[string]any{"r": 4}} },
 	"overlay":        func(w walkNodes) []any { return []any{nodeArg(w.img)} },
-	"where":          func(walkNodes) []any { return []any{map[string]any{"area": map[string]any{"gte": 2}}} },
-	"without":        func(walkNodes) []any { return []any{[]any{1}} },
-	"only":           func(walkNodes) []any { return []any{1} },
-	"sortBy":         func(walkNodes) []any { return []any{"area"} },
-	"top":            func(walkNodes) []any { return []any{3} },
-	"toMask":         func(walkNodes) []any { return []any{map[string]any{"grow": 1}} },
-	"within":         func(w walkNodes) []any { return []any{nodeArg(w.mask), nodeArg(w.edited)} },
-	"heal":           func(w walkNodes) []any { return []any{nodeArg(w.regions), map[string]any{"radius": 1}} },
-	"inpaint":        func(w walkNodes) []any { return []any{nodeArg(w.mask2)} },
+	"Image:overlay": func(w walkNodes) []any {
+		return []any{nodeArg(w.regions), map[string]any{"labels": "id", "color": []any{0.2, 0.9, 0.3}}}
+	},
+	"compare": func(w walkNodes) []any { return []any{[]any{nodeArg(w.edited)}} },
+	"where":   func(walkNodes) []any { return []any{map[string]any{"area": map[string]any{"gte": 2}}} },
+	"without": func(walkNodes) []any { return []any{[]any{1}} },
+	"only":    func(walkNodes) []any { return []any{1} },
+	"sortBy":  func(walkNodes) []any { return []any{"area"} },
+	"top":     func(walkNodes) []any { return []any{3} },
+	"toMask":  func(walkNodes) []any { return []any{map[string]any{"grow": 1}} },
+	"within":  func(w walkNodes) []any { return []any{nodeArg(w.mask), nodeArg(w.edited)} },
+	"heal":    func(w walkNodes) []any { return []any{nodeArg(w.regions), map[string]any{"radius": 1}} },
+	"inpaint": func(w walkNodes) []any { return []any{nodeArg(w.mask2)} },
 	"blend": func(w walkNodes) []any {
 		return []any{nodeArg(w.edited), map[string]any{"mode": "screen", "mask": nodeArg(w.mask)}}
 	},
@@ -174,7 +178,9 @@ func TestRegistryWalk(t *testing.T) {
 			r = w.num.ID
 		}
 		var raw []any
-		if f, ok := walkSamples[op.Name]; ok {
+		if f, ok := walkSamples[string(op.On)+":"+op.Name]; ok {
+			raw = f(w)
+		} else if f, ok := walkSamples[op.Name]; ok {
 			raw = f(w)
 		}
 		n, _, err := e.Call(op.Name, r, raw)

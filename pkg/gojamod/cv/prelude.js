@@ -266,6 +266,15 @@
       const scale = opts && opts.scale !== undefined ? opts.scale : null;
       return native.__evaluate(node.__id, scale);
     },
+    // compare([a, b, …], { mode: "side" | "split" | "diff" }) → Image
+    compare(list, opts) {
+      if (!Array.isArray(list) || list.length === 0 || !list.every(isNode)) {
+        throw cvError("E_ARG_TYPE", "cv.compare needs a non-empty list of Image nodes.", 'cv.compare([img, edited], { mode: "side" })');
+      }
+      const args = [list.slice(1)];
+      if (opts !== undefined) args.push(opts);
+      return callOp(list[0], "compare", args);
+    },
     describe(node) {
       return native.__describe(requireNode(node, "cv.describe").__id);
     },

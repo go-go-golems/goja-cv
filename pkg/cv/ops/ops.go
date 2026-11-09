@@ -16,6 +16,7 @@ func Register(r *graph.Registry) {
 	r.MustRegister(compositeOps()...)
 	r.MustRegister(detectOps()...)
 	r.MustRegister(healOps()...)
+	r.MustRegister(presentOps()...)
 	r.MustRegister(metaOps()...)
 }
 
