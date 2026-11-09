@@ -202,3 +202,45 @@ GCV-001: P1-1 partly resolved and five new P2-level items (N1–N5). I sent one 
 
 ### Code review instructions
 - "Re-check (revision 2)" sections at the end of each findings doc.
+
+## Step 5: Revision 3 done; GCV-001 implementation started
+
+The writer's revision 3 (`82f93a6`, `92d026e`, `ff3bf42`, diary `3cbff7a`) fixed every re-check item without
+declining any. The design phase is closed. I started the GCV-001 implementer on branch
+`task/gcv-001-image-model`, phase by phase, with its own diary (`reference/…diary-implementation…`).
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 1)
+
+**Assistant interpretation:** Move from guides to code: GCV-001 first.
+
+**Inferred user intent:** Working code following the reviewed guides.
+
+### What I did
+- Noted revision-3 changes: golden tolerance rule (≤ 1 code on ≤ 1 % of samples; levels/mask looks expected to change; regenerate with `-update` after the check), `graphtest.RegisterSource` for early phases, `Gray` covering luminance inputs, shallow-copy stamping of statics, sheet cell windows rendered at `zoom·size/side`, Gaussian args renamed to `sigma`/`radius` (breaking), data names restricted to `[A-Za-z0-9_-]{1,64}`, `EllipseCoverage(rx, ry)`.
+- Spawned the GCV-001 implementer: branch, per-phase green checks (build, vet, race tests, lint, logcopter), push per phase, PR at the end, CI watch, no merge; deviations recorded in the diary and appended to the guide.
+
+### Why
+- GCV-002 and GCV-003 build on GCV-001's encodings, spaces, frames, macros and box/point types.
+
+### What worked
+- Three review/revision rounds converged: P1 counts 15 → 1 partly → 0.
+
+### What didn't work
+- N/A
+
+### What I learned
+- N/A
+
+### What was tricky to build
+- N/A
+
+### What warrants a second pair of eyes
+- The breaking renames (`gaussian(sigma)`, `radius`) touch docs and examples across the repo.
+
+### What should be done in the future
+- Verify GCV-001's PR; then GCV-002, then GCV-003; pi runs on a real tile after GCV-002.
+
+### Code review instructions
+- Branch `task/gcv-001-image-model`; its PR when opened.
