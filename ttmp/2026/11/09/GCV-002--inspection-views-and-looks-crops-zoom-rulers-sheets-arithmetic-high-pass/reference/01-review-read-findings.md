@@ -581,3 +581,48 @@ consults `graph.Synonyms` and the module-op list and says "view is an Image meth
 - Diary of this review: `02-diary-review-read.md`
 - GCV-001 guide: `ttmp/2026/11/09/GCV-001--image-model-encodings-working-spaces-channels-and-named-images/design-doc/01-design-and-implementation-guide.md`
 - GCV-003 guide: `ttmp/2026/11/09/GCV-003--measurement-and-data-out-sampling-profiles-region-measures-schema-export/design-doc/01-design-and-implementation-guide.md`
+
+## Disposition (revision 2 of the guide, 2026-11-09)
+
+Section numbers refer to revision 2 of `design-doc/01-design-and-implementation-guide.md`. "Foundations" is
+`GCV-001…/reference/05-foundations-goja-cv-for-the-gcv-guides.md`.
+
+| finding | disposition | where |
+|---|---|---|
+| P1-1 | fixed: one vocabulary (doc px, buffer px, image px; evaluation, preview, look, render scale) defined in Foundations §F5 with the 64 px × 8 → 512 + rulers → 568 worked example; "screen px" removed | Foundations §F5, §3.3, §3.4, §7.7 |
+| P1-2 | fixed: three classes (pixel, geometric, decoration) and render windows; crop is geometric, so annotate → crop draws 1 px lines; `DECORATION_FIRST` warning; sheets render cells through the same path; order tests | §3.4, §7.2, §7.3, §7.9, §9.3, §12 Phases 2, 3, 6 |
+| P1-3 | fixed: no mutable node field; GCV-001 macro nodes carry the label; the caption walker follows `Inputs[0]`; decision record states the deviation from issue 22; GCV-001 §7.8 updated to match | §7.7, §8, GCV-001 §7.8 |
+| P1-4 | fixed: static `max` (default = what fits); frame laid out at build time; `SHEET_TRUNCATED` at evaluation | §7.9, §9.2, §7.13 |
+| P1-5 | fixed: layout arithmetic; labels inside cells; 36 cells at the defaults (1566 px both ways); two views → 18 items in a grid of groups; example replaced | §7.9 |
+| P1-6 | fixed: sheet is a layout op (not a decoration), `AnalysisScale` 1, `await` gives the scale-1 sheet; "sheet labels" removed from the decoration list | §1, §3.4, §7.9 |
+| P2-1 | fixed: prerequisites list GCV-001 §3, §7.2, §7.4–§7.9 and Foundations; terms are defined in Foundations (hash-consing, lifting, AnalysisScale, planted scan, pi harness) and here (halo §3.7); `Global` no longer used | How to read, §3.7 |
+| P2-2 | fixed: `r` is σ; s_σ for local spread; DoG worked example with numbers | §3.7 |
+| P2-3 | fixed: §3.1 "Nodes and look options" with both failure modes | §3.1 |
+| P2-4 | fixed: dispatch by kind; Regions/Value not upsampled; lifted Value test | §7.2, §12 Phase 2 |
+| P2-5 | fixed: `Engine.Render` used only by looks and sheet cells; `Evaluate` stays (0, 1] | §7.2 |
+| P2-6 | fixed: GCV-001 resolves the space before `Expand`; macros declare `Space: {Default: encoded}`; test | §7.5, §12 Phase 5 |
+| P2-7 | fixed: `Identity` false with `auto`; `black`/`white` Optional with defaults in `Run`; `Global` sentence dropped | §7.6 |
+| P2-8 | fixed: `Image\|number` union type with binder rule; Phase 4 test with lifted Value and `SPACE` | §7.4, §12 Phase 4 |
+| P2-9 | fixed: `box` type now introduced in GCV-001 §7.4; `Args.Box` accessor named; `DocFrame` defined in GCV-001 §7.5 | §7.3 |
+| P2-10 | fixed: `Rasterize(target Frame, scale)`; decorations accept containing frames, pixel ops equal frames; golden test | §7.8, §12 Phase 6 |
+| P2-11 | fixed: `signed`, `detail` and the §7.4 example start with `toGray("average")` | §7.4, §7.11 |
+| P2-12 | fixed: picture frames for sheet and compare layouts; `compare` diff dropped (redirect to `sub`); `img.compare` removal listed | §6 items 1, 6; §7.9; §7.10 |
+| P2-13 | fixed: records for module functions, captions, and stretch options; error rows for `look({ stretch })`, `levels({ box })`, `highpass(r, { stretch })` | §8, §10 |
+| P2-14 | fixed: no export script needed; the test reads `~/dustds/gold/{tile_id}.final.json`/`.p1.json` directly (schema and loader named) | §13.4 |
+| P2-15 | fixed: acceptance table per issue | §13.6 |
+| P2-16 | fixed: "existing" dropped; new `TestOpSynonymsDoNotShadowOps`; `UnknownMember` consults the op synonym table. Note: in sessions `cv.view` is answered by `UnknownMember` (`help.go:279-312`, which already finds Image ops), not by `explainDataMisuse` | §4.9, §10, §12 Phase 7 |
+| P3-1 | fixed differently: the `Global` reference is gone (it has no reader) | §7.6 |
+| P3-2 | fixed: ids recounted (#2–#10 expansion, #11 macro node, #12 crop); label passed in the call | §9.1 |
+| P3-3 | fixed: √17 ≈ 4.12 noted; gated test validates | §7.11 |
+| P3-4 | fixed: frame is the requested integer box; values carry their buffer origin below scale 1 | §7.3 |
+| P3-5 | fixed: nearest valid box of the same size | §7.3, §10 |
+| P3-6 | fixed: cap applies before margins (≤ 56 px added); label thinning rule with the `ruler: 1` example | §7.7 |
+| P3-7 | fixed: `sortBy("area").top(36)` with "largest first" | §7.9 |
+| P3-8 | fixed: `show` is a registered function with the look ArgSpecs; chart behaviour of `zoom`/`ruler`/`format` stated | §7.7, §7.10 |
+| P3-9 | fixed: exclusion by flags (`Internal`, bespoke), relation to `FuncDef` decided in one record | §7.10, §8 |
+| P3-10 | fixed: one `ArgSpec.Redirects` mechanism | §6 item 11, §7.7, §10 |
+| P3-11 | fixed: test-only decoration in Phase 2; every phase ends with tests, lint and a commit | §7.2, §12 |
+| P3-12 | fixed: full-sentence bullets; key points after §7 and §12; closing §15 | §7, §12, §13.1, §15 |
+| P3-13 | fixed: glyphs from X11 misc-fixed `5x7.bdf` (public domain) | §7.12 |
+| P3-14 | fixed: opacity redirect and the `{ space: "linear" }` note | §7.4, §10 |
+| P3-15 | fixed: `zoom` is a redirect to `crop(…).look({ zoom })`; `normalize` → `levels` | §10 |
