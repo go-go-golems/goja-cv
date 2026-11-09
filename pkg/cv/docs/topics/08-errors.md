@@ -35,9 +35,8 @@ error:
 | E_NOT_AWAITED | a property of, or a number from, a lazy Value or Regions node (`img.stats().p99`, `img.stats() > 0.5`) | `(await img.stats()).p99` |
 | E_ARG_TYPE (a node as an option) | options are literal values: `levels({ white: d.stats() })` | `levels({ white: (await d.stats()).p99 })` |
 | E_NO_IMAGE | no image is open | `img = cv.open("scan.tif")` |
-| E_NO_DOCUMENT | `doc` is not available yet | return looks instead |
 | E_UNKNOWN_TOPIC | no such docs topic or section | `cv.docs.list()` |
-| E_TIMEOUT | the eval ran longer than 60 s | evaluate less, at preview scale |
+| E_TIMEOUT | the eval ran longer than 60 s | crop before measuring, evaluate less per eval |
 
 ```js error=E_UNKNOWN_OPTION
 return img.levels({ blak: 0.02 })

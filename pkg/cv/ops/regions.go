@@ -17,7 +17,7 @@ func regions(v graph.Value) *graph.RegionsValue { return v.(*graph.RegionsValue)
 // analysisScaleArg is the static argument of Regions-producing ops that
 // fixes the scale they analyse at (see OpDef.AnalysisScale).
 var analysisScaleArg = graph.ArgSpec{Name: "analysisScale", Type: "number", Default: 1.0, Min: graph.F(0.05), Max: graph.F(1),
-	Doc: "scale the input is analysed at, whatever the evaluation scale, so region ids and doc-px coordinates are the same in preview and export"}
+	Doc: "scale the input is analysed at, whatever the evaluation scale, so region ids and doc-px coordinates are the same in a look and a measurement"}
 
 func analysisScale(a graph.Args) float64 {
 	f, _ := a.Raw("analysisScale").(float64)

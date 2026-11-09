@@ -62,7 +62,7 @@ func newRootCommand(stdout, stderr io.Writer) *cobra.Command {
 		Long: `goja-cv runs JavaScript against the cv image API (require("cv")).
 
 Scripts are the body of an async function: use await, and return what you want to see.
-Results are printed as YAML; looks (node.look(), show()) are written as image files.
+Results are printed as YAML; looks (node.look()) are written as image files.
 Exit codes: 0 ok, 1 cv error (the structured error is still printed), 2 usage error.`,
 		SilenceErrors: true,
 		SilenceUsage:  true,

@@ -349,7 +349,7 @@ func TestExplainShowsStatics(t *testing.T) {
 	e := spaceEngine(t)
 	img := src(t, e, "srgb", 0.2, 0.3, 0.4)
 	m, _ := mustCall(t, e, "mask.luminance", img, map[string]any{"above": 0.9})
-	lines := e.Explain(m.ID, 1)
+	lines := e.Explain(m.ID)
 	want := []string{"mask.luminance(above: 0.9)", "convert(→ encoded)", "toGray(", "testsource"}
 	if len(lines) != 4 {
 		t.Fatalf("explain: %q", lines)

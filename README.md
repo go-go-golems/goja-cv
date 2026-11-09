@@ -188,7 +188,7 @@ from six per task to two, every one corrected on the next call):
 - **Keep nodes, await only for data**: `const specks = img.detect.specks()` is a node; `await specks` is data
   (`{ count, items }`). Awaited data still accepts node methods, but `r.count` is a number.
 - **Use `mem`** for anything needed in a later call; `const`/`let` do not survive.
-- **Return looks** to see results (`node.look("label")`, `show(node)`, `cv.compare([a, b])`), zoom into crops with
+- **Look** to see results (`node.look("label")`, `cv.compare([a, b]).look()`: every look of an eval is delivered), zoom into crops with
   rulers (`img.crop([x, y, 64, 64]).look({ zoom: 8, ruler: 8 })`), and back judgements with numbers:
   `img.measure(points)` (step, spread, snr, stepChroma of a spot against its surroundings),
   `regions.measure(img, { ring: true }).sortBy("snr")`, `img.profile(a, b).look()`.

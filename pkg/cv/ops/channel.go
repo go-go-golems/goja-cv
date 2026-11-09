@@ -183,7 +183,7 @@ func channelOps() []graph.OpDef {
 				}
 				return graph.NewImage(out), nil
 			},
-			Doc: "False colour for a one-channel image: colormap(\"viridis\" | \"magma\" | \"gray\" | \"diverging\", { range, center }). Without range the image's [p01, p99] at the evaluation scale (a preview and a full-scale look can differ slightly). The result holds display colours.",
+			Doc: "False colour for a one-channel image: colormap(\"viridis\" | \"magma\" | \"gray\" | \"diverging\", { range, center }). Without range the image's [p01, p99] at the evaluation scale (looks at different scales can differ slightly). The result holds display colours.",
 			See: []string{"chroma", "channel"},
 		},
 		{

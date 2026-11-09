@@ -291,7 +291,7 @@ func (e *Evaluator) Explain(id NodeID, scale float64) []string {
 			w, h := buffer.ScaledSize(n.Frame.W, n.Frame.H, run.scale)
 			right += fmt.Sprintf(" %d×%d", w, h)
 		}
-		if !n.Op.NoCache && e.cache.Contains(run.sig(id)) {
+		if e.cache.Contains(run.sig(id)) {
 			right += "  cached"
 		}
 		if run.scale != parentScale {

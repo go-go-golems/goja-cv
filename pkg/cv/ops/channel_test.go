@@ -95,7 +95,7 @@ func TestOneNodeMacro(t *testing.T) {
 	if cv.Enc != buffer.EncLinear {
 		t.Fatal("the expansion's cached value changed")
 	}
-	lines := e.Explain(m.ID, 1)
+	lines := e.Explain(m.ID)
 	if len(lines) != 5 || !strings.HasPrefix(lines[0], "#") || !strings.Contains(lines[0], "testview") ||
 		!strings.HasPrefix(lines[1], "  #") || !strings.Contains(lines[1], "chroma") {
 		t.Fatalf("explain: %q", lines)

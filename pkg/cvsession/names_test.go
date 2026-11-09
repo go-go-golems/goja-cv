@@ -48,7 +48,7 @@ return { ref: (await ref).file, scan: (await scan).frame }`))
 func TestBadNamesAreENAME(t *testing.T) {
 	app, sid := newApp(t, cvsession.Options{Image: tiffPath})
 	for code, want := range map[string][]string{
-		`cv.open(` + quote(pngPath) + `, { as: "show" })`:        {"code: E_NAME", `"show" is a session global`, `fix: '{ as: "show2" }'`},
+		`cv.open(` + quote(pngPath) + `, { as: "mem" })`:         {"code: E_NAME", `"mem" is a session global`, `fix: '{ as: "mem2" }'`},
 		`cv.open(` + quote(pngPath) + `, { as: "2nd" })`:         {"code: E_NAME", "must be an identifier", "fix:"},
 		`cv.open(` + quote(pngPath) + `, { as: "Math" })`:        {"code: E_NAME", "fix:"},
 		`cv.open(` + quote(pngPath) + `, { as: "class" })`:       {"code: E_NAME"},
@@ -60,8 +60,8 @@ func TestBadNamesAreENAME(t *testing.T) {
 		mustContain(t, out, want...)
 	}
 	// a failed name binds nothing
-	out := text(eval(t, app, sid, `return typeof show`))
-	mustContain(t, out, "function")
+	out := text(eval(t, app, sid, `return typeof mem`))
+	mustContain(t, out, "object")
 }
 
 func TestMCPOpenToolWithNameAndEncoding(t *testing.T) {

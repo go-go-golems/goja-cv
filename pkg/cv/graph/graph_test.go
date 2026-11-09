@@ -338,8 +338,8 @@ func TestDocPxScalingAndScaleQuantization(t *testing.T) {
 	if err != nil || v.(*DataValue).Data != 3.0 {
 		t.Fatalf("radius at 0.25 = %v %v", v, err)
 	}
-	if s := e.PreviewScale(src.ID); s != 0.4 {
-		t.Fatalf("preview scale %v", s)
+	if s := e.ScaleForLong(src.ID, 1600); s != 0.4 {
+		t.Fatalf("scale for a 1600 px long side %v", s)
 	}
 	if e.Evaluator().Signature(src.ID, 0.25) != e.Evaluator().Signature(src.ID, 0.250001) {
 		t.Fatal("scale not quantized")
@@ -357,7 +357,7 @@ func TestExplain(t *testing.T) {
 	if _, err := e.Evaluate(context.Background(), a.ID, EvalOptions{Scale: 0.5}); err != nil {
 		t.Fatal(err)
 	}
-	lines := e.Explain(r.ID, 0.5)
+	lines := e.Evaluator().Explain(r.ID, 0.5)
 	want := []string{"#3 radius(r: 8 px → 4 at scale 0.5)", "  #2 scale(k: 2)", "    #1 fill(v: 1, w: 400, h: 200)"}
 	if len(lines) != 3 {
 		t.Fatalf("lines %q", lines)

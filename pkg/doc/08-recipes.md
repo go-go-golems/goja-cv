@@ -38,7 +38,7 @@ return {
 ```js
 const s = await img.stats()     // options are numbers: await the measurement first
 const fixed = img.levels({ black: s.p01, white: s.p99 }).exposure(0.25)
-show(cv.compare([img, fixed], { mode: "side" }), { label: "before / after" })
+cv.compare([img, fixed], { mode: "side" }).look("before / after")
 const { meanL, clipLow, clipHigh } = await fixed.stats()
 return { meanL, clipLow, clipHigh }
 ```

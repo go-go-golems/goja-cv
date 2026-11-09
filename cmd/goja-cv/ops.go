@@ -44,7 +44,7 @@ func newOpsCommand(opts *rootOptions) *cobra.Command {
 		RunE: func(_ *cobra.Command, _ []string) error {
 			reg := cvmod.DefaultRegistry()
 			valid := []string{"cv"}
-			for _, k := range graph.Kinds {
+			for _, k := range reg.Receivers() {
 				valid = append(valid, string(k))
 			}
 			if kind != "" && !contains(valid, kind) {

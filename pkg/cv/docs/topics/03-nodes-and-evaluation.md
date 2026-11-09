@@ -21,16 +21,17 @@ Every node has one kind, and every op says which kind it takes and returns.
 const a = img.exposure(0.3)
 const same = a === img.exposure(0.3)
 const b = a.gaussian(2)
-return { same, graph: b.explain() }
+return { same, graph: cv.explain(b).graph }
 ```
 
 ## Evaluating
 
 Evaluation happens when you:
 
-- `await` a node: a Value gives its data, an Image a summary `{ kind, w, h, scale, … }`, Regions `{ count, items, … }`;
-- return a look (`node.look()`) or `show(node)`;
-- `cv.evaluate(node, { scale })` for an explicit scale.
+- `await` a node: a Value is evaluated at full resolution and gives its data, Regions give `{ count, items, … }`; an Image gives its summary `{ kind, w, h, encoding, space, frame, … }` (plus file metadata for an opened file) without computing anything;
+- create a look (`node.look()`): every look of an eval is rendered after it.
+
+`await` is the only way to evaluate. `cv.explain(node)` describes a node without evaluating it: id, kind, op, call, frame, encoding, space, path, and `graph`, one line per node (call, kind, size, cached).
 
 ## Options are literal values
 
@@ -87,7 +88,7 @@ return "the line above was a no-op"
 
 ```yaml
 warnings:
-  - 'UNUSED_NODE line 1: img.exposure(0.3) builds a node and discards it. Nodes are lazy: nothing ran. Return it, await it, show() it, or keep it in mem.'
+  - 'UNUSED_NODE line 1: img.exposure(0.3) builds a node and discards it. Nodes are lazy: nothing ran. Return it, await it, look at it, or keep it in mem.'
 ```
 
 ## E_NOT_AWAITED

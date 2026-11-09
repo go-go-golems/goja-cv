@@ -158,7 +158,7 @@ func TestAnalysisScaleMakesRegionsScaleFree(t *testing.T) {
 	if rv := v.(*RegionsValue); rv.W != 200 || rv.Items[0].Box != [4]float64{10, 20, 30, 40} {
 		t.Fatalf("half: %dx%d %v", rv.W, rv.H, rv.Items[0].Box)
 	}
-	lines := e.Explain(half.ID, 1)
+	lines := e.Explain(half.ID)
 	if !strings.Contains(lines[0], "(analysed at scale 0.5)") || !strings.Contains(lines[1], "Image 200×100") {
 		t.Fatalf("explain: %q", lines)
 	}

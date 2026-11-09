@@ -2,10 +2,8 @@
 // pre-bound globals of an eval session:
 //   cv        the module
 //   mem       a plain object that persists between evals
-//   show      show(node, opts) / show(look): queue a look and return it
 //   img       the first named image (a getter/setter; throws E_NO_IMAGE when unset);
 //             cv.open(path, { as: "ref" }) binds more names the same way
-//   doc       the document layer (not available before M4: E_NO_DOCUMENT)
 //   __cv_run  the eval wrapper used by cvsession.App.Evaluate
 (function (native, cv) {
   "use strict";
@@ -36,7 +34,7 @@
     native.checkPath(path);
     let as;
     let rest = opts;
-    if (opts !== null && typeof opts === "object" && !Array.isArray(opts) && !cv.isNode(opts)) {
+    if (opts !== null && typeof opts === "object" && !Array.isArray(opts)) {
       const key = native.asKey(Object.keys(opts));
       if (key !== null) {
         as = opts[key];
@@ -64,26 +62,8 @@
 
   define("cv", guard(cv, "cv"));
   define("mem", {});
-  define("show", function show(x, opts) {
-    const l = cv.isNode(x) ? x.look(opts) : x;
-    native.queue(l);
-    return l;
-  });
 
   defineName("img");
-
-  define(
-    "doc",
-    new Proxy(Object.create(null), {
-      get(_, prop) {
-        if (typeof prop === "symbol" || prop === "then" || prop === "toJSON") return undefined;
-        return native.noDoc(String(prop));
-      },
-      set(_, prop) {
-        return native.noDoc(String(prop));
-      },
-    })
-  );
 
   Object.defineProperty(g, "__cv_run", {
     configurable: false,

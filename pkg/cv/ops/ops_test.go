@@ -57,8 +57,8 @@ func statOf(t *testing.T, e *graph.Engine, n *graph.Node, name string) float64 {
 
 func TestStatsLevelsOnTestImage(t *testing.T) {
 	e, img := newEngine(t)
-	if img.Frame != (graph.Frame{W: 64, H: 48}) || e.PreviewScale(img.ID) != 1 {
-		t.Fatalf("source %dx%d preview %g", img.Frame.W, img.Frame.H, e.PreviewScale(img.ID))
+	if img.Frame != (graph.Frame{W: 64, H: 48}) {
+		t.Fatalf("source %dx%d", img.Frame.W, img.Frame.H)
 	}
 	s := call(t, e, "stats", img.ID)
 	st := evalData(t, e, s, 1).(map[string]any)
@@ -103,7 +103,7 @@ func TestPreviewScaleEvaluatesSmallerBuffers(t *testing.T) {
 	if b.W != 32 || b.H != 24 || b.Scale != 0.5 {
 		t.Fatalf("buffer %v", b)
 	}
-	lines := e.Explain(g.ID, 0.5)
+	lines := e.Evaluator().Explain(g.ID, 0.5)
 	if len(lines) != 2 || !strings.HasPrefix(lines[0], "#2 gaussian(sigma: 4 px → 2 at scale 0.5)  Image 32×24  cached") ||
 		!strings.HasPrefix(lines[1], "  #1 source gradient-64x48-16bit.tif") {
 		t.Fatalf("explain %q", lines)
@@ -210,7 +210,7 @@ func TestRegistryWalk(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s:%s: %v", op.On, op.Name, err)
 		}
-		for _, scale := range []float64{e.PreviewScale(n.ID), 1, 0.5} {
+		for _, scale := range []float64{0.25, 1, 0.5} {
 			v, err := e.Evaluate(context.Background(), n.ID, graph.EvalOptions{Scale: scale})
 			if err != nil {
 				t.Fatalf("%s:%s at %g: %v", op.On, op.Name, scale, err)
@@ -331,7 +331,7 @@ func TestOpSynonymsDoNotShadowOps(t *testing.T) {
 		}
 	}
 	for name := range graph.MethodRedirects {
-		for _, k := range graph.Kinds {
+		for _, k := range reg.Receivers() {
 			if _, ok := reg.Lookup(k, name); ok {
 				t.Errorf("method redirect %q is an op on %s", name, k)
 			}

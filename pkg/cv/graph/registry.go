@@ -25,9 +25,6 @@ const (
 	KindNone Kind = ""
 )
 
-// Kinds lists every kind in display order.
-var Kinds = []Kind{KindImage, KindMask, KindRegions, KindValue}
-
 // accepts reports whether a node of kind k satisfies a declared input kind
 // such as "Image" or "Regions|Mask".
 func accepts(decl Kind, k Kind) bool {
@@ -263,7 +260,6 @@ type OpDef struct {
 	Identity func(a Args) bool    // neutral arguments: the receiver is returned unchanged
 	Halo     func(a Args) float64 // doc px of border around each output pixel the op reads
 	Global   bool                 // needs the whole image (stats, histogram)
-	NoCache  bool                 // never cached (explain reads cache state)
 	Lazy     bool                 // inputs are not evaluated before Run (explain)
 	DocFrame func(a Args) Frame   // the result's frame; nil: the first input with a non-empty frame
 	// Fields is the schema of the result: the items of a Regions result, the
@@ -416,13 +412,27 @@ func (r *Registry) Ops() []*OpDef {
 	return out
 }
 
+// receiverKinds are the receiver kinds in display order.
+var receiverKinds = []Kind{KindImage, KindMask, KindRegions, KindValue}
+
 func kindOrder(k Kind) int {
-	for i, kk := range Kinds {
+	for i, kk := range receiverKinds {
 		if kk == k {
 			return i + 1
 		}
 	}
 	return 0
+}
+
+// Receivers lists the receiver kinds that have methods, in display order.
+func (r *Registry) Receivers() []Kind {
+	var out []Kind
+	for _, k := range receiverKinds {
+		if len(r.Methods(k)) > 0 {
+			out = append(out, k)
+		}
+	}
+	return out
 }
 
 // Methods returns the op names callable on kind.

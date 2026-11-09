@@ -55,7 +55,7 @@ func TestFramesPropagate(t *testing.T) {
 	if v.Frame != window || v.Buf.W != 64 {
 		t.Fatalf("evaluated frame %s, buffer %v", v.Frame, v.Buf)
 	}
-	if got := v.Summary()["frame"]; len(got.([]any)) != 4 || got.([]any)[0] != 100.0 {
+	if got := graph.ImageSummary(call(t, e, "exposure", src.ID, 0.5))["frame"]; len(got.([]any)) != 4 || got.([]any)[0] != 100.0 {
 		t.Fatalf("summary frame %v", got)
 	}
 }

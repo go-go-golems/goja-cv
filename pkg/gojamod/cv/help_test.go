@@ -11,8 +11,8 @@ func TestHelpNeverFailsAndResolvesEveryForm(t *testing.T) {
 	reg := cvmod.DefaultRegistry()
 	for name, key := range map[string]string{
 		"levels": "levels", "mask.box": "mask.box", "cv.compare": "compare", "Mask.coverage": "coverage",
-		"Regions.filter": "filter", "Regions.explain": "explain", "evaluate": "evaluate", "describe": "describe",
-		"docs": "docs", "open": "open", "show": "show", "look": "look",
+		"Regions.filter": "filter", "explain": "explain", "cv.explain": "explain",
+		"docs": "docs", "open": "open", "look": "look",
 	} {
 		h := cvmod.Help(reg, name)
 		if _, ok := h[key]; !ok {
@@ -28,8 +28,8 @@ func TestHelpNeverFailsAndResolvesEveryForm(t *testing.T) {
 	if m := cvmod.Help(reg, "Mask")["methods"].(map[string]any); m["coverage"] == nil {
 		t.Fatalf("Mask methods %v", m)
 	}
-	if on := cvmod.Help(reg, "Regions.explain")["explain"].(map[string]any)["on"]; on != "Regions" {
-		t.Fatalf("Regions.explain on = %v", on)
+	if on := cvmod.Help(reg, "Regions.where")["where"].(map[string]any)["on"]; on != "Regions" {
+		t.Fatalf("Regions.where on = %v", on)
 	}
 	for name, want := range map[string]string{
 		"mask.stats":   "stats",

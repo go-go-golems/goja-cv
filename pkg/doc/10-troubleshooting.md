@@ -30,7 +30,6 @@ marks the failing call), `hint` and usually `fix` (literal code). Apply the fix 
 | TypeError with a hint | a JavaScript error on cv data, translated (`r.count()` after await → `r.count`) |
 | E_NO_IMAGE | nothing open: `img = cv.open("scan.tif")` or start with `--image` |
 | E_ACCESS | the path is outside `--root` |
-| E_NO_DOCUMENT | `doc` (history/apply/export) is not implemented yet |
 | E_TIMEOUT | the eval ran longer than the limit (60 s; `--timeout-ms`) |
 
 `cv.help(name)` never throws and suggests names; `cv.docs.search(text)` finds the guide section.

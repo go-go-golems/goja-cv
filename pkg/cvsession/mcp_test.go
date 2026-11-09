@@ -112,7 +112,7 @@ func TestMCPServerToolsResourcesPrompt(t *testing.T) {
 	mustContain(t, text, "after: '[look 1: after — open(gradient-64x48-16bit.tif) → exposure(0.5) (64×48, 1 image px = 1.0 doc px)]'",
 		"content 1 look 1: after — open(gradient-64x48-16bit.tif) → exposure(0.5) (64×48, 1 image px = 1.0 doc px): attached (image/png")
 
-	text, images, isErr = callEval(t, cs, "show(img, \"before\")\nreturn img.blur(2)")
+	text, images, isErr = callEval(t, cs, "img.look(\"before\")\nreturn img.blur(2)")
 	if !isErr || len(images) != 1 {
 		t.Fatalf("error eval: isErr=%v images=%d\n%s", isErr, len(images), text)
 	}
@@ -154,8 +154,8 @@ return {
 
 	// Part 1 verbatim: cv.compare landed with M3.
 	text, images, isErr = callEval(t, cs, `const fixed = img.levels({ black: 0.0, white: 0.74 }).exposure(0.35)
-show(cv.compare([img, fixed], { mode: "side" }), { label: "before / after" })
-show(fixed.histogram())
+cv.compare([img, fixed], { mode: "side" }).look("before / after")
+fixed.histogram().look()
 const { meanL, clipLow, clipHigh } = await fixed.stats()
 return { meanL, clipLow, clipHigh }`)
 	t.Logf("session A step 2:\n%s", text)
@@ -163,7 +163,7 @@ return { meanL, clipLow, clipHigh }`)
 		t.Fatalf("correction: isErr=%v images=%d\n%s", isErr, len(images), text)
 	}
 	mustContain(t, text, "meanL: 0.50822", "clipLow:", "clipHigh:",
-		"shown:", "look 1: before / after — compare([2 images]) (132×48, 1 image px = 1.0 doc px)", "look 2: open(gradient-64x48-16bit.tif) → levels → exposure(0.35) → histogram (512×204 chart)")
+		"content 1 look 1: before / after — compare([2 images]) (132×48, 1 image px = 1.0 doc px)", "content 2 look 2: open(gradient-64x48-16bit.tif) → levels → exposure(0.35) → histogram (512×204 chart)")
 	if images[0].MIMEType != "image/png" || images[1].MIMEType != "image/png" {
 		t.Fatalf("mimes %s %s", images[0].MIMEType, images[1].MIMEType)
 	}
@@ -177,9 +177,9 @@ func TestMCPInstructionsAreCompactAndDocsAreResources(t *testing.T) {
 	if len(ins) > 4000 {
 		t.Fatalf("instructions are %d characters, want < 4000", len(ins))
 	}
-	for _, s := range []string{"body of an async function", "mem", "node.look(", "show(", "doc px", "fix",
+	for _, s := range []string{"body of an async function", "mem", "node.look(", "cv.explain(", "doc px", "fix",
 		"img.stats()", "img.stats({ box:", "img.levels(", "cv.compare(", "img.mask.luminance(", "img.within(", "img.detect.specks()", "img.heal(",
-		"cv.docs.search(", "cv.docs.read(", "cv.help(op)", "cv://docs/<id>", "cv://reference", "cv://guide/<slug>", "not available yet"} {
+		"cv.docs.search(", "cv.docs.read(", "cv.help(op)", "cv://docs/<id>", "cv://reference", "cv://guide/<slug>"} {
 		if !strings.Contains(ins, s) {
 			t.Fatalf("instructions lack %q", s)
 		}

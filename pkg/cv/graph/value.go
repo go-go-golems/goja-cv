@@ -78,21 +78,22 @@ func (v *ImageValue) Kind() Kind {
 
 func (v *ImageValue) Bytes() int64 { return v.Buf.Bytes() + 64 }
 
-// Summary is what JavaScript receives for an awaited Image: pixels never
-// cross into the VM.
-func (v *ImageValue) Summary() map[string]any {
-	m := map[string]any{
-		"kind": string(v.Kind()), "w": v.Buf.W, "h": v.Buf.H,
-		"scale": v.Buf.Scale, "frame": v.Frame.Data(),
+// ImageSummary is what JavaScript receives for an awaited Image or Mask
+// node: its statics only (the frame's size at scale 1, encoding, space,
+// frame, picture) plus the file metadata of an opened file. Nothing is
+// evaluated, so awaiting a 53-megapixel scan is free (GCV-004 D18).
+func ImageSummary(n *Node) map[string]any {
+	m := map[string]any{"kind": string(n.Kind), "w": float64(n.Frame.W), "h": float64(n.Frame.H), "frame": n.Frame.Data()}
+	if n.Kind == KindImage {
+		m["encoding"], m["space"] = n.Enc.String(), n.Space.String()
 	}
-	if v.Frame.Picture {
+	if n.Frame.Picture {
 		m["picture"] = true
 	}
-	if v.IsMask() {
-		m["coverage"] = v.Coverage()
-	} else {
-		m["channels"] = v.Buf.C
-		m["encoding"] = v.Enc.String()
+	if info, ok := SourceInfo(n); ok {
+		for k, v := range info {
+			m[k] = v
+		}
 	}
 	return m
 }

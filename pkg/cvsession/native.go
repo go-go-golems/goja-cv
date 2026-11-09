@@ -27,13 +27,11 @@ func (n *native) object() *goja.Object {
 		_ = o.Set(name, cvmod.Export(n.vm, name, fn))
 	}
 	set("checkPath", n.checkPath)
-	set("queue", n.queue)
 	set("checkName", n.checkName)
 	set("bindName", n.bindName)
 	set("getName", n.getName)
 	set("setName", n.setName)
 	set("asKey", n.asKey)
-	set("noDoc", n.noDoc)
 	set("fail", n.fail)
 	set("unknownMember", n.unknownMember)
 	return o
@@ -97,29 +95,6 @@ func (n *native) unknownMember(c goja.FunctionCall) goja.Value {
 	}
 	e := cvmod.UnknownMember(n.st.eng.Registry(), c.Argument(0).String(), c.Argument(1).String(), members)
 	n.throw(e)
-	return nil
-}
-
-// queue(look) adds a look to the current eval's shows.
-func (n *native) queue(c goja.FunctionCall) goja.Value {
-	l, ok := cvmod.LookOf(c.Argument(0))
-	if !ok {
-		n.throw(graph.Errorf(graph.EArgType, "show() takes a node or a look; got %s.", c.Argument(0).String()).
-			WithFix(`show(img.exposure(0.3), { label: "brighter" })`))
-	}
-	for _, x := range n.st.shows {
-		if x == l {
-			return goja.Undefined()
-		}
-	}
-	n.st.shows = append(n.st.shows, l)
-	return goja.Undefined()
-}
-
-func (n *native) noDoc(c goja.FunctionCall) goja.Value {
-	n.throw(graph.Errorf(ENoDocument, "doc.%s: the document layer (history, apply, propose, export) is not available in this version.", c.Argument(0).String()).
-		WithHint("Work on img and look at results with node.look() or show(node); keep values in mem.").
-		WithFix("return { after: img.exposure(0.3).look(\"after\") }"))
 	return nil
 }
 

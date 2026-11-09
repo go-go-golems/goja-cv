@@ -31,13 +31,13 @@ Every node has one kind, and every op says which kinds it takes and returns.
 ## Lazy, immutable, shared nodes
 
 `img.exposure(0.3)` computes nothing: it returns a node. The same call returns the same node, so shared work
-is cached by node and scale. Evaluation happens when you `await` a node, return a look, or
-`show()` one.
+is cached by node and scale. `await` is the only evaluation: a measurement (a Value) is computed at full
+resolution, an Image gives its summary without computing anything. Looks render after the eval.
 
 ```js
 const a = img.exposure(0.3)
 const b = a.gaussian(2)
-return { same: a === img.exposure(0.3), graph: b.explain(), summary: await b }
+return { same: a === img.exposure(0.3), graph: cv.explain(b).graph, summary: await b }
 ```
 
 Awaited data still remembers its node, so `const r = await img.detect.specks()` followed by
@@ -52,9 +52,9 @@ expected is `E_ARG_TYPE` with that fix.
 ## Doc px and scales
 
 Lengths, boxes and points are in **doc px** (pixels of the original image) at every scale; areas in doc px².
-`await` evaluates at a preview scale (long side about 1600 px), looks at a look scale (at most 1568 px) or, with
-`look({ zoom })`, magnify a crop above full size (filters are computed at full size, then upsampled); the
-engine rescales radii and boxes so a preview and a full-size result agree. Region detection runs at a fixed
+`await` measures at full resolution; looks render at a look scale (at most 1568 px) or, with `look({ zoom })`,
+magnify a crop above full size (filters are computed at full size, then upsampled); the engine rescales radii and
+boxes so a look and a measurement agree. Region detection runs at a fixed
 `analysisScale`, so region ids and boxes are the same everywhere. Coordinates are absolute in the image's
 **frame** (a window read with `cv.open(path, { box })` keeps the scan's coordinates).
 
@@ -93,8 +93,9 @@ runs in Go.
 
 ## Looks
 
-A look is an image the agent receives: `node.look("label")` inside the returned value, or `show(node)`, which
-also survives a later `throw`. Looks are numbered (the number is burned into the corner) and the caption gives
+A look is an image the agent receives: `node.look("label")`. Every look created in an eval is delivered, whether
+it is returned or not, also when the eval throws later; at most four per eval (a `LOOKS` warning names the others
+by line). Looks are numbered (the number is burned into the corner) and the caption gives
 what the image is and its scale, `look 2: after — open(scan.tif) → levels (1568×1045, 1 image px = 4.0 doc px)`,
 so coordinates read off a look convert to doc px. To judge small things, crop and zoom with coordinate rulers,
 `img.crop([x, y, 64, 64]).look({ zoom: 8, ruler: 8 })`, use a view that makes them stand out

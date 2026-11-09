@@ -40,7 +40,7 @@ Every pixel op has a default and accepts `{ space: "linear" | "encoded" }`:
 Luminance ops (`mask.luminance`, `refine`, `detect.specks`, `check.dust`, `histogram` channel L) compute Rec. 709 luminance from linear light and then express it in their space. `explain()` shows the conversions the graph inserts:
 
 ```js
-return img.mask.luminance({ above: 0.9 }).explain()
+return cv.explain(img.mask.luminance({ above: 0.9 })).graph
 ```
 
 ## Numbers carry their space

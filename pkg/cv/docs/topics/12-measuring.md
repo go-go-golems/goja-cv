@@ -61,4 +61,4 @@ The unstretched DoG is measured (not `view("speck")`, which stretches per tile),
 
 ## Names and spaces
 
-`x, y, w, h` is always a box (corner and size), `cx, cy` a point or centre, `meanL` the gray mean; radii are options only. Measurements are in the working space (linear by default: `{ space: "encoded" }` for the values a look shows) and read the image at scale 1 (`analysisScale`), so they do not depend on the preview. To hand all rows to a program, return `cv.csv(regions)` (see `cv.docs.read("data-out")`).
+`x, y, w, h` is always a box (corner and size), `cx, cy` a point or centre, `meanL` the gray mean; radii are options only. Measurements are in the working space (linear by default: `{ space: "encoded" }` for the values a look shows) and read the image at scale 1 (`analysisScale`), so they do not depend on a look's scale. To hand all rows to a program, return `cv.csv(regions)` (see `cv.docs.read("data-out")`).

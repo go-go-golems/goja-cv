@@ -41,8 +41,6 @@ var Synonyms = map[string]string{
 	"spotHeal":      "heal",
 	"autoLevels":    "levels",
 	"tone":          "levels",
-	"describe":      "explain",
-	"graph":         "explain",
 	"lab":           "toLab",
 	"toLAB":         "toLab",
 	"saturation":    "chroma",

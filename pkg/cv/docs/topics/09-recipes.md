@@ -22,7 +22,7 @@ Stretch the 1st–99th percentiles to black and white, then lift the midtones, a
 ```js
 const s = await img.stats()                 // options are numbers: await the measurement first
 const fixed = img.levels({ black: s.p01, white: s.p99 }).exposure(0.25)
-show(cv.compare([img, fixed], { mode: "side" }), { label: "before / after" })
+cv.compare([img, fixed], { mode: "side" }).look("before / after")
 mem.fixed = fixed
 const { meanL, clipLow, clipHigh } = await fixed.stats()
 return { meanL, clipLow, clipHigh }
@@ -45,7 +45,7 @@ return {
 
 ```js
 const healed = img.heal(mem.dust, { radius: 3 })
-show(cv.compare([img, healed], { mode: "split" }), { label: "before | healed" })
+cv.compare([img, healed], { mode: "split" }).look("before | healed")
 return { after: await healed.check.dust() }
 ```
 

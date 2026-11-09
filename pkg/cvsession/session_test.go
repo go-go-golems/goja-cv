@@ -3,6 +3,7 @@ package cvsession_test
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -90,22 +91,21 @@ func TestStatsAndLookReturnYAMLAndOneImage(t *testing.T) {
 	mustContain(t, text(resp), "mem: b (look)")
 }
 
-func TestShowBeforeThrowStillDeliversTheImage(t *testing.T) {
+func TestLookBeforeThrowStillDeliversTheImage(t *testing.T) {
 	app, sid := newApp(t, cvsession.Options{Image: tiffPath})
-	resp := eval(t, app, sid, "show(img.exposure(-1), \"darker\")\nthrow new Error(\"boom\")")
+	resp := eval(t, app, sid, "img.exposure(-1).look(\"darker\")\nthrow new Error(\"boom\")")
 	out := text(resp)
 	t.Logf("result:\n%s", out)
 	if resp.Cell.Execution.Status == "ok" {
 		t.Fatalf("status ok, want an error")
 	}
-	mustContain(t, out, "error:", "code: Error", "message: boom", "where: 'line 2: throw new Error(\"boom\")'",
-		"shown:", "[look 1: darker — open(gradient-64x48-16bit.tif) → exposure(-1) (64×48, 1 image px = 1.0 doc px)]")
-	if len(resp.Content) != 1 || resp.Content[0].MIMEType != "image/png" {
+	mustContain(t, out, "error:", "code: Error", "message: boom", "where: 'line 2: throw new Error(\"boom\")'")
+	if len(resp.Content) != 1 || resp.Content[0].MIMEType != "image/png" || !strings.Contains(resp.Content[0].Caption, "look 1: darker") {
 		t.Fatalf("content %+v", resp.Content)
 	}
-	// show returns its look and also queues it once
-	resp = eval(t, app, sid, `const l = show(img, "x"); return { l, same: l === show(l) }`)
-	mustContain(t, text(resp), "l: '[look 2: x", "same: true")
+	// a returned look is also queued: delivered once; an equal look is the same look
+	resp = eval(t, app, sid, `const l = img.look("x"); img.look("x"); return { l }`)
+	mustContain(t, text(resp), "l: '[look 2: x")
 	if len(resp.Content) != 1 {
 		t.Fatalf("content %d items, want 1", len(resp.Content))
 	}
@@ -124,7 +124,7 @@ func TestUnusedNodeWarning(t *testing.T) {
 		`const a = img.exposure(0.3); return a.look()`,
 		`const a = img.exposure(0.3); return { m: (await a.stats()).meanL }`,
 		`mem.a = img.exposure(0.3); return 1`,
-		`const a = img.exposure(0.3); show(a); return 1`,
+		`const a = img.exposure(0.3); a.look(); return 1`,
 		`const s = await img.stats(); const f = img.levels({ black: s.p01, white: s.p99 }); return f.look()`,
 		`return img.exposure(0.4)`,
 	} {
@@ -163,8 +163,6 @@ func TestErrorYAMLHasCodeFixAndLine(t *testing.T) {
 	out = text(eval(t, app, sid, "return mem.nothing.x"))
 	mustContain(t, out, "code: TypeError", "where: 'line 1: return mem.nothing.x'", "keep it in mem")
 
-	out = text(eval(t, app, sid, "return doc.apply(img)"))
-	mustContain(t, out, "code: E_NO_DOCUMENT")
 }
 
 func TestNoImageThenOpenPersists(t *testing.T) {
@@ -211,10 +209,10 @@ func quote(s string) string { return "\"" + strings.ReplaceAll(s, "\"", "\\\"") 
 
 func TestTimeoutIsAStructuredError(t *testing.T) {
 	app, sid := newApp(t, cvsession.Options{Image: tiffPath, EvalTimeout: 300 * time.Millisecond})
-	resp := eval(t, app, sid, "show(img)\nwhile (true) {}")
+	resp := eval(t, app, sid, "img.look()\nwhile (true) {}")
 	out := text(resp)
 	t.Logf("result:\n%s\nerror: %s", out, resp.Cell.Execution.Error)
-	mustContain(t, out, "code: E_TIMEOUT", "300ms", "shown:")
+	mustContain(t, out, "code: E_TIMEOUT", "300ms")
 	if len(resp.Content) != 1 {
 		t.Fatalf("content %d, want the look shown before the timeout", len(resp.Content))
 	}
@@ -333,12 +331,12 @@ func TestConcurrentEvalsKeepTheirOwnSource(t *testing.T) {
 // kill the whole eval.
 func TestBatchedHelpNeverThrows(t *testing.T) {
 	app, sid := newApp(t, cvsession.Options{Image: tiffPath})
-	resp := eval(t, app, sid, `return [await cv.help("overlay"), await cv.help("mask.luminance"), await cv.help("Mask.coverage"), await cv.help("Regions.explain"), cv.help("evaluate"), cv.help("nope")]`)
+	resp := eval(t, app, sid, `return [await cv.help("overlay"), await cv.help("mask.luminance"), await cv.help("Mask.coverage"), cv.help("explain"), cv.help("nope")]`)
 	out := text(resp)
 	if resp.Cell.Execution.Status != "ok" {
 		t.Fatalf("status %s:\n%s", resp.Cell.Execution.Status, out)
 	}
-	mustContain(t, out, "overlay:", "mask.luminance:", "coverage:", "explain:", "evaluate:", "found: false", "name: nope")
+	mustContain(t, out, "overlay:", "mask.luminance:", "coverage:", "explain:", "found: false", "name: nope")
 }
 
 // TestAwaitedDataKeepsItsNode is pi run 1 calls 10, 15, 23 and 24: agents
@@ -352,11 +350,10 @@ const healed = img.heal(r.where({ score: { gte: 0.5 } }), { radius: 3 })
 return {
   n: r.count, keys: Object.keys(r), json: Object.keys(JSON.parse(JSON.stringify(r))),
   dust: await dust.count(), filtered: (await viaFilter).count,
-  explain: (await r.explain()).length > 0,
+  explain: cv.explain(img.detect.specks({ polarity: 'both' })).graph.length > 0,
   after: (await healed.check.dust()).count,
   healedDirect: (await img.heal(await dust).check.dust()).count,
   overlay: img.overlay(r, { labels: "id" }).look("all"),
-  isNode: cv.isNode(r),
   summary: Object.keys(await img),
   brighter: (await (await img).exposure(1).stats()).meanL > (await img.stats()).meanL,
 }`)
@@ -366,7 +363,7 @@ return {
 		t.Fatalf("status %s:\n%s", resp.Cell.Execution.Status, out)
 	}
 	mustContain(t, out, "n: 41", "keys: [count, frame, items, kind, scale]", "json: [count, frame, items, kind, scale]",
-		"dust: 40", "filtered: 40", "explain: true", "after: 0", "healedDirect: 0", "look 1: all", "isNode: false", "brighter: true")
+		"dust: 40", "filtered: 40", "explain: true", "after: 0", "healedDirect: 0", "look 1: all", "brighter: true")
 	mustNotContain(t, out, "where:", "UNUSED_NODE")
 	// returning awaited data renders exactly the data
 	out = text(eval(t, app, sid, `const r = await img.detect.specks(); return { count: r.count, items: r.items.length, w: r.frame[2] }`))
@@ -382,7 +379,7 @@ return {
 // quantization; awaiting a source image now says it.
 func TestImageMetadata(t *testing.T) {
 	app, sid := newApp(t, cvsession.Options{Image: tiffPath})
-	out := text(eval(t, app, sid, `return { img: await img, d: cv.describe(img), derived: await img.exposure(1) }`))
+	out := text(eval(t, app, sid, `return { img: await img, d: cv.explain(img), derived: await img.exposure(1) }`))
 	mustContain(t, out, "bitDepth: 16", "format: tiff", "file: gradient-64x48-16bit.tif", "encoding: srgb", "sample: uint", "frame: [0, 0, 64, 48]",
 		"images: img = gradient-64x48-16bit.tif (64×48, 16-bit TIFF, srgb)")
 	out = text(eval(t, app, sid, `img = cv.open(`+quote(pngPath)+`); return await img`))
@@ -410,9 +407,10 @@ func TestArgumentErrorsHaveFixesAndWarningsFold(t *testing.T) {
 func TestUnknownNamesOnCv(t *testing.T) {
 	app, sid := newApp(t, cvsession.Options{Image: tiffPath})
 	for code, want := range map[string][]string{
-		`return await cv.info()`:        {"code: E_UNKNOWN_METHOD", `cv has no "info"`, "fix: await img   // or cv.describe(img)"},
+		`return await cv.info()`:        {"code: E_UNKNOWN_METHOD", `cv has no "info"`, "fix: await img   // or cv.explain(img)"},
 		`return await cv.stats(img)`:    {`cv has no "stats"`, `"stats" is an Image method`, "fix: img.stats(…)"},
 		`return cv.comapre([img, img])`: {`Did you mean "compare"?`, "fix: cv.compare(…)"},
+		`return cv.evaluate(img)`:       {"code: E_UNKNOWN_METHOD", `cv has no "evaluate"`},
 	} {
 		mustContain(t, text(eval(t, app, sid, code)), want...)
 	}
@@ -463,4 +461,50 @@ func TestRawTypeErrorsOnDataNameTheOp(t *testing.T) {
 	mustContain(t, out, "code: TypeError", "s is plain data here, not a node", `"exposure" is an Image method`, "fix: img.exposure(…)")
 	out = text(eval(t, app, sid, "const o = { a: 1 }\nreturn o.detect.specks()"))
 	mustContain(t, out, "code: TypeError") // not a cv name: left alone
+}
+
+// TestLookQueue (GCV-004 §7.7, D9): every look created in an eval is
+// delivered whether or not it is returned; returned looks first, then the
+// others in creation order; equal looks once; at most MaxLooks, the others
+// are not rendered and one LOOKS warning names each by line; looks of a
+// prelude are discarded; a look created after the eval settled is named by
+// the next eval's warnings.
+func TestLookQueue(t *testing.T) {
+	prelude := filepath.Join(t.TempDir(), "prelude.js")
+	if err := os.WriteFile(prelude, []byte("img.look(\"from the prelude\")\nmem.p = 1\nreturn 1"), 0o644); err != nil { // #nosec G306 -- test data
+		t.Fatal(err)
+	}
+	app, sid := newApp(t, cvsession.Options{Image: tiffPath, Preludes: []string{prelude}})
+	captions := func(resp *replsession.EvaluateResponse) []string {
+		var out []string
+		for _, c := range resp.Content {
+			out = append(out, c.Caption)
+		}
+		return out
+	}
+	// not returned: still delivered (the prelude's look was discarded: this is look 1)
+	resp := eval(t, app, sid, "img.look(\"a\")\nreturn 1")
+	if c := captions(resp); len(c) != 1 || !strings.HasPrefix(c[0], "look 1: a") {
+		t.Fatalf("unreturned look: %q\n%s", c, text(resp))
+	}
+	// returned looks first, then the others in creation order; equal looks once
+	resp = eval(t, app, sid, "const a = img.exposure(1).look(\"a\")\nimg.look(\"b\")\nimg.look(\"b\")\nreturn { c: img.exposure(-1).look(\"c\") }")
+	if c := captions(resp); len(c) != 3 || !strings.HasPrefix(c[0], "look 2: c") || !strings.HasPrefix(c[1], "look 3: a") || !strings.HasPrefix(c[2], "look 4: b") {
+		t.Fatalf("order: %q", c)
+	}
+	// six looks: four delivered, a LOOKS warning names the other two by line
+	resp = eval(t, app, sid, "img.look(\"1\")\nimg.look(\"2\")\nimg.look(\"3\")\nimg.look(\"4\")\nimg.look(\"5\")\nreturn { six: img.look(\"6\") }")
+	out := text(resp)
+	if c := captions(resp); len(c) != 4 || !strings.HasPrefix(c[0], "look 5: 6") {
+		t.Fatalf("budget: %q\n%s", c, out)
+	}
+	mustContain(t, out, `LOOKS line 4: 4 of 6 looks delivered; not delivered: line 4 look("4"), line 5 look("5"). Return one cv.sheet of the crops, or look in two evals.`)
+	// a look created after the eval returned is not delivered; the next eval names it
+	resp = eval(t, app, sid, "const f = () => img.look(\"late\")\nimg.gaussian(20).stats().then(f, f)   // runs after the eval returned\nreturn 1")
+	if len(resp.Content) != 0 {
+		t.Fatalf("late look delivered: %q", captions(resp))
+	}
+	time.Sleep(300 * time.Millisecond)
+	out = text(eval(t, app, sid, "return 2"))
+	mustContain(t, out, `LOOKS: look("late") was created after the previous eval had returned`)
 }

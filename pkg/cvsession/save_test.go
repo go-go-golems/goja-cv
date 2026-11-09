@@ -37,7 +37,7 @@ return {
   ra: [ra.encoding, ra.frame.join(","), ra.bitDepth].join(" "),
   rb: [b.encoding, rb.encoding, rb.frame.join(",")].join(" "),
   rc: [rc.encoding, rc.frame.join(","), c.note.includes("linear with origin (0, 0)")].join(" "),
-  rm: [m.encoding, rm.encoding, rm.channels].join(" "),
+  rm: [m.encoding, rm.encoding, rm.fileChannels].join(" "),
   same: Math.abs(s0.meanL - s1.meanL) < 1e-4,
   again: (await v.save("views/speck.tif")).replaced,
 }`))

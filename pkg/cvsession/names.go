@@ -48,7 +48,7 @@ func (t *nameTable) get(name string) (goja.Value, bool) {
 
 // reservedNames are session globals and JavaScript names a name may not take.
 var reservedNames = map[string]bool{
-	"cv": true, "P": true, "mem": true, "show": true, "doc": true, "globalThis": true, "Math": true, "JSON": true,
+	"cv": true, "mem": true, "globalThis": true, "Math": true, "JSON": true,
 	"Promise": true, "console": true, "undefined": true, "NaN": true, "Infinity": true, "eval": true, "arguments": true,
 	// keywords
 	"break": true, "case": true, "catch": true, "class": true, "const": true, "continue": true, "debugger": true,

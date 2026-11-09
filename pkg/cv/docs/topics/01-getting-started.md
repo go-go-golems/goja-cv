@@ -22,10 +22,8 @@ return { meanL: s.meanL, p01: s.p01, p99: s.p99 }
 |---|---|
 | `img` | the open image (an Image node); `img = cv.open("scan.tif")` rebinds it |
 | names | more images: `cv.open(path, { as: "ref" })` binds `ref` as a global that persists like `img`; the context block lists every name |
-| `cv` | the module: `cv.open(path, { encoding, box, origin, as })`, `cv.help(op)`, `cv.docs`, `cv.compare([...])`, `cv.evaluate(node, { scale })` |
+| `cv` | the module: `cv.open(path, { encoding, box, origin, as })`, `cv.help(op)`, `cv.docs`, `cv.compare([...])`, `cv.explain(node)` |
 | `mem` | a plain object that persists between evals |
-| `show(node, opts)` | queue a look of a node (it is delivered even if the eval throws later) |
-| `doc` | the document layer (history, apply, propose, export) is **not available yet**: any use throws `E_NO_DOCUMENT` |
 
 ```js
 const { meanL, p99 } = await img.stats()

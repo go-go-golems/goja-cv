@@ -130,6 +130,12 @@ var (
 	_ resultcontent.Describer = &Look{}
 )
 
+// Key identifies what the look shows: two looks with equal keys (the same
+// node with equal options) render the same image, and an eval delivers one.
+func (l *Look) Key() string {
+	return fmt.Sprintf("%d|%q|%v|%g|%d|%g|%g|%v|%dx%d|%d", l.node, l.label, l.frame, l.scale, l.interp, l.ruler, l.grid, l.png, l.w, l.h, l.chart)
+}
+
 // New creates a look of node id. Image and Mask nodes render as images;
 // Value nodes whose op declares a chart (OpDef.Chart: histogram bars, profile
 // lines) render as that chart. Other kinds are E_WRONG_KIND. It does not
@@ -238,6 +244,9 @@ func (l *Look) Label() string {
 	}
 	return ""
 }
+
+// AgentLabel is the label the agent passed ("" when none).
+func (l *Look) AgentLabel() string { return l.label }
 
 // Size is the rendered size in image px.
 func (l *Look) Size() (int, int) { return l.w, l.h }

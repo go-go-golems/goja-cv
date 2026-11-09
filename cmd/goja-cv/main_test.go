@@ -48,7 +48,7 @@ func TestEvalWritesLookFiles(t *testing.T) {
 func TestRunScriptJSONAndExitCodes(t *testing.T) {
 	dir := t.TempDir()
 	script := filepath.Join(dir, "a.js")
-	if err := os.WriteFile(script, []byte("show(img.exposure(-1), \"dark\")\nconsole.log(\"hi\")\nreturn 42\n"), 0o644); err != nil {
+	if err := os.WriteFile(script, []byte("img.exposure(-1).look(\"dark\")\nconsole.log(\"hi\")\nreturn 42\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	code, out, errOut := runCLI(t, "run", script, "--image", tiffPath, "--out", filepath.Join(dir, "looks"), "--json")
@@ -67,7 +67,7 @@ func TestRunScriptJSONAndExitCodes(t *testing.T) {
 	}
 
 	// cv error: printed, exit 1; looks shown before the throw are still written
-	code, out, _ = runCLI(t, "eval", "--image", tiffPath, "--out", dir, "-e", "show(img, \"before\")\nreturn img.brightness(1)")
+	code, out, _ = runCLI(t, "eval", "--image", tiffPath, "--out", dir, "-e", "img.look(\"before\")\nreturn img.brightness(1)")
 	if code != exitCVError || !strings.Contains(out, "code: E_UNKNOWN_METHOD") || !strings.Contains(out, "look-1-before.png") {
 		t.Fatalf("cv error: exit %d\n%s", code, out)
 	}
@@ -155,7 +155,7 @@ func TestMCPCommandServer(t *testing.T) {
 	if n != 0 || !strings.Contains(text, "meanL: 0.29507") {
 		t.Fatalf("stats: %d images\n%s", n, text)
 	}
-	text, n = call("const fixed = img.levels({ black: 0.0, white: 0.74 }).exposure(0.35)\nshow(cv.compare([img, fixed], { mode: \"side\" }), { label: \"before / after\" })\nshow(fixed.histogram())\nconst { meanL, clipLow, clipHigh } = await fixed.stats()\nreturn { meanL, clipLow, clipHigh }")
+	text, n = call("const fixed = img.levels({ black: 0.0, white: 0.74 }).exposure(0.35)\ncv.compare([img, fixed], { mode: \"side\" }).look(\"before / after\")\nfixed.histogram().look()\nconst { meanL, clipLow, clipHigh } = await fixed.stats()\nreturn { meanL, clipLow, clipHigh }")
 	if n != 2 || !strings.Contains(text, "look 1: before / after") || !strings.Contains(text, "meanL:") {
 		t.Fatalf("correction: %d images\n%s", n, text)
 	}

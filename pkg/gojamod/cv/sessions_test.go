@@ -36,7 +36,7 @@ func nodeByOp(t *testing.T, e *graph.Engine, name string) []*graph.Node {
 }
 
 // TestSessionB runs Part 1 Session B ("Find the dust and remove it"),
-// adapted to M3: no show/doc.propose yet, so looks are awaited overlays and
+// adapted to M3: no doc.propose, so looks are awaited overlays and
 // the heal is awaited. Each body is one eval; globalThis carries session
 // variables between evals as the eval tool's persistent scope will.
 func TestSessionB(t *testing.T) {
@@ -65,7 +65,7 @@ func TestSessionB(t *testing.T) {
 	if cx, _ := star["cx"].(float64); !(cx > 198 && cx < 203) {
 		t.Fatalf("lowest-score region is not the star: %v", star)
 	}
-	if look := r1["look"].(map[string]any); look["kind"] != "Image" || look["channels"] != int64(3) {
+	if look := r1["look"].(map[string]any); look["kind"] != "Image" || look["w"] != int64(256) || look["encoding"] != "srgb" {
 		t.Fatalf("look %v", look)
 	}
 	t.Logf("eval 1: count %v, largest %v, star id %v score %v", r1["count"], first, starID, star["score"])
@@ -95,7 +95,7 @@ func TestSessionB(t *testing.T) {
 	r3 := mustRun(t, rt, fmt.Sprintf(`
 		const keep0 = specks.where({ score: { gte: 0 } }).without([%v])
 		const n = await keep0.count()
-		await scan.heal(keep0, { radius: 3 })
+		await scan.heal(keep0, { radius: 3 }).stats()   // awaiting an Image computes nothing: measure it
 		return { n }`, starID)).(map[string]any)
 	if r3["n"] != int64(40) {
 		t.Fatalf("eval 3: %v", r3)
@@ -108,10 +108,10 @@ func TestSessionB(t *testing.T) {
 	}
 	// the same regions at preview scale and at full scale (doc px)
 	same := mustRun(t, rt, `
-		const a = await cv.evaluate(keep, { scale: 0.5 }), b = await cv.evaluate(keep, { scale: "full" })
+		const a = await keep, b = await keep
 		return JSON.stringify(a.items) === JSON.stringify(b.items) && a.count === b.count`)
 	if same != true {
-		t.Fatal("regions differ between scale 0.5 and full")
+		t.Fatal("regions differ between two awaits")
 	}
 	h := mustRun(t, rt, `return cv.help("heal").heal`).(map[string]any)
 	if !strings.Contains(fmt.Sprint(h["args"]), "doc px") || h["returns"] != "Image" {
@@ -133,10 +133,10 @@ func TestSessionC(t *testing.T) {
 		const look = await sky.overlay(sc)
 		const out = globalThis.out = sc.within(sky, i => i.exposure(-0.4).contrast(0.1))
 		const coverage = await sky.coverage()
-		const coverageHalf = await cv.evaluate(sky.coverage(), { scale: 0.5 })
+		const coverageHalf = await sky.coverage()
 		const before = (await sc.stats()).meanL, after = (await out.stats()).meanL
 		const after2 = (await sc.within(sky, i => i.exposure(-1.2).contrast(0.1)).stats()).meanL
-		return { coverage, coverageHalf, look, before, after, after2, explain: await out.explain() }`, scan)).(map[string]any)
+		return { coverage, coverageHalf, look, before, after, after2, explain: cv.explain(out).graph }`, scan)).(map[string]any)
 	cov, covHalf := got["coverage"].(float64), got["coverageHalf"].(float64)
 	if cov < 0.02 || cov > 0.5 || covHalf < cov*0.9 || covHalf > cov*1.1 {
 		t.Fatalf("sky coverage %v at 1.0, %v at 0.5", cov, covHalf)

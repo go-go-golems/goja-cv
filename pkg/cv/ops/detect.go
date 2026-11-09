@@ -65,7 +65,7 @@ func detectOps() []graph.OpDef {
 			Doc: "Find small dark/bright specks (dust): luminance in the working space (encoded by default) minus a morphological background, " +
 				"thresholded at max(minContrast, 4σ noise) with hysteresis, labelled, at most maxArea. " +
 				"Each region has contrast, localNoise, sharpness (soft round blobs like stars are low) and score in [0, 1]; " +
-				"keep real dust with .where({ score: { gte: 0.5 } }). Regions are analysed at analysisScale (default 1), so ids and boxes are the same in preview and export.",
+				"keep real dust with .where({ score: { gte: 0.5 } }). Regions are analysed at analysisScale (default 1), so ids and boxes are the same in a look and a measurement.",
 			Fields:   fixedFields(speckFields),
 			Produces: speckProduces,
 			See:      []string{"heal", "check.dust", "where", "overlay"},

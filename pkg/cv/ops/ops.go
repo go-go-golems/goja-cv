@@ -30,7 +30,6 @@ func Register(r *graph.Registry) {
 	r.MustRegister(presentOps()...)
 	r.MustRegister(annotateOp())
 	r.MustRegister(sheetOp())
-	r.MustRegister(metaOps()...)
 	r.MustRegisterFunc(funcDefs()...)
 }
 

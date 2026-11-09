@@ -16,8 +16,7 @@ import (
 type FuncDef struct {
 	Name string
 	// On lists the receiver types: node kinds ("Image", "Mask", "Value") or
-	// Go handle types; empty = a module function (cv.<name>) or, with Global,
-	// a session global.
+	// Go handle types; empty = a module function (cv.<name>).
 	On []string
 	// Args are the function's options, bound with BindOptions (positional
 	// arguments first, then an options object; synonyms, did-you-mean and
@@ -26,8 +25,6 @@ type FuncDef struct {
 	// Usage overrides the generated usage line (for functions whose first
 	// argument is a node, such as show).
 	Usage string
-	// Global: a session global (show), not a member of cv.
-	Global bool
 	// Bespoke: implemented by hand in the binding or prelude; the registry
 	// documents it but the prelude does not generate it.
 	Bespoke bool
@@ -35,13 +32,10 @@ type FuncDef struct {
 	See     []string
 }
 
-// CallName is how the function is written in JavaScript: node.look, cv.evaluate, show.
+// CallName is how the function is written in JavaScript: node.look, cv.explain.
 func (f *FuncDef) CallName() string {
-	switch {
-	case len(f.On) > 0:
+	if len(f.On) > 0 {
 		return "node." + f.Name
-	case f.Global:
-		return f.Name
 	}
 	return "cv." + f.Name
 }

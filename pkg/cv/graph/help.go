@@ -16,7 +16,7 @@ func (r *Registry) Help(name string) (map[string]any, error) {
 	if name == "" {
 		perKind := map[string]any{}
 		var kinds []any
-		for _, k := range Kinds {
+		for _, k := range r.Receivers() {
 			kinds = append(kinds, string(k))
 			ms := r.Methods(k)
 			if len(ms) == 0 {
@@ -38,7 +38,7 @@ func (r *Registry) Help(name string) (map[string]any, error) {
 			"kinds":   kinds,
 			"ops":     perKind,
 			"sources": sources,
-			"usage":   "Calls build lazy nodes; await a node (or cv.evaluate(node, { scale })) to compute it. cv.help(\"name\") describes one op.",
+			"usage":   "Calls build lazy nodes; await a node to compute it (data at full resolution), node.look() to see it. cv.help(\"name\") describes one op.",
 		}, nil
 	}
 	ops := r.Find(name)
@@ -107,11 +107,8 @@ func (r *Registry) FuncHelp(name string) (map[string]any, bool) {
 		return nil, false
 	}
 	on := "cv"
-	switch {
-	case len(f.On) > 0:
+	if len(f.On) > 0 {
 		on = strings.Join(f.On, ", ")
-	case f.Global:
-		on = "global"
 	}
 	entry := map[string]any{"on": on, "usage": f.UsageLine(), "doc": f.Doc}
 	if args := describeArgs(f.Args); len(args) > 0 {
