@@ -51,6 +51,11 @@ func TestLookOptionsSynonymsAndRedirects(t *testing.T) {
 		{`return img.look({ box: [0, 0, 8, 8] })`, graph.EUnknownOption, "A window is content: crop the node, then look at the crop.", "node.crop([x, y, w, h]).look()"},
 		{`return img.look({ stretch: "auto" })`, graph.EUnknownOption, "A stretch is content: put levels({ auto: true }) in the chain where it should apply.", "node.levels({ auto: true }).look()"},
 		{`return img.look({ maxSide: 100.5 })`, graph.EArgType, "", "node.look({ maxSide: 100 })"},
+		{`return img.look({ magnify: 8 })`, graph.EUnknownOption, `Did you mean "zoom"?`, `node.look({ zoom: 8 })`},
+		{`return img.look({ interpolation: "linear" })`, graph.EUnknownOption, `Did you mean "interp"?`, `node.look({ interp: … })`},
+		{`return img.look({ zoom: 2, maxSide: 64 })`, graph.EArgType, "", "node.look({ zoom: 2 })"},
+		{`return img.look({ zoom: 32 })`, graph.EArgRange, "", ""},
+		{`return img.look({ interp: "cubic" })`, graph.EArgType, "", `node.look({ interp: "nearest" })`},
 		{`return img.look({ label: img.stats().meanL })`, graph.EArgType, "", ""},
 	} {
 		_, jerr := run(t, rt, tc.body)

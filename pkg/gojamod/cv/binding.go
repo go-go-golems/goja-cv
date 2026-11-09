@@ -345,8 +345,9 @@ func (b *binding) evaluate(c goja.FunctionCall) goja.Value {
 	b.noteUsed(n.ID)
 	promise, resolve, reject := vm.NewPromise()
 	callCtx := b.evalContext()
+	site := b.site()
 	go func() {
-		v, err := b.eng.Evaluate(callCtx, n.ID, graph.EvalOptions{Scale: scale})
+		v, err := b.eng.Evaluate(callCtx, n.ID, graph.EvalOptions{Scale: scale, OnWarn: func(w graph.Warning) { b.noteEvalWarning(w, site) }})
 		settleCtx := callCtx
 		if callCtx.Err() != nil {
 			settleCtx = svc.Lifetime() // still reject, so awaiting code sees E_CANCELLED

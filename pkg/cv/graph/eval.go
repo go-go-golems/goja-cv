@@ -19,14 +19,42 @@ import (
 type EvalOptions struct {
 	// Scale is buffer px per doc px, in (0, 1]. It is quantized to 1e-4.
 	Scale float64
+	// OnWarn receives the evaluation-time warnings of every node the
+	// evaluation uses (EvalCtx.Warn), also for values served from the cache.
+	// It is called from evaluation goroutines.
+	OnWarn func(Warning)
 }
 
 // EvalCtx is what an op's Run sees besides its inputs and args.
 type EvalCtx struct {
 	Eval   *Evaluator
 	Node   *Node
-	Scale  float64        // quantized evaluation scale
+	Scale  float64        // quantized evaluation scale (the render scale for a decoration in a render)
 	Params map[string]any // param values snapshotted at the start of the evaluation
+	// Window is the doc-px rectangle a decoration draws in during a render
+	// above scale 1 (its inputs cover it); the node's frame otherwise.
+	Window Frame
+
+	mu    sync.Mutex
+	warns []Warning
+}
+
+// Warn records an evaluation-time warning (SHEET_TRUNCATED): it is stored
+// with the node's cached value and reported by every evaluation that uses
+// the value, cached or not.
+func (ec *EvalCtx) Warn(code, message, fix string) {
+	if fix != "" {
+		message += " fix: " + fix
+	}
+	ec.mu.Lock()
+	ec.warns = append(ec.warns, Warning{Code: code, Message: message})
+	ec.mu.Unlock()
+}
+
+func (ec *EvalCtx) warnings() []Warning {
+	ec.mu.Lock()
+	defer ec.mu.Unlock()
+	return append([]Warning(nil), ec.warns...)
 }
 
 // InputNode is the node of input i (its statics: frame, encoding, space).
@@ -54,11 +82,12 @@ type Evaluator struct {
 	mu    sync.Mutex
 	runs  map[NodeID]int
 	total int
+	warns map[Signature][]Warning // evaluation-time warnings of cached values
 }
 
 // NewEvaluator wires an evaluator to its graph, params, cache and sources.
 func NewEvaluator(b *Builder, params *ParamStore, cache *Cache, sources *SourceStore) *Evaluator {
-	return &Evaluator{b: b, params: params, cache: cache, sources: sources, runs: map[NodeID]int{}}
+	return &Evaluator{b: b, params: params, cache: cache, sources: sources, runs: map[NodeID]int{}, warns: map[Signature][]Warning{}}
 }
 
 // SetCallbacks installs the runner for JavaScript data lambdas.
@@ -132,17 +161,54 @@ type evalRun struct {
 	vals   map[Signature]Value
 }
 
-// runGroup holds the runs of one Evaluate call, one per scale.
+// runGroup holds the runs of one Evaluate call, one per scale, and reports
+// the evaluation-time warnings of the values it uses once each.
 type runGroup struct {
-	mu   sync.Mutex
-	runs map[float64]*evalRun
+	mu      sync.Mutex
+	runs    map[float64]*evalRun
+	onWarn  func(Warning)
+	emitted map[Signature]bool
 }
 
-func (e *Evaluator) newRun(scale float64) *evalRun {
+func (e *Evaluator) newRun(scale float64, onWarn func(Warning)) *evalRun {
 	r := &evalRun{e: e, scale: QuantizeScale(scale), params: e.params.Snapshot(),
 		sigs: map[NodeID]Signature{}, vals: map[Signature]Value{}}
-	r.group = &runGroup{runs: map[float64]*evalRun{r.scale: r}}
+	r.group = &runGroup{runs: map[float64]*evalRun{r.scale: r}, onWarn: onWarn, emitted: map[Signature]bool{}}
 	return r
+}
+
+// replay reports the stored warnings of the value with signature sig to the
+// evaluation, once per evaluation.
+func (r *evalRun) replay(sig Signature) {
+	if r.group.onWarn == nil {
+		return
+	}
+	r.e.mu.Lock()
+	ws := r.e.warns[sig]
+	r.e.mu.Unlock()
+	if len(ws) == 0 {
+		return
+	}
+	r.group.mu.Lock()
+	done := r.group.emitted[sig]
+	r.group.emitted[sig] = true
+	r.group.mu.Unlock()
+	if done {
+		return
+	}
+	for _, w := range ws {
+		r.group.onWarn(w)
+	}
+}
+
+// keepWarnings stores the warnings a run raised with its value's signature.
+func (e *Evaluator) keepWarnings(sig Signature, ws []Warning) {
+	if len(ws) == 0 {
+		return
+	}
+	e.mu.Lock()
+	e.warns[sig] = ws
+	e.mu.Unlock()
 }
 
 // at returns the run of the same evaluation at scale (quantized).
@@ -182,12 +248,35 @@ func (e *Evaluator) Evaluate(ctx context.Context, id NodeID, opt EvalOptions) (V
 	if _, ok := e.b.Node(id); !ok {
 		return nil, Errorf(EInternal, "unknown node #%d", id)
 	}
-	return e.newRun(opt.Scale).eval(ctx, id)
+	r := e.newRun(opt.Scale, opt.OnWarn)
+	v, err := r.eval(ctx, id)
+	if err == nil {
+		r.replayTree(id, map[NodeID]bool{})
+	}
+	return v, err
+}
+
+// replayTree reports the stored evaluation-time warnings of every node under
+// id (each at the scale it was evaluated at): a value served from the cache
+// reports the warnings its inputs raised when they were computed.
+func (r *evalRun) replayTree(id NodeID, seen map[NodeID]bool) {
+	if r.group.onWarn == nil || seen[id] {
+		return
+	}
+	seen[id] = true
+	n := r.e.node(id)
+	run := r.at(r.scaleFor(n))
+	if !IsMacro(n) {
+		run.replay(run.sig(id))
+	}
+	for _, in := range n.Inputs {
+		run.replayTree(in, seen)
+	}
 }
 
 // Signature returns the cache key of node id at scale with the current params.
 func (e *Evaluator) Signature(id NodeID, scale float64) Signature {
-	return e.newRun(scale).sig(id)
+	return e.newRun(scale, nil).sig(id)
 }
 
 func (r *evalRun) sig(id NodeID) Signature {
@@ -298,7 +387,7 @@ func (r *evalRun) compute(ctx context.Context, n *Node, sig Signature) (Value, e
 	if n.Op.Identity != nil && n.NExplicit > 0 && n.Op.Identity(args) {
 		return stamp(n, ins[0], ins), nil // neutral args: the receiver's value (a stamped copy); not cached twice
 	}
-	ec := &EvalCtx{Eval: r.e, Node: n, Scale: r.scale, Params: r.params}
+	ec := &EvalCtx{Eval: r.e, Node: n, Scale: r.scale, Params: r.params, Window: n.Frame}
 	out, err := safeRun(ctx, n.Op, ec, ins[:n.NExplicit], args)
 	if err != nil {
 		return nil, r.e.wrapWithPath(err, n)
@@ -308,9 +397,16 @@ func (r *evalRun) compute(ctx context.Context, n *Node, sig Signature) (Value, e
 	}
 	out = stamp(n, out, ins)
 	r.e.countRun(n.ID)
-	if !n.Op.NoCache {
-		r.e.cache.Put(sig, out)
+	if n.Op.NoCache {
+		if r.group.onWarn != nil {
+			for _, w := range ec.warnings() {
+				r.group.onWarn(w)
+			}
+		}
+		return out, nil
 	}
+	r.e.keepWarnings(sig, ec.warnings())
+	r.e.cache.Put(sig, out)
 	return out, nil
 }
 

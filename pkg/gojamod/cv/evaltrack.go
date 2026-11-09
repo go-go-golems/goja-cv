@@ -179,6 +179,23 @@ func (b *binding) noteCall(id graph.NodeID, ws []graph.Warning) {
 	}
 }
 
+// noteEvalWarning records an evaluation-time warning (EvalCtx.Warn) with the
+// site of the await or cv.evaluate that started the evaluation. It is called
+// from evaluation goroutines.
+func (b *binding) noteEvalWarning(w graph.Warning, s Site) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if !b.track.active {
+		return
+	}
+	for _, x := range b.track.warnings {
+		if x.Warning == w && x.Site == s {
+			return
+		}
+	}
+	b.track.warnings = append(b.track.warnings, SiteWarning{Warning: w, Site: s})
+}
+
 func (b *binding) noteUsed(ids ...graph.NodeID) {
 	b.mu.Lock()
 	defer b.mu.Unlock()

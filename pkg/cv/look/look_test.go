@@ -219,3 +219,53 @@ func TestLookMarshalsWithoutBytes(t *testing.T) {
 		t.Fatalf("json %s, want {}", js)
 	}
 }
+
+func TestLookZoomRendersBlocks(t *testing.T) {
+	ctx := context.Background()
+	e, img := newEngine(t, testTIFF)
+	gray := call(t, e, "toGray", img.ID)
+	l, err := New(e, gray.ID, Options{Zoom: 4, Label: "gray 4×"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w, h := l.Size(); w != 256 || h != 192 {
+		t.Fatalf("size %d×%d, want 256×192", w, h)
+	}
+	if got, want := l.Caption(), "look: gray 4× (256×192, 1 image px = 0.25 doc px)"; got != want {
+		t.Fatalf("caption %q, want %q", got, want)
+	}
+	m, err := l.image(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	shown, _ := e.Display(gray.ID)
+	v, err := e.Evaluate(ctx, shown, graph.EvalOptions{Scale: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref, _ := buffer.Quantize(ctx, v.(*graph.ImageValue).Buf, 8)
+	g, rg := m.(*image.Gray), ref.(*image.Gray)
+	for y := 0; y < 192; y++ {
+		for x := 0; x < 256; x++ {
+			if g.GrayAt(x, y) != rg.GrayAt(x/4, y/4) {
+				t.Fatalf("pixel (%d, %d) = %v, want the scale-1 pixel (%d, %d) = %v", x, y, g.GrayAt(x, y), x/4, y/4, rg.GrayAt(x/4, y/4))
+			}
+		}
+	}
+}
+
+func TestLookZoomLimits(t *testing.T) {
+	e, img := newEngine(t, writeFlat(t, 400, 300, 0.3))
+	_, err := New(e, img.ID, Options{Zoom: 8})
+	ce, ok := graph.AsError(err)
+	if !ok || ce.Code != graph.EArgRange || ce.Fix != "node.crop([x, y, 196, 196]).look({ zoom: 8 })   // or node.look({ zoom: 3.92 })" {
+		t.Fatalf("zoom 8 of 400×300: %+v", err)
+	}
+	if _, err := New(e, img.ID, Options{Zoom: 3.92}); err != nil {
+		t.Fatalf("zoom 3.92: %v", err)
+	}
+	hist := call(t, e, "histogram", img.ID)
+	if _, err := New(e, hist.ID, Options{Zoom: 2}); err == nil || !strings.Contains(err.Error(), "charts have no doc px") {
+		t.Fatalf("chart zoom: %v", err)
+	}
+}

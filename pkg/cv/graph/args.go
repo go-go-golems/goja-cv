@@ -781,7 +781,7 @@ var OptionSynonyms = map[string][]string{
 	"opacity": {"alpha", "opacity"}, "alpha": {"opacity", "alpha"}, "strength": {"amount", "opacity", "alpha"}, "intensity": {"amount", "opacity"},
 	"colour": {"color"}, "label": {"labels", "label"}, "showIds": {"labels"}, "ids": {"labels"},
 	"tolerance": {"tol"}, "soft": {"softness"}, "feather": {"softness"}, "smooth": {"softness"},
-	"scale": {"analysisScale"}, "type": {"polarity", "mode", "method"}, "kind": {"polarity", "mode"},
+	"scale": {"analysisScale", "zoom"}, "type": {"polarity", "mode", "method"}, "kind": {"polarity", "mode"},
 	"low": {"black", "below"}, "lo": {"black", "below"}, "blackPoint": {"black"}, "shadows": {"black", "below"},
 	"high": {"white", "above"}, "hi": {"white", "above"}, "whitePoint": {"white"}, "highlights": {"white", "above"},
 	"midtones": {"gamma"}, "mid": {"gamma"}, "quantiles": {"percentiles"}, "percentile": {"percentiles"},
@@ -791,6 +791,8 @@ var OptionSynonyms = map[string][]string{
 	"amount": {"amount", "ev", "opacity"}, "stops": {"ev"}, "exposure": {"ev"},
 	"long": {"maxSide"}, "longSide": {"maxSide"}, "maxsize": {"maxSide"}, "max_side": {"maxSide"}, "width_px": {"maxSide"},
 	"caption": {"label"}, "title": {"label"}, "text": {"label"},
+	"magnify": {"zoom"}, "magnification": {"zoom"}, "upscale": {"zoom"}, "factor": {"zoom"}, "zoomFactor": {"zoom"},
+	"interpolation": {"interp"}, "resample": {"interp"}, "resampling": {"interp"}, "upsample": {"interp"},
 }
 
 // optionRedirect finds the redirect of an unknown option name among specs.

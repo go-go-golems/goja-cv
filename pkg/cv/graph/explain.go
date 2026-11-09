@@ -139,7 +139,7 @@ func describeArg(b *Builder, n *Node, s *ArgSpec, v any, scale float64) string {
 // result kind, its size at scale, and whether it is cached at that scale.
 // It computes no pixels. Nodes reached twice are printed once.
 func (e *Evaluator) Explain(id NodeID, scale float64) []string {
-	root := e.newRun(scale)
+	root := e.newRun(scale, nil)
 	type row struct{ left, right, statics string }
 	var rows []row
 	seen := map[NodeID]bool{}

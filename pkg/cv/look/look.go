@@ -20,8 +20,10 @@ import (
 	"image/draw"
 	"image/jpeg"
 	"image/png"
+	"math"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 
 	"github.com/go-go-golems/go-go-goja/pkg/resultcontent"
@@ -40,8 +42,10 @@ const (
 
 // Options configure a look.
 type Options struct {
-	Label   string // shown in the caption; default: the node's label
-	MaxSide int    // long side in image px; 0 = the engine's look size (1568)
+	Label   string        // shown in the caption; default: the node's label
+	Zoom    float64       // render scale in [1, 16]; 0 = fit to MaxSide
+	Interp  buffer.Interp // upsampling when zoomed
+	MaxSide int           // long side in image px when fitting; 0 = the engine's look size (1568)
 }
 
 // OptionsFrom reads the look options bound by graph.BindOptions against the
@@ -51,6 +55,12 @@ func OptionsFrom(a graph.Args) (Options, error) {
 	if a.Has("label") {
 		o.Label = a.String("label")
 	}
+	if a.Has("zoom") {
+		o.Zoom = a.Number("zoom")
+	}
+	if a.Has("interp") {
+		o.Interp, _ = buffer.ParseInterp(a.String("interp"))
+	}
 	if a.Has("maxSide") {
 		f := a.Number("maxSide")
 		if f != float64(int(f)) {
@@ -59,20 +69,30 @@ func OptionsFrom(a graph.Args) (Options, error) {
 		}
 		o.MaxSide = int(f)
 	}
+	if o.Zoom != 0 && o.MaxSide != 0 {
+		return o, graph.Errorf(graph.EArgType, "look takes zoom or maxSide, not both: zoom sets the scale; maxSide fits it.").
+			WithFix(fmt.Sprintf("node.look({ zoom: %s })", fmtZoom(o.Zoom)))
+	}
 	return o, nil
 }
 
+func fmtZoom(z float64) string { return strconv.FormatFloat(z, 'g', 4, 64) }
+
 // Look is a lazily rendered image of one node.
 type Look struct {
-	eng   *graph.Engine
-	node  graph.NodeID
-	root  graph.NodeID // what is rendered: node, or convert(node → encoded)
-	kind  graph.Kind
-	label string
-	scale float64 // buffer px per doc px; 1 for charts
-	w, h  int     // rendered size
-	chart bool    // a Value node rendered as a chart
-	n     atomic.Int64
+	eng    *graph.Engine
+	node   graph.NodeID
+	root   graph.NodeID // what is rendered: node, or convert(node → encoded)
+	kind   graph.Kind
+	label  string
+	scale  float64 // render scale: image px per doc px; 1 for charts
+	interp buffer.Interp
+	w, h   int  // rendered size
+	chart  bool // a Value node rendered as a chart
+	n      atomic.Int64
+
+	mu    sync.Mutex
+	warns []graph.Warning // evaluation-time warnings of the render
 }
 
 var (
@@ -96,7 +116,7 @@ func New(eng *graph.Engine, id graph.NodeID, opt Options) (*Look, error) {
 		}
 		maxLong = opt.MaxSide
 	}
-	l := &Look{eng: eng, node: id, kind: n.Kind, label: strings.TrimSpace(opt.Label)}
+	l := &Look{eng: eng, node: id, kind: n.Kind, label: strings.TrimSpace(opt.Label), interp: opt.Interp}
 	if l.label == "" {
 		l.label = graph.Label(n)
 	}
@@ -109,10 +129,19 @@ func New(eng *graph.Engine, id graph.NodeID, opt Options) (*Look, error) {
 		}
 		l.root = root
 		l.scale = eng.ScaleForLong(id, maxLong)
+		if opt.Zoom != 0 {
+			l.scale = graph.QuantizeScale(opt.Zoom)
+		}
 		l.w, l.h = buffer.ScaledSize(n.Frame.W, n.Frame.H, l.scale)
+		if limit := eng.Options().LookLong; max(l.w, l.h) > limit {
+			return nil, zoomTooLarge(n, opt.Zoom, limit)
+		}
 	case graph.KindValue:
 		if n.Op.Name != "histogram" {
 			return nil, lookKindError(n)
+		}
+		if opt.Zoom != 0 {
+			return nil, graph.Errorf(graph.EArgType, "look of a chart takes no zoom: charts have no doc px.").WithFix("node.look()")
 		}
 		l.chart, l.scale = true, 1
 		l.w, l.h = chartSize(maxLong)
@@ -122,6 +151,23 @@ func New(eng *graph.Engine, id graph.NodeID, opt Options) (*Look, error) {
 		return nil, lookKindError(n)
 	}
 	return l, nil
+}
+
+// zoomTooLarge is E_ARG_RANGE for a zoomed look above the size limit, with
+// both fixes: a smaller crop at the same zoom, or the same image at a lower
+// zoom.
+func zoomTooLarge(n *graph.Node, zoom float64, limit int) error {
+	side := int(float64(limit) / zoom)
+	long := max(n.Frame.W, n.Frame.H)
+	fix := fmt.Sprintf("node.crop([x, y, %d, %d]).look({ zoom: %s })", min(side, n.Frame.W), min(side, n.Frame.H), fmtZoom(zoom))
+	if z := float64(limit) / float64(long); z >= 1 {
+		fix += fmt.Sprintf("   // or node.look({ zoom: %s })", fmtZoom(math.Floor(z*100)/100))
+	} else {
+		fix += "   // or node.look() to fit the whole image"
+	}
+	return graph.Errorf(graph.EArgRange, "look({ zoom: %s }) of %s (%s doc px) would be %d px on its long side; looks are at most %d px.",
+		fmtZoom(zoom), graph.Label(n), n.Frame.Size(), int(math.Round(float64(long)*zoom)), limit).
+		WithHint("Zoom a crop: at zoom z a look shows at most " + strconv.Itoa(limit) + "/z doc px per side.").WithFix(fix)
 }
 
 func lookKindError(n *graph.Node) error {
@@ -161,10 +207,13 @@ func (l *Look) AssignNumber(n int) int {
 	return l.Number()
 }
 
-// DocPxPerImagePx formats 1/scale for captions: "4.0", "6.13".
+// DocPxPerImagePx formats 1/scale for captions: "4.0", "6.13", "0.125".
 func DocPxPerImagePx(scale float64) string {
 	if scale <= 0 {
 		return "?"
+	}
+	if scale > 1 {
+		return strconv.FormatFloat(1/scale, 'g', 3, 64)
 	}
 	s := strconv.FormatFloat(1/scale, 'f', 2, 64)
 	s = strings.TrimRight(s, "0")
@@ -200,7 +249,33 @@ func (l *Look) ResultContent(ctx context.Context) ([]resultcontent.Content, erro
 	if err != nil {
 		return nil, err
 	}
-	return []resultcontent.Content{{MIMEType: mime, Data: data, Caption: l.Caption()}}, nil
+	caption := l.Caption()
+	if ws := l.Warnings(); len(ws) > 0 {
+		parts := make([]string, len(ws))
+		for i, w := range ws {
+			parts[i] = w.Code + ": " + w.Message
+		}
+		caption += " — warnings: " + strings.Join(parts, "; ")
+	}
+	return []resultcontent.Content{{MIMEType: mime, Data: data, Caption: caption}}, nil
+}
+
+// Warnings are the evaluation-time warnings of the last render (SHEET_TRUNCATED).
+func (l *Look) Warnings() []graph.Warning {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return append([]graph.Warning(nil), l.warns...)
+}
+
+func (l *Look) warn(w graph.Warning) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	for _, x := range l.warns {
+		if x == w {
+			return
+		}
+	}
+	l.warns = append(l.warns, w)
 }
 
 // Render evaluates and encodes the look, returning the bytes and MIME type.
@@ -218,7 +293,7 @@ func (l *Look) Render(ctx context.Context) ([]byte, string, error) {
 // images are rendered through convert(node → encoded) (no node when the
 // values already are encoded), masks and derived images as they are.
 func (l *Look) image(ctx context.Context) (draw.Image, error) {
-	v, err := l.eng.Evaluate(ctx, l.root, graph.EvalOptions{Scale: l.scale})
+	v, err := l.eng.Render(ctx, l.root, graph.RenderOptions{Scale: l.scale, Interp: l.interp, OnWarn: l.warn})
 	if err != nil {
 		return nil, err
 	}

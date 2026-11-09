@@ -22,8 +22,12 @@ var lookRedirects = map[string]graph.Redirect{
 func LookArgs() []graph.ArgSpec {
 	return []graph.ArgSpec{
 		{Name: "label", Type: "string", Positional: true, Optional: true, Doc: "caption text (default: the node's op)"},
+		{Name: "zoom", Type: "number", Optional: true, Min: graph.F(1), Max: graph.F(graph.MaxRenderScale),
+			Doc: "render scale: each doc px becomes zoom × zoom image px (default: fit to maxSide); exclusive with maxSide", Redirects: lookRedirects},
+		{Name: "interp", Type: "enum:nearest,linear", Default: "nearest",
+			Doc: "upsampling when zoomed: nearest repeats pixels (exact values, visible pixel edges), linear blends neighbours"},
 		{Name: "maxSide", Type: "number", Optional: true, Min: graph.F(16), Max: graph.F(MaxLookSide),
-			Doc: "long side in image px when fitting (default 1568)", Redirects: lookRedirects},
+			Doc: "long side in image px when fitting (default 1568)"},
 	}
 }
 
@@ -36,7 +40,7 @@ func funcDefs() []graph.FuncDef {
 		},
 		{
 			Name: "show", Global: true, Args: LookArgs(), Bespoke: true,
-			Usage: "show(node, label | { label, maxSide }) · show(look)",
+			Usage: "show(node, label | { label, zoom, interp, maxSide }) · show(look)",
 			Doc:   "Create a look, queue it and return it; queued looks are delivered even if the eval throws later.",
 			See:   []string{"look"},
 		},
