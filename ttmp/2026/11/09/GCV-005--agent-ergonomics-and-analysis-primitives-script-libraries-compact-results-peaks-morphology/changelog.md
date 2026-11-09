@@ -35,3 +35,8 @@ Phase A2: compact tables exempt from the item/string caps (shared 2/3 budget, pa
 
 Phase A3: sheet captions list cells (label else id) for arrays, 'cells in region order' for Regions nodes; labels id|none; golden sheet-2x2 regenerated (commit c9987c0); deviations 26-28; diary step 5
 
+
+## 2026-11-09
+
+Phase A4: UNUSED_NODE deleted with its node tracking (commit eaafc1d); Part A docs sweep: instructions (12.1 without peaks), eval tool description, guidebook agents/setup/recipes/troubleshooting, README, rows instead of joined strings (commit 7cec0bf); deviations 29-32; diary step 6
+

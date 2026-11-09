@@ -2496,3 +2496,21 @@ details and numbers.
 28. **Golden `sheet-2x2` moved**: it passed `labels: "index"` (GCV-004 deviation 35) to keep its labels 0 and 1; with
     the mode gone its literal items show their ids 1 and 2. Only the two label texts changed (99 of 113,472 samples).
     No other golden moved.
+
+### Phase A4 (commits `eaafc1d`, `7cec0bf`)
+
+29. **`UNUSED_NODE` is deleted in A4**, in its own commit, not in A2 (the coordinator's batch plan). With it went
+    everything only the lint read: `EvalTrace.Created` and `Used`, `NodeUse`, `MarkUsed`, `noteUsed`, the renderer's
+    node list and `namedNodes`; `noteCall` keeps only a call's warnings and their site (−242 lines).
+30. **The instructions are §12.1 without the peaks line** (B2 has not landed; B3 adds it), 3,503 bytes. They keep the
+    calls GCV-004's length test checks (`img.stats({ box:`, `cv.compare(`, `img.within(`, `img.heal(`, `cv.explain(`),
+    say "await img gives the image's file, encoding and frame" (agents still typed `cv.info` in GCV-004's pi runs),
+    show `img.annotate([{ circle: [x, y, r] }])` beside `img.overlay(items)` (agents tried `annotate([{ cx, cy, r }])`)
+    and `cv.sheet(items.slice(0, 15), …)` (sheets of 20 did not fit at large sizes). "Never read a coordinate off a
+    picture: take it from data (items, measure)" names no `peaks` yet.
+31. **The task-library and thread-width recipes** are in the guidebook's recipes page (`goja-cv help recipes`, the model
+    library runs as an eval body, the thread width loads `dust/thread-width.js`) and in the task-libraries topic (the
+    pipeline script, found by `cv.docs.search("width of a line")`); `09-recipes` is at its 6,000-character cap and gets
+    B3's peaks recipes.
+32. **Doc examples return rows**: the blocks of `05`, `09`, `12` and the guidebook recipes that returned
+    `rows.map(r => [...].join(" "))` return the rows or picked fields, which render as tables.

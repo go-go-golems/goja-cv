@@ -651,3 +651,92 @@ is deleted; `labels: "none"` keeps the caption list.
 
 `git diff --stat b0ae2b3 c9987c0`: 8 files, +98 / −8. A caption:
 `[look 1: a — sheet(6 items; cells: 9 11 14 40 "big one" 6) (…)]`.
+
+## Step 6: Phase A4 — UNUSED_NODE deleted; the Part A documentation sweep
+
+A4 deletes `UNUSED_NODE` with all the per-eval node tracking that only it read, and rewrites what agents and people
+read for Part A: the MCP instructions (§12.1 without the peaks line), the eval tool description, the guidebook's
+agents, setup, recipes and troubleshooting pages, the README, and the doc examples that still returned joined strings.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 2)
+
+**Assistant interpretation:** delete `UNUSED_NODE` entirely (moved here from A2 by the brief) and do §12.2's A4 rows:
+instructions, recipes (task library, thread width with `profile`, the playbook pattern), README, `help setup-*`.
+
+**Inferred user intent:** the lint that was wrong 18 times in 19 goes, and agents learn task libraries, tables and the
+"nothing happens unless awaited, looked at or saved" rule from what they read first.
+
+**Commit (code):** eaafc1d — "GCV-005 A4: delete UNUSED_NODE"
+
+**Commit (docs):** 7cec0bf — "GCV-005 A4: Part A documentation sweep"
+
+### What I did
+
+- Deleted `unusedNodes`, `onPlaceholder`, `WUnusedNode`, `NodeUse`, `EvalTrace.Created`/`Used`, `MarkUsed`,
+  `noteUsed` (and its four callers), `renderer.nodes`, `namedNodes`; `state.warnings` lost its `returned` and `lint`
+  parameters; `noteCall(ws)` records warnings only.
+- Tests: `TestNoUnusedNodeWarning` (the study's `mem.views()` bundle, `img.gaussian(2)` alone, a `within` builder, a
+  discarded chain: no warning at all); `TestM3KindsInTheSession` lost its `UNUSED_NODE` expectation;
+  `TestEvalTrackingRecordsWarningSites` checks only warning sites.
+- Docs for the rule: `03-nodes-and-evaluation` ("A node you don't use does nothing", with an unawaited save that is
+  still written), `01`, `08`, `pkg/doc/02-concepts.md`.
+- `pkg/cvsession/reference.go`: new `Instructions` (3,503 bytes), `EvalToolDescription` names `cv.load`/`cv.scripts`;
+  `TestMCPInstructionsAreCompactAndDocsAreResources` also checks `cv.load(`, `cv.scripts()`, `x.dilate(r)`,
+  "does nothing", "table".
+- Guidebook: `04-agents` (task libraries and the study), `05`/`06`/`07` setup pages (`--read DIR --prelude
+  DIR/lib.js`), `08-recipes` (write a task library, the width of a thread, the playbook pattern), `10-troubleshooting`;
+  README (CLI and MCP sections).
+- Topics: `14-task-libraries` gains the thread-width pipeline; `05`, `09`, `12` return rows.
+- Deviations 29–32.
+
+### Why
+
+- Deleting the tracking with the lint: `Created`/`Used` had no other reader (grepped: looks and `SiteWarning` keep their
+  own records), so keeping them would be dead state per eval.
+- The instructions follow §12.1 but keep GCV-004 Phase 8's tested calls, so nothing the pi runs relied on disappears.
+
+### What worked
+
+- After the deletion the full suite passed on the first run except the one docs block that expected the warning.
+- `cv.docs.search("width of a line")` (the example in the instructions) ranks the new thread-width section first.
+
+### What didn't work
+
+- `TestDocsCodeBlocksRun/nodes-and-evaluation`: `want warning UNUSED_NODE` (the topic's `warns=UNUSED_NODE` block);
+  replaced by the new section.
+- First instructions draft failed `instructions lack "img.stats()"` (the test's literal list).
+
+### What I learned
+
+- The instructions budget still has about 500 bytes after §12.1's text; B3's peaks line fits.
+
+### What was tricky to build
+
+- Keeping the masks, looks and recipes topics under 6,000 characters while converting examples to rows: `rows: keep`
+  (the items' own table) is shorter than picking fields.
+
+### What warrants a second pair of eyes
+
+- `TestNoUnusedNodeWarning` asserts no `warnings:` at all for those evals; a future warning on them would fail it.
+- `noteCall` now takes the site for every call with warnings, also for a macro's extra nodes (it used to attach them
+  to the first node only; the result is the same list).
+
+### What should be done in the future
+
+- B3: the instructions' peaks line ("Find spots: await img.as(\"linear\").peaks({ radius: 3, snr: 1.4 }) …") and the
+  recipes of §12.2's B3 rows; replace the model library (`pkg/cvsession/testdata/scripts/dust/helpers.js`, the
+  guidebook recipe) with §12.3's peaks version.
+
+### Code review instructions
+
+- `git show eaafc1d` (deletions in `pkg/cvsession/processor.go`, `pkg/gojamod/cv/evaltrack.go`), then `git show 7cec0bf
+  -- pkg/cvsession/reference.go pkg/doc/08-recipes.md`.
+- `go test ./pkg/cvsession -run 'TestNoUnusedNode|TestMCPInstructions|TestDocs|TestGuide' -count=1`.
+- Gate: `gate=0`.
+
+### Technical details
+
+`git diff --stat e5ec24d eaafc1d`: 14 files, +50 / −242. `git diff --stat eaafc1d 7cec0bf`: 13 files, +186 / −40.
+Batch A without the ticket (`git diff --stat 259df82 7cec0bf -- . ':!ttmp'`): 62 files, +2,218 / −517.
