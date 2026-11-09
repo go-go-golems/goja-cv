@@ -574,3 +574,65 @@ after the op runs. The invariant to test: for every pixel op with a Halo, `op(x)
 the full-frame result cut to `w`, sample for sample. Measurement ops (sample, measure, profile) would then read only
 the windows around their points. Not done here: it touches the evaluator, the source store and every op's border
 behaviour, and GCV-003's measurements are already fast on 1024² tiles.
+
+## Step 10: Agent runs, redirects from them, pull request
+
+Four pi runs on the guide's §13.5 questions (on a real tile) compare the build before GCV-003 with the build after it.
+Before, the agents rebuilt the probe from masks and dozens of `stats` calls, paged YAML to assemble a CSV by hand and
+could not save the view. After, they used `measure`, `regions.measure`, `profile`, `cv.csv`/`cv.json` and `save`,
+needed about half the calls, wrote complete files under the out-root and reopened the saved TIFF with its encoding and
+frame. Two of their errors became redirects. The PR is open against the GCV-002 branch.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 1)
+
+**Assistant interpretation:** The optional pi runs (two before, two after) on measurement questions, then the PR, CI and the report.
+
+**Inferred user intent:** Evidence that a cheap model uses the new surface on its own.
+
+**Commit (code):** 1eb57f2 - "GCV-003: redirects found by the agent runs (regions.measure ringRadii, components maxArea)"
+
+### What I did
+- Wrote `questions-gcv-003.md` next to the harness in the dust-scanning repo (left uncommitted): rank the 20 strongest spots by step/spread, a profile across the strongest, neutral vs coloured, the full table as CSV and JSON with the row count, save the view as a 16-bit TIFF and reopen it.
+- Runs on tile `7edbfe9c3e7ab7d6_512_1024` (`IMAGE`, `QUESTIONS`), model `lunaroute/deepseek-4.1-flash`: before (runs 15, 16) on a `git archive` of 3295649 with the original `run.sh`; after (runs 17, 18) on the working tree at be25dd2 with a scratch copy of `run.sh` that adds `--out-root OUT/out` and `--root OUT/out` (so the saved file can be reopened). Counts by a scratch script (`summarize.py`) over `events.jsonl`.
+- Redirects from the after-runs' errors: `regions.measure(img, { ring: true, ringRadii: [4, 10] })` (img.measure's option name) → fix `{ ring: [6, 12], coreRadius: 3 }`; `components({ maxArea })` → `.where({ area: { lte: 200 } })`; tests in `TestRegionMeasureErrors`.
+- PR #4 (base `task/gcv-002-inspection-views`).
+
+### Why
+- Brief: optional pi runs, PR, CI.
+
+### What worked
+
+| run | build | calls | error results | measurement calls | data out | Q4 table | Q5 TIFF |
+|---|---|---|---|---|---|---|---|
+| 15 | before (3295649) | 79 | 7 | stats 17, mask.ellipse 12 | none | 137 rows pasted into the answer from paged YAML | "no file-output op" |
+| 16 | before | 89 | 10 | stats 33, mask.ellipse 7 | `save` tried twice (refused) | 324 rows pasted, by paging | not possible |
+| 17 | after (be25dd2) | 57 | 6 | measure 10, sample 4, profile 2, stats 5 | cv.csv 2, cv.json 3, save 5 | `candidates.csv` / `.json`, 742 rows (its own merged list), files in the out-root | saved 16-bit, reopened: linear, frame [0, 0, 1024, 1024]; CLAMP explained |
+| 18 | after | 44 | 7 | measure 14, regions.measure 7, profile 3, stats 10 | cv.csv 3, cv.json 2, save 4 | 233 rows = 233 regions, CSV in schema order with the ring fields | saved and reopened, as 17 |
+
+- Both after-runs reported the row count of their table equal to their region count and named the files; both used stepChroma for neutrality.
+
+### What didn't work
+- Run 17's first reopen used the bare file name, `cv.open("speck-view.tif")`, which resolves against the session's base directory, not the out-root: `E_ACCESS … outside the directories this session may read`; it then used the absolute `path` that `save` returned.
+- Run 18: `ringRadii` on `regions.measure` (now redirected), `components({ maxArea })` (now redirected), `filter({ area: … })` (an object where a function is expected; pre-existing), `stats().p999` (E_NO_FIELD with did-you-mean), `cv.compare` of looks (E_WRONG_KIND).
+- Agents still use `slice` a lot (17: 21, 18: 31), mostly to return parts of tables to themselves; the files carry the full data.
+
+### What I learned
+- The agents read the data-out topic and used `name`, `.save` and the returned absolute paths without help; the out-root was found from the E_ACCESS hint when needed.
+
+### What was tricky to build
+- Nothing new; the harness needed a second root so the saved file can be opened again.
+
+### What warrants a second pair of eyes
+- Relative paths: `save("x.tif")` is relative to the out-root, `cv.open("x.tif")` to the session base directory. The save result gives the absolute path; the docs say to reopen with `cv.open(saved.path)`.
+
+### What should be done in the future
+- Consider resolving a relative `cv.open` path against the out-root when it is also a read root, or a hint naming the out-root file when one with that name exists.
+
+### Code review instructions
+- `pkg/cv/ops/regionmeasure.go` (`ring` redirects), `pkg/cv/ops/regions.go` (`minArea` redirects).
+- Runs: `…/scratchpad/pi/run-15` … `run-18` (`events.jsonl`, `transcript.html`, `out/`).
+
+### Technical details
+- Harness: `IMAGE=~/dustdet/cv_tiles/7edbfe9c3e7ab7d6_512_1024.tif QUESTIONS=…/06-pi-cv-agent/questions-gcv-003.md bash run-gcv3.sh /path/to/goja-cv OUT` (the scratch copy of `run.sh` adds `"--root", "$OUT/out", "--out-root", "$OUT/out"` to the MCP args).

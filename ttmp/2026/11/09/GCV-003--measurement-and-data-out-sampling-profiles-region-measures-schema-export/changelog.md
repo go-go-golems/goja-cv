@@ -49,3 +49,8 @@ Step 8: Phase 8 preludes (commit 8d6245c)
 
 Step 9: Phase 9 docs, open items 1 and 9, gated hot-list test (commits 8e9a3ed, be25dd2)
 
+
+## 2026-11-09
+
+Step 10: agent runs 15-18, redirects, PR #4 (commit 1eb57f2)
+
