@@ -5,7 +5,7 @@ go 1.26.1
 require (
 	github.com/dop251/goja v0.0.0-20261103151521-97b96e1e55f5
 	github.com/dop251/goja_nodejs v0.0.0-20260918173711-b481721df8a2
-	github.com/go-go-golems/go-go-goja v0.4.6
+	github.com/go-go-golems/go-go-goja v0.10.8-0.20261109050453-e797f8741dd2
 	github.com/modelcontextprotocol/go-sdk v1.7.0
 	github.com/pkg/errors v0.9.1
 	github.com/rs/zerolog v1.35.1
@@ -146,5 +146,3 @@ require (
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )
-
-replace github.com/go-go-golems/go-go-goja => ../go-go-goja
