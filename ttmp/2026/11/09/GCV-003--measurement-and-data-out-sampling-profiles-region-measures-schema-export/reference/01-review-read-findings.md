@@ -669,3 +669,17 @@ No new P1. New P2 and P3 findings:
 - No default `depth` per format is given.
 - §7.9 says the `data` argument type "tells the binder not to lift awaited data". The lift happens earlier, in the prelude's `marshal` (`prelude.js:103`), so say the prelude skips `marshal` for `data` arguments.
 - `--json` `rows` requires the CLI to count CSV records or JSON items itself; say so.
+
+### Disposition of the re-check (revision 3 of the guide)
+
+| finding | disposition | where |
+|---|---|---|
+| P2-4 remark | fixed: the 256 KiB limit runs inside `Data.ResultContent`, which receives the limit from its session | §7.9 budgets table |
+| P2-14 | fixed: `name` is an identifier `[A-Za-z0-9_-]{1,64}`, otherwise `E_ARG_TYPE` at bind time; default `data-<N>`; files land directly in `--out` | §7.9 |
+| P2-15 | fixed: the helper centres on round(cx) + 0.5 (0–1 px offset, 0.5 on average; the one-pixel-blob example); `regions.measure` keeps the exact centroid and the bias is named as a reason for re-measured ranges; the π vs 3.14 difference at area 95 stated | §7.4 |
+| P3-18 | fixed: `EllipseCoverage(px, py, cx, cy, rx, ry)`; disks pass rx = ry | §3.1, §9.1, §12 Phase 3 |
+| P3-19 | fixed: "within 1e-9" for probe vs `StatsWeighted`; coverage vs `EllipseMask` stays bit for bit | §8, §12 Phase 3, §13.1 |
+| P3-20 | fixed in GCV-002 revision 3 (`sigma`, `sigma1`, `sigma2`, `radius`) | GCV-002 §7.5 |
+| P3-21 | fixed: masks saved with the linear note and reopen with the same numbers | §7.10 |
+| P3-22 | fixed: Phase 6 switches `internal/testimage` to the production writers and deletes GCV-001's duplicate TIFF/NPY fixture writers (the DNG one stays) | §7.10, §12 Phase 6 |
+| P3-23 | fixed: default depths per format; the prelude passes `data` arguments without `marshal`; the CLI counts rows | §7.9, §7.10 |

@@ -23,7 +23,7 @@ RelatedFiles:
     - Path: pkg/cv/ops/detect.go
       Note: speckFields list (box, centroid) used for help
     - Path: pkg/cv/kernels/mask.go
-      Note: EllipseMask 4x4 supersampling; becomes DiskCoverage shared with the probe kernel
+      Note: EllipseMask 4x4 supersampling; becomes EllipseCoverage shared with the probe kernel
     - Path: pkg/cv/kernels/measure_weighted.go
       Note: StatsWeighted wrapper
     - Path: pkg/cv/buffer/io.go
@@ -52,6 +52,7 @@ WhenToUse: "Read before touching measurement ops, Regions fields, awaited summar
 |---|---|---|
 | 2026-11-09 | 1 | First version (commit b30efec). |
 | 2026-11-09 | 2 | Revised from the review read (`reference/01-review-read-findings.md`, disposition table at its end). Foundations in the shared chapter. One naming rule (`x, y` corner, `cx, cy` point, `meanL`, radius options that cannot be read as fields, `stepChroma`). Coverage is the 4 × 4 supersampled rule of `mask.ellipse`, shared through one function. One schema mechanism for Regions and Value results; `Validate` sees inputs. Point ops take points only; one way to ring-measure regions. Named data files written by goja-cv; `--json` lists files. Writers for TIFF (uint and float), PNG chunks and NPY with an honest round-trip table. Content budgets, evaluation-time warnings, edge rule, directories table, and new decision records. |
+| 2026-11-09 | 3 | Revised from the re-check (rows P2-14, P2-15 and P3-18 to P3-23 in the disposition). Data names are identifiers with a default; `mem.hot`'s 0–1 px centring offset stated; the MCP data limit runs inside the Data handle; `EllipseCoverage` handles non-circular ellipses; "within 1e-9" instead of "exactly"; masks saved with the linear note; `internal/testimage` switches to the production writers; default depths; the prelude does not marshal `data` arguments; the CLI counts rows. |
 
 ## How to read this guide
 
@@ -127,8 +128,8 @@ inside the disk.
 
 goja-cv already computes disk coverage in `mask.ellipse`: it tests a 4 × 4 grid of sub-pixel points and counts those
 inside, so weights are multiples of 1/16 (`EllipseMask`, `pkg/cv/kernels/mask.go:173-200`). This ticket extracts that
-rule into one function, `kernels.DiskCoverage(px, py, cx, cy, r float64) float64`, used by `EllipseMask` and by every
-measurement. Keeping the 4 × 4 rule, rather than switching to exact area, keeps measurements identical to what the
+rule into one function, `kernels.EllipseCoverage(px, py, cx, cy, rx, ry float64) float64`, used by `EllipseMask`
+(whose boxes may give rx ≠ ry, `mask.go:178`) and by every measurement, which passes rx = ry = r. Keeping the 4 × 4 rule, rather than switching to exact area, keeps measurements identical to what the
 colleague's helper computed with `mask.ellipse` and what the playbook's thresholds were calibrated on. A disk of radius
 2 then has a total weight close to π · 2² ≈ 12.6 doc px².
 
@@ -350,7 +351,7 @@ are gone in the next, so the colleague re-pastes `84-cv-helpers.js` into every c
  img.profile(a, b, { width })          img.detect.specks()  ├─ schema per node  node.save(path), data.save(path)
  img.measure(points, { coreRadius })   regions.measure(img) ┘                  → out-root
         │                                       │
-        └── kernels/probe.go: DiskCoverage, coverage-weighted sums, weighted quantiles, ringCoverage ──┘
+        └── kernels/probe.go: EllipseCoverage, coverage-weighted sums, weighted quantiles, ringCoverage ──┘
 ```
 
 All measurement ops share `pkg/cv/kernels/probe.go`, which works in a small window around each point; nothing evaluates
@@ -461,10 +462,16 @@ Field names are `prefix + Stat + Channel` in camelCase (`meanL`, `maxR`, `dogMax
 the prefix (`dogStep`). A field that already exists is `E_FIELD_EXISTS` with a fix that adds a prefix. Regions and image
 must share a frame (`E_FRAME`, GCV-001 §7.10).
 
-The default core radius follows `mem.hot` (`84-cv-helpers.js:56-58`): it probes at the rounded centroid with r =
-clamp(round(√(area / 3.14)), 2, 8), which by the mapping of §13.2 is a disk of radius r + 0.5. `regions.measure` centres
-on the exact centroid instead of the rounded one, a sub-pixel difference; §13.4 re-measures the playbook table so the
-colleague gets ranges for the new numbers.
+The default core radius follows `mem.hot` (`84-cv-helpers.js:56-58`): it probes with r = clamp(round(√(area / 3.14)),
+2, 8), which by the mapping of §13.2 is a disk of radius r + 0.5. The guide's formula uses π; on integer areas in the
+clamp range the two round differently only at area 95 (√(95/π) = 5.499, √(95/3.14) = 5.500).
+
+The centre differs more. `mem.hot` passes `Math.round(centroid)` to `mem.probe`, which centres on (x + 0.5, y + 0.5),
+so the helper's centre is round(cx) + 0.5: between 0 and 1 px right of and below the true centroid, 0.5 px on
+average per axis. A one-pixel blob at pixel 1312 has cx = 1312.5 and is probed at 1313.5, a full pixel off with a
+core radius of 2.5. `regions.measure` centres on the exact centroid, which is correct; the helper's numbers carry
+that bias, which is one more reason for §13.4's re-measured ranges. `img.measure` reproduces the helper exactly only
+through the mapping of §13.2, which takes the helper's integer arguments, not its rounding of centroids.
 
 Per-region statistics need per-region weights. `RegionsValue.Rasterize` merges all regions into one mask
 (`regions.go:194-240`), so it cannot be used. When the region raster and the image are the same size (both at
@@ -592,18 +599,24 @@ func (d *Data) ResultContent(ctx context.Context) ([]resultcontent.Content, erro
 ```
 
 - `x` may be a Value or Regions node (lazy) or plain data (eager). The function's argument is declared with the type
-  `data`, which tells the binder not to lift awaited data back to its node (Foundations §F4): `cv.json(await r)` writes
-  the data as the agent sees it, including edits the agent made to it. Image nodes are `E_WRONG_KIND` with the fix
+  `data`. Awaited data is lifted back to its node by the prelude's `marshal` (`prelude.js:103`, Foundations §F4), so
+  for `data` arguments the prelude passes the value without `marshal`: `cv.json(await r)` writes the data as the
+  agent sees it, including edits the agent made to it. Image nodes are `E_WRONG_KIND` with the fix
   `node.save("x.tif")`.
 - A lazy placeholder states what is known at build time: the name and, for CSV, the column count from the schema. Row
   counts are known only after rendering; the CLI file list and the MCP note report them.
 - CSV columns default to the schema order for Regions and Value rows, and to first-seen key order for plain objects;
   `columns` selects and orders. Nested arrays and objects are JSON-encoded in their cell.
+- `name` is an identifier matching `[A-Za-z0-9_-]{1,64}`; anything else (a path, `../../x`) is `E_ARG_TYPE` at bind
+  time with a sanitized fix. Without `name`, the item is called `data-<N>`, N being its content number. Agent text
+  therefore never becomes a path component.
 - The content's caption is `data <name>.<ext>`; the extension comes from `resultcontent.ExtensionForMIME`.
 
 **Files from the CLI.** `cmd/goja-cv`'s `writeLooks` becomes `writeContent`: looks keep their names
 (`look-<n>-<slug>.<ext>`), data items are written as `<name>.<ext>` from their caption (a second item with the same name
-gets `-2`), and dropped items are still reported with their reason. No upstream change to go-go-goja is needed. The
+gets `-2`), and dropped items are still reported with their reason. Because names are identifiers, every file lands
+directly in `--out`. The CLI counts CSV records or JSON array items itself for the `rows` field. No upstream change to
+go-go-goja is needed. The
 `--json` output renames `looks` to `files`:
 
 ```json
@@ -627,7 +640,7 @@ and reads `files[i].path` for the item whose `mimeType` is `text/csv`.
 |---|---|---|
 | `Options.MaxLooks` | 4 | the session, in `state.collect` (`processor.go:116-140`): later looks are replaced by a note |
 | `Options.MaxData` | 4 | the session, in `state.collect` |
-| `Options.MaxDataBytes` | 0 = unlimited; the `mcp` command sets 256 KiB | the session after rendering: a larger data item is replaced by the note "too large for the conversation (412 KB): save it with .save(\"spots.csv\")" |
+| `Options.MaxDataBytes` | 0 = unlimited; the `mcp` command sets 256 KiB (counted on the rendered bytes) | the Data handle itself, in `ResultContent` (goja-cv has no hook after go-go-goja's Render; the handle receives the limit from the session that created it): a larger data item is replaced by the note "too large for the conversation (412 KB): save it with .save(\"spots.csv\")" |
 | `ContentLimits().MaxItems` | `MaxLooks + MaxData` | go-go-goja's render limit; `mcp.go:61` mirrors it for the MCP transport |
 | `ContentLimits().MaxTotalBytes` | 8 MiB, shared | go-go-goja |
 
@@ -663,15 +676,18 @@ const d = await cv.csv(ranked).save("spots/tile-17.csv")
   and `tEXt` with keyword `goja-cv` and the same string;
 - an NPY writer for `<f4` and `<u2`.
 
-| format | depths | encodings | what reopens (GCV-001 decoders) |
+| format | depths (default first) | encodings | what reopens (GCV-001 decoders) |
 |---|---|---|---|
-| `.tif`, `.tiff` | 8, 16, 32 (float) | srgb, linear | values, encoding, frame origin |
-| `.png` | 8, 16 | srgb, linear | values, encoding (`gAMA`/`sRGB`), frame origin (`tEXt`) |
-| `.npy` | 16 (`<u2`), 32 (`<f4`) | any | values only: opens as `linear` with origin (0, 0); a note in the result says so |
+| `.tif`, `.tiff` | 16, 8, 32 (float) | srgb, linear | values, encoding, frame origin |
+| `.png` | 16, 8 | srgb, linear | values, encoding (`gAMA`/`sRGB`), frame origin (`tEXt`) |
+| `.npy` | 32 (`<f4`), 16 (`<u2`) | any | values only: opens as `linear` with origin (0, 0); a note in the result says so |
 | `.jpg`, `.jpeg` | 8 | srgb only | values; a linear image is `E_ARG_TYPE` with the fix `.png` |
 
-Masks are saved as single-channel images with no encoding note (they reopen as `srgb`-implied gray images unless opened
-with `encoding: "linear"`; the result says so). `buffer.WriteFile` and `EncodeTIFF16` are deleted.
+Masks are saved as single-channel images with the linear note (`encoding=linear` in TIFF, `gAMA` 1.0 in PNG), because
+a mask's value is its displayed value (GCV-001 §3.6); they reopen with the same numbers. `buffer.WriteFile` and
+`EncodeTIFF16` are deleted, and `internal/testimage` (`testimage.go:42,45`, `planted.go:127`), which calls
+`buffer.WriteFile`, switches to the new writers in the same phase; GCV-001's fixture writers for TIFF and NPY are
+deleted in favour of them, and only the minimal DNG writer (SubIFDs, LinearRaw) stays in `internal/testimage`.
 
 ### 7.11 Preludes
 
@@ -740,7 +756,8 @@ The key points:
 - **Decision:** (c).
 - **Rationale:** (a) makes `measure` and `stats({ mask: ellipse })` disagree; (b) moves the calibrated numbers. (c)
   keeps them and removes the duplication.
-- **Consequences:** Weights are multiples of 1/16 on edge pixels; tests compare with `StatsWeighted` exactly.
+- **Consequences:** Weights are multiples of 1/16 on edge pixels; tests compare with `StatsWeighted` within 1e-9
+  (sums run in a different order).
 - **Status:** accepted
 
 ### Decision: no item cap; caps belong to presentation
@@ -819,8 +836,8 @@ probe(buf, frame, scale, centre (doc px), coreRadius r, ringRadii [r1, r2], gray
   c := ((cx − frame.X) · scale, (cy − frame.Y) · scale)          // buffer px
   window := square of side 2·r2·scale + 2 around c, clipped to the buffer
   for each pixel p in window:
-      wc := DiskCoverage(p, c, r·scale)                           // 4×4 supersampled
-      wr := DiskCoverage(p, c, r2·scale) − DiskCoverage(p, c, r1·scale)
+      wc := EllipseCoverage(p, c, r·scale, r·scale)              // 4×4 supersampled
+      wr := EllipseCoverage(p, c, r2·scale, r2·scale) − EllipseCoverage(p, c, r1·scale, r1·scale)
       accumulate wc- and wr-weighted sums of the gray plane and of each channel; keep (gray value, wr) pairs
   coreMean, ringMean, per-channel means; spread = weighted p90 − p10 (the rule of kernels.weightedQuantile)
   ringCoverage = Σ wr inside the frame / (full annulus weight)
@@ -919,10 +936,10 @@ After Phase 1, region items are flat, and region items can be passed as boxes an
 2. Remove `SummaryLimit` and `truncated`; add the safety limit.
 
 **Phase 3 — probe kernel and measurement ops.**
-1. Write tests: `probe` core and ring means equal `StatsWeighted` with `mask.ellipse` masks exactly; `measure` matches
+1. Write tests: `probe` core and ring means equal `StatsWeighted` with `mask.ellipse` masks within 1e-9; `measure` matches
    `mem.probe` under the mapping of §13.2; `sample` with radius 0 equals the pixel; a profile across a synthetic edge of
    known σ recovers it (a fitted σ within 10 %); edge rows report `ringCoverage`; `OUTSIDE` warnings; spaces respected.
-2. Implement `DiskCoverage` (and switch `EllipseMask` to it), `kernels/probe.go`, `sample`, `profile`, `measure`; merge
+2. Implement `EllipseCoverage` (and switch `EllipseMask` to it), `kernels/probe.go`, `sample`, `profile`, `measure`; merge
    `StatsWeighted`.
 
 **Phase 4 — `regions.measure`.**
@@ -940,7 +957,8 @@ After Phase 1, region items are flat, and region items can be passed as boxes an
    uint16 and float32; PNG chunks are read back; NPY values round-trip and open as linear at origin (0, 0); JPEG refuses
    linear images; containment refuses a symlink pointing outside the out-root; `CLAMP` warnings.
 2. Implement `tiffwrite.go`, PNG chunk insertion, the NPY writer, `save` on nodes, the shared containment helper and
-   `Options.OutRoot`; delete `buffer.WriteFile` and `EncodeTIFF16`; move `EAccess`.
+   `Options.OutRoot`; switch `internal/testimage` to the new writers and delete its duplicate TIFF/NPY fixture writers
+   (keep the DNG one); delete `buffer.WriteFile` and `EncodeTIFF16`; move `EAccess`.
 
 **Phase 7 — data out.**
 1. Write tests: `cv.json`/`cv.csv` placeholders and bytes; lazy nodes and eager data (an edited awaited object is
@@ -969,8 +987,8 @@ The key points:
 
 ### 13.1 Unit and property tests
 
-- The probe tests check `DiskCoverage` against `EllipseMask` and the probe means against `StatsWeighted` with ellipse
-  masks, exactly.
+- The probe tests check `EllipseCoverage` against `EllipseMask` bit for bit, and the probe means against `StatsWeighted`
+  with ellipse masks within 1e-9 (sums run in a different order).
 - The schema property test checks, for every op returning Regions or Value rows, that item or row keys equal the schema
   names and that every schema field is accepted by `where` and `sortBy`.
 - The coercion tests check box and point objects, unions with enums, and the refusal of `{ x, y }` as a point.
