@@ -173,6 +173,11 @@
         return function () {
           return { node: label(t) };
         };
+      case "look":
+        // look({ label, maxSide }) → a Go-backed look (an image the eval returns)
+        return function (opts) {
+          return native.__look(t.__id, opts === undefined ? null : opts);
+        };
     }
     if (PROBES.has(prop)) return undefined;
     if (t.__kind === "Param") {
@@ -202,7 +207,7 @@
     has(t, prop) {
       if (typeof prop !== "string") return false;
       const tab = tables[t.__kind];
-      return prop === "then" || prop === "__id" || prop === "__kind" || !!(tab && tab[prop]);
+      return prop === "then" || prop === "__id" || prop === "__kind" || prop === "look" || !!(tab && tab[prop]);
     },
     ownKeys() {
       return [];

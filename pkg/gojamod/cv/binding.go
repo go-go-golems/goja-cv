@@ -27,6 +27,8 @@ type binding struct {
 	// Only the owner goroutine reads or writes it.
 	funcs    map[graph.FuncID]goja.Callable
 	nextFunc graph.FuncID
+	track    tracker        // per-eval state (evaltrack.go)
+	opened   []graph.NodeID // sources opened with cv.open
 }
 
 var _ graph.Callbacks = &binding{}
@@ -108,6 +110,7 @@ func (b *binding) object() *goja.Object {
 	set("__func", b.funcJS)
 	set("__builders", b.builders)
 	set("__placeholder", b.placeholder)
+	set("__look", b.look)
 	return o
 }
 
@@ -235,6 +238,7 @@ func (b *binding) call(c goja.FunctionCall) goja.Value {
 		b.throw(err)
 	}
 	b.addWarnings(ws)
+	b.noteCall(n.ID, ws)
 	return handle(b.vm, n)
 }
 
@@ -248,6 +252,7 @@ func (b *binding) open(c goja.FunctionCall) goja.Value {
 	if err != nil {
 		b.throw(err)
 	}
+	b.noteOpen(n.ID)
 	return handle(b.vm, n)
 }
 
@@ -286,8 +291,9 @@ func (b *binding) evaluate(c goja.FunctionCall) goja.Value {
 	if !ok || svc.Owner == nil {
 		b.throw(graph.Errorf(graph.EInternal, "cv: runtime services missing (create the runtime with go-go-goja's engine)"))
 	}
+	b.noteUsed(n.ID)
 	promise, resolve, reject := vm.NewPromise()
-	callCtx := runtimebridge.CurrentOwnerContext(vm)
+	callCtx := b.evalContext()
 	go func() {
 		v, err := b.eng.Evaluate(callCtx, n.ID, graph.EvalOptions{Scale: scale})
 		settleCtx := callCtx
