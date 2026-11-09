@@ -43,6 +43,26 @@
   const nodeSet = new WeakSet();
   const proxies = new Map(); // id → proxy: hash-consed nodes are === in JS too
 
+  // Awaited data keeps a link to its node: a hidden symbol, plus the node's
+  // methods as non-enumerable properties for names the data (or its
+  // prototype) does not have. Data wins for reads (r.count stays the
+  // number), and Object.keys, JSON and the YAML result are unchanged. Ops
+  // given such data lift it back to the node (marshal).
+  const NODE = Symbol("cv.node");
+
+  function link(v, node) {
+    if (v === null || typeof v !== "object" || !node || !Object.isExtensible(v)) return v;
+    Object.defineProperty(v, NODE, { value: node });
+    const tab = tables[node.__kind];
+    const names = tab ? Object.keys(tab) : [];
+    names.push("look");
+    for (const name of names) {
+      if (name in v || name === "then") continue;
+      Object.defineProperty(v, name, { value: node[name], writable: true, configurable: true, enumerable: false });
+    }
+    return v;
+  }
+
   function isNode(x) {
     return typeof x === "object" && x !== null && nodeSet.has(x);
   }
@@ -65,6 +85,7 @@
   function marshal(x) {
     if (x === null || x === undefined) return x;
     if (isNode(x)) return { __cvnode: x.__id };
+    if (typeof x === "object" && x[NODE]) return { __cvnode: x[NODE].__id }; // awaited data → its node
     if (typeof x === "function") return { __cvfunc: funcId(x) };
     if (Array.isArray(x)) return x.map(marshal);
     if (typeof x === "object") {
@@ -162,7 +183,10 @@
     switch (prop) {
       case "then":
         return function (onFulfilled, onRejected) {
-          return native.__evaluate(t.__id, null).then(onFulfilled, onRejected);
+          const node = proxies.get(t.__id);
+          return native.__evaluate(t.__id, null)
+            .then((v) => link(v, node))
+            .then(onFulfilled, onRejected);
         };
       case "__id":
         return t.__id;
@@ -290,7 +314,7 @@
     evaluate(node, opts) {
       requireNode(node, "cv.evaluate");
       const scale = opts && opts.scale !== undefined ? opts.scale : null;
-      return native.__evaluate(node.__id, scale);
+      return native.__evaluate(node.__id, scale).then((v) => link(v, node));
     },
     // compare([a, b, …], { mode: "side" | "split" | "diff" }) → Image
     compare(list, opts) {

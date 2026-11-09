@@ -42,6 +42,18 @@ const after = await fixed.stats().pick("meanL", "p01", "p99")
 return { after, look: fixed.look("levels") }
 ```
 
+## Awaited data remembers its node
+
+What `await` returns is plain data (YAML, `Object.keys` and `JSON.stringify` see only the data), but it remembers the node it came from. You can keep calling node methods on it and pass it to ops, which use the node:
+
+```js
+const specks = await img.detect.specks()          // data: { count, items, … }
+const dust = specks.where({ score: { gte: 0.5 } })  // a Regions node again
+return { all: specks.count, dust: await dust.count(), look: img.overlay(dust).look("dust") }
+```
+
+Data wins where names collide: `specks.count` is the number; the method form is `img.detect.specks().count()`. Ops recompute the node, so after a param moved they see the new value, not the awaited snapshot.
+
 ## UNUSED_NODE
 
 A node built as a statement and never returned, awaited, looked at, stored in `mem` or used by another node did nothing. The result then carries a warning with your line:

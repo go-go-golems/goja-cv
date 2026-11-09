@@ -332,3 +332,40 @@ func TestBatchedHelpNeverThrows(t *testing.T) {
 	}
 	mustContain(t, out, "overlay:", "mask.luminance:", "coverage:", "explain:", "evaluate:", "found: false", "name: nope")
 }
+
+// TestAwaitedDataKeepsItsNode is pi run 1 calls 10, 15, 23 and 24: agents
+// await a node and keep using the result as the node.
+func TestAwaitedDataKeepsItsNode(t *testing.T) {
+	app, sid := newApp(t, cvsession.Options{Image: planted(t)})
+	resp := eval(t, app, sid, `const r = await img.detect.specks({ polarity: 'both' })
+const dust = r.where({ score: { gte: 0.5 } })
+const viaFilter = r.filter(x => x.score >= 0.5)
+const healed = img.heal(r.where({ score: { gte: 0.5 } }), { radius: 3 })
+return {
+  n: r.count, keys: Object.keys(r), json: Object.keys(JSON.parse(JSON.stringify(r))),
+  dust: await dust.count(), filtered: (await viaFilter).count,
+  explain: (await r.explain()).length > 0,
+  after: (await healed.check.dust()).count,
+  healedDirect: (await img.heal(await dust).check.dust()).count,
+  overlay: img.overlay(r, { labels: "id" }).look("all"),
+  isNode: cv.isNode(r),
+  summary: Object.keys(await img),
+  brighter: (await (await img).exposure(1).stats()).meanL > (await img.stats()).meanL,
+}`)
+	out := text(resp)
+	t.Logf("%s", out)
+	if resp.Cell.Execution.Status != "ok" {
+		t.Fatalf("status %s:\n%s", resp.Cell.Execution.Status, out)
+	}
+	mustContain(t, out, "n: 41", "keys: [count, docH, docW, items, kind, scale, truncated]", "json: [count, docH, docW, items, kind, scale, truncated]",
+		"dust: 40", "filtered: 40", "explain: true", "after: 0", "healedDirect: 0", "look 1: all", "isNode: false", "brighter: true")
+	mustNotContain(t, out, "where:", "UNUSED_NODE")
+	// returning awaited data renders exactly the data
+	out = text(eval(t, app, sid, `const r = await img.detect.specks(); return { count: r.count, truncated: r.truncated, w: r.docW }`))
+	mustContain(t, out, "{count: 41, truncated: false, w: 256}")
+	out = text(eval(t, app, sid, `const s = await img.stats(); return s`))
+	mustNotContain(t, out, "levels", "exposure", "pick:")
+	// plain objects that never came from a node still get a structured error with a fix
+	out = text(eval(t, app, sid, `return img.overlay({ items: [] }).look()`))
+	mustContain(t, out, "code: E_WRONG_KIND", "fix:")
+}

@@ -662,7 +662,19 @@ func bind(op *OpDef, hasReceiver bool, raw []any, trusted map[string]any, kindOf
 		}
 		na, ok := raw[i].(NodeArg)
 		if !ok {
-			return nil, Errorf(EWrongKind, "%s needs %s node as argument %d, got %s.", call, A(string(decl)), j+1, describeRaw(raw[i]))
+			e := Errorf(EWrongKind, "%s needs %s node as argument %d, got %s.", call, A(string(decl)), j+1, describeRaw(raw[i]))
+			if _, isData := raw[i].(map[string]any); isData {
+				e.Hint = "That is plain data, not a node. Keep the node in a variable and await it only to read data."
+				switch {
+				case accepts(decl, KindRegions):
+					e.Fix = fmt.Sprintf("const regions = img.detect.specks()   // a node; then %s(regions, …)", op.Name)
+				case accepts(decl, KindMask):
+					e.Fix = fmt.Sprintf("const m = img.mask.luminance({ above: 0.6 })   // a node; then %s(m, …)", op.Name)
+				default:
+					e.Fix = fmt.Sprintf("const other = img.exposure(0.3)   // a node; then %s(other, …)", op.Name)
+				}
+			}
+			return nil, e
 		}
 		k, _ := kindOf(na.ID)
 		if !accepts(decl, k) {
