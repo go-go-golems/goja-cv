@@ -285,6 +285,9 @@ type OpDef struct {
 	// then the same at preview and export. Regions ops use it so that region
 	// ids and doc-px coordinates are identities, not artefacts of the scale.
 	AnalysisScale func(args Args) float64
+	// Short is the op's compact call in captions and chains (Short); nil:
+	// ShortCall, the op name with its non-default positional arguments.
+	Short func(a Args) string
 	// Builders lists the positions (0-based, among the call's arguments) that
 	// may be builder lambdas: the JavaScript surface calls the function once
 	// with a placeholder for the receiver and passes the result as a

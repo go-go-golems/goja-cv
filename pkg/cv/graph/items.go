@@ -337,6 +337,30 @@ func ItemCount(n *Node) (int, bool) {
 	return len(itemEntries(n)), true
 }
 
+// ItemTexts are the texts overlay and sheet print for the items of an items
+// node, in order: each item's label, else its id, else its position from 1
+// (literal items without an id). ok is false for another node (a detector's
+// Regions node, whose ids are known only when it is evaluated).
+func ItemTexts(n *Node) ([]string, bool) {
+	if n.Op.Name != ItemsOp || n.Op.On != KindNone {
+		return nil, false
+	}
+	entries := itemEntries(n)
+	out := make([]string, len(entries))
+	for i, e := range entries {
+		m, _ := e.(map[string]any)
+		switch l, id := m["label"], m["id"]; {
+		case l != nil && l != "":
+			out[i] = fmt.Sprint(l)
+		case id != nil:
+			out[i] = fmtNum(id.(float64))
+		default:
+			out[i] = strconv.Itoa(i + 1)
+		}
+	}
+	return out, true
+}
+
 // HasPointItems reports whether an items node holds a centre without a
 // radius ([x, y] or { cx, cy }).
 func HasPointItems(n *Node) bool {
