@@ -41,6 +41,11 @@ nodes-and-evaluation, lambdas, masks-and-regions, looks, params, errors, recipes
 `pkg/cv/docs/topics`, every `js` block is run by `TestDocsCodeBlocksRun`). The MCP server sends short
 instructions (eval contract, most used calls) and serves the topics as `cv://docs/<id>` next to the full op
 reference `cv://reference`.
+`cv.help(name)` never throws: it takes ops, kinds (`"Mask"`), `Kind.method` (`"Regions.filter"`) and cv
+functions (`"evaluate"`), and returns `{ found: false, didYouMean, hint }` for anything else.
+`img.stats({ box: [x, y, w, h] })` / `img.stats({ mask })` measure inside a selection (+ `area`, `coverage`);
+awaited data remembers its node (`const r = await img.detect.specks(); r.where(…)`, `img.heal(r)`);
+`await img` includes `file`, `format`, `bitDepth`, `colorSpace`.
 Exit codes: 0 ok, 1 cv error (still printed), 2 usage error. Go API: `pkg/cvsession`
 (`cvsession.New`, `App.Evaluate`, `NewMCPServer`); xgoja: `pkg/xgoja/providers/cv` and
 `examples/xgoja/cv-agent/xgoja.yaml`.
