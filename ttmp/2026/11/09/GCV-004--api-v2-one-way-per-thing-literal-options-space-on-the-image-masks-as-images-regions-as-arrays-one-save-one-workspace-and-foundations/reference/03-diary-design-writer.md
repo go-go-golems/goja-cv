@@ -284,3 +284,154 @@ assume.
 - Guide: 2,170 lines, sections 1–18. Deletion estimate: ~2,900 lines removed, ~800 added, net ~−2,100 of 23,154
   non-test lines (−9 %), ±25 %.
 - Goldens expected to move, Phase 3 only: `gaussian`, `levels-gamma`, `levels-stats`, `profile-chart`.
+
+## Step 3: Revision 2 from the review read and the coordinator's decisions
+
+The coordinator sent the review read (37 findings: 4 P1, 18 P2, 15 P3) together with decisions on revision 1's six
+open questions. I revised the guide in place (`004ffd7`, 2,716 lines). I rewrote the sections the findings touched
+as whole blocks rather than patching sentences, added seven decision records, and added Appendix A, which maps every
+finding to its disposition: 36 fixed, 1 partly fixed (F36), none declined.
+
+### Prompt Context
+
+**User prompt (verbatim):**
+
+```text
+GCV-004 revision round: please revise the guide from the review findings plus the coordinator decisions below.
+
+The review read is in `reference/04-review-read-findings.md` (37 findings: 4 P1, 18 P2, 15 P3), and the reviewer's diary is in `reference/05-diary-review-read.md`. Pull first: the branch has the reviewer's commits `780c2bf` and `243a9aa`, plus my diary step 4 `0bba23b`.
+
+**What to do**
+- Fix all four P1s:
+  - F1: two-input ops take the larger channel count.
+  - F2: inputs declared as masks are never space-converted.
+  - F3: item links are `[node, index]`, never the `id` field.
+  - F4: use `os.SameFile` and refuse to save through a symlink.
+- Fix every P2, unless one conflicts with a decision below. Pay particular attention to these:
+  - F5: Phase 0 must be green without `--root`.
+  - F8: cover the xgoja provider front end.
+  - F12: rename the `as` option to `name`.
+  - F14: converting an opened file to linear must not copy its pyramid level.
+  - F15: one luminance definition.
+  - F16: drop `--read-only` and the inline delivery.
+  - F18: split Phase 1, so the Args redesign becomes its own phase.
+- Take P3s where they are cheap. Fold in F10 (a LOOKS warning that lists dropped looks), F11 (stepChroma) and F21 (Phase 0a, with the golden moves named for the sheet badge and the ruler-label fixes).
+
+**Decisions on the open questions**
+Write each one as a decision record, with pros and cons and the evidence.
+- **Q1:** `gaussian` follows the image's space. Blur is a linear filter that is valid in any space, and the high-pass background must share the space of the subtraction it feeds. All 10 explicit agent choices were encoded.
+- **Q2:** `blend` and `within` follow the receiver, provided F2 holds. State one rule for every multi-input op: the receiver decides, and the other inputs are converted to the receiver's space through cached convert nodes. Masks are never converted.
+- **Q3:** `measure` includes the ring by default unless `stats` is given (the reviewer's condition). The radii come from the item when it has them:
+  - core = the item's `r` if present (gold points carry one), otherwise the equivalent radius √(area/π) for region items;
+  - ring = [1.5r, 2.5r];
+  - an explicit `coreRadius` or `ringRadii` overrides.
+
+  Evidence from a real gold tile (DUST-002 `reference/08`): a gold point with `r = 63` measured snr 0.12 with a fixed 3 px core and 0.56 with core and ring sized from `r`. Plain points without `r` and without `coreRadius` are `E_ARG` with a fix.
+- **Q4:** awaiting an Image returns its static summary and evaluates nothing. Values and Regions still evaluate when awaited. This also removes most of the full-resolution cost that `await` would otherwise have on large DNGs.
+- **Q5:** refuse arrays that mix two region sets (the reviewer's position). Spell out that literal objects mixed with items from one set are fine, for example gold points (x, y, r) together with one detector's items.
+- **Q6:** a workspace plus read-only extra directories. Neither the reviewer nor the first draft covered the data-in-several-places case, so this is new:
+  - `--root DIR` is the one read-write workspace. Relative paths for both `cv.open` and `cv.save` resolve against it.
+  - A repeatable `--read DIR` adds read-only directories through their own `os.Root`. Real setups keep data in several places: the colleague reads tiles from `~/dustdet/cv_tiles` and data from `~/dustds`, and `os.Root` refuses symlinks that leave the root, so symlinking is not a workaround.
+  - `mcp` requires `--root` and errors at startup without it.
+  - `eval` and `run` default `--root` to the current directory.
+  - There is no inline-save fallback (F16).
+- **D3:** keep `exposure` physical, with the reviewer's two conditions (F14, F15). In addition, the `exposure` doc and hint should point agents who want "brighter for looking" at `levels({ auto })`, not only at `mul(2 ** ev)`. That was the real intent behind the 11 encoded exposure calls.
+
+**Process**
+- Add a revision-history entry summarising revision 2.
+- Add a short "Review disposition" section or appendix that maps every finding ID to fixed, partly fixed or declined, with a reason for anything declined.
+- Keep the guide self-contained for an intern, and introduce new concepts (receiver-decides, the item index link, `--read`) before you use them.
+- Write diary step 3 in the same diary-skill format.
+- Commit the guide, then the diary, and push with a plain `git push`. End commit messages with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
+- Run `docmgr doctor` before finishing.
+
+When you are done, report the disposition counts, anything you declined and why, and any new open questions.
+```
+
+**Assistant interpretation:** Revise the guide: apply every finding except where a coordinator decision overrides
+one, write the six open-question decisions and the D3 refinement as decision records, add a disposition appendix
+and a revision-history entry, then commit, write the diary and push.
+
+**Inferred user intent:** A guide that can be implemented without the silent-failure seams the review found, and that
+supports the colleague's real setup (data in several directories, gold points with radii).
+
+**Commit (docs):** `004ffd7` — "GCV-004: guide revision 2 from the review read …"
+
+### What I did
+- Pulled `780c2bf`, `243a9aa`, `0bba23b`; read the findings in full and coordination diary step 4 (the five v1 bugs).
+- Checked the code behind new claims:
+  - `matchChannels` in `pkg/cv/kernels/composite.go:24-29` (F1);
+  - goja's uncatchable exception types, `runtime.go:317-346` of the module: `InterruptedError` and
+    `StackOverflowError` are exported, while their base is not, so `isGojaPanic` matches the pointer types (F9);
+  - the `stepChroma` divisor (`measurement.go:155`) and `coreRingFields` (`:140`);
+  - the measurements' `gray` option (`measurement.go:26-35`, Rec. 709 of working-space values, F15);
+  - the xgoja provider config (`pkg/xgoja/providers/cv/cv.go`: `baseDir`, `cacheBytes`, `previewLong`, `lookLong`).
+- Rewrote these blocks (§ numbers are the guide's):
+  - §4.3–4.6: receiver decides, one luminance, the larger channel count, masks read as stored, `[node, index]`
+    links, literal boxes and circles, workspace and read directories;
+  - §6.4–6.9: radii from items, the `ITEMS` warning, Image awaits, `LOOKS`, `name`, save mismatches and overwrite
+    rules, the surface table;
+  - §7.1, §7.4–7.8 and §7.11–7.14: `openLinear` and `as` folding, `OpDef.Luma`, `colormap` follows, the channel
+    table, `ThreeChannel`, moved-item check, `Region.Shape` `Pixels`/`Box`/`Disk`, the look queue rules, `Workspace`
+    with read roots and `Location`, `Lstat` and `SameFile`, temporary-name writes, the stale-source rule, `isGojaPanic`,
+    `SourceMeta.Path`→`Loc`, the 14 typed keys accounted for, the Phase 0b smoke without `--root`;
+  - §9 with a phase column and every F17 item;
+  - §10–14 and §16–17.
+- Smaller fixes in §1–3 (F19 kinds table, F24 definitions, F25 trace step 10, F29 scope).
+- Decision records:
+  - rewrote D3, D6, D7, D8, D9, D10, and D11 (now the workspace plus `--read` decision);
+  - added D15 (`gaussian` follows), D16 (receiver decides), D17 (measure radii), D18 (Image awaits), D19 (one set
+    per array), D20 (one luminance), D21 (`name`).
+- Updated `tasks.md` (Phases 0a, 0b, 0c; the review task checked) and the changelog; `docmgr doctor` passes.
+
+### Why
+- The P1s are silent wrong-value or data-loss cases at the seams of the new model. The coordinator's decisions settle
+  the open questions; recording them as decision records keeps the rationale with the evidence.
+
+### What worked
+- Writing whole sections to files and splicing them by heading kept the revision coherent; a table checker found one
+  cell broken by `|snr|`, which I escaped.
+
+### What didn't work
+- One Bash call that wrote a section through a heredoc was refused by the shell safety check ("could not be checked
+  for dangerous rm operations"); I wrote the section with the Write tool and spliced it with a small Python helper
+  (`splice.py` in the scratchpad).
+- A `python3 /dev/stdin` invocation silently did nothing (the heredoc and the argument competed for stdin); I
+  re-ran it through the helper script.
+
+### What I learned
+- On a derived, linear-encoded DoG, the old luma of codes and the new luminance coincide, so the speck views and the
+  `sheet-2x2` golden are unaffected by the one-luminance change.
+- Gold JSON uses `x, y` for a centre, while goja-cv's `x, y` is a box corner. Literal circles are therefore
+  `{ cx, cy, r }`, and the examples convert gold points explicitly.
+
+### What was tricky to build
+- **Phase numbering.** The coordinator named "Phase 0a" for the v1 bugs and wanted the Args redesign split out. To
+  keep the labels in execution order I used 0a (bugs), 0b (foundations) and 0c (Args).
+- **F36 against Q5.** The reviewer asked to drop the point shape; the coordinator wants gold points (centre and
+  radius) mixed with items. I dropped points but added a `Disk` shape for literal circles, and centres without a
+  radius are accepted only where an op takes points.
+
+### What warrants a second pair of eyes
+- The `stepChroma` gate at |snr| < 2: labelled dust has a median snr of 2.17, so about half of the labelled dust
+  would report `null` (open question 3 of §17).
+- "Saves do not follow links" refuses even links that stay inside the workspace (open question 1).
+- The `ringRadii` option name in `measure` replaces revision 1's `ring: [r1, r2]` (the coordinator's wording); the
+  typed redirect for `ringRadii` is therefore dropped as unnecessary.
+
+### What should be done in the future
+- reMarkable upload of revision 2.
+- Implementation from Phase 0a.
+
+### Code review instructions
+- Start with Appendix A, then check each "where" column against the guide.
+- `docmgr doctor --ticket GCV-004`.
+
+### Technical details
+- Disposition: 36 fixed, 1 partly (F36: no point shape, but a `Disk` for literal circles), 0 declined.
+- Estimate now: ~2,950 removed, ~900 added, net ~−2,050 (−9 %).
+- New open questions (§17):
+  1. symlinks inside the workspace when saving;
+  2. pinned versus failing stale sources;
+  3. the `stepChroma` gate threshold;
+  4. relative paths into `--read` directories.
