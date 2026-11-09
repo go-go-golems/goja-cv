@@ -28,6 +28,10 @@ RelatedFiles:
       Note: crop (Phase 3)
     - Path: repo://pkg/cv/ops/present.go
       Note: cv.compare module op, picture frame (Phase 4)
+    - Path: repo://pkg/cv/ops/tone.go
+      Note: levels auto (Phase 5)
+    - Path: repo://pkg/cv/ops/views.go
+      Note: highpass, dog, localContrast, view presets (Phase 5)
     - Path: repo://pkg/cv/text/text.go
       Note: the one bitmap font (Phase 1)
 ExternalSources: []
@@ -36,6 +40,7 @@ LastUpdated: 2026-11-09T05:54:43.150917-05:00
 WhatFor: Reviewing and continuing the GCV-002 implementation on branch task/gcv-002-inspection-views (stacked on task/gcv-001-image-model).
 WhenToUse: Before reviewing a GCV-002 commit, or when picking up GCV-003 on top of it.
 ---
+
 
 
 
@@ -299,3 +304,62 @@ side-by-side result is a picture: coordinates and crops are refused on it.
 
 ### Technical details
 - `img.sub(img.gaussian(3, { space: "encoded" }))` on the planted scan: p01 −0.0368, p99 0.0348.
+
+## Step 5: Phase 5 - high-pass views, auto stretch, presets
+
+Phase 5 builds the views the colleague measured: `highpass` and `dog` as one-node macros (so the caption says `dog` and
+the expansion's nodes are shared with any hand-written chain), `localContrast` as a kernel, `levels({ auto })` for a
+stretch taken from the image itself, and `img.view(name)` presets that combine them with their stretch. It also renames
+Gaussian widths to `sigma` and distances to `radius`, so no option is called `r`.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 1)
+
+**Assistant interpretation:** Implement guide Phase 5 with its tests: macros with node identity, encoded space by default, polarities, local contrast, levels auto, every preset renders; and the sigma/radius renames.
+
+**Inferred user intent:** One call (`img.view("speck")`) gives the view in which a speck is the 18th thing the eye meets instead of the 715th.
+
+**Commit (code):** ba667ae - "GCV-002 Phase 5: highpass, dog, localContrast, levels({ auto }), view presets; sigma/radius names"
+
+### What I did
+- `pkg/cv/ops/views.go`: `highpass`, `dog` (Expand: gaussian(s) and sub in the resolved space, then `polarity`), `localContrast` (Run, `kernels.LocalContrast`), `Presets` (name, description, expansion) and the `view` macro (`name` enum with `ValueDocs` and value synonyms, `size` static doc px, `Halo` 4·size); macros declare `Halo` so CROP_FIRST names them.
+- `speck`: `toGray("average").dog(s/3, 4s/3, bright)` then `levels({ black: 0, white: max(p99 · 5, 1e-4) })` with the white point a lifted Value (stats → .p99 → mul → max); `speckDark`, `speckColor` (no toGray); `signed` (highpass + diverging colormap); `detail` (localContrast 4s, diverging ±4); `neutral` (relative chroma, viridis 0–1); `scene` (`levels({ auto: true })`). Every step gets the view's resolved space.
+- `kernels.LocalContrast`: Gaussian mean and mean of squares, spread `sqrt(max(E[a²] − E[a]², 0))`.
+- `levels`: `black`/`white` Optional (Run uses 0/1), `auto` (`bool|number[]`, static) computing luminance percentiles of the input, `Validate` (auto with black/white; percentiles order), `Identity` false with auto, `levels({ box })` redirect.
+- Binder: unions choose their alternative by the value's shape (bool, list, object), so `bool|number[]` works; `withEnumFix` reads the suggestion from the hint robustly and writes positional enums positionally (`view("speck")`).
+- `ArgSpec.ValueDocs`: help lists each value's description; an unknown value's hint lists them after the did-you-mean.
+- Renames: `gaussian.sigma`; `feather`, `grow`, `shrink`, `refine` `radius`; synonyms `r → sigma | radius`, `radius → sigma`, `sigma → radius`, `std/stddev/sd → sigma`, `size/kernel/width → sigma | radius`, `distance → radius`. Docs and the MCP instructions follow.
+- Tests: `pkg/cv/ops/views_test.go` (macro node over the hand-written chain, encoded space by default and linear passed on, dog bright = `max(G1 − G4, 0)` node, derived, dog(4, 1) fix, CROP_FIRST names highpass; polarities on planted specks of radius ≥ 1.5; localContrast of a constant is 0 and of white noise has spread 0.85–1.15; levels auto equals levels with the crop's stats p01/p99, runs, percentiles intern apart, the three errors; every preset is a `view` macro with chain `open(…) → view(name)` and renders a crop at zoom 8 with a range of values; unknown preset hint and fix); walk samples; synonym tests for sigma/radius.
+
+### Why
+- Guide §3.7, §3.8, §7.5, §7.6, §7.11 and Phase 5.
+
+### What worked
+- The highpass macro node's last input is exactly the node of `img.sub(img.gaussian(3, { space: "encoded" }))`.
+- Visual check on the planted scan: `view("speck")` shows the bright specks and the star as bright blobs (dark specks leave faint DoG rings), `view("signed")` red and blue specks on white.
+
+### What didn't work
+- `TestLevelsAuto`: "after auto: p01 0.0135 p99 1.0000001" - I expected the stretched luminance p01 to be 0; channels clip separately, so it stays slightly above. The test now compares against `levels({ black: s.p01, white: s.p99 })` exactly and only bounds p01.
+- `TestEveryViewPresetBuildsAndRenders`: the enum fix was built by trimming the whole hint once the hint had the preset list appended (`view({ name: "speck\"? scene: …" })`); `withEnumFix` now takes the text between the first pair of quotes.
+- `make lint`: gofmt on `views.go` (struct field alignment).
+
+### What I learned
+- `levels({ auto })` uses the luminance of the input in levels' working space (linear by default), like stats' p01/p99, so `levels({ auto: true })` and `levels({ black: s.p01, white: s.p99 })` are the same image.
+
+### What was tricky to build
+- The speck stretch: "white = 5 × p99" must be a node (the view is built at intern time, before any value exists). It is a lifted Value chain inside the expansion, which keeps the view one node with one hash; `max(…, 1e-4)` keeps a flat crop (p99 0) from failing with "white must be above black".
+
+### What warrants a second pair of eyes
+- Presets run every step in the view's space (encoded by default), including `scene`'s levels (encoded-space percentiles: what a look shows); `levels` alone keeps its linear default.
+- `speck` uses σ 4·size/3 = 4 for size 3, where the colleague's helper effectively used √17 ≈ 4.12; the gated ranking test (Phase 7) checks the result on real tiles.
+
+### What should be done in the future
+- N/A
+
+### Code review instructions
+- `pkg/cv/ops/views.go`, `pkg/cv/ops/tone.go` (levels), `pkg/cv/kernels/filter.go` (`LocalContrast`), `pkg/cv/graph/args.go` (`checkUnion`, `withEnumFix`, ValueDocs in the enum error).
+- `go test ./pkg/cv/ops -run 'Highpass|DoG|LocalContrast|LevelsAuto|ViewPreset|OptionSynonyms' -v`.
+
+### Technical details
+- `explain()` of `img.view("speck")`: view → levels(black 0, white #…) → dog(1, 4, polarity "bright") → max(0) → sub → gaussian(1)/gaussian(4) → toGray("average"), plus the stats → .p99 → mul(5) → max(0.0001) chain for the white point.

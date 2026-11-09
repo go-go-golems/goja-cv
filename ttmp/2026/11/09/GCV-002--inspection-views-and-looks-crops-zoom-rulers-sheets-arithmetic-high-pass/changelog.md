@@ -24,3 +24,8 @@ Step 3 (Phase 3): crop, rulers/grid, chain captions, order warnings (commit b3db
 
 Step 4 (Phase 4): image arithmetic, reduced blend, cv.compare module op, picture frames (commit fe816fe)
 
+
+## 2026-11-09
+
+Step 5 (Phase 5): highpass, dog, localContrast, levels auto, view presets, sigma/radius renames (commit ba667ae)
+
