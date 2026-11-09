@@ -80,7 +80,7 @@ return {
 
 ## Measure spots, boxes and regions
 
-`img.measure(points)` compares a disk around each point with a ring around it (step, spread, snr, stepChroma); region items are points, so the specks' own rows come back with their coordinates. `regions.measure(img, { ring: true })` adds the same fields to every region and keeps the ids, ready for `sortBy("snr")`.
+`img.measure(points)` compares a disk around each point with a ring around it (step, spread, snr, stepChroma: null when |snr| < 1); region items are points, so the specks' own rows come back with their coordinates. `regions.measure(img, { ring: true })` adds the same fields to every region and keeps the ids, ready for `sortBy("snr")`.
 
 ```js
 const specks = img.detect.specks().sortBy("area").top(3)

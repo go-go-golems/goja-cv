@@ -110,18 +110,15 @@ type numbered interface {
 	SetNumber(n, maxBytes int)
 }
 
-// WLooks is the warning for looks an eval created but did not deliver.
-const WLooks = "LOOKS"
-
 // collect decides what an eval delivers (owner). Every look the eval
 // created is delivered, whether or not it was returned: the looks found in
 // the returned value first, then the others in creation order; equal looks
 // (the same node with equal options) once. At most MaxLooks are delivered;
 // the others are not rendered, one LOOKS warning names each by line, and a
 // returned one keeps a note in its placeholder. Data items are kept up to
-// MaxData. Looks created by a prelude are discarded (preludes have no
-// output). It numbers the delivered looks and data items and returns the
-// LOOKS warnings.
+// MaxData (DATA names the others). Looks created by a prelude are discarded
+// (preludes have no output). It numbers the delivered looks and data items
+// and returns the LOOKS and DATA warnings (the v1 texts, GCV-004 Phase 0a).
 func (s *state) collect(fromValue []resultcontent.Provider, trace cvmod.EvalTrace) ([]resultcontent.Provider, map[resultcontent.Provider]string, []string) {
 	if s.prelude.Load() {
 		return nil, nil, nil
@@ -137,7 +134,8 @@ func (s *state) collect(fromValue []resultcontent.Provider, trace cvmod.EvalTrac
 	seen := map[resultcontent.Provider]bool{}
 	byKey := map[string]*look.Look{}
 	alias := map[*look.Look]*look.Look{}
-	var notDelivered []*look.Look
+	var undelivered []*look.Look
+	var lostData []string
 	looks, data := 0, 0
 	for _, p := range cands {
 		switch x := p.(type) {
@@ -153,12 +151,13 @@ func (s *state) collect(fromValue []resultcontent.Provider, trace cvmod.EvalTrac
 			byKey[x.Key()] = x
 			if looks++; looks > s.opts.MaxLooks {
 				dropped[x] = fmt.Sprintf("more than %d looks in one eval; return fewer, or one cv.sheet of many crops", s.opts.MaxLooks)
-				notDelivered = append(notDelivered, x)
+				undelivered = append(undelivered, x)
 				continue
 			}
 		case numbered:
 			if data++; data > s.opts.MaxData {
 				dropped[p] = fmt.Sprintf("more than %d data items in one eval; return one table with every row", s.opts.MaxData)
+				lostData = append(lostData, strconv.Quote(strings.TrimPrefix(resultcontent.Describe(p), "data ")))
 				continue
 			}
 		}
@@ -180,19 +179,35 @@ func (s *state) collect(fromValue []resultcontent.Provider, trace cvmod.EvalTrac
 		}
 	}
 	var warnings []string
-	if len(notDelivered) > 0 {
-		names := make([]string, len(notDelivered))
-		for i, l := range notDelivered {
+	if len(undelivered) > 0 {
+		names := make([]string, len(undelivered))
+		for i, l := range undelivered {
 			names[i] = s.lookName(l, sites[l])
 		}
-		warnings = append(warnings, s.lineTag(WLooks, sites[notDelivered[0]])+fmt.Sprintf("%d of %d looks delivered; not delivered: %s. Return one cv.sheet of the crops, or look in two evals.",
-			s.opts.MaxLooks, looks, strings.Join(names, ", ")))
+		warnings = append(warnings, s.lineTag(graph.WLooks, sites[undelivered[0]])+fmt.Sprintf("%d %s not delivered (at most %d per eval): %s. Split the work over several calls, or return fewer looks (one cv.sheet of many crops).",
+			len(undelivered), plural(len(undelivered), "look was", "looks were"), s.opts.MaxLooks, strings.Join(names, ", ")))
+	}
+	if len(lostData) > 0 {
+		warnings = append(warnings, fmt.Sprintf("%s: %d %s not delivered (at most %d per eval): %s. Split the work over several calls, or return fewer data items (one table with every row).",
+			graph.WData, len(lostData), plural(len(lostData), "data item was", "data items were"), s.opts.MaxData, strings.Join(lostData, ", ")))
 	}
 	for _, q := range trace.Late {
 		warnings = append(warnings, fmt.Sprintf("%s: %s was created after the previous eval had returned (in a callback that ran later) and was not delivered. Await what it needs inside the eval.",
-			WLooks, lookCall(q.Look)))
+			graph.WLooks, lookCall(q.Look)))
 	}
 	return out, dropped, warnings
+}
+
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
+}
+
+// notDelivered is the placeholder of a look left out by the budget.
+func notDelivered(l *look.Look, why string) string {
+	return "[not delivered: " + strings.TrimSuffix(strings.TrimPrefix(l.String(), "["), "]") + " — " + why + "]"
 }
 
 // lookName names a look in a warning: "line 7 look("b")".

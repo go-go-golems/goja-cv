@@ -299,3 +299,20 @@ func TestMCPDataContent(t *testing.T) {
 		t.Fatalf("300 KiB item:\n%.600s", text)
 	}
 }
+
+// TestMCPLooksBeyondTheBudgetWarn: an eval that makes more looks than
+// MaxLooks delivers four images and a LOOKS warning naming the others
+// (returned looks come first, then the shown ones).
+func TestMCPLooksBeyondTheBudgetWarn(t *testing.T) {
+	img := planted(t)
+	cs := connect(t, cvsession.Options{Image: img, BaseDir: filepath.Dir(img)})
+	text, images, isErr := callEval(t, cs, `img.toGray().look("first"); return ["a", "b", "c", "d", "e"].map((l, i) => img.exposure(i / 10).look(l))`)
+	if isErr || len(images) != 4 {
+		t.Fatalf("error %v, %d images:\n%s", isErr, len(images), text)
+	}
+	for _, s := range []string{`LOOKS line 1: 2 looks were not delivered (at most 4 per eval): line 1 look("e"), line 1 look("first"). Split the work over several calls, or return fewer looks`, "[not delivered: look: e"} {
+		if !strings.Contains(text, s) {
+			t.Fatalf("result lacks %q:\n%s", s, text)
+		}
+	}
+}

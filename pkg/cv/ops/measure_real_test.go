@@ -137,7 +137,9 @@ func TestRealHotListMeasures(t *testing.T) {
 			for _, r := range rv.Items {
 				if near(r, p, 4) {
 					dustSNR = append(dustSNR, r.Measures["snr"])
-					dustChroma = append(dustChroma, r.Measures["stepChroma"])
+					if c := r.Measures["stepChroma"]; !math.IsNaN(c) { // null below |snr| 1
+						dustChroma = append(dustChroma, c)
+					}
 					break
 				}
 			}
@@ -152,7 +154,9 @@ func TestRealHotListMeasures(t *testing.T) {
 			}
 			if !labelled {
 				otherSNR = append(otherSNR, r.Measures["snr"])
-				otherChroma = append(otherChroma, r.Measures["stepChroma"])
+				if c := r.Measures["stepChroma"]; !math.IsNaN(c) { // null below |snr| 1
+					otherChroma = append(otherChroma, c)
+				}
 			}
 		}
 	}

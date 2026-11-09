@@ -151,7 +151,7 @@ func coreRingFields(channels string) []graph.FieldSpec {
 			f.Optional = opt
 			fs = append(fs, f)
 		}
-		f := numField("stepChroma", graph.Unitless, "(max − min of the channel steps) / max(|step|, 1e-3): 0 for a neutral spot (dust), larger for coloured ones")
+		f := numField("stepChroma", graph.Unitless, "(max − min of the channel steps) / |step|: 0 for a neutral spot (dust), larger for coloured ones; null when |snr| < 1 (the step is within the ring's spread, so its colour cannot be attributed)")
 		f.Optional = opt
 		fs = append(fs, f)
 	}
@@ -291,9 +291,17 @@ func coreRingRow(row map[string]any, prefix string, r kernels.CoreRing, channels
 		for c, n := range channelNames(len(r.ChanSteps)) {
 			row[name("step"+n)] = r.ChanSteps[c]
 		}
-		row[name("stepChroma")] = r.StepChroma
+		row[name("stepChroma")] = nullable(r.StepChroma)
 	}
 	row[name("ringCoverage")] = r.RingCoverage
+}
+
+// nullable is x, or nil (JavaScript null) for NaN.
+func nullable(x float64) any {
+	if math.IsNaN(x) {
+		return nil
+	}
+	return x
 }
 
 // prefixed is prefix + Name in camelCase ("dog", "maxL" → "dogMaxL").
@@ -467,7 +475,7 @@ func measurementOps() []graph.OpDef {
 			Run:    runMeasure,
 			Doc: "How much each point stands out from its surroundings: one row per point { cx, cy, coreMean, ringMean, step, spread, snr, stepR, stepG, stepB, stepChroma, ringCoverage }, " +
 				"comparing the core disk (coreRadius) with the ring (ringRadii) on the gray plane, linear by default. step > 0 is brighter; snr = step / ring spread (p90 − p10); " +
-				"stepChroma ≈ 0 for a neutral (grey) spot such as dust. The helper mem.probe(x, y, r) is img.measure([[x + 0.5, y + 0.5]], { coreRadius: r + 0.5, ringRadii: [r + 3.5, r + 9.5], gray: \"average\" }).",
+				"stepChroma ≈ 0 for a neutral (grey) spot such as dust, null when |snr| < 1 (a step within the ring's spread has no attributable colour). The helper mem.probe(x, y, r) is img.measure([[x + 0.5, y + 0.5]], { coreRadius: r + 0.5, ringRadii: [r + 3.5, r + 9.5], gray: \"average\" }).",
 			See: []string{"sample", "profile", "Regions.measure"},
 		},
 		{

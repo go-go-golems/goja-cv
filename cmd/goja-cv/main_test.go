@@ -45,6 +45,28 @@ func TestEvalWritesLookFiles(t *testing.T) {
 	}
 }
 
+// TestEvalWarnsAboutLooksBeyondTheBudget: looks beyond the four of an eval
+// are not written and the LOOKS warning names them.
+func TestEvalWarnsAboutLooksBeyondTheBudget(t *testing.T) {
+	dir := t.TempDir()
+	code, out, errOut := runCLI(t, "eval", "--image", tiffPath, "--out", dir, "-e",
+		`for (const i of [1, 2, 3, 4, 5, 6]) img.exposure(i / 10).look("s" + i); return 1`)
+	if code != exitOK {
+		t.Fatalf("exit %d\n%s\n%s", code, out, errOut)
+	}
+	for _, s := range []string{"warnings:", `LOOKS line 1: 2 looks were not delivered (at most 4 per eval): line 1 look("s5"), line 1 look("s6"). Split the work over several calls, or return fewer looks`} {
+		if !strings.Contains(out, s) {
+			t.Fatalf("output lacks %q:\n%s", s, out)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, "look-4-s4.png")); err != nil {
+		t.Fatalf("fourth look not written: %v", err)
+	}
+	if m, _ := filepath.Glob(filepath.Join(dir, "*s5*")); len(m) > 0 {
+		t.Fatalf("a dropped look was written: %v", m)
+	}
+}
+
 func TestRunScriptJSONAndExitCodes(t *testing.T) {
 	dir := t.TempDir()
 	script := filepath.Join(dir, "a.js")

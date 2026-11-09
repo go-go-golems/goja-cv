@@ -498,7 +498,7 @@ func TestLookQueue(t *testing.T) {
 	if c := captions(resp); len(c) != 4 || !strings.HasPrefix(c[0], "look 5: 6") {
 		t.Fatalf("budget: %q\n%s", c, out)
 	}
-	mustContain(t, out, `LOOKS line 4: 4 of 6 looks delivered; not delivered: line 4 look("4"), line 5 look("5"). Return one cv.sheet of the crops, or look in two evals.`)
+	mustContain(t, out, `LOOKS line 4: 2 looks were not delivered (at most 4 per eval): line 4 look("4"), line 5 look("5"). Split the work over several calls, or return fewer looks (one cv.sheet of many crops).`)
 	// a look created after the eval returned is not delivered; the next eval names it
 	resp = eval(t, app, sid, "const f = () => img.look(\"late\")\nimg.gaussian(20).stats().then(f, f)   // runs after the eval returned\nreturn 1")
 	if len(resp.Content) != 0 {

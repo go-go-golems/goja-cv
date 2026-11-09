@@ -53,7 +53,7 @@ To keep a speck that is real detail, drop it by id before healing: `img.heal(mem
 
 ## Measure a spot, a box or regions
 
-`img.measure(points)` says how much each point stands out from a ring around it (step, spread, snr, stepChroma); `img.sample(points)` reads values; `img.stats({ box })` or `{ mask }` measures inside an area (plus `area`, `coverage`). Region items are points and boxes. Details: `cv.docs.read("measuring")`.
+`img.measure(points)` says how much each point stands out from a ring around it (step, spread, snr, stepChroma: null when |snr| < 1); `img.sample(points)` reads values; `img.stats({ box })` or `{ mask }` measures inside an area (plus `area`, `coverage`). Region items are points and boxes. Details: `cv.docs.read("measuring")`.
 
 ```js
 const top = (await img.detect.specks().sortBy("area").top(2)).items

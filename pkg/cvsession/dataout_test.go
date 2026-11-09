@@ -90,10 +90,20 @@ return { s: [s.format, s.rows, s.path.endsWith("t/specks.csv")].join(" "), j: j.
 	// five looks and five data items: the fifth of each is not delivered
 	resp := eval(t, app, sid, `return [1, 2, 3, 4, 5].map(i => img.exposure(i / 10).look("l" + i)).concat([1, 2, 3, 4, 5].map(i => cv.json({ i }, { name: "d" + i })))`)
 	out = mustOK(t, resp)
-	mustContain(t, out, "[not delivered: look: l5", "more than 4 looks in one eval", "[not delivered: data d5.json", "more than 4 data items")
+	mustContain(t, out, "[not delivered: look: l5", "more than 4 looks in one eval", "[not delivered: data d5.json", "more than 4 data items",
+		`LOOKS line 1: 1 look was not delivered (at most 4 per eval): line 1 look("l5"). Split the work over several calls, or return fewer looks`,
+		`DATA: 1 data item was not delivered (at most 4 per eval): "d5.json (1 keys)". Split the work over several calls, or return fewer data items`)
 	if len(resp.Content) != 8 {
 		t.Fatalf("%d content items, want 8", len(resp.Content))
 	}
+	// unreturned looks beyond the budget: named in LOOKS by line, also when the eval throws
+	out = mustOK(t, eval(t, app, sid, `for (const i of [1, 2, 3, 4, 5, 6]) img.exposure(i / 10).look("s" + i); return 1`))
+	mustContain(t, out, `LOOKS line 1: 2 looks were not delivered (at most 4 per eval): line 1 look("s5"), line 1 look("s6"). Split the work over several calls, or return fewer looks`)
+	mustNotContain(t, out, "DATA:")
+	out = text(eval(t, app, sid, `for (const i of [1, 2, 3, 4, 5]) img.exposure(i / 10).look("t" + i); throw new Error("boom")`))
+	mustContain(t, out, "boom", `LOOKS line 1: 1 look was not delivered (at most 4 per eval): line 1 look("t5")`)
+	// within the budget: no warning
+	mustNotContain(t, mustOK(t, eval(t, app, sid, `return [1, 2, 3, 4].map(i => img.exposure(i / 10).look("ok" + i))`)), "LOOKS", "not delivered")
 	// over the byte limit: a note to save it
 	resp = eval(t, app, sid, `return cv.csv(img.measure(Array.from({ length: 200 }, (_, i) => [i + 0.5, 50.5])), { name: "big" })`)
 	mustOK(t, resp)
