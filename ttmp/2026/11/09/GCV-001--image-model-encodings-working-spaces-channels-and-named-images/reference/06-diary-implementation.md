@@ -252,3 +252,63 @@ were checked with the §13.3 tolerance rule and regenerated in the same commit.
 
 ### Technical details
 - Tolerance run (before `-update`), largest difference / differing samples: exposure 1/1, gaussian 1/2, toGray 1/3, compare-side 1/1, compare-split 1/1, contrast 0/0, compare-diff 0/0, levels-stats 48/97 %, levels-gamma 34/99.9 %, mask-luminance 74/13 %, mask-overlay 48/57 %, specks-overlay 72/3 %, histogram 215/0.006 %.
+
+## Step 5: Phase 4 - decoders and opening
+
+Phase 4 replaces the stdlib-based decode (which always applied the sRGB curve) with a decoder registry that returns
+encoded values and reports each file's encoding, and gives `cv.open` its `encoding`, `box` and `origin` options. The
+TIFF reader is goja-cv's own, so float TIFFs, LZW/Deflate/PackBits with predictor, VueScan's LinearRaw DNG (top-level
+or in SubIFDs) and windowed reads share one code path.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 1)
+
+**Assistant interpretation:** Implement Phase 4: fixture writers, decoder tests (fixture vs generating buffer, probes, windows, metadata, fuzz), the registry and four decoders, the open options and the new source metadata.
+
+**Inferred user intent:** Let the colleague open density tiles stored as v, float data, `.npy` caches and DNG windows directly, in scan coordinates.
+
+**Commit (code):** c99e453 - "GCV-001 Phase 4: decoder registry, own TIFF/DNG parser, NPY; cv.open encoding, box, origin"
+
+### What I did
+- `pkg/cv/buffer/decode.go`: `Info` (format, size, channels, bits, sample, encoding, origin, notes), `DecodeOptions{Box}`, `Decoder`, `Register`, `ProbeFile`, `DecodeFile`, `FormatError` (→ `E_FORMAT`), `Linearize` (exact 8/16-bit tables for integer codes), goja-cv metadata (`FormatMetadata`, parsing).
+- `decode_std.go` (png with a chunk scan for IHDR/gAMA/sRGB/tEXt; jpeg), `decode_tiff.go` (IFD walk incl. SubIFDs, image selection preferring LinearRaw, all §7.3 tags, strip decompression in parallel with errgroup, row-segment reads for uncompressed windows), `decode_npy.go`.
+- Removed `Decode`, the old `DecodeFile` and `DecodeConfigFile`; `EncodeTIFF16` and friends remain (GCV-003 replaces the writers).
+- Graph: `E_FORMAT`; `SourceKey{Path, Stamp, Box, Enc}`; `Engine.Open(path, raw)` probes and passes hidden `w, h, format, bits, channels, sample, fileEncoding, recordedOrigin, notes`; `SourceInfo` reports `encoding`, `sample`, `frame`, `notes`; `cv.open` is the call name in binder errors.
+- `open` op: `encoding` (enum), `box` (box, static), `origin` (point, static) with `Validate` (box and origin together, whole pixels, box inside the file with the nearest valid box as fix), `DocFrame` (`openFrame`), `Result` from the option or the file. Binding/prelude/session wrapper pass the options object.
+- `internal/testimage/fixtures.go`: TIFF writer (8/16/32-bit, none/LZW/Deflate/PackBits, predictor, big-endian, description), a TIFF-LZW encoder (early change) with a round-trip test against `x/image/tiff/lzw`, minimal DNG (thumbnail IFD0 + LinearRaw SubIFD, optional black/white levels or CFA), NPY writer.
+- `pkg/cv/buffer/decoders_test.go` (package `buffer_test`): 16 fixtures from the planted scan within one code of their format (exact for floats), probes equal decode info, windows equal the cut full decode, one-channel fixtures, ImageDescription/tEXt/gAMA metadata, E_FORMAT cases, exact tables in `Linearize`, `FuzzTIFFProbe`, `FuzzNPYProbe`.
+- `pkg/cv/ops/open_test.go`: encodings from the file and from the call, DNG windows in file coordinates, origins (declared, recorded, overridden, window of a window), and the open errors.
+- Help redirects, the 02-units doc line and the README say `encoding` instead of `colorSpace`.
+
+### Why
+- Guide §7.3, §7.4, §9.1 and Phase 4.
+
+### What worked
+- All decoder and open tests passed on their first run. Fuzzing: `go test ./pkg/cv/buffer -run XXX -fuzz FuzzTIFFProbe -fuzztime 45s` (47771 execs) and `FuzzNPYProbe -fuzztime 30s` (109945 execs), no crash.
+- Real data, before the gated tests of Phase 7: the tile `1d955ef4b27d3d88_1536_1536.tif` opens as `srgb` with full-scale stats meanL 0.33567, p01 0.0085384, p99 0.91793 (the guide's numbers); `raw0027.dng` with `box: [1536, 1536, 1024, 1024]` opens as `dng`, `linear`, frame `[1536, 1536, 1024, 1024]`, notes `camera RGB primaries (DNG)`; the whole eval took 0.34 s.
+
+### What didn't work
+- `make lint` after the first green test run: gofmt on two files, `QF1001` (De Morgan) in the PackBits writer and `QF1002` (tagged switch) in the NPY reader.
+- A TIFF-LZW detail I had wrong at first: the width switch. Deriving it from `x/image/tiff/lzw` (`if d.hi+1 >= d.overflow`) shows the encoder must widen when its next free code reaches `1<<width`; the round-trip test over 0-300000 random bytes now passes.
+
+### What I learned
+- The PNG stdlib decoder verifies the CRC of every chunk, so test PNGs with inserted chunks need real CRCs.
+
+### What was tricky to build
+- Allocation safety: a fuzzed header can declare a huge image. The decoders now check that strips (×4096 for compressed data) or the `.npy` file can hold the declared data before allocating the output buffer.
+- DNG levels: values after BlackLevel/WhiteLevel are not `code/max`, so `Linearize` must not round them back to codes; `Info.scaled` marks that.
+
+### What warrants a second pair of eyes
+- `parseTIFF`'s image choice (first NewSubfileType-0 IFD, LinearRaw/CFA preferred) on unusual multi-page TIFFs.
+- `openFrame` for `box` on a file with a recorded origin (deviation 9).
+
+### What should be done in the future
+- GCV-003's writers should write the `goja-cv` metadata these decoders read (ImageDescription, PNG tEXt and gAMA).
+
+### Code review instructions
+- `pkg/cv/buffer/decode.go`, `decode_tiff.go`, `decode_npy.go`, `decode_std.go`; `pkg/cv/ops/source.go`; `pkg/cv/graph/engine.go` (`Open`), `sources.go`.
+- `go test ./pkg/cv/buffer ./pkg/cv/ops ./internal/testimage -count=1`; fuzz as above.
+
+### Technical details
+- Supported (also `buffer.SupportedFormats`): PNG 8/16-bit, JPEG, TIFF 8/16-bit integer or 32-bit float (none, LZW, Deflate, PackBits; predictor 2 on integers), LinearRaw DNG, NumPy `.npy` (`|u1 <u2 >u2 <f4 >f4 <f8 >f8`, (H, W), (H, W, 1), (H, W, 3)).

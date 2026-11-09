@@ -12,9 +12,9 @@
 - [x] Phase 3: SpaceRule, Result func, Gray, Internal; Register appends static space option and checks Run xor Expand; Intern resolves space, inserts toGray/convert; internNode computes Enc/Space/Frame; placeholder copies statics; Level unit and warnings <!-- t:urz2 -->
 - [x] Phase 3: port kernels (Levels, Contrast, ColorMask, FloodMask, Histogram, DetectSpecks MeanL, parseColor); delete PerceptualLuminance; enable guard test <!-- t:50sk -->
 - [x] Phase 3: look.Render via convert(->encoded) + Quantize; WriteFile writes encoded values; delete ToImage; regenerate goldens (only levels and mask looks may differ) <!-- t:55lv -->
-- [ ] Phase 4: internal/testimage writers (linear TIFF16, float32 TIFF, LZW+predictor TIFF, npy f4/u2, minimal LinearRaw DNG with SubIFD) <!-- t:mbgj -->
-- [ ] Phase 4: decoder tests (fixture vs generating float within one code, Probe, Box, ImageDescription and PNG tEXt/gAMA -> Info.Encoding/Origin, FuzzTIFFProbe, FuzzNPYProbe) <!-- t:mb5z -->
-- [ ] Phase 4: decoder registry; png (chunk scan), jpeg, tiff (own IFD parser, LZW/Deflate/PackBits, predictor, SubIFDs, windows), npy; delete Decode/DecodeFile/DecodeConfigFile; open args encoding, box, origin; SourceInfo encoding/sample/frame/notes <!-- t:fgoz -->
+- [x] Phase 4: internal/testimage writers (linear TIFF16, float32 TIFF, LZW+predictor TIFF, npy f4/u2, minimal LinearRaw DNG with SubIFD) <!-- t:mbgj -->
+- [x] Phase 4: decoder tests (fixture vs generating float within one code, Probe, Box, ImageDescription and PNG tEXt/gAMA -> Info.Encoding/Origin, FuzzTIFFProbe, FuzzNPYProbe) <!-- t:mb5z -->
+- [x] Phase 4: decoder registry; png (chunk scan), jpeg, tiff (own IFD parser, LZW/Deflate/PackBits, predictor, SubIFDs, windows), npy; delete Decode/DecodeFile/DecodeConfigFile; open args encoding, box, origin; SourceInfo encoding/sample/frame/notes <!-- t:fgoz -->
 - [ ] Phase 5: macros (Expand, Expander, macro node for one-node results, CallResult, array return in binding/prelude) with tests <!-- t:pqq3 -->
 - [ ] Phase 5: channel ops channel, split, toLab (+PRIMARIES warning), chroma, colormap (kernels/colormap.go), encode; remove toGray rec601 <!-- t:hadh -->
 - [ ] Phase 6: named images (session name table, init.js wrapper with as and synonyms, E_NAME, unnamed opens in context block, MCP open encoding/as, bare module rejects as) <!-- t:lvq2 -->

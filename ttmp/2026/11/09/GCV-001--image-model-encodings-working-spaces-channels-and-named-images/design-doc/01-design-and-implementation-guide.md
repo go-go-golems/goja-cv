@@ -1599,3 +1599,14 @@ Recorded while implementing on branch `task/gcv-001-image-model` (details and re
    lists it under `args` and as `space: "<default> (default; …)"`, and unknown-option errors list it as valid.
 8. **Enum errors carry a literal fix** `op({ name: "value" })`: `mask.gradient.from` is now checked by the binder (type
    `point|enum:top,bottom,left,right`) before the op's own validation could add its fix.
+9. **`box` on a file with a recorded origin** (§7.4): the frame origin is the recorded origin plus the box corner (a
+   window of a window keeps the scan's coordinates); without a recorded origin it is the box corner, as written.
+10. **Decoder extras**: the TIFF reader also accepts big-endian files, `SampleFormat` 3 with LZW/Deflate (no float
+    predictor), one-channel LinearRaw, and two/four samples per pixel with the extra sample dropped; the NPY reader
+    also accepts `>f8`. Before allocating, both check that the file can hold the declared data (a malformed header
+    cannot ask for gigabytes). `Info` keeps an unexported `scaled` flag so that `Linearize` uses the exact integer
+    tables only for plain codes (not after DNG black/white levels).
+11. **Source store key**: `SourceStore.Load(ctx, SourceKey{Path, Stamp, Box, Enc})`, so a window and an encoding
+    override are separate sources (§9.1 sketches `Load(abs, stamp, box)`).
+12. **Enum fix for `cv.open`**: `cv.open(path, { encoding: "srgb" })` (the first valid value or the did-you-mean
+    suggestion), following deviation 8.
