@@ -2803,3 +2803,22 @@ order found; the phase is in brackets.
     patch landed then. Only `sheet-2x2` moved (on `main`); `ruler-crop-zoom8` and `grid-gray-crop-zoom4` did not.
     The merged `LOOKS` warning uses the v1 code and wording with Phase 2's line-tagged names (deviation 16 is
     superseded); the v1 `DATA` warning stays until Phase 6 deletes the data items.
+19. [3] `Builder.as` has a third fold besides §7.4's two: `as(openLinear(…), encoded)` is the encoded `open(…)` node.
+    Without it `img.sub(lin)` with `lin = img.as("linear")` (the argument converted back to the receiver's space)
+    and `img.as("linear").as("encoded")` would hold a second encoded copy of the source. The folds also run in
+    `Substitute`, so a lambda's graph equals the hand-written chain.
+20. [3] The one luminance is `OpDef.Luma` plus two refinements: `LumaOf` names the argument whose luminance is read
+    when it is not the receiver (`refine` reads its `guide`, `measure` its `image`), and `LumaWhen` adds the input
+    only when it is used (`levels` with `auto`, `histogram` with channel `L`), so plain `levels` and per-channel
+    histograms keep their hash and their goldens. `toGray`'s rule is `SpaceOf`: Physical for `rec709`, Follows for
+    `average`.
+21. [3] `exposure`'s RANGE hint is carried by a new `ArgSpec.UsualHint` (appended to the RANGE message); the same
+    text ends `exposure`'s doc.
+22. [3] `cv.explain` lists the inserted `as` nodes and shows `openLinear` as `source <file> (linear)`; captions,
+    `path` and the caption chain hide both (`open(f) → exposure(0.5)`).
+23. [3] Test changes forced by the receiver rule: `a.sub(b).add(b) == a` became `b.add(a.sub(b))` (a derived
+    receiver works in linear, §7.4); the "blurred scan is clean" check of `check.dust` blurs in linear light
+    (`img.as("linear").gaussian(6).as("encoded")`: an encoded blur of σ 6 leaves one 191 px candidate); the hot-list
+    test and benchmark build on `img.as("linear")` and the `GOJACV_HOT_SPACE` / `GOJACV_VIEW_SPACE` experiment
+    switches are gone with the option. Session numbers in tests and `03-cli.md` moved to file units (gradient meanL
+    0.29507 → 0.52726, p99 0.83255 → 0.92244).

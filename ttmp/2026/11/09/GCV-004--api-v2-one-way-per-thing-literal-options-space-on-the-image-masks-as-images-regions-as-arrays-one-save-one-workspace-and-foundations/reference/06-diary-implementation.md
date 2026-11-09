@@ -650,3 +650,140 @@ move in separate commits and batch 2 starts from the merged state.
 Goldens moved by the merge (from `main`, not regenerated here): `sheet-2x2.png` (4752 → 4743 bytes: the badge no
 longer covers cell 0's label). `ruler-crop-zoom8.png` and `grid-gray-crop-zoom4.png` did not move (the v1 ruler fix
 changed no existing golden).
+
+## Step 6: Phase 3 — space on the image
+
+Phase 3 moves the space from the op to the image. `cv.open` returns file units (`space: "encoded"`), `img.as("linear")`
+gives light, and an op works in its receiver's space and returns it. Physical ops (`exposure`, `heal`, `inpaint`,
+`toLab`, `encode`, `toGray("rec709")`) compute in linear light inside a bracket the builder closes with `as`, and the
+pictures (`overlay`, `annotate`, `compare`, `sheet`) draw encoded. Every luminance read (`stats`, `histogram` L,
+`mask.luminance`, `refine`, `detect.specks`, `check.dust`, `levels({ auto })`, the measurements' gray plane) is one
+`toGray()` input of the node. The `{ space }` option and its machinery are gone.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 1)
+
+**Assistant interpretation:** Guide §13 Phase 3: tests first (§14 Phase 3 list), then the `SpaceRule` enum and the
+resolution of §7.4, the encoded source and `openLinear`, `as` with folding, brackets, `OpDef.Luma`, `colormap`
+following, views; regenerate exactly the four named goldens; docs 10, 11, 12, recipes and the op docs.
+
+**Inferred user intent:** Numbers measured on an image are thresholds for ops on that image; no op silently changes
+the scale of its result; nothing extra is copied on a 0.6 GB scan.
+
+**Commit (code):** `ae53037` — "GCV-004 Phase 3: space on the image"
+
+### What I did
+
+- `pkg/cv/graph`: `SpaceRule` (`Follows`, `Physical`, `Display`) with `OpDef.SpaceOf` for `toGray`; `workSpace`;
+  `Builder.as` with three folds (identity; `as(as(x, s1), s0) = x`; `as(open, linear) = openLinear`;
+  `as(openLinear, encoded) = open`); `resolveSpace` adds the luminance input and converts image inputs to the work
+  space; `closeBracket` after `internNode`; `Substitute` folds `as` like the builder. `OpDef.Gray`, the space option,
+  `SpaceArg`, `SpaceValueSynonyms`, `Default`/`Fixed`/`For`, `presetSpace` and the `workingSpace` option synonyms are
+  deleted. `Args.Luma()` reads the luminance input. `Shown`, `Label`, `Chain`, `Path` hide inserted `as`;
+  `cv.explain` lists them.
+- `pkg/cv/ops`: `open`'s `Run` converts the pyramid level to encoded; internal `openLinear` returns the level; public
+  `as` (positional `linear|encoded`, `Identity` when the conversion is one); `Space` rules mapped (Display for the
+  four pictures, Physical for exposure/heal/inpaint/toLab/encode, the rest follow); the speck and speckColor presets
+  start with `as("linear")`, the other presets and `highpass`/`dog` follow; `stats`, `histogram`, masks, `detect`,
+  `sample`/`measure`/`profile`, `regions.measure` read `a.Luma()`; `exposure`'s doc and RANGE hint name
+  `levels({ auto: true })` and `mul(2 ** ev)` (new `ArgSpec.UsualHint`).
+- `pkg/cv/kernels`: `Stats`, `StatsWeighted`, `SamplePoints` and the probe take the luminance plane explicitly
+  (`luminance()` accepts a one-channel buffer without one, and refuses a three-channel buffer without one); the
+  `GrayPlane` enum is gone.
+- Tests: `space_test.go` rewritten for the §14 Phase 3 list (`TestOpenIsEncodedAndAsConverts`, `TestPhysicalBracket`
+  with run counter and cache bytes, `TestReceiverDecides`, `TestOutputSpaceFollowsTheReceiver`, `TestOneLuminance`,
+  `TestColormapRangeOnItsReceiver`, `TestEncodingWarnings`, `{ space }` → `E_UNKNOWN_OPTION`); ops, cvsession,
+  gojamod and cmd tests updated for file units (see deviation 23).
+- Docs: `10-encodings-and-spaces` rewritten (the space of an image, `as`, the receiver decides, physical ops and
+  pictures, one luminance, `ENCODING`'s fix); `11-views`, `12-measuring`, `02-units-and-scales`, `09-recipes`,
+  `04-lambdas`, `05-masks-and-regions`, `03-nodes-and-evaluation`; `pkg/doc` 01, 02, 03, 08; help `space`; the MCP
+  instructions line (shortened to stay under the 4000-character cap); every op and argument doc that said "working space
+  (… by default)".
+- Guide deviations 19–23.
+
+### Why
+
+- Guide §4.2, §6.2, §7.4, D2, D3, D15, D16, D20.
+
+### What worked
+
+- The gate: `gofmt=0 build=0 vet=0 test=0 lint=0 logcopter=0 smoke=0 gate=0`.
+- The golden check before `-update` failed on exactly the four named looks and nothing else; `sheet-2x2` (the speck
+  views) stayed exact.
+- Real data (`05-real-data.sh`) identical to the post-merge numbers (below): the speck view and the hot list compute
+  in linear light as before.
+
+### What didn't work
+
+- `go test ./pkg/cv/ops`: `pkg/cv/ops/measure_real_test.go:250:61: not enough arguments in call to
+  kernels.StatsWeighted` (the kernels take the luminance plane now); the benchmark then panicked with `index out of
+  range [393474] with length 0` in `ProbePoint` (no gray plane) until `hotPoints` computed one.
+- `TestOneNodeMacro` panicked: `cv: op testview has no arg "space"` (a test macro that forwarded the option).
+- `TestPart2Section3NodesAndEvaluation`: explain had four lines, not three: `#4 as(to: "encoded")` closes the exposure
+  bracket and the source is `source gradient-64x48-16bit.tif (linear)`.
+- The first `10-encodings-and-spaces` draft showed `img.mask.luminance(…).stats()` (masks get `stats` in Phase 4) and
+  `img.blend(ref)` of an srgb and a linear file, which warns `ENCODING`: the block now blends `img.as("linear")`.
+- I had first made `speckDark` linear too; the guide (§6.2, §7.4 "Views") names only `speck` and `speckColor`, so
+  `speckDark` follows its receiver as before.
+
+### What I learned
+
+- The post-merge real-data numbers differ from Step 1's baseline in the `stepChroma` quartiles only (labelled dust
+  0.00–0.62 → 0.00–0.45, unlabelled median 0.64 → 0.00): that is the v1 `stepChroma` rule from the merge (checked on
+  a worktree at `37f451f`), not Phase 3.
+- A cache entry carries 64 bytes of overhead beyond its pixels, so the "no extra buffer" test bounds the bytes
+  between three and four buffers instead of comparing exactly.
+
+### What was tricky to build
+
+- Folding in two places. The builder interns `as` through `b.as`, but lambdas rebuild their graph with `Substitute`,
+  which first produced `as(as(…))` chains a hand-written call never has (`TestLambdasResolveLikeDirectCalls`). Both
+  paths now go through the same `b.as`.
+- The fourth fold (`as(openLinear, encoded) = open`) is what makes `img.sub(img.as("linear"))` read the opened node
+  twice instead of an encoded copy of the pyramid.
+- `LumaWhen`: adding a luminance input to every `levels` and `histogram` would change their hash and hold a gray
+  plane nobody reads; the input is added only for `auto` and for channel `L`.
+
+### What warrants a second pair of eyes
+
+- `pkg/cv/graph/space.go` (`resolveSpace`, `as`, `closeBracket`) and its call sites in `node.go` (`call`,
+  `intern`, `Substitute`).
+- The rule table in the ops (`Space:` fields): every op that is not listed follows.
+- `kernels.luminance` refusing a three-channel buffer without a plane: any new kernel caller must pass `Args.Luma()`.
+
+### What should be done in the future
+
+- Batch 2 (Phase 5) re-tunes the hot-list and view-ranking thresholds on the current gold labels; the tests already
+  build on `img.as("linear")`.
+
+### Code review instructions
+
+- Start with `pkg/cv/graph/space.go`, then `registry.go` (`SpaceRule`, `Luma*`), `node.go`, `explain.go`,
+  `pkg/cv/ops/source.go` and `space.go`, `views.go`, then `pkg/cv/graph/space_test.go`.
+- Validate: `scripts/04-gate.sh` (`gate=0`); `scripts/05-real-data.sh`; `go test ./pkg/cv/look -run Golden`.
+
+### Technical details
+
+Goldens moved (regenerated after the check failed on exactly these):
+
+| golden | bytes | why |
+|---|---|---|
+| `gaussian.png` | 19875 → 20175 | `img.gaussian(2)` blurs file units (it blurred light) |
+| `levels-gamma.png` | 48857 → 48250 | `levels({ black: 0.02, white: 0.6, gamma: 1.4 })` maps file units |
+| `levels-stats.png` | 60806 → 58589 | `levels` from `stats()` p01/p99, both in file units |
+| `profile-chart.png` | 2830 → 2982 | the profile's values are file units |
+
+Real data (`05-real-data.sh`), identical to the state after the merge:
+
+```
+hot list: 15 tiles, 884 regions (58.9 per tile), 197 gold points: 43.7 % within 4 px of a top-30 spot (by snr), 48.2 % of any spot
+labelled dust (94 matched): snr median 4.87 (middle half 2.21–7.84), stepChroma median 0.00 (0.00–0.45)
+unlabelled spots (772): snr median 0.53 (middle half 0.29–1.06), stepChroma median 0.00 (0.00–0.26)
+tile stats: meanL 0.13604 p01 0.00066 p99 0.84013   (now of img.as("linear"))
+speck view: 197 points on 15 tiles, median rank 75, top50 39.6 %
+77 specks, first at raw (1765.5, 2404.3)
+```
+
+`git diff --stat 37f451f ae53037 -- pkg cmd internal Makefile`: 75 files changed, 1005 insertions(+), 836
+deletions(-).
