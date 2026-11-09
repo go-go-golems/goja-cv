@@ -43,5 +43,21 @@ func sourceOps() []graph.OpDef {
 			},
 			Doc: "A named value a person can move (declare with P.slider / P.toggle / P.choice).",
 		},
+		{
+			Name: graph.PlaceholderOp, On: graph.KindNone, Returns: graph.KindImage, Space: "source",
+			Args: []graph.ArgSpec{
+				{Name: "for", Type: "number", Hidden: true},
+				{Name: "w", Type: "number", Hidden: true},
+				{Name: "h", Type: "number", Hidden: true},
+			},
+			DocSize: func(a graph.Args, _ []*graph.Node) (int, int) { return a.Int("w"), a.Int("h") },
+			Run: func(context.Context, *graph.EvalCtx, []graph.Value, graph.Args) (graph.Value, error) {
+				return nil, graph.Errorf(graph.EPlaceholder, "This is the placeholder image a within() function receives; it only stands for the masked image while the function builds its edit.").
+					WithHint("Use the function's return value. Do not keep the placeholder in a variable outside the function.").
+					WithFix("img.within(mask, i => i.exposure(-0.4))")
+			},
+			Doc: "The placeholder Image a builder lambda (within) receives; replaced by the real receiver when the lambda returns.",
+			See: []string{"within"},
+		},
 	}
 }

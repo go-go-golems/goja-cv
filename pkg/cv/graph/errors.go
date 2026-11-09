@@ -8,7 +8,8 @@ import (
 )
 
 // Error and warning codes (guide Part 4, Appendix B, plus the M1 additions
-// E_NO_FIELD, E_IMMUTABLE, E_EVAL and E_INTERNAL).
+// E_NO_FIELD, E_IMMUTABLE, E_EVAL and E_INTERNAL and the M3 addition
+// E_PLACEHOLDER).
 const (
 	EUnknownMethod    = "E_UNKNOWN_METHOD"
 	ENamespace        = "E_NAMESPACE"
@@ -24,10 +25,11 @@ const (
 	ENoModel          = "E_NO_MODEL"
 	ETimeout          = "E_TIMEOUT"
 	ECancelled        = "E_CANCELLED"
-	ENoField          = "E_NO_FIELD"  // a derived field does not exist in the evaluated value
-	EImmutable        = "E_IMMUTABLE" // assignment to a node property
-	EEval             = "E_EVAL"      // a kernel or IO failure during evaluation
-	EInternal         = "E_INTERNAL"  // a bug: an op panicked
+	ENoField          = "E_NO_FIELD"    // a derived field does not exist in the evaluated value
+	EImmutable        = "E_IMMUTABLE"   // assignment to a node property
+	EEval             = "E_EVAL"        // a kernel or IO failure during evaluation
+	EInternal         = "E_INTERNAL"    // a bug: an op panicked
+	EPlaceholder      = "E_PLACEHOLDER" // a builder lambda's placeholder node was evaluated outside its builder
 	WUnusedNode       = "UNUSED_NODE"
 	WRange            = "RANGE"
 	WScale            = "SCALE"

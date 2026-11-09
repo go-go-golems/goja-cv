@@ -103,7 +103,7 @@ func TestPreviewScaleEvaluatesSmallerBuffers(t *testing.T) {
 
 // walkNodes are the receivers and node inputs the registry walk uses.
 type walkNodes struct {
-	img, stats, num, mask, mask2, regions *graph.Node
+	img, stats, num, mask, mask2, regions, edited *graph.Node
 }
 
 func nodeArg(n *graph.Node) graph.NodeArg { return graph.NodeArg{ID: n.ID} }
@@ -138,6 +138,10 @@ var walkSamples = map[string]func(w walkNodes) []any{
 	"sortBy":         func(walkNodes) []any { return []any{"area"} },
 	"top":            func(walkNodes) []any { return []any{3} },
 	"toMask":         func(walkNodes) []any { return []any{map[string]any{"grow": 1}} },
+	"within":         func(w walkNodes) []any { return []any{nodeArg(w.mask), nodeArg(w.edited)} },
+	"blend": func(w walkNodes) []any {
+		return []any{nodeArg(w.edited), map[string]any{"mode": "screen", "mask": nodeArg(w.mask)}}
+	},
 }
 
 // walkSkip are ops the Go-only walk cannot evaluate (data lambdas need a
@@ -154,6 +158,7 @@ func TestRegistryWalk(t *testing.T) {
 		mask:  call(t, e, "mask.luminance", img.ID, map[string]any{"above": 0.3}),
 		mask2: call(t, e, "mask.box", img.ID, []any{8, 8, 30, 20})}
 	w.regions = call(t, e, "components", w.mask.ID)
+	w.edited = call(t, e, "exposure", img.ID, -0.5)
 	recv := map[graph.Kind]graph.NodeID{graph.KindImage: img.ID, graph.KindValue: stats.ID, graph.KindMask: w.mask.ID, graph.KindRegions: w.regions.ID}
 	for _, op := range e.Registry().Ops() {
 		if _, err := e.Registry().Help(op.Name); err != nil {

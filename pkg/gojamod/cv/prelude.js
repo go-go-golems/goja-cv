@@ -77,9 +77,40 @@
     return nodeFor(native.__call(op, t.__id, args.map(marshal)));
   }
 
+  // Builder lambdas (within(mask, i => …)) run here, once, while the graph
+  // is built: the function receives a placeholder node for the receiver and
+  // its result travels to Go as { __cvbuilt: [result, placeholder] }; Go
+  // substitutes the receiver for the placeholder (graph.Builder.Substitute).
+  const BUILDERS = native.__builders(); // { "Image:within": [1] }
+
+  function cvError(code, message, fix) {
+    const e = new Error(message);
+    e.name = e.code = code;
+    e.cv = true;
+    if (fix) e.fix = fix;
+    return e;
+  }
+
+  function build(t, op, fn) {
+    const hole = nodeFor(native.__placeholder(t.__id));
+    const res = fn(hole);
+    if (!isNode(res)) {
+      const what = res !== null && typeof res === "object" && typeof res.then === "function" ? "a promise (the function must not be async)" : typeof res;
+      throw cvError("E_ARG_TYPE", op + "'s function must return a node built from its argument; it returned " + what + ".", "img." + op + "(mask, i => i.exposure(-0.4))");
+    }
+    return { __cvbuilt: [res.__id, hole.__id] };
+  }
+
   function method(t, op) {
+    const builders = BUILDERS[t.__kind + ":" + op];
     return function () {
-      return callOp(t, op, Array.prototype.slice.call(arguments));
+      const args = Array.prototype.slice.call(arguments);
+      if (builders) {
+        for (const i of builders) {
+          if (typeof args[i] === "function") args[i] = build(t, op, args[i]);
+        }
+      }
+      return callOp(t, op, args);
     };
   }
 

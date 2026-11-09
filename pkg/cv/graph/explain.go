@@ -20,6 +20,8 @@ func Label(n *Node) string {
 			return "open(" + filepath.Base(n.Args.String("path")) + ")"
 		case "param":
 			return "param(" + n.Args.String("name") + ")"
+		case PlaceholderOp:
+			return "placeholder"
 		}
 	}
 	if n.Op.On == KindValue && n.Op.Name == "field" {
@@ -40,6 +42,8 @@ func Describe(b *Builder, n *Node, scale float64, params map[string]any) string 
 			name := n.Args.String("name")
 			v, _ := json.Marshal(params[name])
 			return fmt.Sprintf("param %s = %s", name, v)
+		case PlaceholderOp:
+			return "placeholder (within builder)"
 		}
 	}
 	if n.Op.On == KindValue && n.Op.Name == "field" {

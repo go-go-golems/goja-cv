@@ -2,6 +2,7 @@ package cvmod_test
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -49,4 +50,36 @@ func TestMasksAndRegionsFromJS(t *testing.T) {
 		t.Fatalf("filter error %+v", e)
 	}
 	mustFail(t, rt, "E_ARG_TYPE", `return img.exposure(x => 1)`)
+}
+
+func TestWithinBuilderFromJS(t *testing.T) {
+	rt := newRuntime(t)
+	got := mustRun(t, rt, `
+		const sky = img.mask.luminance({ above: 0.3 }).and(img.mask.gradient({ from: "top", to: 0.6 })).feather(4)
+		const ev = P.slider("skyEv", { min: -2, max: 2, value: -0.4 })
+		let seen = 0
+		const out = img.within(sky, i => { seen++; return i.exposure(ev) })
+		const again = img.within(sky, i => i.exposure(ev))
+		const direct = img.within(sky, img.exposure(ev))
+		const a = await out.stats().meanL
+		P.set("skyEv", -1.5)
+		const b = await out.stats().meanL
+		return { seen, same: out === again && out === direct, a, b, explain: await out.explain() }`).(map[string]any)
+	if got["seen"] != int64(1) || got["same"] != true {
+		t.Fatalf("builder: %v", got)
+	}
+	if !(got["b"].(float64) < got["a"].(float64)) {
+		t.Fatalf("param inside within did not apply: %v", got)
+	}
+	lines := fmt.Sprint(got["explain"])
+	if !strings.Contains(lines, "within()") || !strings.Contains(lines, "exposure(ev: #") || strings.Contains(lines, "placeholder") {
+		t.Fatalf("explain: %s", lines)
+	}
+	mustFail(t, rt, "E_ARG_TYPE", `return img.within(img.mask.box([0, 0, 4, 4]), i => 3)`)
+	e := mustFail(t, rt, "E_ARG_TYPE", `return img.within(img.mask.box([0, 0, 4, 4]), async i => i.exposure(1))`)
+	if !strings.Contains(e.Message, "async") {
+		t.Fatalf("async builder: %+v", e)
+	}
+	mustFail(t, rt, "E_PLACEHOLDER", `let leak; img.within(img.mask.box([0, 0, 4, 4]), i => { leak = i; return i }); return await leak.stats()`)
+	mustFail(t, rt, "E_WRONG_KIND", `return img.within(img, i => i)`)
 }

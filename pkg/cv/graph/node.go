@@ -77,6 +77,10 @@ func (b *Builder) Intern(op *OpDef, receiver NodeID, raw []any, trusted map[stri
 	} else if op.On != KindNone {
 		return nil, nil, Errorf(EInternal, "%s needs a %s receiver", op.Name, op.On)
 	}
+	raw, err := b.resolveBuilt(raw, receiver)
+	if err != nil {
+		return nil, nil, err
+	}
 	bd, err := bind(op, recv != nil, raw, trusted, b.kindOf)
 	if err != nil {
 		return nil, nil, err
@@ -103,15 +107,24 @@ func (b *Builder) Intern(op *OpDef, receiver NodeID, raw []any, trusted map[stri
 			return nil, nil, err
 		}
 	}
-	h := hashNode(op, args, inputs)
+	return b.internNode(op, args, inputs, nExplicit), bd.warnings, nil
+}
 
+// internNode returns the node for (op, canonical args, inputs), creating it
+// if it does not exist yet.
+func (b *Builder) internNode(op *OpDef, args Args, inputs []*Node, nExplicit int) *Node {
+	h := hashNode(op, args, inputs)
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if n, ok := b.byKey[h]; ok {
-		return n, bd.warnings, nil
+		return n
+	}
+	ids := make([]NodeID, len(inputs))
+	for i, in := range inputs {
+		ids[i] = in.ID
 	}
 	b.next++
-	n := &Node{ID: b.next, Op: op, Inputs: all, NExplicit: nExplicit, Args: args, Kind: op.Returns, Hash: h, Base: -1}
+	n := &Node{ID: b.next, Op: op, Inputs: ids, NExplicit: nExplicit, Args: args, Kind: op.Returns, Hash: h, Base: -1}
 	for _, in := range inputs {
 		n.Base = max(n.Base, in.Base)
 	}
@@ -126,7 +139,94 @@ func (b *Builder) Intern(op *OpDef, receiver NodeID, raw []any, trusted map[stri
 		}
 	}
 	b.byKey[h], b.nodes[n.ID] = n, n
-	return n, bd.warnings, nil
+	return n
+}
+
+// BuiltArg is the result of a builder lambda in a raw call: the node the
+// function returned (Root), built on the placeholder node Hole that stood
+// for the call's receiver. Intern substitutes the receiver for the
+// placeholder before binding, so the op's input is an ordinary graph over
+// the real receiver (hash-consed with the same graph built directly).
+type BuiltArg struct{ Root, Hole NodeID }
+
+// PlaceholderOp is the name of the source op of placeholder nodes.
+const PlaceholderOp = "placeholder"
+
+// resolveBuilt replaces top-level BuiltArgs in raw by node arguments.
+func (b *Builder) resolveBuilt(raw []any, receiver NodeID) ([]any, error) {
+	var out []any
+	for i, v := range raw {
+		ba, ok := v.(BuiltArg)
+		if !ok {
+			continue
+		}
+		hole, ok := b.Node(ba.Hole)
+		if !ok || hole.Op.Name != PlaceholderOp || hole.Op.On != KindNone {
+			return nil, Errorf(EInternal, "builder result #%d does not come with a placeholder", ba.Root)
+		}
+		if receiver == 0 {
+			return nil, Errorf(EInternal, "a builder lambda needs a receiver")
+		}
+		id, err := b.Substitute(ba.Root, ba.Hole, receiver)
+		if err != nil {
+			return nil, err
+		}
+		if out == nil {
+			out = append([]any(nil), raw...)
+		}
+		out[i] = NodeArg{ID: id}
+	}
+	if out == nil {
+		return raw, nil
+	}
+	return out, nil
+}
+
+// Substitute returns the node equal to root with every occurrence of node
+// from replaced by node to (re-interning each node on the path; nodes that do
+// not depend on from are returned unchanged). The replacement must have the
+// same kind as from.
+func (b *Builder) Substitute(root, from, to NodeID) (NodeID, error) {
+	fn, ok1 := b.Node(from)
+	tn, ok2 := b.Node(to)
+	if !ok1 || !ok2 {
+		return 0, Errorf(EInternal, "substitute: unknown node")
+	}
+	if fn.Kind != tn.Kind {
+		return 0, Errorf(EInternal, "substitute: %s placeholder for a %s node", fn.Kind, tn.Kind)
+	}
+	memo := map[NodeID]*Node{from: tn}
+	var walk func(id NodeID) (*Node, error)
+	walk = func(id NodeID) (*Node, error) {
+		if n, ok := memo[id]; ok {
+			return n, nil
+		}
+		n, ok := b.Node(id)
+		if !ok {
+			return nil, Errorf(EInternal, "substitute: unknown node #%d", id)
+		}
+		changed := false
+		ins := make([]*Node, len(n.Inputs))
+		for i, in := range n.Inputs {
+			r, err := walk(in)
+			if err != nil {
+				return nil, err
+			}
+			ins[i] = r
+			changed = changed || r.ID != in
+		}
+		out := n
+		if changed {
+			out = b.internNode(n.Op, n.Args, ins, n.NExplicit)
+		}
+		memo[id] = out
+		return out, nil
+	}
+	r, err := walk(root)
+	if err != nil {
+		return 0, err
+	}
+	return r.ID, nil
 }
 
 func hashNode(op *OpDef, args Args, inputs []*Node) [32]byte {

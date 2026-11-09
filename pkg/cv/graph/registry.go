@@ -119,9 +119,14 @@ type OpDef struct {
 	// then the same at preview and export. Regions ops use it so that region
 	// ids and doc-px coordinates are identities, not artefacts of the scale.
 	AnalysisScale func(args Args) float64
-	Run           RunFunc
-	Doc           string
-	See           []string
+	// Builders lists the positions (0-based, among the call's arguments) that
+	// may be builder lambdas: the JavaScript surface calls the function once
+	// with a placeholder for the receiver and passes the result as a
+	// BuiltArg (within(mask, i => i.exposure(-0.4))).
+	Builders []int
+	Run      RunFunc
+	Doc      string
+	See      []string
 }
 
 // Key is the registry key "On:Name".

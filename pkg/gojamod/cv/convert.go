@@ -9,13 +9,19 @@ import (
 
 // fromJS converts an exported, prelude-marshalled argument into the raw
 // argument space of graph.Engine.Call: node markers {__cvnode: id} become
-// graph.NodeArg, function markers {__cvfunc: id} become graph.FuncArg.
+// graph.NodeArg, function markers {__cvfunc: id} become graph.FuncArg and
+// builder results {__cvbuilt: [root, placeholder]} become graph.BuiltArg.
 func fromJS(v any) any {
 	switch x := v.(type) {
 	case map[string]any:
 		if id, ok := x["__cvnode"]; ok && len(x) == 1 {
 			f, _ := graph.Normalize(id).(float64)
 			return graph.NodeArg{ID: graph.NodeID(f)}
+		}
+		if ids, ok := x["__cvbuilt"].([]any); ok && len(x) == 1 && len(ids) == 2 {
+			root, _ := graph.Normalize(ids[0]).(float64)
+			hole, _ := graph.Normalize(ids[1]).(float64)
+			return graph.BuiltArg{Root: graph.NodeID(root), Hole: graph.NodeID(hole)}
 		}
 		if id, ok := x["__cvfunc"]; ok && len(x) == 1 {
 			f, _ := graph.Normalize(id).(float64)

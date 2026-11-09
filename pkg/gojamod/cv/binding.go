@@ -106,6 +106,8 @@ func (b *binding) object() *goja.Object {
 	set("__paramSet", b.paramSet)
 	set("__params", b.params)
 	set("__func", b.funcJS)
+	set("__builders", b.builders)
+	set("__placeholder", b.placeholder)
 	return o
 }
 
@@ -191,6 +193,32 @@ func (b *binding) registry(goja.FunctionCall) goja.Value {
 		out[string(k)] = toAny(b.eng.Registry().Methods(k))
 	}
 	return toJS(b.vm, out)
+}
+
+// __builders() → { "Image:within": [1], … }: argument positions that take
+// builder lambdas.
+func (b *binding) builders(goja.FunctionCall) goja.Value {
+	out := map[string]any{}
+	for _, op := range b.eng.Registry().Ops() {
+		if len(op.Builders) == 0 {
+			continue
+		}
+		pos := make([]any, len(op.Builders))
+		for i, p := range op.Builders {
+			pos[i] = float64(p)
+		}
+		out[string(op.On)+":"+op.Name] = pos
+	}
+	return toJS(b.vm, out)
+}
+
+// __placeholder(receiverId) → {id, kind}: the node a builder lambda receives.
+func (b *binding) placeholder(c goja.FunctionCall) goja.Value {
+	n, err := b.eng.Placeholder(graph.NodeID(c.Argument(0).ToInteger()))
+	if err != nil {
+		b.throw(err)
+	}
+	return handle(b.vm, n)
 }
 
 // __call(op, receiverId, args[]) → {id, kind}

@@ -118,6 +118,27 @@ func (e *Engine) Open(path string) (*Node, error) {
 	return n, err
 }
 
+// Placeholder interns the placeholder Image node that a builder lambda
+// receives in place of receiver (within(mask, i => …)). The node only exists
+// so the lambda can build on it; Intern substitutes the receiver for it when
+// the builder's result is passed back as a BuiltArg. Evaluating a
+// placeholder is an error (E_PLACEHOLDER).
+func (e *Engine) Placeholder(receiver NodeID) (*Node, error) {
+	op, ok := e.reg.Lookup(KindNone, PlaceholderOp)
+	if !ok {
+		return nil, Errorf(EInternal, "no placeholder op registered")
+	}
+	r, ok := e.b.Node(receiver)
+	if !ok {
+		return nil, Errorf(EInternal, "unknown node #%d", receiver)
+	}
+	if r.Kind != op.Returns {
+		return nil, Errorf(EWrongKind, "builder lambdas take a %s; the receiver is a %s.", op.Returns, r.Kind)
+	}
+	n, _, err := e.b.Intern(op, 0, nil, map[string]any{"for": float64(receiver), "w": r.DocW, "h": r.DocH})
+	return n, err
+}
+
 // DeclareParam declares (or re-declares) a param and returns its node.
 func (e *Engine) DeclareParam(def ParamDef, reset bool) (*Node, ParamDef, error) {
 	op, ok := e.reg.Lookup(KindNone, "param")

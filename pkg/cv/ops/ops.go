@@ -13,6 +13,7 @@ func Register(r *graph.Registry) {
 	r.MustRegister(maskMakerOps()...)
 	r.MustRegister(maskOps()...)
 	r.MustRegister(regionOps()...)
+	r.MustRegister(compositeOps()...)
 	r.MustRegister(metaOps()...)
 }
 
