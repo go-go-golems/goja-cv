@@ -44,3 +44,8 @@ Step 7: Phase 7 data out (commit 58c0480)
 
 Step 8: Phase 8 preludes (commit 8d6245c)
 
+
+## 2026-11-09
+
+Step 9: Phase 9 docs, open items 1 and 9, gated hot-list test (commits 8e9a3ed, be25dd2)
+

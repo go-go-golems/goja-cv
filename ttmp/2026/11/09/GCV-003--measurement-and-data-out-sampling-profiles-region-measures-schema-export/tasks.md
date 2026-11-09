@@ -14,6 +14,6 @@
 - [x] Phase 7: pkg/cv/dataout Data handle; cv.json and cv.csv FuncDefs with the data argument type; budgets (MaxData, MaxDataBytes for mcp, ContentLimits sum) in collect <!-- t:w0kr -->
 - [x] Phase 7: CLI writeContent (look-N-slug names, <name>.<ext> data files, dropped reporting) and --json files list; script 83 command in docs <!-- t:w62w -->
 - [x] Phase 8: --prelude on eval, run, mcp (Options.Preludes, evaluated at CreateSession, FILE:LINE errors) <!-- t:s5z6 -->
-- [ ] Phase 9: docs - topics 12-measuring and 13-data-out; flat fields in masks-and-regions (lines 29, 35-40), recipes, nodes topic; guidebook CLI flags; MCP instructions; synonyms (drop measure->stats) <!-- t:5a6n -->
+- [x] Phase 9: docs - topics 12-measuring and 13-data-out; flat fields in masks-and-regions (lines 29, 35-40), recipes, nodes topic; guidebook CLI flags; MCP instructions; synonyms (drop measure->stats) <!-- t:5a6n -->
 - [ ] Phase 9: gated real-tile test (snr/stepChroma ranges for the hand-over, top-30 coverage >= 70%), HotList benchmark >= 20x helper; pi harness questions-gcv-003.md before/after <!-- t:5bwg -->
 - [x] Phase 6/7 (rev 3): data names as identifiers (default data-<N>); MaxDataBytes inside Data.ResultContent; masks saved with linear note; internal/testimage switched to new writers (keep DNG fixture writer); EllipseCoverage(rx, ry) <!-- t:aa69 -->

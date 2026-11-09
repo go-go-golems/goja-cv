@@ -1076,3 +1076,80 @@ Python zoom, its export trick, its pasted helpers and its YAML paging.
 - CVJS-001 intern guide Part 2 §5 (masks vs regions) and the integration-surfaces doc §3: `/Users/manuel/code/wesen/2026-11-07--dust-scanning/ttmp/2026/11/08/CVJS-001--js-eval-cv-api-for-agents-compare-9-implementations/design-doc/`.
 - GCV-001 (spaces, Level unit, frames, box/point types, decoders that read saved metadata) and GCV-002 (functions, text font, render path, evaluation warnings, sheet and annotate): `design-doc/01-design-and-implementation-guide.md` of each ticket.
 - TIFF 6.0 specification; PNG specification (gAMA, sRGB, tEXt chunks); NumPy `.npy` format (NEP 1).
+
+## Implementation notes (deviations)
+
+Recorded while implementing on branch `task/gcv-003-measurement-data-out` (stacked on `task/gcv-002-inspection-views`;
+details and reasons in `reference/03-diary-implementation.md`). The guide above is unchanged; these notes say where
+the code differs.
+
+1. **`OpDef.Produces` is a map** (§7.5): field name → the call that adds it (`"snr": "regions.measure(img, { ring:
+   true })"`), so the producer hint carries a literal fix. The hint is added by the builder (`Registry.producerHint`)
+   to errors made with `graph.UnknownFieldError`, because `Validate` does not see the registry.
+2. **`FieldSpec.Optional`**: fields present only in some rows (`check.dust`'s `hint`, a sample/measure row's
+   `outside`, channel fields whose presence depends on the channel count, which is not a node static). The schema
+   property test requires every non-optional field and allows nothing outside the schema.
+3. **Ordered data for JavaScript and JSON**: `graph.Record` (keys in schema order) for region items, and
+   `graph.OrderBySchema` for awaited Value rows/objects, because the binding sorts map keys. Data-lambda items get
+   the same prototype with the throwing accessors (`__itemProto`).
+4. **`sortBy` of a string field** is `E_ARG_TYPE` at build time; unknown fields are `E_UNKNOWN_OPTION` for both
+   `where` and `sortBy` (sortBy used `E_ARG_TYPE`).
+5. **`only`/`without` take items**: an object with `id` (a region item) or a list of them, besides ids.
+6. **Rows outside the frame** keep every required key with `null` values plus `outside: true`; `OUTSIDE` names the
+   row indices.
+7. **Points are `Regions|point[]`**: the Regions alternative exists only so the validator can refuse it with the
+   `regions.measure` fix (a plain `point[]` would give the binder's generic "Value nodes only" hint).
+8. **The probe measures through `StatsWeighted`** on the gathered pixels of each disk or ring (row-major, positive
+   weights only), so it equals `stats({ mask: mask.ellipse(…) })` bit for bit in the tests, ties of the weighted
+   quantile included. `kernels.EllipseCoverage(i, j, cx, cy, rx, ry)` takes the pixel's integer index.
+9. **`regions.measure`**: the explicit input is `Image|Mask` (so `components().measure(mask, { stats: ["mean"] })`
+   replaces `meanMask`); `stats` is a `string[]` validated by the op with synonyms (`maximum → max`, …) because the
+   binder's enum check runs before its list check; stats per channel only with `channels: true`, while ring channel
+   steps are on for colour images unless `channels: false`; `min`/`max` are the 0 and 1 weighted quantiles;
+   `RegionsValue.Coverage` shares `Rasterize`'s per-pixel overlap loop.
+10. **Charts**: the histogram bar chart is unchanged (no axis labels), so its goldens hold; only the profile line
+    chart has labels (value range, t range in doc px).
+11. **Writers**: TIFF strips are always Deflate (no uncompressed option); PNG `sRGB` chunk for sRGB values and `gAMA`
+    100000 for linear ones; the frame origin is recorded only when it is not (0, 0). Views are derived images, so a
+    saved view is `encoding=linear`. `EncodePNG` gained a `Meta` argument instead of a second function.
+12. **Fixture writers kept for decoder variants**: GCV-001's TIFF/NPY fixture writers remain in `internal/testimage`
+    for what goja-cv reads but never writes (LZW, PackBits, predictors, big-endian, `|u1`, `>u2`, `>f4`, `<f8`);
+    deleting them would drop those decoder tests. Every plain write (planted scan, gradients, linear fixtures) uses
+    the production writers through `testimage.WriteFile`.
+13. **Containment**: `graph.Within` resolves the longest existing prefix of a path through symlinks, so a file
+    under a symlinked directory pointing outside the root is refused before anything is created; `cv.open`'s root
+    check uses it too. `OutRoot` lives in `graph.EngineOptions` (the cv module saves) and `cvsession.Options`.
+14. **Data handles** are `goja.DynamicObject`s whose exported value embeds `*dataout.Data`, giving JavaScript
+    `name`, `format` and `save` while `resultcontent.ProviderOf` still finds the provider. Eager data is exported on
+    the owner goroutine with key order (`exportOrdered`); nodes inside plain data are written as their description.
+    The binder type `data` keeps the argument as given (a node or plain data). `json`, `csv`, `save` are FuncDefs
+    bound with `BindOptions`; the prelude hand-writes `cv.json`, `cv.csv` and `node.save` (marked Bespoke where
+    module functions).
+15. **CSV tables**: an object whose longest arrays share a length (a profile) is one row per element; awaited
+    Regions (`{ kind: "Regions", items }`) are their items; lists of lists get columns `c1, c2, …`. The placeholder
+    gives a column count only for row schemas (not for a profile's).
+16. **Budgets**: looks and data items beyond `MaxLooks`/`MaxData` are left out in `collect` and their placeholders
+    say `[not delivered: … — more than 4 … in one eval; …]`; the MCP over-limit note is a `text/plain` content item.
+17. **Preludes** run through `App.Evaluate` (they appear in the session history); `FILE:LINE` is read from the
+    rendered error's `where` line; a failing prelude deletes the half-made session; the CLI exits 1 for it and 2 for a
+    missing file.
+18. **Speck view default space** (GCV-002 open item): `view("speck")` and `view("speckColor")` default to linear
+    space through a new `SpaceRule.For` (per-call default). `TestRealViewRanking`, 142 gold points on 15 tiles:
+    encoded median rank 20, 70.4 % in the top 50; linear 18, 79.6 %. Other presets stay encoded. Golden `sheet-2x2`
+    (a speck-view cell) moved.
+19. **Gated hot-list test** (§13.4): the DoG runs in linear space (density on these tiles), as the speck view now
+    does. Measured on 142 gold points of 15 tiles: 71.8 % within 4 px of a hot spot (about 37 per tile), 62.7 % within
+    4 px of a top-30 spot by snr (the guide's 70 % for the top 30 is not met; the test asserts ≥ 70 % for any spot and
+    ≥ 60 % for the top 30). With the encoded DoG: 63.4 % and 59.2 %. Labelled dust: snr median 2.17 (middle half
+    1.61–3.03), stepChroma median 0.00 (0.00–0.26); unlabelled spots: snr 0.86 (0.56–1.23), stepChroma 0.00
+    (0.00–0.51). These replace the playbook table for the hand-over.
+20. **HotList benchmark**: kernel level (`kernels.ProbePoint` against the helper's three whole-image ellipse masks,
+    a minus and two `StatsWeighted` per spot), 28 spots on a 1024² tile: about 2 ms against 470 ms (over 200×);
+    `TestHotListIsFasterThanTheHelper` asserts ≥ 20×.
+21. **Evaluation warnings live in the value cache** (GCV-002 open item): `Cache.SetWarnings/Warnings`, dropped with
+    their entry; a value too large to cache reports its warnings directly.
+22. **Extra legacy removed**: the old `EncodePNG`/`EncodeTIFF16`/`WriteFile` and the `x/image/tiff` writer path,
+    `statsWeighted` wrapper, the `measure → stats` op synonym; method redirects added for `export`/`write`/`saveAs`
+    (→ save), `toCSV`/`table` (→ cv.csv), `json`/`dump` (→ cv.json).
+23. **Not done**: windowed pixel-op evaluation with `OpDef.Halo` (GCV-002 open item; design note in the diary,
+    step 9); moving the `cvFuncs` help table to `pkg/cvsession` (optional; `cv.help` lives in the module).
