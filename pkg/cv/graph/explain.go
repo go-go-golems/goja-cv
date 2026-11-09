@@ -56,6 +56,143 @@ func Label(n *Node) string {
 	return n.Op.Name
 }
 
+// ShortCall is the compact form of a call for captions and fixes: the op
+// name with its non-default positional arguments ("gaussian(2)",
+// "view(speck)", "crop[300,100,64,64]"); lifted arguments show as "…".
+func ShortCall(op *OpDef, args Args) string {
+	if op.Name == "crop" && op.Class == GeometricOp {
+		if b, ok := literalList(args.vals["box"]); ok {
+			return "crop[" + strings.Join(b, ",") + "]"
+		}
+	}
+	var parts []string
+	for i := range op.Args {
+		s := &op.Args[i]
+		if !s.Positional || s.Hidden || !args.Has(s.Name) {
+			continue
+		}
+		v := args.vals[s.Name]
+		if s.Default != nil && reflect.DeepEqual(v, normalize(s.Default)) {
+			continue
+		}
+		parts = append(parts, shortValue(v))
+	}
+	if len(parts) == 0 {
+		return op.Name
+	}
+	return op.Name + "(" + strings.Join(parts, ", ") + ")"
+}
+
+func shortValue(v any) string {
+	switch x := v.(type) {
+	case float64:
+		return fmtNum(x)
+	case string:
+		return x
+	case bool:
+		return strconv.FormatBool(x)
+	case []any:
+		if l, ok := literalList(x); ok {
+			return "[" + strings.Join(l, ",") + "]"
+		}
+		el := make([]string, len(x))
+		for i, e := range x {
+			el[i] = shortValue(e)
+		}
+		return "[" + strings.Join(el, ",") + "]"
+	}
+	return "…"
+}
+
+func literalList(v any) ([]string, bool) {
+	l, ok := v.([]any)
+	if !ok {
+		return nil, false
+	}
+	out := make([]string, len(l))
+	for i, e := range l {
+		f, ok := e.(float64)
+		if !ok {
+			return nil, false
+		}
+		out[i] = fmtNum(f)
+	}
+	return out, true
+}
+
+// Short is the compact form of a node in a caption chain: "open(scan.tif)",
+// "param(ev)", ".p99", "crop[300,100,64,64]" (its frame), "view(speck)".
+func Short(n *Node) string {
+	switch {
+	case n.Op.On == KindNone && n.Op.Name == "open":
+		return "open(" + shortFile(filepath.Base(n.Args.String("path"))) + ")"
+	case n.Op.On == KindNone:
+		return Label(n)
+	case n.Op.Name == "crop" && n.Op.Class == GeometricOp:
+		return fmt.Sprintf("crop[%d,%d,%d,%d]", n.Frame.X, n.Frame.Y, n.Frame.W, n.Frame.H)
+	case n.Op.On == KindValue && n.Op.Name == "field":
+		return "." + n.Args.String("name")
+	}
+	return ShortCall(n.Op, n.Args)
+}
+
+// shortFile keeps long file names readable in a caption: "1d955ef4b2…_1536_1536.tif".
+func shortFile(name string) string {
+	r := []rune(name)
+	if len(r) <= 32 {
+		return name
+	}
+	return string(r[:10]) + "…" + string(r[len(r)-12:])
+}
+
+// maxChain is the longest caption chain before it is shortened.
+const maxChain = 120
+
+// Chain is the receiver chain of node id in compact form, from the source:
+// "open(t.tif) → view(speck) → crop[300,100,64,64]". Macro nodes are one
+// step (their expansion is in explain()); inserted conversions are skipped.
+// A chain longer than 120 characters keeps the source and the last three
+// steps.
+func (e *Evaluator) Chain(id NodeID) string {
+	var rev []string
+	var next *Node // the consumer of n on the chain
+	for n := e.node(id); n != nil; {
+		if !n.Op.Internal && !insertedGray(n, next) {
+			rev = append(rev, Short(n))
+		}
+		if n.NExplicit == 0 || len(n.Inputs) == 0 {
+			break
+		}
+		if !n.Op.Internal {
+			next = n
+		}
+		n = e.node(n.Inputs[0])
+	}
+	steps := make([]string, len(rev))
+	for i, s := range rev {
+		steps[len(rev)-1-i] = s
+	}
+	out := strings.Join(steps, " → ")
+	if len([]rune(out)) > maxChain && len(steps) > 4 {
+		out = steps[0] + " → … → " + strings.Join(steps[len(steps)-3:], " → ")
+	}
+	return out
+}
+
+// insertedGray reports whether n is the toGray(rec709) the builder feeds a
+// luminance input of next (the grey-input rule): the chain does not show it.
+func insertedGray(n, next *Node) bool {
+	if next == nil || next.Op.Gray == nil || n.Op.Name != ToGrayOp || n.Args.String("weights") != "rec709" {
+		return false
+	}
+	for _, i := range next.Op.Gray(next.Args) {
+		if i == 0 {
+			return true
+		}
+	}
+	return false
+}
+
 // Describe renders a node as a call, e.g. "gaussian(r: 2 px → 0.5 at scale
 // 0.25)". Arguments equal to their default are omitted; lifted arguments
 // show the input node id.

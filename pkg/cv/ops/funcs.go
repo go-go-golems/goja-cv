@@ -28,6 +28,10 @@ func LookArgs() []graph.ArgSpec {
 			Doc: "upsampling when zoomed: nearest repeats pixels (exact values, visible pixel edges), linear blends neighbours"},
 		{Name: "maxSide", Type: "number", Optional: true, Min: graph.F(16), Max: graph.F(MaxLookSide),
 			Doc: "long side in image px when fitting (default 1568)"},
+		{Name: "ruler", Type: "number|bool", Unit: graph.DocPx, Optional: true,
+			Doc: "coordinate rulers in margins: tick spacing in doc px, or true to pick 1, 2, 4, 8 … so ticks are ≥ 40 image px apart; labels are absolute doc px"},
+		{Name: "grid", Type: "number", Unit: graph.DocPx, Optional: true, Min: graph.F(0),
+			Doc: "faint lines every grid doc px over the image"},
 	}
 }
 
@@ -40,7 +44,7 @@ func funcDefs() []graph.FuncDef {
 		},
 		{
 			Name: "show", Global: true, Args: LookArgs(), Bespoke: true,
-			Usage: "show(node, label | { label, zoom, interp, maxSide }) · show(look)",
+			Usage: "show(node, label | { label, zoom, interp, maxSide, ruler, grid }) · show(look)",
 			Doc:   "Create a look, queue it and return it; queued looks are delivered even if the eval throws later.",
 			See:   []string{"look"},
 		},

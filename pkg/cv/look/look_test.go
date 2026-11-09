@@ -67,12 +67,12 @@ func TestLookCaptionScaleAndSize(t *testing.T) {
 	if w, h := l.Size(); w != 1568 || h != 784 {
 		t.Fatalf("size %d×%d, want 1568×784", w, h)
 	}
-	if got, want := l.Caption(), "look: before (1568×784, 1 image px = 2.04 doc px)"; got != want {
+	if got, want := l.Caption(), "look: before — open(flat.png) (1568×784, 1 image px = 2.04 doc px)"; got != want {
 		t.Fatalf("caption %q, want %q", got, want)
 	}
 	l.AssignNumber(3)
 	l.AssignNumber(9) // first number wins
-	if got, want := l.ResultPlaceholder(), "look 3: before (1568×784, 1 image px = 2.04 doc px)"; got != want {
+	if got, want := l.ResultPlaceholder(), "look 3: before — open(flat.png) (1568×784, 1 image px = 2.04 doc px)"; got != want {
 		t.Fatalf("placeholder %q, want %q", got, want)
 	}
 
@@ -196,7 +196,7 @@ func TestLookKindsAndChart(t *testing.T) {
 		t.Fatal(err)
 	}
 	l.AssignNumber(1)
-	if got := l.Caption(); got != "look 1: hist (512×204 chart)" {
+	if got := l.Caption(); got != "look 1: hist — open(gradient-64x48-16bit.tif) → histogram (512×204 chart)" {
 		t.Fatalf("caption %q", got)
 	}
 	data, mime, err := l.Render(context.Background())
@@ -231,7 +231,7 @@ func TestLookZoomRendersBlocks(t *testing.T) {
 	if w, h := l.Size(); w != 256 || h != 192 {
 		t.Fatalf("size %d×%d, want 256×192", w, h)
 	}
-	if got, want := l.Caption(), "look: gray 4× (256×192, 1 image px = 0.25 doc px)"; got != want {
+	if got, want := l.Caption(), "look: gray 4× — open(gradient-64x48-16bit.tif) → toGray (256×192, 1 image px = 0.25 doc px, doc x 0–64, y 0–48)"; got != want {
 		t.Fatalf("caption %q, want %q", got, want)
 	}
 	m, err := l.image(ctx)

@@ -70,13 +70,13 @@ func TestStatsAndLookReturnYAMLAndOneImage(t *testing.T) {
 	if resp.Cell.Execution.Status != "ok" {
 		t.Fatalf("status %s: %s", resp.Cell.Execution.Status, resp.Cell.Execution.Error)
 	}
-	mustContain(t, out, "stats:", "meanL: 0.29507", "after: '[look 1: after (64×48, 1 image px = 1.0 doc px)]'",
+	mustContain(t, out, "stats:", "meanL: 0.29507", "after: '[look 1: after — open(gradient-64x48-16bit.tif) → exposure(0.5) (64×48, 1 image px = 1.0 doc px)]'",
 		"context:", "images: img = gradient-64x48-16bit.tif (64×48, 16-bit TIFF, srgb)")
 	mustNotContain(t, out, "UNUSED_NODE")
 	if len(resp.Content) != 1 || resp.Content[0].MIMEType != "image/jpeg" || len(resp.Content[0].Data) == 0 {
 		t.Fatalf("content %+v", resp.Content)
 	}
-	if got := resp.Content[0].Caption; got != "look 1: after (64×48, 1 image px = 1.0 doc px)" {
+	if got := resp.Content[0].Caption; got != "look 1: after — open(gradient-64x48-16bit.tif) → exposure(0.5) (64×48, 1 image px = 1.0 doc px)" {
 		t.Fatalf("caption %q", got)
 	}
 	// numbers continue across evals; a look delivered again keeps its number
@@ -99,7 +99,7 @@ func TestShowBeforeThrowStillDeliversTheImage(t *testing.T) {
 		t.Fatalf("status ok, want an error")
 	}
 	mustContain(t, out, "error:", "code: Error", "message: boom", "where: 'line 2: throw new Error(\"boom\")'",
-		"shown:", "[look 1: darker (64×48, 1 image px = 1.0 doc px)]")
+		"shown:", "[look 1: darker — open(gradient-64x48-16bit.tif) → exposure(-1) (64×48, 1 image px = 1.0 doc px)]")
 	if len(resp.Content) != 1 || resp.Content[0].MIMEType != "image/jpeg" {
 		t.Fatalf("content %+v", resp.Content)
 	}

@@ -21,7 +21,7 @@ func TestLookReturnsGoBackedProvider(t *testing.T) {
 	if !ok {
 		t.Fatalf("look exported as %T", v)
 	}
-	if got, want := l.Caption(), "look: after (32×24, 1 image px = 2.0 doc px)"; got != want {
+	if got, want := l.Caption(), "look: after — open(gradient-64x48-16bit.tif) → exposure(0.5) (32×24, 1 image px = 2.0 doc px)"; got != want {
 		t.Fatalf("caption %q, want %q", got, want)
 	}
 	v, jerr = run(t, rt, `return img.look("before")`)

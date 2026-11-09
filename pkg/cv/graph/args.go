@@ -134,7 +134,7 @@ func (a Args) XY(name string, v *ImageValue) []float64 {
 		return nil
 	}
 	sx, sy := AxisScales(v)
-	ox, oy := float64(v.Frame.X), float64(v.Frame.Y)
+	ox, oy := v.BufferOrigin()
 	for i := range l {
 		if i%2 == 0 {
 			if i < 2 {
@@ -149,6 +149,18 @@ func (a Args) XY(name string, v *ImageValue) []float64 {
 		}
 	}
 	return l
+}
+
+// Box reads a literal "box" argument in doc px, [x, y, w, h] (for frames
+// and display; kernels use XY).
+func (a Args) Box(name string) [4]float64 {
+	if s := a.mustSpec(name); s.Unit != DocPx {
+		panic(fmt.Sprintf("cv: %s.%s is not a doc-px box", a.op.Name, name))
+	}
+	l := a.Lengths(name, 1)
+	var out [4]float64
+	copy(out[:], l)
+	return out
 }
 
 // AxisScales are the effective buffer-px-per-doc-px scales of an image
@@ -792,6 +804,8 @@ var OptionSynonyms = map[string][]string{
 	"long": {"maxSide"}, "longSide": {"maxSide"}, "maxsize": {"maxSide"}, "max_side": {"maxSide"}, "width_px": {"maxSide"},
 	"caption": {"label"}, "title": {"label"}, "text": {"label"},
 	"magnify": {"zoom"}, "magnification": {"zoom"}, "upscale": {"zoom"}, "factor": {"zoom"}, "zoomFactor": {"zoom"},
+	"ticks": {"ruler"}, "axes": {"ruler"}, "axis": {"ruler"}, "coords": {"ruler"}, "coordinates": {"ruler"}, "rulers": {"ruler"}, "scaleBar": {"ruler"},
+	"gridlines": {"grid"}, "gridLines": {"grid"}, "lines": {"grid"},
 	"interpolation": {"interp"}, "resample": {"interp"}, "resampling": {"interp"}, "upsample": {"interp"},
 }
 

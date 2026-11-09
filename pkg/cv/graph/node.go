@@ -91,6 +91,13 @@ type CallResult struct {
 
 // Call is Intern for any op, including macros that return several nodes.
 func (b *Builder) Call(op *OpDef, receiver NodeID, raw []any, trusted map[string]any) (CallResult, error) {
+	return b.call(op, receiver, raw, trusted, false)
+}
+
+// call interns a call; nested calls (a macro's expansion, inserted
+// conversions) raise no order warnings of their own: the call the agent
+// wrote does.
+func (b *Builder) call(op *OpDef, receiver NodeID, raw []any, trusted map[string]any, nested bool) (CallResult, error) {
 	var recv *Node
 	if receiver != 0 {
 		var ok bool
@@ -138,14 +145,18 @@ func (b *Builder) Call(op *OpDef, receiver NodeID, raw []any, trusted map[string
 			return CallResult{}, err
 		}
 	}
+	warnings := bd.warnings
+	if !nested && recv != nil {
+		warnings = append(warnings, b.orderWarnings(op, args, recv)...)
+	}
 	if op.Expand != nil {
-		return b.expand(op, args, recv, inputs, nExplicit, bd.warnings)
+		return b.expand(op, args, recv, inputs, nExplicit, warnings)
 	}
 	inputs, ws, err := b.resolveSpace(op, args, inputs)
 	if err != nil {
 		return CallResult{}, err
 	}
-	ws = append(bd.warnings, ws...)
+	ws = append(warnings, ws...)
 	if op.Warn != nil {
 		ws = append(ws, op.Warn(b, args, inputs)...)
 	}

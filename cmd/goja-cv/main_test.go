@@ -38,7 +38,7 @@ func TestEvalWritesLookFiles(t *testing.T) {
 			t.Fatalf("output does not name %s:\n%s", p, out)
 		}
 	}
-	for _, s := range []string{"meanL: 0.29507", "after: '[look 1: after (64×48, 1 image px = 1.0 doc px)]'", "files:"} {
+	for _, s := range []string{"meanL: 0.29507", "after: '[look 1: after — open(gradient-64x48-16bit.tif) → exposure(0.5) (64×48, 1 image px = 1.0 doc px)]'", "files:"} {
 		if !strings.Contains(out, s) {
 			t.Fatalf("output lacks %q:\n%s", s, out)
 		}

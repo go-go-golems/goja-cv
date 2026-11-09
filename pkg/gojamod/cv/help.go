@@ -50,7 +50,6 @@ var helpRedirects = map[string][2]string{
 	"Mask.stats":    {"stats", "Measure inside a mask with img.stats({ mask: m })."},
 	"Regions.stats": {"stats", "Measure inside regions with img.stats({ mask: regions.toMask() })."},
 	"mask.mean":     {"stats", "img.stats({ mask: m }).meanL is the mean inside a mask."},
-	"crop":          {"stats", "There is no crop; measure a box with img.stats({ box: [x, y, w, h] }) and look at it with img.mask.box(box).overlay(img).look()."},
 	"metadata":      {"open", "Await the image for its metadata: (await img) has file, format, bitDepth, sample, fileChannels, encoding, frame and notes."},
 	"meta":          {"open", "Await the image for its metadata: (await img) has file, format, bitDepth, sample, fileChannels, encoding, frame and notes."},
 	"info":          {"open", "Await the image for its metadata: (await img) has file, format, bitDepth, sample, fileChannels, encoding, frame and notes."},

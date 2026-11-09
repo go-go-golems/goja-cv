@@ -46,6 +46,8 @@ type Options struct {
 	Zoom    float64       // render scale in [1, 16]; 0 = fit to MaxSide
 	Interp  buffer.Interp // upsampling when zoomed
 	MaxSide int           // long side in image px when fitting; 0 = the engine's look size (1568)
+	Ruler   float64       // tick spacing in doc px; -1 picks one; 0 = no ruler
+	Grid    float64       // grid spacing in doc px; 0 = no grid
 }
 
 // OptionsFrom reads the look options bound by graph.BindOptions against the
@@ -69,6 +71,22 @@ func OptionsFrom(a graph.Args) (Options, error) {
 		}
 		o.MaxSide = int(f)
 	}
+	if a.Has("ruler") {
+		switch v := a.Raw("ruler").(type) {
+		case bool:
+			if v {
+				o.Ruler = -1
+			}
+		case float64:
+			if !(v > 0) {
+				return o, graph.Errorf(graph.EArgRange, "look ruler must be a tick spacing above 0 doc px, or true; got %g.", v).WithFix("node.look({ ruler: true })")
+			}
+			o.Ruler = v
+		}
+	}
+	if a.Has("grid") {
+		o.Grid = a.Raw("grid").(float64)
+	}
 	if o.Zoom != 0 && o.MaxSide != 0 {
 		return o, graph.Errorf(graph.EArgType, "look takes zoom or maxSide, not both: zoom sets the scale; maxSide fits it.").
 			WithFix(fmt.Sprintf("node.look({ zoom: %s })", fmtZoom(o.Zoom)))
@@ -84,9 +102,13 @@ type Look struct {
 	node   graph.NodeID
 	root   graph.NodeID // what is rendered: node, or convert(node → encoded)
 	kind   graph.Kind
-	label  string
+	label  string // the agent's label ("" = none)
+	chain  string // the node's op chain (graph.Chain)
+	frame  graph.Frame
 	scale  float64 // render scale: image px per doc px; 1 for charts
 	interp buffer.Interp
+	ruler  float64
+	grid   float64
 	w, h   int  // rendered size
 	chart  bool // a Value node rendered as a chart
 	n      atomic.Int64
@@ -116,10 +138,8 @@ func New(eng *graph.Engine, id graph.NodeID, opt Options) (*Look, error) {
 		}
 		maxLong = opt.MaxSide
 	}
-	l := &Look{eng: eng, node: id, kind: n.Kind, label: strings.TrimSpace(opt.Label), interp: opt.Interp}
-	if l.label == "" {
-		l.label = graph.Label(n)
-	}
+	l := &Look{eng: eng, node: id, kind: n.Kind, label: strings.TrimSpace(opt.Label), interp: opt.Interp,
+		chain: eng.Chain(id), frame: n.Frame, ruler: opt.Ruler, grid: opt.Grid}
 	l.root = id
 	switch n.Kind {
 	case graph.KindImage, graph.KindMask:
@@ -140,8 +160,8 @@ func New(eng *graph.Engine, id graph.NodeID, opt Options) (*Look, error) {
 		if n.Op.Name != "histogram" {
 			return nil, lookKindError(n)
 		}
-		if opt.Zoom != 0 {
-			return nil, graph.Errorf(graph.EArgType, "look of a chart takes no zoom: charts have no doc px.").WithFix("node.look()")
+		if opt.Zoom != 0 || opt.Ruler != 0 || opt.Grid != 0 {
+			return nil, graph.Errorf(graph.EArgType, "look of a chart takes no zoom, ruler or grid: charts have no doc px.").WithFix("node.look()")
 		}
 		l.chart, l.scale = true, 1
 		l.w, l.h = chartSize(maxLong)
@@ -188,8 +208,16 @@ func lookKindError(n *graph.Node) error {
 // Node is the node the look renders.
 func (l *Look) Node() graph.NodeID { return l.node }
 
-// Label is the look's label.
-func (l *Look) Label() string { return l.label }
+// Label is the look's label: the agent's, or the node's op name.
+func (l *Look) Label() string {
+	if l.label != "" {
+		return l.label
+	}
+	if n, ok := l.eng.Node(l.node); ok {
+		return graph.Label(n)
+	}
+	return ""
+}
 
 // Size is the rendered size in image px.
 func (l *Look) Size() (int, int) { return l.w, l.h }
@@ -223,17 +251,31 @@ func DocPxPerImagePx(scale float64) string {
 	return s
 }
 
-// Caption is "look N: label (W×H, 1 image px = S doc px)"; "look: …" before
-// a number is assigned. Charts say "chart" instead of the scale.
+// Caption says what the image is: "look N: label — op chain (W×H[ +
+// ruler], 1 image px = S doc px[, doc x a–b, y c–d])"; without a label the
+// chain alone. "look: …" before a number is assigned; charts say "chart"
+// instead of the scale. The doc range is given for crops, zooms and rulers.
 func (l *Look) Caption() string {
 	head := "look"
 	if n := l.Number(); n > 0 {
 		head = fmt.Sprintf("look %d", n)
 	}
-	if l.chart {
-		return fmt.Sprintf("%s: %s (%d×%d chart)", head, l.label, l.w, l.h)
+	what := l.chain
+	if l.label != "" && l.label != l.chain {
+		what = l.label + " — " + l.chain
 	}
-	return fmt.Sprintf("%s: %s (%d×%d, 1 image px = %s doc px)", head, l.label, l.w, l.h, DocPxPerImagePx(l.scale))
+	if l.chart {
+		return fmt.Sprintf("%s: %s (%d×%d chart)", head, what, l.w, l.h)
+	}
+	size := fmt.Sprintf("%d×%d", l.w, l.h)
+	if l.ruler != 0 {
+		size += " + ruler"
+	}
+	tail := ""
+	if f := l.frame; l.ruler != 0 || l.grid != 0 || l.scale > 1 || f.X != 0 || f.Y != 0 {
+		tail = fmt.Sprintf(", doc x %d–%d, y %d–%d", f.X, f.X+f.W, f.Y, f.Y+f.H)
+	}
+	return fmt.Sprintf("%s: %s (%s, 1 image px = %s doc px%s)", head, what, size, DocPxPerImagePx(l.scale), tail)
 }
 
 // ResultPlaceholder implements resultcontent.Describer.
@@ -306,6 +348,11 @@ func (l *Look) image(ctx context.Context) (draw.Image, error) {
 		dm, ok := img.(draw.Image)
 		if !ok {
 			return nil, errors.Errorf("look: unexpected image type %T", img)
+		}
+		if l.ruler != 0 || l.grid != 0 {
+			ox, oy := x.BufferOrigin()
+			sx, sy := graph.AxisScales(x)
+			dm = addRulers(dm, axis{origin: ox, scale: sx, n: x.Buf.W}, axis{origin: oy, scale: sy, n: x.Buf.H}, l.ruler, l.grid)
 		}
 		return dm, nil
 	case *graph.DataValue:

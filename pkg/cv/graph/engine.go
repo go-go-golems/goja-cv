@@ -228,3 +228,6 @@ func (e *Engine) Explain(id NodeID, scale float64) []string {
 
 // Path is the receiver chain of node id.
 func (e *Engine) Path(id NodeID) []string { return e.ev.Path(id) }
+
+// Chain is the compact receiver chain of node id for captions.
+func (e *Engine) Chain(id NodeID) string { return e.ev.Chain(id) }

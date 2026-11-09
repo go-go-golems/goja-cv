@@ -54,7 +54,14 @@ func (b *Builder) internOp(name string, recv *Node, raw ...any) (*Node, []Warnin
 	if !ok {
 		return nil, nil, Errorf(EInternal, "no %s op is registered for %s", name, A(string(recv.Kind)))
 	}
-	return b.Intern(op, recv.ID, raw, nil)
+	r, err := b.call(op, recv.ID, raw, nil, true)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(r.Nodes) != 1 {
+		return nil, nil, Errorf(EInternal, "%s returns %d nodes", name, len(r.Nodes))
+	}
+	return r.Nodes[0], r.Warnings, nil
 }
 
 // resolveSpace stores the op's working space in args (so the hash and the

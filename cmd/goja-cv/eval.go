@@ -170,7 +170,7 @@ func printYAML(w io.Writer, key string, value *yaml.Node) {
 	fmt.Fprintf(w, "\n%s", b)
 }
 
-var lookCaption = regexp.MustCompile(`^look (\d+): (.*?) \(`)
+var lookCaption = regexp.MustCompile(`^look (\d+): (.*?)(?: — | \()`)
 
 // writeLooks writes the rendered looks of resp into dir (a new temporary
 // directory when dir is empty) and returns one entry per content ref.

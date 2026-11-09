@@ -431,6 +431,11 @@ func stamp(n *Node, v Value, ins []Value) Value {
 			x = &c
 		}
 		x.Frame, x.Enc = n.Frame, n.Enc
+		if x.origin == nil && len(ins) > 0 { // keep a cut buffer's origin through ops that keep its raster
+			if in, ok := ins[0].(*ImageValue); ok && in.origin != nil && in.Frame == x.Frame && in.Buf.W == x.Buf.W && in.Buf.H == x.Buf.H {
+				x.origin = in.origin
+			}
+		}
 		return x
 	case *RegionsValue:
 		if isInput(v) {
