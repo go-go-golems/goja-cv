@@ -906,3 +906,197 @@ deletions(-).
 
 Batch 1 total, `git diff --stat fa115dc cdc6326 -- pkg cmd internal Makefile`: 146 files changed, 4238
 insertions(+), 3768 deletions(-).
+
+## Step 8: Phase 5 — regions are arrays
+
+Batch 2 starts here, at `7ffe54b` (batch 1 verified by the coordinator). Phase 5 turns region sets into plain
+JavaScript arrays. An awaited Regions node is an array of flat items, each carrying a hidden `[node, index]` link;
+every op that takes regions takes a Regions node or an array (linked items, literal boxes and circles, and for
+`measure`, `sample` and `cv.sheet` points), so JavaScript does the querying and the query ops, data lambdas and
+their machinery are gone. One `img.measure(items)` replaces both measures, with radii from each item;
+`img.mask.regions(items)` replaces `toMask`. The three gated real-data tests are re-tuned, and the speck-ranking drop
+turned out to be a change of the tile files, not of labels or code.
+
+### Prompt Context
+
+**User prompt (verbatim):** "You are the GCV-004 implementer, batch 2: phases 5, 6, 7 and 8 of the GCV-004 guide in
+goja-cv, then the pi validation and the PR. […] Phase 5: Re-tune the three real-data tests (`TestRealHotListMeasures`,
+`TestRealTileReEncodedAsLinear`, `TestRealViewRanking`) against the current gold labels in `~/dustds/gold` […] Make them
+robust to label drift. Compare methods or check relative properties instead of asserting absolute counts […]
+Investigate why the speck view's ranking is now median rank 75 with 39.6 % of gold points in the top 50 […] Verify
+that by checking out `b847520` in a temporary worktree […] Keep the v1 stepChroma rule […] Delete `fields.go` […]
+Rewrite the regions half of `05-masks-and-regions.md` and add a `regions` help concept. […] Additions from GCV-005
+that are cheap here: Item `label` field […] `sheet` takes points […]" (the full prompt is in the batch-2 task; the
+rules on gate, commits, goldens, docs, tasks and deviations are those of batch 1.)
+
+Coordinator messages during the phase (verbatim): "1. **One binding for points.** Use one `items|point[]` binding
+for `measure`, `sample` and `cv.sheet`, with a `Point` item shape for a centre without a radius (`[x, y]` or
+`{ cx, cy }`). Delete the sheet's separate list path, so all three ops accept the same inputs. 2. **Ids may
+repeat.** Items may carry a `label` string, and labels print `label`, else `id`. A non-numeric `id` is
+`E_ARG_TYPE`, with a fix that moves the text to `label`. Ids may repeat: say so in the help text, and never use them
+for identity, which stays the `[node, index]` link." and "1. **Phase 5: don't add `mask.regions`' `grow` option.**
+GCV-005 replaces mask `grow`/`shrink` with `dilate`/`erode` on one-channel images, so a `grow` option would only be
+deleted again. If you already added it, remove it and record the removal as a deviation. 2. **Phase 6: track
+`cv.save` promises.** […]"
+
+**Assistant interpretation:** Implement guide §13 Phase 5 (§6.4, §7.6, D5–D7, D17, D19, §9 item 10) with the
+GCV-005 additions (label, Point, one points binding, repeatable ids, no `grow`), re-tune the real-data tests to
+relative checks, explain the ranking drop with a controlled comparison, and update docs 04, 05, 09, 12 (and every
+other block the change breaks).
+
+**Inferred user intent:** Agents filter regions with the JavaScript they already know, the colleague's
+detector-plus-gold workflow becomes one array, and the real-data tests stop breaking whenever the labels change.
+
+**Commit (code):** `449aaed` — "GCV-004 Phase 5: regions as arrays"
+
+### What I did
+
+- **Items** (`pkg/cv/graph/items.go`, new): the type words `Items`, `Items|Mask`, `Items|point[]`; `binder.checkItems`
+  takes a Regions node (an input), a one-channel image for `Items|Mask`, or an array, which `parseItems` turns into
+  canonical entries — linked `{ index, x, y, w, h, id?, label? }` from `__cvref: [node, index]`, literal
+  `{ shape: box|disk|point, geometry, id?, label? }` — and interns through a new `bind` callback
+  (`Builder.itemsNode`) as the internal `items` op (`graph.ItemsOpDef`, registered by `ops`; `AnalysisScale` 1;
+  frame of its source or empty). Two region sets → `E_ARG_TYPE` with the op's fix (`twoSetsFix`); unlinked objects
+  with `id` and `area` → `ITEMS` warning; a non-number `id` → `E_ARG_TYPE` with the `label` fix. `runItems` takes
+  linked regions by position and refuses a moved box (compared with the region's box rounded to 0.01 doc px); literal
+  items are `Box`, `Disk` and `Point` regions. `stripRefs` drops `__cvref` from every non-items argument (an item
+  passed as a box, a point, options or marks is its fields).
+- **Regions** (`pkg/cv/graph/regions.go`): `Region.Shape` (`Pixels`, `Box`, `Disk`, `Point`), `R`, `Label`,
+  `Text()` (label, else id); `overlap` draws a box with exact area coverage and a disk with
+  `kernels.EllipseCoverage` (so a literal box equals `mask.box`, a circle `mask.ellipse`); `Records()` replaces
+  `Summary()` (an array, `E_TOO_MANY` with a v2 fix); `Data` keeps measures exact (deviation 34) and rounds geometry
+  and `r`.
+- **Ops:** `measure` on Image (`pkg/cv/ops/regionmeasure.go`, rewritten): `items` (`Items|point[]`), `ring` (default:
+  on unless `stats`), `stats`, `coreRadius`, `ringRadii`, `channels`, `prefix`, `gray`, `analysisScale`; core radius
+  from `coreRadius`, the item's `r`, else √(area / π) ≥ 1; ring [1.5 r, 2.5 r]; a point without `coreRadius` is
+  `E_ARG_TYPE` with `img.measure(points, { coreRadius: 3 })`; items outside the frame get null ring fields and an
+  `OUTSIDE` warning; the v1 `stepChroma` gate is kept. The point `measure` (Value rows) is gone; `sample` takes
+  `Items|point[]` and samples centres; `mask.regions(items)` replaces `toMask` (no `grow`); overlay, heal and
+  `stats({ mask })` take `Items|Mask`; `cv.sheet` takes `Items|point[]` (its list path `listItems`/`sheetItem` is
+  deleted; the bound comes from `graph.ItemCount`); overlay and sheet print `Region.Text()`.
+- **Deleted** (§9 item 10): `where`, `sortBy`, `top`, `only`, `without`, `count`, `filter`, `toMask`,
+  `validatePredicate`, `compare`, `matches`, `idSet`, `idFilterOp`, `truthy`, `rasterize`, `OpDef.Produces`,
+  `producerHint`, `UnknownFieldError`, `RemovedFields`, `RemovedFieldError`, `Error.field`, `ENoField`,
+  `speckProduces`, `regionMeasureProduces`, `statSynonyms`, `OpDef.MaxItems`, `FuncID`, `FuncArg`, `Args.Func`, the
+  `func` type, `Callbacks`, `Evaluator.CallEach`/`SetCallbacks`, `binding.funcJS`/`CallEach`, `pkg/gojamod/cv/fields.go`
+  (`__removedFields`, `__noField`, `__itemProto`), the prelude's `NODE`, `link`, `ITEM_PROTO`, `ARRAY_METHODS`,
+  `funcIds`, `__cvfunc`, `__notArray`/`ENotArray`, `__collision` and `EvalTrace.Collisions`, `jsError`, the
+  `Member`/`RECV` and collision branches of `explainDataMisuse`, the Regions branch of `kindHelp`.
+- **JavaScript:** `linkItems` sets `it[ITEM] = [id, i]` (an enumerable symbol); `marshal` sends a linked item as
+  `{ __cvref, …fields }`; `resultToJS` returns the records array. Regions have no method table, so every property of
+  a lazy Regions node is `E_NOT_AWAITED` (an image method that takes items says "regions are arguments").
+- **Help:** a `regions` concept; `Mask`/`Regions` are concepts (`helpKinds` is Image, Value); `Mask.x` and
+  `Regions.x` answer `found: false` with the Image method and the concept (`conceptMethod`); the `id` field doc says
+  ids may repeat.
+- **Docs:** `05-masks-and-regions` regions half rewritten ("Regions are arrays", "Literal items", "Converting");
+  `03` ("Awaited regions are arrays", kinds table), `04` (builder lambdas only; data is JavaScript), `12` (one
+  `measure`, radii, gold `r / 2`, measuring regions, the re-measured hot-list numbers), `09`, `13`, `02`, `06`, `08`,
+  `01`; guidebook `01`, `02`, `03`, `04`, `08`, `10`; README; MCP instructions (one Regions line, still under 4000).
+- **Real data** (`measure_real_test.go`, `viewrank_test.go`, `realdata_test.go`): see Technical details.
+
+### Why
+
+- Guide §6.4, §7.6, D5–D7, D17, D19; the GCV-005 additions keep GCV-005 from changing the item model again.
+
+### What worked
+
+- The gate: `gofmt=0 build=0 vet=0 test=0 lint=0 logcopter=0 smoke=0 gate=0`.
+- Goldens: the check ran without `-update` and passed. `specks-overlay` is exact; `sheet-2x2` is exact with
+  `labels: "index"` in its call (deviation 35). No golden was regenerated.
+- goja copies enumerable symbol keys in spread and hides them from `Object.keys` and `JSON.stringify`
+  (`TestMasksAndRegionsFromJS` asserts `7:1:{"a":1}`, D6), and renumbered, labelled, reordered items keep their own
+  pixels (`measuredIds: 1:r0:16,2:r1:80`).
+- `overlay(array)` equals `overlay(node)` byte for byte; literal boxes and circles equal `mask.box`/`mask.ellipse`
+  at scales 1 and 0.5.
+
+### What didn't work
+
+- The ranking investigation's first assumption (labels) was wrong; see Technical details.
+- D17's prediction failed on the gold labels: `circles sized from r: median snr 0.86, not above the fixed 3 px core's
+  1.17` (deviation 39).
+- `TestMeasureMatchesTheHelper` failed after the switch to Regions: `ok: false d: [4.6269e-05, 4.976e-05, 3.1856e-05,
+  4.8805e-05, 0.0076872]` — region measures were rounded to 4 decimals; they are exact now (deviation 34).
+- `TestGoldenLooks/sheet-2x2: largest difference 238 codes, 99 of 113472 samples differ`: literal points are labelled
+  by id (1, 2) instead of index (0, 1); the golden call passes `labels: "index"`.
+- `TestSessionB`: `heal nodes: 1` — two filtered arrays with the same items are one hash-consed items node, so the
+  "second threshold" heal was the same node; the test now heals with another radius.
+- Topic size: `masks-and-regions is 6377 characters`, then `looks is 6103`, `recipes is 6054`; tightened prose.
+- `make lint`: `func sortedNames is unused`, `rasterize`, `jsError`, `median`; deleted.
+
+### What I learned
+
+- The tile JSON now says `"view": "density, dust bright, code value = v: open with encoding 'linear'"`: the
+  colleague's export changed under the tests in DUST-002 `d54088c` ("tiles re-exported as linear density").
+- Gold `r` from dustview is the fit radius (2 × the half-level radius, per DUST-002 `cc70685`), not the speck radius.
+
+### What was tricky to build
+
+- The binder had to intern a node in the middle of binding. Passing `Builder.itemsNode` into `bind` keeps the
+  binder free of the builder; `funcs.go`'s bespoke functions pass nil (arrays refused there).
+- Frames: the evaluator stamps a Regions value with its node's frame, which is also the raster of the regions'
+  pixels. `measure` therefore takes its items' frame (falling back to the receiver's for literal items), not the
+  image's, or a linked region's pixels would be read in the wrong raster.
+- Identity versus data: linked entries carry `id` and `label` (so a renumbering shows up in labels and results), but
+  never pixels or box; `index` is the identity.
+
+### What warrants a second pair of eyes
+
+- `pkg/cv/graph/items.go` (`parseItems`, `runItems`'s moved check at 1e-6 after rounding to 0.01).
+- `stripRefs` in `bind`: every non-Items argument is copied without `__cvref`.
+- `itemsCover` (containment instead of same frame for heal, stats and measure, deviation 33).
+
+### What should be done in the future
+
+- D17 and the gold `r`: decide whether `{ cx, cy, r }` means the speck radius (as now) or whether the DUST-002
+  helpers should pass `r / 2`; the measuring topic documents `r / 2` for dustview labels.
+- Phase 6 replaces the `cv.json`/`cv.csv` tests touched here.
+
+### Code review instructions
+
+- Start with `pkg/cv/graph/items.go`, then `args.go` (`check` → `checkItems`, `bind`'s `stripRefs`),
+  `regions.go` (`Shape`, `overlap`, `Records`), `pkg/cv/ops/regionmeasure.go`, `regions.go`, `sheet.go`,
+  `pkg/gojamod/cv/prelude.js` (`linkItems`, `marshal`), `help.go` (`conceptMethod`).
+- Validate: `scripts/04-gate.sh`; `go test ./pkg/cv/ops -run 'TestItems|TestMeasure' -v`;
+  `go test ./pkg/gojamod/cv -run TestMasksAndRegionsFromJS`; `scripts/05-real-data.sh`.
+
+### Technical details
+
+**The speck-ranking drop.** On the same current tiles and labels, `b847520` (a temporary worktree in the scratch
+area) prints exactly the batch-1 numbers: `speck view: 197 points on 15 tiles, median rank 75, top50 39.6 %` and the
+same hot-list and tile-stats lines. So no code regression. The tiles changed: since DUST-002 `d54088c` they store
+density v as the code value (open with `encoding: "linear"`), where they used to store sRGB_encode(v); the tests
+opened them as sRGB, so `as("linear")` decoded density a second time. A split by encoding and by label change:
+
+| open as | all 197 points | 111 points, 13 tiles with unchanged labels | 86 points, 2 relabelled tiles (2026-11-09) |
+|---|---|---|---|
+| srgb (as the old tests) | median 75, top50 39.6 % | 57, 43.2 % | 209, 34.9 % |
+| linear (as the tile JSON says) | median 24, top50 78.2 % | 22, 74.8 % | 26, 82.6 % |
+
+With the right encoding the numbers are back near the GCV-002 18 / 79.6 % (on 142 points), and the re-encoded tile's
+stats are exactly the old "guide" constants (meanL 0.33567, p01 0.00854, p99 0.91794). The labels moved the
+numbers only a little.
+
+**Re-tuned tests** (relative assertions; numbers logged):
+
+```
+speck view: 197 points on 15 tiles, median rank 24, top50 78.2 %      (must beat levels({ auto: true }))
+levels view: 197 points on 15 tiles, median rank 1467, top50 1.0 %
+hot list: 15 tiles, 555 regions (37.0 per tile), 197 gold points: 60.4 % within 4 px of a top-30 spot by snr, 43.1 % by area, 73.6 % of any spot
+labelled dust (142 matched): snr median 2.23 (middle half 1.75–2.81), stepChroma median 0.00 (0.00–0.57)
+unlabelled spots (386): snr median 0.76 (middle half 0.51–1.06), stepChroma median 0.00 (0.00–0.36)
+gold dust (190 points): snr median 1.56 (middle half 0.92–2.35) with r / 2, 0.86 (0.58–1.45) with the label's r, 1.17 (0.79–1.84) with a 3 px core
+tile stats: meanL 0.33567 p01 0.00854 p99 0.91794   (TestRealTileReEncodedAsLinear: code-value tile = sRGB-encoded export through as("linear"))
+78 specks, first at raw (1765.6, 2404.9)
+```
+
+Assertions: speck view median rank below and top-50 share above `levels({ auto: true })`'s; labelled dust median snr
+≥ 2 × the unlabelled median and its lower quartile above it; ranking by snr puts more gold points in the top 30 than
+ranking by area; gold circles at `r / 2` beat the 3 px core; the sRGB-encoded export through `as("linear")` matches
+the code-value tile within 3/65535, masks within 2e-3, stats within 1e-4. Hot-list thresholds with the new radii:
+37 spots per tile (was 58.9 with the clamped radius and the sRGB misread), 60.4 % by snr.
+
+Ring-radius variants on the 190 gold dust points (an experiment, not committed): core r, ring [r+3, r+9]: 0.85; core
+r/2, ring [1.5 r, 2.5 r]: 1.98; core r/2, ring [r, 2r]: 1.78; core r, ring [2r, 3r]: 0.88.
+
+`git diff --stat 7ffe54b 449aaed -- pkg cmd internal README.md`: 74 files changed, 1847 insertions(+), 1983
+deletions(-); non-test Go and JavaScript only: 33 files changed, 967 insertions(+), 1283 deletions(-).
