@@ -3,13 +3,15 @@ package ops
 
 import "github.com/go-go-golems/goja-cv/pkg/cv/graph"
 
-// Register adds every M1 op to r.
+// Register adds every op to r.
 func Register(r *graph.Registry) {
 	r.MustRegister(sourceOps()...)
 	r.MustRegister(toneOps()...)
 	r.MustRegister(filterOps()...)
 	r.MustRegister(measureOps()...)
 	r.MustRegister(valueOps()...)
+	r.MustRegister(maskMakerOps()...)
+	r.MustRegister(maskOps()...)
 	r.MustRegister(metaOps()...)
 }
 

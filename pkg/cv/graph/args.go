@@ -106,6 +106,29 @@ func (a Args) Lengths(name string, scale float64) []float64 {
 	return out
 }
 
+// XY reads a DocPx list of coordinates and sizes ([x, y], [x, y, w, h])
+// converted to buffer px with per-axis scales: even elements are multiplied
+// by sx, odd ones by sy. Use it with AxisScales of the buffer the
+// coordinates refer to (rounded buffer sizes make sx and sy differ slightly
+// from the nominal scale). It returns nil when the value is not a list.
+func (a Args) XY(name string, sx, sy float64) []float64 {
+	l := a.Lengths(name, 1)
+	for i := range l {
+		if i%2 == 0 {
+			l[i] *= sx
+		} else {
+			l[i] *= sy
+		}
+	}
+	return l
+}
+
+// AxisScales are the effective buffer-px-per-doc-px scales of an image
+// value along x and y.
+func AxisScales(v *ImageValue) (float64, float64) {
+	return float64(v.Buf.W) / float64(max(1, v.DocW)), float64(v.Buf.H) / float64(max(1, v.DocH))
+}
+
 // Node reads a kind-typed argument: the evaluated value of the node passed
 // for it (nil if the argument is absent).
 func (a Args) Node(name string) Value {
