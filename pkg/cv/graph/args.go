@@ -12,9 +12,18 @@ import (
 // NodeArg is a node passed as an argument value in a raw call (from JS).
 type NodeArg struct{ ID NodeID }
 
-// FuncArg is a JavaScript function passed as an argument (no op accepts
-// lambdas in M1).
-type FuncArg struct{}
+// FuncID identifies a JavaScript function registered by the binding.
+type FuncID int64
+
+// FuncArg is a JavaScript function passed as an argument. Only arguments of
+// type "func" (data lambdas such as Regions.filter) accept it; builder
+// lambdas (within) are run by the prelude and arrive as BuiltArg.
+type FuncArg struct{ ID FuncID }
+
+// MarshalJSON encodes the function reference for hashing and display.
+func (f FuncArg) MarshalJSON() ([]byte, error) {
+	return []byte(`{"$fn":` + strconv.FormatInt(int64(f.ID), 10) + `}`), nil
+}
 
 // InputRef is a lifted node argument inside canonical args: it refers to
 // node.Inputs[Index].
@@ -127,6 +136,13 @@ func (a Args) XY(name string, sx, sy float64) []float64 {
 // value along x and y.
 func AxisScales(v *ImageValue) (float64, float64) {
 	return float64(v.Buf.W) / float64(max(1, v.DocW)), float64(v.Buf.H) / float64(max(1, v.DocH))
+}
+
+// Func reads a "func" argument.
+func (a Args) Func(name string) FuncID {
+	a.mustSpec(name)
+	f, _ := a.vals[name].(FuncArg)
+	return f.ID
 }
 
 // Node reads a kind-typed argument: the evaluated value of the node passed
@@ -393,9 +409,16 @@ func (b *binder) check(s *ArgSpec, typ string, v any, where string) (any, error)
 		}
 		return nil, Errorf(EWrongKind, "%s needs a %s node, got %s.", where, typ, describeRaw(v))
 	}
-	if _, ok := v.(FuncArg); ok {
+	if fa, ok := v.(FuncArg); ok {
+		if typ == "func" {
+			return fa, nil
+		}
 		return nil, Errorf(EArgType, "%s does not accept a function.", where).
-			WithHint("No M1 op takes a lambda; pass a value or a node.")
+			WithHint("Only within(mask, i => …) (a builder) and Regions.filter(r => …) (a data lambda) take functions; pass a value or a node.")
+	}
+	if typ == "func" {
+		return nil, Errorf(EArgType, "%s must be a function, got %s.", where, describeRaw(v)).
+			WithFix("regions.filter(r => r.contrast > 3 * r.localNoise)")
 	}
 	if _, ok := v.(InputRef); ok && b == nil {
 		return nil, Errorf(EInternal, "%s: unresolved input reference", where)

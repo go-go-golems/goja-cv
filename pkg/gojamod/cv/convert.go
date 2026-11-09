@@ -9,7 +9,7 @@ import (
 
 // fromJS converts an exported, prelude-marshalled argument into the raw
 // argument space of graph.Engine.Call: node markers {__cvnode: id} become
-// graph.NodeArg, function markers become graph.FuncArg.
+// graph.NodeArg, function markers {__cvfunc: id} become graph.FuncArg.
 func fromJS(v any) any {
 	switch x := v.(type) {
 	case map[string]any:
@@ -17,8 +17,9 @@ func fromJS(v any) any {
 			f, _ := graph.Normalize(id).(float64)
 			return graph.NodeArg{ID: graph.NodeID(f)}
 		}
-		if _, ok := x["__cvfunc"]; ok && len(x) == 1 {
-			return graph.FuncArg{}
+		if id, ok := x["__cvfunc"]; ok && len(x) == 1 {
+			f, _ := graph.Normalize(id).(float64)
+			return graph.FuncArg{ID: graph.FuncID(f)}
 		}
 		out := make(map[string]any, len(x))
 		for k, e := range x {

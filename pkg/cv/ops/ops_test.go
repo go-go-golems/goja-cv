@@ -103,7 +103,7 @@ func TestPreviewScaleEvaluatesSmallerBuffers(t *testing.T) {
 
 // walkNodes are the receivers and node inputs the registry walk uses.
 type walkNodes struct {
-	img, stats, num, mask, mask2 *graph.Node
+	img, stats, num, mask, mask2, regions *graph.Node
 }
 
 func nodeArg(n *graph.Node) graph.NodeArg { return graph.NodeArg{ID: n.ID} }
@@ -132,7 +132,17 @@ var walkSamples = map[string]func(w walkNodes) []any{
 	"shrink":         func(walkNodes) []any { return []any{2} },
 	"refine":         func(w walkNodes) []any { return []any{nodeArg(w.img), map[string]any{"r": 4}} },
 	"overlay":        func(w walkNodes) []any { return []any{nodeArg(w.img)} },
+	"where":          func(walkNodes) []any { return []any{map[string]any{"area": map[string]any{"gte": 2}}} },
+	"without":        func(walkNodes) []any { return []any{[]any{1}} },
+	"only":           func(walkNodes) []any { return []any{1} },
+	"sortBy":         func(walkNodes) []any { return []any{"area"} },
+	"top":            func(walkNodes) []any { return []any{3} },
+	"toMask":         func(walkNodes) []any { return []any{map[string]any{"grow": 1}} },
 }
+
+// walkSkip are ops the Go-only walk cannot evaluate (data lambdas need a
+// JavaScript runtime; they are covered by the runtime tests).
+var walkSkip = map[string]bool{"filter": true}
 
 // TestRegistryWalk builds every op with sample arguments on the test image,
 // evaluates it at preview scale and at 1.0, checks the result kind and that
@@ -143,13 +153,14 @@ func TestRegistryWalk(t *testing.T) {
 	w := walkNodes{img: img, stats: stats, num: call(t, e, "field", stats.ID, "meanL"),
 		mask:  call(t, e, "mask.luminance", img.ID, map[string]any{"above": 0.3}),
 		mask2: call(t, e, "mask.box", img.ID, []any{8, 8, 30, 20})}
-	recv := map[graph.Kind]graph.NodeID{graph.KindImage: img.ID, graph.KindValue: stats.ID, graph.KindMask: w.mask.ID}
+	w.regions = call(t, e, "components", w.mask.ID)
+	recv := map[graph.Kind]graph.NodeID{graph.KindImage: img.ID, graph.KindValue: stats.ID, graph.KindMask: w.mask.ID, graph.KindRegions: w.regions.ID}
 	for _, op := range e.Registry().Ops() {
 		if _, err := e.Registry().Help(op.Name); err != nil {
 			t.Fatalf("help(%s): %v", op.Name, err)
 		}
 		r, ok := recv[op.On]
-		if !ok {
+		if !ok || walkSkip[op.Name] {
 			continue // sources are covered by Open/DeclareParam; Param has no receiver here
 		}
 		if op.On == graph.KindValue && op.Name != "field" && op.Name != "pick" && op.Name != "percentile" && op.Name != "explain" {

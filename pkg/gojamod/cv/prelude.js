@@ -40,13 +40,25 @@
     return typeof x === "object" && x !== null && nodeSet.has(x);
   }
 
+  // data lambdas: one native id per function object, so the same function
+  // passed twice gives the same (hash-consed) node.
+  const funcIds = new WeakMap();
+  function funcId(fn) {
+    let id = funcIds.get(fn);
+    if (id === undefined) {
+      id = native.__func(fn);
+      funcIds.set(fn, id);
+    }
+    return id;
+  }
+
   // marshal converts call arguments for the native side: nodes become
-  // { __cvnode: id }, functions { __cvfunc: true }; arrays and plain objects
+  // { __cvnode: id }, functions { __cvfunc: id }; arrays and plain objects
   // are walked (nodes inside options objects are lifted by Go).
   function marshal(x) {
     if (x === null || x === undefined) return x;
     if (isNode(x)) return { __cvnode: x.__id };
-    if (typeof x === "function") return { __cvfunc: true };
+    if (typeof x === "function") return { __cvfunc: funcId(x) };
     if (Array.isArray(x)) return x.map(marshal);
     if (typeof x === "object") {
       const o = {};

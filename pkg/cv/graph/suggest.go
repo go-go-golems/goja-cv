@@ -88,6 +88,10 @@ func closest(name string, candidates []string) string {
 	return ""
 }
 
+// Closest returns the candidate nearest to name within a small edit
+// distance, or "" (for did-you-mean hints in ops).
+func Closest(name string, candidates []string) string { return closest(name, candidates) }
+
 // UnknownMethod builds the E_UNKNOWN_METHOD (or E_NAMESPACE) error for
 // receiverExpr.name on a node of kind k. Suggestions come from, in order: a
 // namespaced op with that member name, the synonym table, edit distance over

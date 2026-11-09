@@ -22,10 +22,69 @@ type binding struct {
 
 	mu       sync.Mutex
 	warnings []graph.Warning
+
+	// funcs holds the JavaScript functions passed as data lambdas, by id.
+	// Only the owner goroutine reads or writes it.
+	funcs    map[graph.FuncID]goja.Callable
+	nextFunc graph.FuncID
 }
 
+var _ graph.Callbacks = &binding{}
+
 func newBinding(vm *goja.Runtime, eng *graph.Engine) *binding {
-	return &binding{vm: vm, eng: eng}
+	b := &binding{vm: vm, eng: eng, funcs: map[graph.FuncID]goja.Callable{}}
+	eng.Evaluator().SetCallbacks(b)
+	return b
+}
+
+// __func(fn) → id: registers a data lambda. The prelude caches ids per
+// function object, so passing the same function twice gives the same node.
+func (b *binding) funcJS(c goja.FunctionCall) goja.Value {
+	fn, ok := goja.AssertFunction(c.Argument(0))
+	if !ok {
+		b.throw(graph.Errorf(graph.EArgType, "expected a function"))
+	}
+	b.nextFunc++
+	b.funcs[b.nextFunc] = fn
+	return b.vm.ToValue(int64(b.nextFunc))
+}
+
+// CallEach runs data lambda id on the runtime owner goroutine, once per
+// argument (converted to fresh JS objects), and returns the exported
+// results. It is called from evaluation goroutines, never from the owner
+// (evaluation started from JavaScript always runs off the owner), so
+// Owner.Call can schedule onto the idle event loop.
+func (b *binding) CallEach(ctx context.Context, id graph.FuncID, args []any) ([]any, error) {
+	svc, ok := runtimebridge.Lookup(b.vm)
+	if !ok || svc.Owner == nil {
+		return nil, graph.Errorf(graph.EInternal, "cv: runtime services missing; data lambdas need a go-go-goja runtime")
+	}
+	res, err := svc.Owner.Call(ctx, "cv.datalambda", func(_ context.Context, vm *goja.Runtime) (any, error) {
+		fn, ok := b.funcs[id]
+		if !ok {
+			return nil, graph.Errorf(graph.EInternal, "data lambda #%d is not registered", id)
+		}
+		out := make([]any, len(args))
+		for i, a := range args {
+			v, err := fn(goja.Undefined(), toJS(vm, a))
+			if err != nil {
+				return nil, graph.Errorf(graph.EEval, "the function passed to filter threw on item %d: %v", i, err).
+					WithHint("The function receives one region's data: { id, box, area, centroid, score, … }.")
+			}
+			out[i] = graph.Normalize(v.Export())
+		}
+		return out, nil
+	})
+	if err != nil {
+		if ce, ok := graph.AsError(err); ok {
+			return nil, ce
+		}
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		return nil, graph.Errorf(graph.EEval, "data lambda: %v", err)
+	}
+	return res.([]any), nil
 }
 
 func (b *binding) object() *goja.Object {
@@ -46,6 +105,7 @@ func (b *binding) object() *goja.Object {
 	set("__paramInfo", b.paramInfo)
 	set("__paramSet", b.paramSet)
 	set("__params", b.params)
+	set("__func", b.funcJS)
 	return o
 }
 
