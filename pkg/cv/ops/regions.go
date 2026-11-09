@@ -337,6 +337,10 @@ func regionOps() []graph.OpDef {
 		{
 			Name: "top", On: graph.KindRegions, Returns: graph.KindRegions,
 			Args: []graph.ArgSpec{{Name: "n", Type: "number", Positional: true, Min: graph.F(0)}},
+			MaxItems: func(a graph.Args) (int, bool) {
+				n, ok := a.Raw("n").(float64)
+				return int(n), ok
+			},
 			Run: func(_ context.Context, _ *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
 				rv := regions(in[0])
 				n := min(len(rv.Items), a.Int("n"))
@@ -401,8 +405,7 @@ func regionOps() []graph.OpDef {
 
 // rasterize draws rv at the buffer size of scale.
 func rasterize(ctx context.Context, rv *graph.RegionsValue, scale float64) (*buffer.Buffer, error) {
-	w, h := buffer.ScaledSize(rv.Frame.W, rv.Frame.H, scale)
-	return rv.Rasterize(ctx, w, h, scale)
+	return rv.Rasterize(ctx, graph.FrameRaster(rv.Frame, scale))
 }
 
 func truthy(v any) bool {

@@ -153,7 +153,10 @@ var walkSamples = map[string]func(w walkNodes) []any{
 	"dog":           func(walkNodes) []any { return []any{1.0, 4.0, map[string]any{"polarity": "bright"}} },
 	"localContrast": func(walkNodes) []any { return []any{3.0} },
 	"view":          func(walkNodes) []any { return []any{"speck"} },
-	"inpaint":       func(w walkNodes) []any { return []any{nodeArg(w.mask2)} },
+	"annotate": func(walkNodes) []any {
+		return []any{[]any{map[string]any{"circle": []any{20.0, 20.0, 5.0}, "label": "a"}, map[string]any{"box": []any{3.0, 4.0, 10.0, 8.0}}}}
+	},
+	"inpaint": func(w walkNodes) []any { return []any{nodeArg(w.mask2)} },
 	"blend": func(w walkNodes) []any {
 		return []any{nodeArg(w.edited), map[string]any{"mode": "screen", "mask": nodeArg(w.mask)}}
 	},

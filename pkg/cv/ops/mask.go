@@ -374,7 +374,8 @@ func maskOps() []graph.OpDef {
 			Doc: "The fraction of the image the mask selects (its mean), in [0, 1].",
 		},
 		{
-			Name: "overlay", On: graph.KindMask, Inputs: []graph.Kind{graph.KindImage}, Returns: graph.KindImage, Space: graph.SpaceRule{Default: buffer.SpaceEncoded},
+			Name: "overlay", On: graph.KindMask, Inputs: []graph.Kind{graph.KindImage}, Returns: graph.KindImage, Space: graph.SpaceRule{Default: buffer.SpaceEncoded}, Class: graph.Decoration,
+			DocFrame: func(_ graph.Args, inputs []*graph.Node) graph.Frame { return inputs[1].Frame },
 			Args: []graph.ArgSpec{
 				{Name: "color", Type: "any", Default: "red", Doc: "colour name or display [r, g, b] in [0, 1] (encoded values)"},
 				{Name: "alpha", Type: "number", Default: 0.5, Min: graph.F(0), Max: graph.F(1)},
@@ -391,8 +392,16 @@ func maskOps() []graph.OpDef {
 }
 
 func tint(ctx context.Context, img, m *graph.ImageValue, a graph.Args) (graph.Value, error) {
-	if err := sameFrame("overlay", m, img); err != nil {
+	if err := containsFrame("overlay", m.Frame, img.Frame); err != nil {
 		return nil, err
+	}
+	if m.Frame != img.Frame { // a mask of the whole image on a crop: cut it like the image
+		sx, _ := graph.AxisScales(img)
+		cut, err := cropValue(m, img.Frame, sx)
+		if err != nil {
+			return nil, err
+		}
+		m = cut.(*graph.ImageValue)
 	}
 	col, err := parseColor(a.Raw("color"), "overlay.color")
 	if err != nil {

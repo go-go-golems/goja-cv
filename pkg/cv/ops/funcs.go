@@ -32,6 +32,9 @@ func LookArgs() []graph.ArgSpec {
 			Doc: "coordinate rulers in margins: tick spacing in doc px, or true to pick 1, 2, 4, 8 … so ticks are ≥ 40 image px apart; labels are absolute doc px"},
 		{Name: "grid", Type: "number", Unit: graph.DocPx, Optional: true, Min: graph.F(0),
 			Doc: "faint lines every grid doc px over the image"},
+		{Name: "format", Type: "enum:auto,png,jpeg", Default: "auto",
+			Doc:           "auto: PNG for gray, zoomed, sheet and small (≤ 512 × 512) looks, JPEG (q85) otherwise; png is lossless (no ringing around specks)",
+			ValueSynonyms: map[string]string{"lossless": "png", "jpg": "jpeg", "lossy": "jpeg", "PNG": "png", "JPEG": "jpeg"}},
 	}
 }
 
@@ -72,7 +75,7 @@ func funcDefs() []graph.FuncDef {
 		},
 		{
 			Name: "show", Global: true, Args: LookArgs(), Bespoke: true,
-			Usage: "show(node, label | { label, zoom, interp, maxSide, ruler, grid }) · show(look)",
+			Usage: "show(node, label | { label, zoom, interp, maxSide, ruler, grid, format }) · show(look)",
 			Doc:   "Create a look, queue it and return it; queued looks are delivered even if the eval throws later.",
 			See:   []string{"look"},
 		},

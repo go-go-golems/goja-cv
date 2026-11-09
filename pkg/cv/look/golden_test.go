@@ -106,6 +106,27 @@ func goldenCases() []goldenCase {
 		{"grid-gray-crop-zoom4", classStrict, func(t *testing.T, e *graph.Engine, img graph.NodeID) graph.NodeID {
 			return call(t, e, "crop", call(t, e, "toGray", img).ID, []any{180.0, 20.0, 48.0, 40.0}).ID
 		}, Options{Zoom: 4, Grid: 4}},
+		// GCV-002 Phase 6: decorations at zoom and a sheet
+		{"overlay-crop-zoom8", classStrict, func(t *testing.T, e *graph.Engine, img graph.NodeID) graph.NodeID {
+			sp := call(t, e, "detect.specks", img)
+			c := call(t, e, "crop", img, []any{180.0, 20.0, 48.0, 40.0})
+			return call(t, e, "overlay", c.ID, graph.NodeArg{ID: sp.ID}, map[string]any{"labels": "id"}).ID
+		}, Options{Zoom: 8}},
+		{"annotate-crop-zoom4", classStrict, func(t *testing.T, e *graph.Engine, img graph.NodeID) graph.NodeID {
+			a := call(t, e, "annotate", img, []any{
+				map[string]any{"circle": []any{200.5, 46.5, 6.0}, "color": "lime", "label": "star"},
+				map[string]any{"point": []any{160.0, 30.0}},
+				map[string]any{"box": []any{170.0, 60.0, 12.0, 10.0}, "color": "#ff8800"},
+				map[string]any{"polyline": []any{[]any{152.0, 75.0}, []any{165.0, 70.0}, []any{180.0, 80.0}}, "color": "cyan"},
+				map[string]any{"text": "hair?", "at": []any{185.0, 25.0}},
+			}, map[string]any{"width": 1.0})
+			return call(t, e, "crop", a.ID, []any{150.0, 20.0, 64.0, 64.0}).ID
+		}, Options{Zoom: 4}},
+		{"sheet-2x2", classStrict, func(t *testing.T, e *graph.Engine, img graph.NodeID) graph.NodeID {
+			v := call(t, e, "view", img, "speck")
+			return call(t, e, "sheet", 0, []any{[]any{200.5, 46.5}, []any{40.0, 150.0, 30.0, 12.0}},
+				map[string]any{"views": []any{graph.NodeArg{ID: img}, graph.NodeArg{ID: v.ID}}, "size": 24.0, "zoom": 4.0}).ID
+		}, Options{}},
 	}
 }
 

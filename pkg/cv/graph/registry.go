@@ -237,7 +237,12 @@ type OpDef struct {
 	Result   *ResultEnc            // encoding and space of an Image result; nil = KeepEnc
 	Gray     func(args Args) []int // positions of the Image inputs read as luminance (fed toGray rec709 in linear space)
 	Internal bool                  // not callable from JavaScript, not listed in help (convert)
-	Bespoke  bool                  // a module op bound by hand (cv.open, P.slider, the builder placeholder): the prelude does not generate cv.<name>
+	Lossless bool                  // looks of its result are PNG by default (format "auto"): contact sheets
+	// MaxItems is a static upper bound on the item count of a Regions
+	// result (top(n)); ok false when unknown (a lifted n). A sheet sizes
+	// itself by it.
+	MaxItems func(args Args) (n int, ok bool)
+	Bespoke  bool // a module op bound by hand (cv.open, P.slider, the builder placeholder): the prelude does not generate cv.<name>
 	// Expand makes the op a macro: a graph of other ops built at intern
 	// time (exactly one of Run and Expand is set). See ExpandFunc.
 	Expand ExpandFunc

@@ -19,18 +19,41 @@ func overlayArgs() []graph.ArgSpec {
 	}
 }
 
+// Overlays are decorations (GCV-002 §7.8): in a render above scale 1 they
+// receive the image rendered in the window and draw at the render scale, so
+// outlines are 1 image px (2 px on looks of at least 1024 px) and ids are
+// readable at any zoom. Regions and masks may cover a larger frame than the
+// image (regions found on the whole image, drawn on a crop).
+
+// containsFrame returns E_FRAME unless outer contains inner.
+func containsFrame(op string, outer, inner graph.Frame) error {
+	if inner.X >= outer.X && inner.Y >= outer.Y && inner.X+inner.W <= outer.X+outer.W && inner.Y+inner.H <= outer.Y+outer.H {
+		return nil
+	}
+	return graph.SameFrame(op, outer, inner)
+}
+
+// decorationWidth is the line width of outlines on an image of w × h px.
+func decorationWidth(w, h int) int {
+	if max(w, h) >= 1024 {
+		return 2
+	}
+	return 1
+}
+
 // drawRegions draws regions onto img for looking: their pixels tinted at
 // alpha·0.6, a box outline around each (at least 5 px, 2 px margin) and
-// optionally the id above the box.
+// optionally the id above the box (font size 2).
 func drawRegions(ctx context.Context, img *graph.ImageValue, rv *graph.RegionsValue, a graph.Args) (graph.Value, error) {
-	if err := graph.SameFrame("overlay", rv.Frame, img.Frame); err != nil {
+	if err := containsFrame("overlay", rv.Frame, img.Frame); err != nil {
 		return nil, err
 	}
 	col, err := parseColor(a.Raw("color"), "overlay.color")
 	if err != nil {
 		return nil, err
 	}
-	m, err := rv.Rasterize(ctx, img.Buf.W, img.Buf.H, img.Buf.Scale)
+	t := graph.RasterOf(img)
+	m, err := rv.Rasterize(ctx, t)
 	if err != nil {
 		return nil, err
 	}
@@ -38,10 +61,8 @@ func drawRegions(ctx context.Context, img *graph.ImageValue, rv *graph.RegionsVa
 	if err != nil {
 		return nil, err
 	}
-	sx, sy := graph.AxisScales(img)
-	short := min(out.W, out.H)
-	lw := max(1, int(math.Round(float64(short)/800)))
-	k := max(1, int(math.Round(float64(short)/400)))
+	lw := decorationWidth(out.W, out.H)
+	const px = 2
 	labels := a.String("labels") == "id"
 	for i, r := range rv.Items {
 		if i%256 == 0 {
@@ -49,11 +70,13 @@ func drawRegions(ctx context.Context, img *graph.ImageValue, rv *graph.RegionsVa
 				return nil, err
 			}
 		}
-		bx, by := r.Box[0]-float64(img.Frame.X), r.Box[1]-float64(img.Frame.Y) // absolute → buffer origin
-		x0 := int(math.Floor(bx*sx)) - 2
-		y0 := int(math.Floor(by*sy)) - 2
-		x1 := int(math.Ceil((bx+r.Box[2])*sx)) + 1
-		y1 := int(math.Ceil((by+r.Box[3])*sy)) + 1
+		x0 := int(math.Floor((r.Box[0]-t.OX)*t.SX)) - 2
+		y0 := int(math.Floor((r.Box[1]-t.OY)*t.SY)) - 2
+		x1 := int(math.Ceil((r.Box[0]+r.Box[2]-t.OX)*t.SX)) + 1
+		y1 := int(math.Ceil((r.Box[1]+r.Box[3]-t.OY)*t.SY)) + 1
+		if x1 < -lw || y1 < -lw || x0 >= out.W+lw || y0 >= out.H+lw-text.Height(px) {
+			continue // outside the window
+		}
 		if x1-x0 < 4 {
 			c := (x0 + x1) / 2
 			x0, x1 = c-2, c+2
@@ -64,11 +87,11 @@ func drawRegions(ctx context.Context, img *graph.ImageValue, rv *graph.RegionsVa
 		}
 		kernels.DrawRect(out, x0, y0, x1, y1, lw, col, 1)
 		if labels {
-			ty := y0 - lw - text.Height(k) - 1
+			ty := y0 - lw - text.Height(px) - 1
 			if ty < 0 {
 				ty = y1 + lw + 1
 			}
-			kernels.DrawText(out, x0, ty, strconv.Itoa(r.ID), k, col)
+			kernels.DrawText(out, x0, ty, strconv.Itoa(r.ID), px, col)
 		}
 	}
 	return graph.NewImage(out), nil
@@ -94,7 +117,7 @@ func imageInputs(inputs []*graph.Node) []*graph.Node {
 func presentOps() []graph.OpDef {
 	return []graph.OpDef{
 		{
-			Name: "overlay", On: graph.KindImage, Inputs: []graph.Kind{"Regions|Mask"}, Returns: graph.KindImage, Space: graph.SpaceRule{Default: buffer.SpaceEncoded},
+			Name: "overlay", On: graph.KindImage, Inputs: []graph.Kind{"Regions|Mask"}, Returns: graph.KindImage, Space: graph.SpaceRule{Default: buffer.SpaceEncoded}, Class: graph.Decoration,
 			Args:     overlayArgs(),
 			Validate: validateColor("color"),
 			Run: func(ctx context.Context, _ *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
@@ -104,17 +127,19 @@ func presentOps() []graph.OpDef {
 				}
 				return tint(ctx, img, mask(in[1]), a)
 			},
-			Doc: "The image with regions (tinted pixels, box outlines, optional ids) or a mask (tint) drawn over it, for looking.",
-			See: []string{"compare", "detect.specks"},
+			DocFrame: func(_ graph.Args, inputs []*graph.Node) graph.Frame { return inputs[0].Frame },
+			Doc:      "The image with regions (tinted pixels, box outlines, optional ids) or a mask (tint) drawn over it, for looking. A decoration: in a zoomed look outlines stay 1 image px and ids readable, before or after a crop; regions found on the whole image can be drawn on a crop.",
+			See:      []string{"compare", "detect.specks"},
 		},
 		{
-			Name: "overlay", On: graph.KindRegions, Inputs: []graph.Kind{graph.KindImage}, Returns: graph.KindImage, Space: graph.SpaceRule{Default: buffer.SpaceEncoded},
+			Name: "overlay", On: graph.KindRegions, Inputs: []graph.Kind{graph.KindImage}, Returns: graph.KindImage, Space: graph.SpaceRule{Default: buffer.SpaceEncoded}, Class: graph.Decoration,
 			Args:     overlayArgs(),
 			Validate: validateColor("color"),
 			Run: func(ctx context.Context, _ *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
 				return drawRegions(ctx, image(in[1]), regions(in[0]), a)
 			},
-			Doc: "regions.overlay(img, opts) is img.overlay(regions, opts).",
+			DocFrame: func(_ graph.Args, inputs []*graph.Node) graph.Frame { return inputs[1].Frame },
+			Doc:      "regions.overlay(img, opts) is img.overlay(regions, opts).",
 		},
 		{
 			Name: "compare", On: graph.KindNone, Returns: graph.KindImage, Result: graph.DisplayEnc,

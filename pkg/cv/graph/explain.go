@@ -99,6 +99,12 @@ func shortValue(v any) string {
 		if l, ok := literalList(x); ok {
 			return "[" + strings.Join(l, ",") + "]"
 		}
+		for _, e := range x {
+			switch e.(type) {
+			case []any, map[string]any:
+				return fmt.Sprintf("[%d items]", len(x))
+			}
+		}
 		el := make([]string, len(x))
 		for i, e := range x {
 			el[i] = shortValue(e)

@@ -28,7 +28,7 @@ func TestEvalWritesLookFiles(t *testing.T) {
 	if code != exitOK {
 		t.Fatalf("exit %d\n%s\n%s", code, out, errOut)
 	}
-	for _, f := range []string{"look-1-after.jpg", "look-2-gray.png"} {
+	for _, f := range []string{"look-1-after.png", "look-2-gray.png"} {
 		p := filepath.Join(dir, f)
 		st, err := os.Stat(p)
 		if err != nil || st.Size() == 0 {
@@ -62,13 +62,13 @@ func TestRunScriptJSONAndExitCodes(t *testing.T) {
 	if res.Status != "ok" || !strings.HasPrefix(res.Result, "42") || len(res.Looks) != 1 || len(res.Console) != 1 {
 		t.Fatalf("result %+v", res)
 	}
-	if _, err := os.Stat(res.Looks[0].Path); err != nil || filepath.Base(res.Looks[0].Path) != "look-1-dark.jpg" {
+	if _, err := os.Stat(res.Looks[0].Path); err != nil || filepath.Base(res.Looks[0].Path) != "look-1-dark.png" {
 		t.Fatalf("look %+v: %v", res.Looks[0], err)
 	}
 
 	// cv error: printed, exit 1; looks shown before the throw are still written
 	code, out, _ = runCLI(t, "eval", "--image", tiffPath, "--out", dir, "-e", "show(img, \"before\")\nreturn img.brightness(1)")
-	if code != exitCVError || !strings.Contains(out, "code: E_UNKNOWN_METHOD") || !strings.Contains(out, "look-1-before.jpg") {
+	if code != exitCVError || !strings.Contains(out, "code: E_UNKNOWN_METHOD") || !strings.Contains(out, "look-1-before.png") {
 		t.Fatalf("cv error: exit %d\n%s", code, out)
 	}
 

@@ -77,7 +77,7 @@ func targetMask(ctx context.Context, op string, v graph.Value, base *graph.Image
 			return nil, err
 		}
 		var err error
-		if m, err = x.Rasterize(ctx, base.Buf.W, base.Buf.H, base.Buf.Scale); err != nil {
+		if m, err = x.Rasterize(ctx, graph.RasterOf(base)); err != nil {
 			return nil, err
 		}
 		thr = 1e-3

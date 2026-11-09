@@ -87,10 +87,10 @@ func TestLookCaptionScaleAndSize(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(items) != 1 || items[0].MIMEType != "image/jpeg" {
+	if len(items) != 1 || items[0].MIMEType != "image/png" { // a small look (≤ 512 × 512) is lossless
 		t.Fatalf("items %+v", items)
 	}
-	m, err := jpeg.Decode(bytes.NewReader(items[0].Data))
+	m, err := png.Decode(bytes.NewReader(items[0].Data))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -159,7 +159,7 @@ func TestLookBurnsNumberIntoGrayPNG(t *testing.T) {
 }
 
 func TestLookColourIsJPEGWithNumber(t *testing.T) {
-	e, img := newEngine(t, writeFlat(t, 320, 200, 0.5))
+	e, img := newEngine(t, writeFlat(t, 640, 400, 0.5))
 	l, _ := New(e, img.ID, Options{})
 	l.AssignNumber(12)
 	data, mime, err := l.Render(context.Background())
@@ -171,7 +171,7 @@ func TestLookColourIsJPEGWithNumber(t *testing.T) {
 		t.Fatal(err)
 	}
 	lum := func(x, y int) uint8 { return color.GrayModel.Convert(m.At(x, y)).(color.Gray).Y }
-	s := text.NumberScale(320, 200)
+	s := text.NumberScale(640, 400)
 	if v := lum(s/2, s/2); v > 40 {
 		t.Fatalf("box corner luminance %d, want dark", v)
 	}
@@ -179,7 +179,7 @@ func TestLookColourIsJPEGWithNumber(t *testing.T) {
 	if v := lum(s+1*s+s/2, s+3*s+s/2); v < 200 {
 		t.Fatalf("digit pixel luminance %d, want bright", v)
 	}
-	if v := lum(300, 180); v < 150 || v > 230 {
+	if v := lum(600, 380); v < 150 || v > 230 {
 		t.Fatalf("background luminance %d, want the flat grey", v)
 	}
 }
@@ -267,5 +267,32 @@ func TestLookZoomLimits(t *testing.T) {
 	hist := call(t, e, "histogram", img.ID)
 	if _, err := New(e, hist.ID, Options{Zoom: 2}); err == nil || !strings.Contains(err.Error(), "charts have no doc px") {
 		t.Fatalf("chart zoom: %v", err)
+	}
+}
+
+func TestLookFormatRule(t *testing.T) {
+	ctx := context.Background()
+	e, img := newEngine(t, writeFlat(t, 800, 600, 0.4))
+	small := call(t, e, "crop", img.ID, []any{0.0, 0.0, 400.0, 300.0})
+	for _, tc := range []struct {
+		name string
+		id   graph.NodeID
+		opt  Options
+		want string
+	}{
+		{"large colour", img.ID, Options{}, "image/jpeg"},
+		{"forced png", img.ID, Options{Format: "png"}, "image/png"},
+		{"small colour", small.ID, Options{}, "image/png"},
+		{"small, forced jpeg", small.ID, Options{Format: "jpeg"}, "image/jpeg"},
+		{"zoomed colour", call(t, e, "crop", img.ID, []any{0.0, 0.0, 300.0, 200.0}).ID, Options{Zoom: 2}, "image/png"},
+		{"gray", call(t, e, "toGray", img.ID).ID, Options{Format: "jpeg"}, "image/png"},
+	} {
+		l, err := New(e, tc.id, tc.opt)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, mime, err := l.Render(ctx); err != nil || mime != tc.want {
+			t.Fatalf("%s: %s %v, want %s", tc.name, mime, err, tc.want)
+		}
 	}
 }

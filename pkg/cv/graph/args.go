@@ -832,6 +832,7 @@ var OptionSynonyms = map[string][]string{
 	"caption": {"label"}, "title": {"label"}, "text": {"label"},
 	"magnify": {"zoom"}, "magnification": {"zoom"}, "upscale": {"zoom"}, "factor": {"zoom"}, "zoomFactor": {"zoom"},
 	"ticks": {"ruler"}, "axes": {"ruler"}, "axis": {"ruler"}, "coords": {"ruler"}, "coordinates": {"ruler"}, "rulers": {"ruler"}, "scaleBar": {"ruler"},
+	"lossless": {"format"}, "png": {"format"}, "jpeg": {"format"}, "quality": {"format"}, "compression": {"format"}, "mime": {"format"},
 	"gridlines": {"grid"}, "gridLines": {"grid"}, "lines": {"grid"},
 	"interpolation": {"interp"}, "resample": {"interp"}, "resampling": {"interp"}, "upsample": {"interp"},
 }

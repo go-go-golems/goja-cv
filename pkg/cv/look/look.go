@@ -19,7 +19,7 @@ import (
 	"image"
 	"image/draw"
 	"image/jpeg"
-	"image/png"
+	pngenc "image/png"
 	"math"
 	"strconv"
 	"strings"
@@ -48,7 +48,11 @@ type Options struct {
 	MaxSide int           // long side in image px when fitting; 0 = the engine's look size (1568)
 	Ruler   float64       // tick spacing in doc px; -1 picks one; 0 = no ruler
 	Grid    float64       // grid spacing in doc px; 0 = no grid
+	Format  string        // "auto" (or ""), "png" or "jpeg"
 }
+
+// smallLook is the largest look side the auto format keeps lossless.
+const smallLook = 512
 
 // OptionsFrom reads the look options bound by graph.BindOptions against the
 // look function's ArgSpecs (ops.LookArgs).
@@ -87,6 +91,9 @@ func OptionsFrom(a graph.Args) (Options, error) {
 	if a.Has("grid") {
 		o.Grid = a.Raw("grid").(float64)
 	}
+	if a.Has("format") {
+		o.Format = a.String("format")
+	}
 	if o.Zoom != 0 && o.MaxSide != 0 {
 		return o, graph.Errorf(graph.EArgType, "look takes zoom or maxSide, not both: zoom sets the scale; maxSide fits it.").
 			WithFix(fmt.Sprintf("node.look({ zoom: %s })", fmtZoom(o.Zoom)))
@@ -109,6 +116,7 @@ type Look struct {
 	interp buffer.Interp
 	ruler  float64
 	grid   float64
+	png    bool // encode as PNG (the format rule, decided at creation)
 	w, h   int  // rendered size
 	chart  bool // a Value node rendered as a chart
 	n      atomic.Int64
@@ -141,6 +149,10 @@ func New(eng *graph.Engine, id graph.NodeID, opt Options) (*Look, error) {
 	l := &Look{eng: eng, node: id, kind: n.Kind, label: strings.TrimSpace(opt.Label), interp: opt.Interp,
 		chain: eng.Chain(id), frame: n.Frame, ruler: opt.Ruler, grid: opt.Grid}
 	l.root = id
+	if n.Frame.Picture && (opt.Zoom != 0 || opt.Ruler != 0 || opt.Grid != 0) {
+		return nil, graph.Errorf(graph.EWrongKind, "%s is a picture (a sheet or a side-by-side compare): its pixels are not doc px, so it takes no zoom, ruler or grid.", graph.Label(n)).
+			WithHint("Zoom and rule the images it shows: crop them, or raise the sheet's zoom.").WithFix("node.look()")
+	}
 	switch n.Kind {
 	case graph.KindImage, graph.KindMask:
 		root, err := eng.Display(id)
@@ -156,6 +168,13 @@ func New(eng *graph.Engine, id graph.NodeID, opt Options) (*Look, error) {
 		if limit := eng.Options().LookLong; max(l.w, l.h) > limit {
 			return nil, zoomTooLarge(n, opt.Zoom, limit)
 		}
+		switch opt.Format {
+		case "png":
+			l.png = true
+		case "jpeg":
+		default: // auto: lossless where JPEG artefacts are the size of what is judged
+			l.png = n.Kind == graph.KindMask || l.scale > 1 || n.Op.Lossless || (l.w <= smallLook && l.h <= smallLook)
+		}
 	case graph.KindValue:
 		if n.Op.Name != "histogram" {
 			return nil, lookKindError(n)
@@ -163,7 +182,7 @@ func New(eng *graph.Engine, id graph.NodeID, opt Options) (*Look, error) {
 		if opt.Zoom != 0 || opt.Ruler != 0 || opt.Grid != 0 {
 			return nil, graph.Errorf(graph.EArgType, "look of a chart takes no zoom, ruler or grid: charts have no doc px.").WithFix("node.look()")
 		}
-		l.chart, l.scale = true, 1
+		l.chart, l.scale, l.png = true, 1, true
 		l.w, l.h = chartSize(maxLong)
 	case graph.KindRegions, graph.KindParam, graph.KindNone:
 		return nil, lookKindError(n)
@@ -327,7 +346,7 @@ func (l *Look) Render(ctx context.Context) ([]byte, string, error) {
 		return nil, "", err
 	}
 	text.BurnNumber(m, l.Number())
-	return Encode(m, l.chart)
+	return Encode(m, l.png)
 }
 
 // image evaluates the look's node and returns its 8-bit image, before the
@@ -361,12 +380,12 @@ func (l *Look) image(ctx context.Context) (draw.Image, error) {
 	return nil, errors.Errorf("look: unexpected value %T", v)
 }
 
-// Encode writes m as JPEG q85, or PNG for single-channel images and when
-// forcePNG is set (charts).
-func Encode(m image.Image, forcePNG bool) ([]byte, string, error) {
+// Encode writes m as PNG (single-channel images, and when png is set by the
+// format rule) or JPEG q85.
+func Encode(m image.Image, png bool) ([]byte, string, error) {
 	var buf bytes.Buffer
-	if _, gray := m.(*image.Gray); gray || forcePNG {
-		if err := png.Encode(&buf, m); err != nil {
+	if _, gray := m.(*image.Gray); gray || png {
+		if err := pngenc.Encode(&buf, m); err != nil {
 			return nil, "", errors.Wrap(err, "look: encode png")
 		}
 		return buf.Bytes(), "image/png", nil

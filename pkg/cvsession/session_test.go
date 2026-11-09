@@ -73,7 +73,7 @@ func TestStatsAndLookReturnYAMLAndOneImage(t *testing.T) {
 	mustContain(t, out, "stats:", "meanL: 0.29507", "after: '[look 1: after — open(gradient-64x48-16bit.tif) → exposure(0.5) (64×48, 1 image px = 1.0 doc px)]'",
 		"context:", "images: img = gradient-64x48-16bit.tif (64×48, 16-bit TIFF, srgb)")
 	mustNotContain(t, out, "UNUSED_NODE")
-	if len(resp.Content) != 1 || resp.Content[0].MIMEType != "image/jpeg" || len(resp.Content[0].Data) == 0 {
+	if len(resp.Content) != 1 || resp.Content[0].MIMEType != "image/png" || len(resp.Content[0].Data) == 0 {
 		t.Fatalf("content %+v", resp.Content)
 	}
 	if got := resp.Content[0].Caption; got != "look 1: after — open(gradient-64x48-16bit.tif) → exposure(0.5) (64×48, 1 image px = 1.0 doc px)" {
@@ -100,7 +100,7 @@ func TestShowBeforeThrowStillDeliversTheImage(t *testing.T) {
 	}
 	mustContain(t, out, "error:", "code: Error", "message: boom", "where: 'line 2: throw new Error(\"boom\")'",
 		"shown:", "[look 1: darker — open(gradient-64x48-16bit.tif) → exposure(-1) (64×48, 1 image px = 1.0 doc px)]")
-	if len(resp.Content) != 1 || resp.Content[0].MIMEType != "image/jpeg" {
+	if len(resp.Content) != 1 || resp.Content[0].MIMEType != "image/png" {
 		t.Fatalf("content %+v", resp.Content)
 	}
 	// show returns its look and also queues it once
@@ -250,7 +250,7 @@ return { cov: await sky.coverage(), sky: sky.look("sky"), darker: darker.look("d
 	out := text(resp)
 	mustContain(t, out, "cov: 0.22492", "look 1: sky", "look 2: darker")
 	mustNotContain(t, out, "UNUSED_NODE")
-	if len(resp.Content) != 2 || resp.Content[0].MIMEType != "image/png" || resp.Content[1].MIMEType != "image/jpeg" {
+	if len(resp.Content) != 2 || resp.Content[0].MIMEType != "image/png" || resp.Content[1].MIMEType != "image/png" {
 		t.Fatalf("content %+v", resp.Content)
 	}
 	resp = eval(t, app, sid, `const m = img.mask.luminance({ above: 0.5 })
