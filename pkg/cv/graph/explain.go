@@ -18,21 +18,18 @@ func SourceInfo(n *Node) (map[string]any, bool) {
 	if n.Op.On != KindNone || n.Op.Name != "open" {
 		return nil, false
 	}
-	info := map[string]any{"file": filepath.Base(n.Args.String("path")), "encoding": n.Enc.String(), "frame": n.Frame.Data()}
-	if n.Args.Has("sample") {
-		info["sample"] = n.Args.String("sample")
+	m := Meta[SourceMeta](n.Args)
+	info := map[string]any{"file": filepath.Base(m.Path), "encoding": n.Enc.String(), "frame": n.Frame.Data(),
+		"format": m.Info.Format, "bitDepth": float64(m.Info.Bits), "fileChannels": float64(m.Info.Channels)}
+	if m.Info.Sample != "" {
+		info["sample"] = m.Info.Sample
 	}
-	if n.Args.Has("notes") {
-		info["notes"] = n.Args.Raw("notes")
-	}
-	if n.Args.Has("format") {
-		info["format"] = n.Args.String("format")
-	}
-	if n.Args.Has("bits") {
-		info["bitDepth"] = n.Args.Raw("bits")
-	}
-	if n.Args.Has("channels") {
-		info["fileChannels"] = n.Args.Raw("channels")
+	if len(m.Info.Notes) > 0 {
+		notes := make([]any, len(m.Info.Notes))
+		for i, s := range m.Info.Notes {
+			notes[i] = s
+		}
+		info["notes"] = notes
 	}
 	return info, true
 }
@@ -68,7 +65,7 @@ func ShortCall(op *OpDef, args Args) string {
 	var parts []string
 	for i := range op.Args {
 		s := &op.Args[i]
-		if !s.Positional || s.Hidden || !args.Has(s.Name) {
+		if !s.Positional || !args.Has(s.Name) {
 			continue
 		}
 		v := args.vals[s.Name]
@@ -228,7 +225,7 @@ func Describe(b *Builder, n *Node, scale float64, params map[string]any) string 
 	var parts []string
 	for i := range n.Op.Args {
 		s := &n.Op.Args[i]
-		if s.Hidden || !n.Args.Has(s.Name) {
+		if !n.Args.Has(s.Name) {
 			continue
 		}
 		v := n.Args.Raw(s.Name)

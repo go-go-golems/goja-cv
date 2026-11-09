@@ -306,7 +306,8 @@ func (l *Look) String() string { return "[" + l.Caption() + "]" }
 
 // ResultContent implements resultcontent.Provider: it evaluates the node at
 // look scale and encodes it. It runs off the runtime owner goroutine.
-func (l *Look) ResultContent(ctx context.Context) ([]resultcontent.Content, error) {
+func (l *Look) ResultContent(ctx context.Context) (_ []resultcontent.Content, err error) { //nolint:nonamedreturns // recover needs named results
+	defer graph.Recover(&err, "look")
 	data, mime, err := l.Render(ctx)
 	if err != nil {
 		return nil, err

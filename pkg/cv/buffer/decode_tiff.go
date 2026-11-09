@@ -9,6 +9,7 @@ import (
 	"io"
 	"math"
 
+	"github.com/go-go-golems/goja-cv/pkg/cv/parallel"
 	"github.com/pkg/errors"
 	"golang.org/x/image/tiff/lzw"
 	"golang.org/x/sync/errgroup"
@@ -588,7 +589,8 @@ func (tiffDecoder) Decode(ctx context.Context, r io.ReadSeeker, o DecodeOptions)
 	g, gctx := errgroup.WithContext(ctx)
 	g.SetLimit(8)
 	for s := s0; s <= s1; s++ {
-		g.Go(func() error {
+		g.Go(func() (err error) { //nolint:nonamedreturns // recover needs named results
+			defer parallel.Recover(&err)
 			if err := gctx.Err(); err != nil {
 				return err
 			}

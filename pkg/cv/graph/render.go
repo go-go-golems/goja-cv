@@ -40,49 +40,65 @@ type RenderOptions struct {
 // Render computes node id for a look or a sheet cell. At scale ≤ 1 it is
 // Evaluate, cut to the window. Above 1 it renders by op class (see above).
 // An Image or Mask result covers the window: its Frame is the window and its
-// buffer is ScaledSize(window, scale).
+// buffer is exactly ScaledSize(window, scale), which the one exit enforces.
 func (e *Evaluator) Render(ctx context.Context, id NodeID, o RenderOptions) (Value, error) {
+	n, win, s, err := e.renderRequest(id, o)
+	if err != nil {
+		return nil, err
+	}
+	v, err := e.renderBranch(ctx, n, win, s, o)
+	if err != nil || !isImageKind(n.Kind) {
+		return v, err
+	}
+	return exactSize(ctx, v.(*ImageValue), win, s) // the only place the size is decided
+}
+
+func isImageKind(k Kind) bool { return k == KindImage || k == KindMask }
+
+// renderRequest validates a render and returns the node, its window (the
+// node's frame for data) and the quantized scale (1 for data).
+func (e *Evaluator) renderRequest(id NodeID, o RenderOptions) (*Node, Frame, float64, error) {
 	n, ok := e.b.Node(id)
 	if !ok {
-		return nil, Errorf(EInternal, "unknown node #%d", id)
+		return nil, Frame{}, 0, Errorf(EInternal, "unknown node #%d", id)
 	}
 	if !(o.Scale > 0 && o.Scale <= MaxRenderScale) {
-		return nil, Errorf(EArgRange, "render scale %g is outside (0, %d].", o.Scale, MaxRenderScale)
+		return nil, Frame{}, 0, Errorf(EArgRange, "render scale %g is outside (0, %d].", o.Scale, MaxRenderScale)
 	}
-	s := QuantizeScale(o.Scale)
-	img := n.Kind == KindImage || n.Kind == KindMask
+	if !isImageKind(n.Kind) {
+		return n, n.Frame, 1, nil // data does not upsample
+	}
 	win := n.Frame
-	if o.Window != nil && img {
+	if o.Window != nil {
 		win = intersect(*o.Window, n.Frame)
 		if win.Empty() {
-			return nil, Errorf(EArgRange, "render window %s does not overlap the image's frame %s.", *o.Window, n.Frame)
+			return nil, Frame{}, 0, Errorf(EArgRange, "render window %s does not overlap the image's frame %s.", *o.Window, n.Frame)
 		}
 	}
-	if !img {
-		s = 1 // data does not upsample
-	}
+	return n, win, QuantizeScale(o.Scale), nil
+}
+
+// renderBranch computes the value: data as usual, ≤ 1 evaluated and cut,
+// > 1 rendered by op class.
+func (e *Evaluator) renderBranch(ctx context.Context, n *Node, win Frame, s float64, o RenderOptions) (Value, error) {
 	if s <= 1 {
 		r := e.newRun(s, o.OnWarn)
-		v, err := r.eval(ctx, id)
+		v, err := r.eval(ctx, n.ID)
 		if err != nil {
 			return nil, err
 		}
-		r.replayTree(id, map[NodeID]bool{})
-		if !img {
+		r.replayTree(n.ID, map[NodeID]bool{})
+		if !isImageKind(n.Kind) {
 			return v, nil
 		}
-		iv, err := cutValue(v.(*ImageValue), win)
-		if err != nil {
-			return nil, err
-		}
-		return fitScale(ctx, iv, win, s)
+		return cutValue(v.(*ImageValue), win, s)
 	}
 	rr := &renderRun{e: e, one: e.newRun(1, o.OnWarn), s: s, interp: o.Interp}
 	v, err := rr.render(ctx, n, win)
 	if err != nil {
 		return nil, err
 	}
-	rr.one.replayTree(id, map[NodeID]bool{})
+	rr.one.replayTree(n.ID, map[NodeID]bool{})
 	return v, nil
 }
 
@@ -129,7 +145,7 @@ func (rr *renderRun) render(ctx context.Context, n *Node, win Frame) (Value, err
 		if err != nil {
 			return nil, err
 		}
-		c, err := cutValue(v.(*ImageValue), win)
+		c, err := cutValue(v.(*ImageValue), win, 1)
 		if err != nil {
 			return nil, err
 		}
@@ -179,9 +195,9 @@ func (rr *renderRun) decorate(ctx context.Context, n *Node, win Frame) (Value, e
 	g, gctx := errgroup.WithContext(ctx)
 	for i, id := range n.Inputs {
 		in := rr.e.node(id)
-		g.Go(func() error {
+		g.Go(func() (err error) { //nolint:nonamedreturns // recover needs named results
+			defer Recover(&err, "rendering "+n.Op.Name+"'s input")
 			var v Value
-			var err error
 			if in.Kind == KindImage || in.Kind == KindMask {
 				v, err = rr.render(gctx, in, intersect(win, in.Frame))
 			} else {
@@ -246,15 +262,12 @@ func intersect(a, b Frame) Frame {
 // Intersect is the rectangle common to a and b (empty when they do not meet).
 func Intersect(a, b Frame) Frame { return intersect(a, b) }
 
-// cutValue cuts window win (doc px, inside v's frame) out of v at v's
-// scale. Below scale 1 the cut is aligned to buffer pixels: it covers the
-// buffer pixels the window touches.
-// fitScale resizes a result that an op computed above the requested scale
-// (AnalysisScale, e.g. a sheet composed at scale 1) down to ScaledSize(win, s),
-// so a look's size matches what its caption reports.
-func fitScale(ctx context.Context, v *ImageValue, win Frame, s float64) (*ImageValue, error) {
+// exactSize returns v when its buffer is ScaledSize(win, s) and otherwise v
+// resized to exactly that size: only results computed at another scale (a
+// sheet, composed at its AnalysisScale 1) are resized.
+func exactSize(ctx context.Context, v *ImageValue, win Frame, s float64) (*ImageValue, error) {
 	w, h := buffer.ScaledSize(win.W, win.H, s)
-	if v.Buf.W <= w+1 && v.Buf.H <= h+1 {
+	if v.Buf.W == w && v.Buf.H == h {
 		return v, nil
 	}
 	b, err := buffer.Resize(ctx, v.Buf, w, h)
@@ -262,25 +275,43 @@ func fitScale(ctx context.Context, v *ImageValue, win Frame, s float64) (*ImageV
 		return nil, Errorf(EInternal, "resize %s to %d×%d: %v", win, w, h, err)
 	}
 	b.Scale = s
-	out := *v
-	out.Buf = b
-	return &out, nil
+	out := v.withBuffer(b, win)
+	out.origin = nil
+	return out, nil
 }
 
-func cutValue(v *ImageValue, win Frame) (*ImageValue, error) {
+// cutValue cuts window win (doc px, inside v's frame) out of v, a value
+// evaluated at scale s. A buffer at scale s gives exactly ScaledSize(win, s)
+// buffer px, starting at the buffer pixel under the window's corner and
+// shifted left or up by any overflow at the buffer's edge; the value
+// records where its buffer starts in doc px (the rule crop follows below
+// scale 1). A buffer at another scale (an op with an AnalysisScale) is cut
+// to the buffer pixels the window touches, and exactSize resizes it.
+func cutValue(v *ImageValue, win Frame, s float64) (*ImageValue, error) {
 	if win == v.Frame {
 		return v, nil
 	}
 	sx, sy := AxisScales(v)
-	x0 := int(math.Floor(float64(win.X-v.Frame.X) * sx))
-	y0 := int(math.Floor(float64(win.Y-v.Frame.Y) * sy))
-	x1 := min(v.Buf.W, max(x0+1, int(math.Ceil(float64(win.X+win.W-v.Frame.X)*sx))))
-	y1 := min(v.Buf.H, max(y0+1, int(math.Ceil(float64(win.Y+win.H-v.Frame.Y)*sy))))
-	b, err := buffer.Cut(v.Buf, x0, y0, x1-x0, y1-y0)
+	ox, oy := v.BufferOrigin()
+	fx, fy := (float64(win.X)-ox)*sx, (float64(win.Y)-oy)*sy
+	w, h := buffer.ScaledSize(win.W, win.H, s)
+	if fw, fh := buffer.ScaledSize(v.Frame.W, v.Frame.H, s); v.Buf.W != fw || v.Buf.H != fh {
+		w = max(1, int(math.Ceil((float64(win.X+win.W)-ox)*sx))-int(math.Floor(fx)))
+		h = max(1, int(math.Ceil((float64(win.Y+win.H)-oy)*sy))-int(math.Floor(fy)))
+	}
+	w, h = min(w, v.Buf.W), min(h, v.Buf.H)
+	x0 := min(max(0, int(math.Floor(fx))), v.Buf.W-w)
+	y0 := min(max(0, int(math.Floor(fy))), v.Buf.H-h)
+	b, err := buffer.Cut(v.Buf, x0, y0, w, h)
 	if err != nil {
 		return nil, Errorf(EInternal, "cut %s of %s: %v", win, v.Frame, err)
 	}
-	return v.withBuffer(b, win), nil
+	out := v.withBuffer(b, win)
+	out.origin = nil
+	if bx, by := ox+float64(x0)/sx, oy+float64(y0)/sy; bx != float64(win.X) || by != float64(win.Y) {
+		out.origin = &[2]float64{bx, by}
+	}
+	return out, nil
 }
 
 // withBuffer is v with another buffer and frame (same kind and encoding).

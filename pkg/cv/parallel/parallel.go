@@ -3,7 +3,9 @@ package parallel
 
 import (
 	"context"
+	"fmt"
 	"runtime"
+	"runtime/debug"
 
 	"golang.org/x/sync/errgroup"
 )
@@ -38,7 +40,8 @@ func Rows(ctx context.Context, n int, fn func(y0, y1 int)) error {
 			break
 		}
 		y0, y1 := i*n/bands, (i+1)*n/bands
-		g.Go(func() error {
+		g.Go(func() (err error) { //nolint:nonamedreturns // recover needs named results
+			defer Recover(&err)
 			if err := gctx.Err(); err != nil {
 				return err
 			}
@@ -50,4 +53,23 @@ func Rows(ctx context.Context, n int, fn func(y0, y1 int)) error {
 		return err
 	}
 	return ctx.Err()
+}
+
+// PanicError is a panic recovered on a goroutine goja-cv started (a kernel
+// band, a decoder strip): the goroutine cannot re-panic on its caller's
+// stack, so the panic travels back as this error, which the graph reports as
+// E_INTERNAL.
+type PanicError struct {
+	Value any
+	Stack string
+}
+
+func (e *PanicError) Error() string { return fmt.Sprintf("panic: %v", e.Value) }
+
+// Recover turns a panic into a *PanicError in *err. Use it in a deferred call
+// at the top of every goroutine: defer parallel.Recover(&err).
+func Recover(err *error) {
+	if p := recover(); p != nil {
+		*err = &PanicError{Value: p, Stack: string(debug.Stack())}
+	}
 }

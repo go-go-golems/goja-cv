@@ -142,9 +142,6 @@ func describeArgs(specs []ArgSpec) map[string]any {
 	out := map[string]any{}
 	for i := range specs {
 		s := &specs[i]
-		if s.Hidden {
-			continue
-		}
 		out[s.Name] = DescribeArgSpec(s)
 	}
 	return out

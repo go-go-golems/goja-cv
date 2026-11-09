@@ -332,7 +332,7 @@ func NoField(field string, keys []string) *Error {
 // not a call the agent can copy).
 func needsArgs(op *OpDef) bool {
 	for _, a := range op.Args {
-		if !a.Hidden && a.Default == nil && !a.Optional && !a.Variadic {
+		if a.Default == nil && !a.Optional && !a.Variadic {
 			return true
 		}
 	}

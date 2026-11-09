@@ -178,7 +178,6 @@ type ArgSpec struct {
 	Optional   bool       // may be absent without a default
 	Positional bool       // may be passed positionally (in declaration order)
 	Variadic   bool       // a positional "...[]" argument that takes all remaining positional values
-	Hidden     bool       // set by Go only (e.g. a source file stamp); not settable or listed
 	Static     bool       // must be a literal: a node (Value/Param) is rejected
 	Len        int        // for list types: the exact number of elements
 	InFrame    bool       // "box"/"point": a box must overlap, a point lie in, the receiver's frame (E_ARG_RANGE)

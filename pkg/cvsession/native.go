@@ -23,16 +23,19 @@ func newNative(vm *goja.Runtime, st *state) *native { return &native{vm: vm, st:
 
 func (n *native) object() *goja.Object {
 	o := n.vm.NewObject()
-	_ = o.Set("checkPath", n.checkPath)
-	_ = o.Set("queue", n.queue)
-	_ = o.Set("checkName", n.checkName)
-	_ = o.Set("bindName", n.bindName)
-	_ = o.Set("getName", n.getName)
-	_ = o.Set("setName", n.setName)
-	_ = o.Set("asKey", n.asKey)
-	_ = o.Set("noDoc", n.noDoc)
-	_ = o.Set("fail", n.fail)
-	_ = o.Set("unknownMember", n.unknownMember)
+	set := func(name string, fn func(goja.FunctionCall) goja.Value) {
+		_ = o.Set(name, cvmod.Export(n.vm, name, fn))
+	}
+	set("checkPath", n.checkPath)
+	set("queue", n.queue)
+	set("checkName", n.checkName)
+	set("bindName", n.bindName)
+	set("getName", n.getName)
+	set("setName", n.setName)
+	set("asKey", n.asKey)
+	set("noDoc", n.noDoc)
+	set("fail", n.fail)
+	set("unknownMember", n.unknownMember)
 	return o
 }
 

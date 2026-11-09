@@ -50,7 +50,10 @@ func (b *binding) async(fn func(ctx context.Context, warn func(graph.Warning)) (
 	callCtx := b.evalContext()
 	site := b.site()
 	go func() {
-		v, err := fn(callCtx, func(w graph.Warning) { b.noteEvalWarning(w, site) })
+		v, err := func() (v any, err error) { //nolint:nonamedreturns // recover needs named results
+			defer graph.Recover(&err, "save")
+			return fn(callCtx, func(w graph.Warning) { b.noteEvalWarning(w, site) })
+		}()
 		settleCtx := callCtx
 		if callCtx.Err() != nil {
 			settleCtx = svc.Lifetime()
@@ -102,7 +105,7 @@ var _ goja.DynamicObject = &dataObject{}
 func (o *dataObject) Get(key string) goja.Value {
 	switch key {
 	case "save":
-		return o.b.vm.ToValue(func(c goja.FunctionCall) goja.Value { return o.b.saveData(o.Data, c.Argument(0), c.Argument(1)) })
+		return o.b.vm.ToValue(o.b.export("data.save", func(c goja.FunctionCall) goja.Value { return o.b.saveData(o.Data, c.Argument(0), c.Argument(1)) }))
 	case "name":
 		return o.b.vm.ToValue(o.Name())
 	case "format":

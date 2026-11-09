@@ -3,6 +3,7 @@ package graph
 import (
 	"crypto/sha256"
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"sync"
@@ -70,11 +71,22 @@ func (b *Builder) kindOf(id NodeID) (Kind, bool) {
 // unknown option keys), lifts node-valued arguments into inputs, resolves
 // the op's working space and inserts the toGray and convert nodes its inputs
 // need, and returns the existing node with the same structure or a new one.
-// receiver is 0 for source ops. trusted holds Go-side values for hidden
-// arguments. Warnings (RANGE, SPACE, ENCODING) are returned alongside the
-// node.
-func (b *Builder) Intern(op *OpDef, receiver NodeID, raw []any, trusted map[string]any) (*Node, []Warning, error) {
-	r, err := b.Call(op, receiver, raw, trusted)
+// receiver is 0 for source ops. Warnings (RANGE, SPACE, ENCODING) are
+// returned alongside the node.
+func (b *Builder) Intern(op *OpDef, receiver NodeID, raw []any) (*Node, []Warning, error) {
+	return b.intern(op, receiver, raw, nil)
+}
+
+// InternSource interns a source node (cv.open, a builder lambda's
+// placeholder) whose node also carries typed Go-side metadata the agent did
+// not write (SourceMeta, PlaceholderMeta): op code reads it with Meta, and
+// it is hashed with the canonical arguments.
+func (b *Builder) InternSource(op *OpDef, raw []any, meta any) (*Node, []Warning, error) {
+	return b.intern(op, 0, raw, meta)
+}
+
+func (b *Builder) intern(op *OpDef, receiver NodeID, raw []any, meta any) (*Node, []Warning, error) {
+	r, err := b.call(op, receiver, raw, meta, false)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -92,14 +104,14 @@ type CallResult struct {
 }
 
 // Call is Intern for any op, including macros that return several nodes.
-func (b *Builder) Call(op *OpDef, receiver NodeID, raw []any, trusted map[string]any) (CallResult, error) {
-	return b.call(op, receiver, raw, trusted, false)
+func (b *Builder) Call(op *OpDef, receiver NodeID, raw []any) (CallResult, error) {
+	return b.call(op, receiver, raw, nil, false)
 }
 
 // call interns a call; nested calls (a macro's expansion, inserted
 // conversions) raise no order warnings of their own: the call the agent
 // wrote does.
-func (b *Builder) call(op *OpDef, receiver NodeID, raw []any, trusted map[string]any, nested bool) (CallResult, error) {
+func (b *Builder) call(op *OpDef, receiver NodeID, raw []any, meta any, nested bool) (CallResult, error) {
 	var recv *Node
 	if receiver != 0 {
 		var ok bool
@@ -116,7 +128,7 @@ func (b *Builder) call(op *OpDef, receiver NodeID, raw []any, trusted map[string
 	if err != nil {
 		return CallResult{}, err
 	}
-	bd, err := bind(op, callName(op), recv != nil, raw, trusted, b.kindOf)
+	bd, err := bind(op, callName(op), recv != nil, raw, b.kindOf)
 	if err != nil {
 		return CallResult{}, err
 	}
@@ -136,7 +148,7 @@ func (b *Builder) call(op *OpDef, receiver NodeID, raw []any, trusted map[string
 		}
 		inputs[i] = in
 	}
-	args := Args{op: op, vals: bd.args}
+	args := Args{op: op, vals: bd.args, meta: meta}
 	if op.Validate != nil {
 		if err := op.Validate(args, inputs); err != nil {
 			return CallResult{}, b.reg.producerHint(err)
@@ -202,7 +214,7 @@ func checkPicture(op *OpDef, args Args, recv *Node) error {
 	}
 	for i := range op.Args {
 		s := &op.Args[i]
-		if what == "" && !s.Hidden && (s.Unit == DocPx || s.Unit == DocPx2) && args.Has(s.Name) {
+		if what == "" && (s.Unit == DocPx || s.Unit == DocPx2) && args.Has(s.Name) {
 			if s.Default == nil || !reflect.DeepEqual(args.vals[s.Name], normalize(s.Default)) {
 				what = op.Name + "." + s.Name
 			}
@@ -382,6 +394,14 @@ func hashNode(op *OpDef, args Args, inputs []*Node) [32]byte {
 	js := args.canonicalJSON()
 	_ = binary.Write(h, binary.LittleEndian, uint32(len(js))) // #nosec G115 -- canonical args JSON is far below 4 GiB
 	h.Write(js)
+	if args.meta != nil {
+		mj, err := json.Marshal(args.meta)
+		if err != nil {
+			panic(fmt.Sprintf("cv: metadata of %s not serializable: %v", op.Name, err))
+		}
+		_ = binary.Write(h, binary.LittleEndian, uint32(len(mj))) // #nosec G115 -- metadata JSON is small
+		h.Write(mj)
+	}
 	for _, in := range inputs {
 		h.Write(in.Hash[:])
 	}

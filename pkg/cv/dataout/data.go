@@ -203,7 +203,8 @@ func (d *Data) Render(ctx context.Context) ([]byte, int, error) {
 
 // ResultContent renders the item. Over the session's byte limit (the MCP
 // server's) it is replaced by a note telling the agent to save it.
-func (d *Data) ResultContent(ctx context.Context) ([]resultcontent.Content, error) {
+func (d *Data) ResultContent(ctx context.Context) (_ []resultcontent.Content, err error) { //nolint:nonamedreturns // recover needs named results
+	defer graph.Recover(&err, "data")
 	out, rows, err := d.Render(ctx)
 	if err != nil {
 		return nil, err
@@ -248,87 +249,56 @@ func (d *Data) Save(ctx context.Context, root, path string) (Saved, error) {
 	return Saved{Path: abs, Format: d.format, Bytes: len(out), Rows: rows, Replaced: replaced}, nil
 }
 
-// encodeJSON writes v as JSON: records keep their key order, maps are
-// sorted, NaN and infinities are null.
+// encodeJSON writes v as JSON with encoding/json: records keep their key
+// order (Record.MarshalJSON), maps are sorted, NaN and infinities are null
+// (plain).
 func encodeJSON(v any) ([]byte, int, error) {
-	var b bytes.Buffer
-	if err := writeJSON(&b, v); err != nil {
-		return nil, 0, err
+	b, err := json.Marshal(plain(v))
+	if err != nil {
+		return nil, 0, graph.Errorf(graph.EArgType, "this data cannot be written as JSON: %v", err)
 	}
-	b.WriteByte('\n')
 	rows := 1
 	if l, ok := v.([]any); ok {
 		rows = len(l)
 	}
-	return b.Bytes(), rows, nil
+	return append(b, '\n'), rows, nil
 }
 
-func writeJSON(b *bytes.Buffer, v any) error {
+// plain returns a copy of v in which every NaN and ±Inf is nil (JSON null,
+// an empty CSV cell) and every other number is a float64: the one place
+// that rule lives.
+func plain(v any) any {
 	switch x := v.(type) {
-	case nil:
-		b.WriteString("null")
-	case bool:
-		b.WriteString(strconv.FormatBool(x))
 	case float64:
 		if math.IsNaN(x) || math.IsInf(x, 0) {
-			b.WriteString("null")
-		} else {
-			b.WriteString(strconv.FormatFloat(x, 'g', -1, 64))
+			return nil
 		}
-	case string:
-		writeString(b, x)
+		return x
 	case []any:
-		b.WriteByte('[')
+		out := make([]any, len(x))
 		for i, e := range x {
-			if i > 0 {
-				b.WriteByte(',')
-			}
-			if err := writeJSON(b, e); err != nil {
-				return err
-			}
+			out[i] = plain(e)
 		}
-		b.WriteByte(']')
+		return out
 	case graph.Record:
-		return writeObject(b, x.Keys, x.Vals)
+		vals := make(map[string]any, len(x.Vals))
+		for k, e := range x.Vals {
+			vals[k] = plain(e)
+		}
+		return graph.Record{Keys: x.Keys, Vals: vals}
 	case map[string]any:
-		keys := make([]string, 0, len(x))
-		for k := range x {
-			keys = append(keys, k)
+		out := make(map[string]any, len(x))
+		for k, e := range x {
+			out[k] = plain(e)
 		}
-		sort.Strings(keys)
-		return writeObject(b, keys, x)
-	default:
-		if f, ok := graph.Normalize(v).(float64); ok { // other numeric types
-			return writeJSON(b, f)
-		}
-		writeString(b, fmt.Sprint(v))
+		return out
+	case nil, string, bool:
+		return x
 	}
-	return nil
-}
-
-// writeString writes s as a JSON string. strconv.Quote is Go syntax: its \x00,
-// \a and \v escapes are not JSON.
-func writeString(b *bytes.Buffer, s string) {
-	enc := json.NewEncoder(b)
-	enc.SetEscapeHTML(false)
-	_ = enc.Encode(s)       // a string always encodes
-	b.Truncate(b.Len() - 1) // Encode appends a newline
-}
-
-func writeObject(b *bytes.Buffer, keys []string, vals map[string]any) error {
-	b.WriteByte('{')
-	for i, k := range keys {
-		if i > 0 {
-			b.WriteByte(',')
-		}
-		writeString(b, k)
-		b.WriteByte(':')
-		if err := writeJSON(b, vals[k]); err != nil {
-			return err
-		}
+	if f, ok := graph.Normalize(v).(float64); ok { // other numeric types
+		return plain(f)
 	}
-	b.WriteByte('}')
-	return nil
+	return v
 }
 
 // columnArrays finds the per-row arrays of a column table. With a schema they
@@ -445,24 +415,22 @@ func table(v any, fields []graph.FieldSpec) ([]string, []map[string]any) {
 }
 
 func cell(v any) (string, error) {
+	v = plain(v)
 	switch x := v.(type) {
 	case nil:
 		return "", nil
 	case float64:
-		if math.IsNaN(x) || math.IsInf(x, 0) {
-			return "", nil
-		}
 		return strconv.FormatFloat(x, 'g', -1, 64), nil
 	case string:
 		return x, nil
 	case bool:
 		return strconv.FormatBool(x), nil
 	}
-	var b bytes.Buffer
-	if err := writeJSON(&b, v); err != nil {
+	b, err := json.Marshal(v)
+	if err != nil {
 		return "", err
 	}
-	return b.String(), nil
+	return string(b), nil
 }
 
 // encodeCSV writes v as CSV with a header; columns selects and orders.

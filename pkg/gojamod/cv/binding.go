@@ -103,7 +103,7 @@ func (b *binding) CallEach(ctx context.Context, id graph.FuncID, args []any) ([]
 
 func (b *binding) object() *goja.Object {
 	o := b.vm.NewObject()
-	set := func(name string, fn func(goja.FunctionCall) goja.Value) { _ = o.Set(name, fn) }
+	set := func(name string, fn func(goja.FunctionCall) goja.Value) { _ = o.Set(name, b.export(name, fn)) }
 	_ = o.Set("__version", Version)
 	set("__registry", b.registry)
 	set("__kinds", b.kinds)
@@ -367,7 +367,10 @@ func (b *binding) evaluate(c goja.FunctionCall) goja.Value {
 	callCtx := b.evalContext()
 	site := b.site()
 	go func() {
-		v, err := b.eng.Evaluate(callCtx, n.ID, graph.EvalOptions{Scale: scale, OnWarn: func(w graph.Warning) { b.noteEvalWarning(w, site) }})
+		v, err := func() (v graph.Value, err error) { //nolint:nonamedreturns // recover needs named results
+			defer graph.Recover(&err, "await")
+			return b.eng.Evaluate(callCtx, n.ID, graph.EvalOptions{Scale: scale, OnWarn: func(w graph.Warning) { b.noteEvalWarning(w, site) }})
+		}()
 		settleCtx := callCtx
 		if callCtx.Err() != nil {
 			settleCtx = svc.Lifetime() // still reject, so awaiting code sees E_CANCELLED

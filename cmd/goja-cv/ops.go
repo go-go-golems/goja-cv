@@ -57,9 +57,7 @@ func newOpsCommand(opts *rootOptions) *cobra.Command {
 				}
 				info := opInfo{Name: op.Name, On: kindName(op.On), Returns: string(op.Returns), Doc: op.Doc, Args: map[string]string{}}
 				for i := range op.Args {
-					if s := &op.Args[i]; !s.Hidden {
-						info.Args[s.Name] = graph.DescribeArgSpec(s)
-					}
+					info.Args[op.Args[i].Name] = graph.DescribeArgSpec(&op.Args[i])
 				}
 				list = append(list, info)
 			}

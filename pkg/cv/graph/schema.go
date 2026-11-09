@@ -1,6 +1,8 @@
 package graph
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -176,6 +178,30 @@ type Record struct {
 
 // Map returns the record's values as a plain map.
 func (r Record) Map() map[string]any { return r.Vals }
+
+// MarshalJSON writes the record's keys in order.
+func (r Record) MarshalJSON() ([]byte, error) {
+	var b bytes.Buffer
+	b.WriteByte('{')
+	for i, k := range r.Keys {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		kb, err := json.Marshal(k)
+		if err != nil {
+			return nil, err
+		}
+		vb, err := json.Marshal(r.Vals[k])
+		if err != nil {
+			return nil, err
+		}
+		b.Write(kb)
+		b.WriteByte(':')
+		b.Write(vb)
+	}
+	b.WriteByte('}')
+	return b.Bytes(), nil
+}
 
 // OrderBySchema gives the object of a Value, or each row of a list of rows,
 // the key order of the node's schema (keys outside it follow, sorted), so

@@ -42,6 +42,26 @@ func (r InputRef) MarshalJSON() ([]byte, error) {
 type Args struct {
 	op   *OpDef
 	vals map[string]any
+	meta any // typed Go-side metadata of a source node (SourceMeta, PlaceholderMeta); nil otherwise
+}
+
+// Meta returns the node's typed metadata (SourceMeta of cv.open,
+// PlaceholderMeta of a builder lambda's placeholder). It panics when the
+// node has no metadata of type T: a programming error.
+func Meta[T any](a Args) T {
+	m, ok := a.meta.(T)
+	if !ok {
+		var want T
+		panic(fmt.Sprintf("cv: %s has metadata %T, not %T", a.opName(), a.meta, want))
+	}
+	return m
+}
+
+func (a Args) opName() string {
+	if a.op == nil {
+		return "Args"
+	}
+	return a.op.Name
 }
 
 // Has reports whether the argument is present.
@@ -778,10 +798,8 @@ func checkKeys(specs []ArgSpec, m map[string]any, what string, fix func(sug stri
 	var valid []string
 	known := map[string]bool{}
 	for _, s := range specs {
-		if !s.Hidden {
-			valid = append(valid, s.Name)
-			known[s.Name] = true
-		}
+		valid = append(valid, s.Name)
+		known[s.Name] = true
 	}
 	for _, k := range sortedKeys(m) {
 		if !known[k] {
@@ -933,9 +951,8 @@ type bound struct {
 
 // bind maps raw call arguments onto op: explicit node inputs first, then
 // positional args in declaration order, then an optional trailing options
-// object whose keys may name any non-hidden argument. trusted values (set by
-// Go, e.g. hidden source stamps) are bound without the unknown-key check.
-func bind(op *OpDef, call string, hasReceiver bool, raw []any, trusted map[string]any, kindOf func(NodeID) (Kind, bool)) (*bound, error) {
+// object whose keys may name any argument.
+func bind(op *OpDef, call string, hasReceiver bool, raw []any, kindOf func(NodeID) (Kind, bool)) (*bound, error) {
 	raw = normalize(trimUndefined(raw)).([]any)
 	res := &bound{}
 	i := 0
@@ -970,7 +987,7 @@ func bind(op *OpDef, call string, hasReceiver bool, raw []any, trusted map[strin
 	given := map[string]any{}
 	var positional []*ArgSpec
 	for k := range op.Args {
-		if op.Args[k].Positional && !op.Args[k].Hidden {
+		if op.Args[k].Positional {
 			positional = append(positional, &op.Args[k])
 		}
 	}
@@ -1018,9 +1035,6 @@ func bind(op *OpDef, call string, hasReceiver bool, raw []any, trusted map[strin
 			}
 			given[k] = opts[k]
 		}
-	}
-	for k, v := range trusted {
-		given[k] = normalize(v)
 	}
 
 	b := &binder{op: op, kindOf: kindOf, liftIdx: map[NodeID]int{}}
@@ -1109,7 +1123,7 @@ func signatureHint(op *OpDef, call string) string {
 		pos = append(pos, strings.ToLower(string(in)))
 	}
 	for _, a := range op.Args {
-		if a.Hidden || isSpaceOption(op, &a) {
+		if isSpaceOption(op, &a) {
 			continue // the working-space option is on every pixel op; help and errors explain it
 		}
 		if a.Positional {
@@ -1152,7 +1166,7 @@ func resolveArgs(n *Node, ins []Value) (Args, error) {
 		}
 		out[k] = r
 	}
-	return Args{op: n.Op, vals: out}, nil
+	return Args{op: n.Op, vals: out, meta: n.Args.meta}, nil
 }
 
 func containsRef(v any) bool {

@@ -85,7 +85,7 @@ func (e *Engine) Call(name string, receiver NodeID, raw []any) (CallResult, erro
 		}
 		return CallResult{}, e.reg.UnknownMethod(kind, name, path)
 	}
-	return e.b.Call(op, receiver, raw, nil)
+	return e.b.Call(op, receiver, raw)
 }
 
 // Open interns a source node for an image file with the options of
@@ -122,24 +122,12 @@ func (e *Engine) Open(path string, raw map[string]any) (*Node, error) {
 		return nil, Errorf(EArgType, "cannot read %q as an image: %v", path, errors.Cause(err)).
 			WithHint("Supported: " + buffer.SupportedFormats + ".")
 	}
-	stamp := fmt.Sprintf("%d-%d", st.Size(), st.ModTime().UnixNano())
-	trusted := map[string]any{"stamp": stamp, "w": info.W, "h": info.H, "format": info.Format, "bits": info.Bits,
-		"channels": info.Channels, "sample": info.Sample, "fileEncoding": info.Encoding.String()}
-	if info.Origin != nil {
-		trusted["recordedOrigin"] = []any{float64(info.Origin[0]), float64(info.Origin[1])}
-	}
-	if len(info.Notes) > 0 {
-		notes := make([]any, len(info.Notes))
-		for i, n := range info.Notes {
-			notes[i] = n
-		}
-		trusted["notes"] = notes
-	}
+	meta := SourceMeta{Path: abs, Stamp: fmt.Sprintf("%d-%d", st.Size(), st.ModTime().UnixNano()), Info: info, FileEncoding: info.Encoding}
 	call := []any{abs}
 	if len(raw) > 0 {
 		call = append(call, raw)
 	}
-	n, _, err := e.b.Intern(op, 0, call, trusted)
+	n, _, err := e.b.InternSource(op, call, meta)
 	return n, err
 }
 
@@ -160,8 +148,7 @@ func (e *Engine) Placeholder(receiver NodeID) (*Node, error) {
 	if r.Kind != op.Returns {
 		return nil, Errorf(EWrongKind, "builder lambdas take %s; the receiver is %s.", A(string(op.Returns)), A(string(r.Kind)))
 	}
-	n, _, err := e.b.Intern(op, 0, nil, map[string]any{"for": float64(receiver), "frame": r.Frame.Data(),
-		"enc": r.Enc.String(), "space": r.Space.String()})
+	n, _, err := e.b.InternSource(op, nil, PlaceholderMeta{For: receiver, Frame: r.Frame, Enc: r.Enc, Space: r.Space})
 	return n, err
 }
 
@@ -193,7 +180,7 @@ func (e *Engine) DeclareParam(def ParamDef, reset bool) (*Node, ParamDef, error)
 	if err != nil {
 		return nil, ParamDef{}, err
 	}
-	n, _, err := e.b.Intern(op, 0, []any{def.Name}, nil)
+	n, _, err := e.b.Intern(op, 0, []any{def.Name})
 	return n, d, err
 }
 

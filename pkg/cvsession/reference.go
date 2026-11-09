@@ -98,9 +98,8 @@ func funcLine(f *graph.FuncDef) string {
 	}
 	line += "\n"
 	for i := range f.Args {
-		if s := &f.Args[i]; !s.Hidden {
-			line += "  - " + s.Name + ": " + graph.DescribeArgSpec(s) + "\n"
-		}
+		s := &f.Args[i]
+		line += "  - " + s.Name + ": " + graph.DescribeArgSpec(s) + "\n"
 	}
 	return line
 }
@@ -110,9 +109,6 @@ func opLine(op *graph.OpDef) string {
 	var details []string
 	for i := range op.Args {
 		s := &op.Args[i]
-		if s.Hidden {
-			continue
-		}
 		if s.Name == graph.SpaceArg && op.Space.Default != buffer.SpaceNone {
 			details = append(details, fmt.Sprintf("space: \"linear\" | \"encoded\", default %q. working space (the option is not part of the usage line)", op.Space.Default.String()))
 			continue

@@ -41,12 +41,3 @@ func NewRegistry() *graph.Registry {
 func image(v graph.Value) *graph.ImageValue { return v.(*graph.ImageValue) }
 
 func data(v any) *graph.DataValue { return &graph.DataValue{Data: v} }
-
-// frameArg reads a hidden [x, y, w, h] argument as a frame.
-func frameArg(a graph.Args, name string) graph.Frame {
-	l := a.Numbers(name)
-	if len(l) != 4 {
-		return graph.Frame{}
-	}
-	return graph.Frame{X: int(l[0]), Y: int(l[1]), W: int(l[2]), H: int(l[3])}
-}

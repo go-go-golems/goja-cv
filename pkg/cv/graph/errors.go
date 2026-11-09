@@ -2,8 +2,10 @@ package graph
 
 import (
 	"fmt"
+	"runtime/debug"
 	"strings"
 
+	"github.com/go-go-golems/goja-cv/pkg/cv/parallel"
 	"github.com/pkg/errors"
 )
 
@@ -113,3 +115,23 @@ type Warning struct {
 }
 
 func (w Warning) String() string { return w.Code + ": " + w.Message }
+
+// Recover converts a panic into E_INTERNAL in *err, with the stack in the
+// hint. Use it in a deferred call at the top of every goroutine goja-cv
+// starts and of every Go function reachable from JavaScript that returns an
+// error: defer graph.Recover(&err, "await").
+func Recover(err *error, where string) {
+	if p := recover(); p != nil {
+		*err = Errorf(EInternal, "%s panicked: %v", where, p).WithHint(string(debug.Stack()))
+	}
+}
+
+// internalError reports a panic that a goroutine recovered as an error
+// (parallel.PanicError) as E_INTERNAL; other errors are returned as they are.
+func internalError(err error, where string) error {
+	var pe *parallel.PanicError
+	if errors.As(err, &pe) {
+		return Errorf(EInternal, "%s panicked: %v", where, pe.Value).WithHint(pe.Stack)
+	}
+	return err
+}

@@ -211,10 +211,12 @@ func TestRenderScalesAndMacros(t *testing.T) {
 	if v.Buf.W != 512 || v.Buf.H != 384 || v.Frame != img.Frame {
 		t.Fatalf("render at 2: %d×%d frame %s", v.Buf.W, v.Buf.H, v.Frame)
 	}
-	// below 1 a render is an evaluation cut to the window, aligned to buffer px
+	// below 1 a render is an evaluation cut to the window: exactly
+	// ScaledSize(window, scale) buffer px, starting at the buffer pixel under
+	// the window's corner (doc x 10 for x 11 at scale 0.5)
 	half := render(t, e, img, graph.RenderOptions{Scale: 0.5, Window: &graph.Frame{X: 11, Y: 10, W: 20, H: 10}})
-	if half.Buf.W != 11 || half.Buf.H != 5 {
-		t.Fatalf("render at 0.5 of a 20×10 window: %d×%d", half.Buf.W, half.Buf.H)
+	if ox, oy := half.BufferOrigin(); half.Buf.W != 10 || half.Buf.H != 5 || ox != 10 || oy != 10 {
+		t.Fatalf("render at 0.5 of a 20×10 window: %d×%d from (%g, %g)", half.Buf.W, half.Buf.H, ox, oy)
 	}
 	// a macro node renders its expansion
 	parts, err := e.Call("split", img.ID, nil)

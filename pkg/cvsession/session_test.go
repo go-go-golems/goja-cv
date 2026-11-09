@@ -229,6 +229,18 @@ func TestTimeoutIsAStructuredError(t *testing.T) {
 	}
 }
 
+// TestTimeoutInsideANativeFunction: a native function that runs agent
+// JavaScript (cv.json reads a getter) is interrupted by the watchdog; the
+// panic boundary lets goja's interrupt through, so the result is E_TIMEOUT,
+// not E_INTERNAL (GCV-004 §7.11).
+func TestTimeoutInsideANativeFunction(t *testing.T) {
+	app, sid := newApp(t, cvsession.Options{Image: tiffPath, EvalTimeout: 300 * time.Millisecond})
+	resp := eval(t, app, sid, "return cv.json({ get x() { while (true) {} } })")
+	out := text(resp)
+	mustContain(t, out, "code: E_TIMEOUT")
+	mustNotContain(t, out, "E_INTERNAL")
+}
+
 func TestInterruptInAsyncContinuationIsReported(t *testing.T) {
 	app, sid := newApp(t, cvsession.Options{Image: tiffPath, EvalTimeout: 300 * time.Millisecond})
 	out := text(eval(t, app, sid, "await img.stats()\nwhile (true) {}"))

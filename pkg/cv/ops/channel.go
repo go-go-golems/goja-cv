@@ -44,8 +44,8 @@ func SourceNotes(b *graph.Builder, n *graph.Node) []string {
 			return
 		}
 		seen[n.ID] = true
-		if n.Op.On == graph.KindNone && n.Op.Name == "open" && n.Args.Has("notes") {
-			out = append(out, n.Args.Strings("notes")...)
+		if n.Op.On == graph.KindNone && n.Op.Name == "open" {
+			out = append(out, graph.Meta[graph.SourceMeta](n.Args).Info.Notes...)
 		}
 		for _, id := range n.Inputs {
 			if in, ok := b.Node(id); ok {

@@ -13,15 +13,14 @@ import (
 // its decoder reports; the node holds linear values (the encoding undone).
 var sourceEnc = &graph.ResultEnc{
 	Enc: func(a graph.Args, _ []*graph.Node) buffer.Encoding {
-		name := a.String("fileEncoding")
 		if a.Has("encoding") {
-			name = a.String("encoding")
+			e, _ := buffer.ParseEncoding(a.String("encoding"))
+			return e
 		}
-		e, ok := buffer.ParseEncoding(name)
-		if !ok {
-			return buffer.EncSRGB
+		if e := graph.Meta[graph.SourceMeta](a).FileEncoding; e != buffer.EncNone {
+			return e
 		}
-		return e
+		return buffer.EncSRGB
 	},
 	Space: func(graph.Args, buffer.Space, []*graph.Node) buffer.Space { return buffer.SpaceLinear },
 }
@@ -30,10 +29,10 @@ var sourceEnc = &graph.ResultEnc{
 // coordinates (box), a file that is itself a window has its declared
 // (origin) or recorded origin.
 func openFrame(a graph.Args, _ []*graph.Node) graph.Frame {
-	f := graph.Frame{W: a.Int("w"), H: a.Int("h")}
-	if a.Has("recordedOrigin") {
-		o := a.Numbers("recordedOrigin")
-		f.X, f.Y = int(o[0]), int(o[1])
+	info := graph.Meta[graph.SourceMeta](a).Info
+	f := graph.Frame{W: info.W, H: info.H}
+	if info.Origin != nil {
+		f.X, f.Y = info.Origin[0], info.Origin[1]
 	}
 	switch {
 	case a.Has("box"):
@@ -65,7 +64,8 @@ func validateOpen(a graph.Args, _ []*graph.Node) error {
 	}
 	if a.Has("box") {
 		b := a.Numbers("box")
-		w, h := a.Int("w"), a.Int("h")
+		info := graph.Meta[graph.SourceMeta](a).Info
+		w, h := info.W, info.H
 		if !isInt(b) {
 			return graph.Errorf(graph.EArgType, "cv.open.box must be whole file pixels, got %v.", b).
 				WithFix(fmt.Sprintf("cv.open(path, { box: [%d, %d, %d, %d] })", int(b[0]), int(b[1]), int(math.Ceil(b[2])), int(math.Ceil(b[3]))))
@@ -83,13 +83,9 @@ func validateOpen(a graph.Args, _ []*graph.Node) error {
 // placeholderEnc gives a builder lambda's placeholder the statics of the
 // receiver it stands for, so the lambda's graph resolves as on the receiver.
 var placeholderEnc = &graph.ResultEnc{
-	Enc: func(a graph.Args, _ []*graph.Node) buffer.Encoding {
-		e, _ := buffer.ParseEncoding(a.String("enc"))
-		return e
-	},
+	Enc: func(a graph.Args, _ []*graph.Node) buffer.Encoding { return graph.Meta[graph.PlaceholderMeta](a).Enc },
 	Space: func(a graph.Args, _ buffer.Space, _ []*graph.Node) buffer.Space {
-		s, _ := buffer.ParseSpace(a.String("space"))
-		return s
+		return graph.Meta[graph.PlaceholderMeta](a).Space
 	},
 }
 
@@ -105,21 +101,12 @@ func sourceOps() []graph.OpDef {
 					Doc: "read only this window [x, y, w, h] of the file (file px); the image keeps the file's coordinates"},
 				{Name: "origin", Type: "point", Static: true, Optional: true,
 					Doc: "declare where a file that is itself a window starts [x, y] (doc px); omit it for whole files"},
-				{Name: "stamp", Type: "string", Hidden: true},
-				{Name: "w", Type: "number", Hidden: true},
-				{Name: "h", Type: "number", Hidden: true},
-				{Name: "format", Type: "string", Hidden: true, Optional: true},
-				{Name: "bits", Type: "number", Hidden: true, Optional: true},
-				{Name: "channels", Type: "number", Hidden: true, Optional: true},
-				{Name: "sample", Type: "string", Hidden: true, Optional: true},
-				{Name: "fileEncoding", Type: "string", Hidden: true, Optional: true},
-				{Name: "recordedOrigin", Type: "number[]", Hidden: true, Optional: true},
-				{Name: "notes", Type: "string[]", Hidden: true, Optional: true},
 			},
 			DocFrame: openFrame,
 			Validate: validateOpen,
 			Run: func(ctx context.Context, ec *graph.EvalCtx, _ []graph.Value, a graph.Args) (graph.Value, error) {
-				k := graph.SourceKey{Path: a.String("path"), Stamp: a.String("stamp"), Enc: ec.Node.Enc}
+				m := graph.Meta[graph.SourceMeta](a)
+				k := graph.SourceKey{Path: m.Path, Stamp: m.Stamp, Enc: ec.Node.Enc}
 				if a.Has("box") {
 					b := a.Numbers("box")
 					k.Box = &[4]int{int(b[0]), int(b[1]), int(b[2]), int(b[3])}
@@ -151,13 +138,7 @@ func sourceOps() []graph.OpDef {
 		},
 		{
 			Name: graph.PlaceholderOp, On: graph.KindNone, Returns: graph.KindImage, Result: placeholderEnc, Bespoke: true,
-			Args: []graph.ArgSpec{
-				{Name: "for", Type: "number", Hidden: true},
-				{Name: "frame", Type: "number[]", Hidden: true, Doc: "the receiver's frame [x, y, w, h]"},
-				{Name: "enc", Type: "string", Hidden: true, Optional: true, Doc: "the receiver's encoding"},
-				{Name: "space", Type: "string", Hidden: true, Optional: true, Doc: "the receiver's space"},
-			},
-			DocFrame: func(a graph.Args, _ []*graph.Node) graph.Frame { return frameArg(a, "frame") },
+			DocFrame: func(a graph.Args, _ []*graph.Node) graph.Frame { return graph.Meta[graph.PlaceholderMeta](a).Frame },
 			Run: func(context.Context, *graph.EvalCtx, []graph.Value, graph.Args) (graph.Value, error) {
 				return nil, graph.Errorf(graph.EPlaceholder, "This is the placeholder image a within() function receives; it only stands for the masked image while the function builds its edit.").
 					WithHint("Use the function's return value. Do not keep the placeholder in a variable outside the function.").

@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
-	"runtime/debug"
 	"sync"
 
 	"github.com/pkg/errors"
@@ -358,9 +357,9 @@ func (r *evalRun) compute(ctx context.Context, n *Node, sig Signature) (Value, e
 	if !n.Op.Lazy && len(n.Inputs) > 0 {
 		g, gctx := errgroup.WithContext(ctx)
 		for i, in := range n.Inputs {
-			g.Go(func() error {
-				v, err := r.eval(gctx, in)
-				ins[i] = v
+			g.Go(func() (err error) { //nolint:nonamedreturns // recover needs named results
+				defer Recover(&err, "evaluation of "+n.Op.Name+"'s input")
+				ins[i], err = r.eval(gctx, in)
 				return err
 			})
 		}
@@ -447,12 +446,9 @@ func stamp(n *Node, v Value, ins []Value) Value {
 }
 
 func safeRun(ctx context.Context, op *OpDef, ec *EvalCtx, in []Value, args Args) (v Value, err error) { //nolint:nonamedreturns // recover needs named results
-	defer func() {
-		if p := recover(); p != nil {
-			err = Errorf(EInternal, "op %s panicked: %v", op.Name, p).WithHint(string(debug.Stack()))
-		}
-	}()
-	return op.Run(ctx, ec, in, args)
+	defer Recover(&err, "op "+op.Name)
+	v, err = op.Run(ctx, ec, in, args)
+	return v, internalError(err, "op "+op.Name)
 }
 
 func ctxError(err error) *Error {

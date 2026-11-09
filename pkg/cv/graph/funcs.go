@@ -55,9 +55,6 @@ func (f *FuncDef) UsageLine() string {
 	}
 	var pos, all []string
 	for _, a := range f.Args {
-		if a.Hidden {
-			continue
-		}
 		if a.Positional {
 			pos = append(pos, a.Name)
 		}
@@ -150,7 +147,7 @@ func BindOptions(call string, specs []ArgSpec, raw []any) (Args, []Warning, erro
 		st[i] = s
 	}
 	op := &OpDef{Name: call, Args: st}
-	bd, err := bind(op, call, false, raw, nil, func(NodeID) (Kind, bool) { return "", false })
+	bd, err := bind(op, call, false, raw, func(NodeID) (Kind, bool) { return "", false })
 	if err != nil {
 		return Args{}, nil, err
 	}

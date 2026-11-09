@@ -83,7 +83,8 @@ build-bin:
 	GOWORK=off go build -o ./dist/$(BINARY) $(CMD_DIR)
 
 # End-to-end check of the real CLI: help pages, the op catalogue, an eval on a
-# generated test image that must write a look file, and the cv-error exit code.
+# generated test image that must write a look file (the path the CLI reports
+# in its --json files list), and the cv-error exit code.
 smoke: build-bin
 	rm -rf $(SMOKE_DIR) && mkdir -p $(SMOKE_DIR)
 	GOWORK=off go run ./internal/testimage/gen -out $(SMOKE_DIR)
@@ -95,8 +96,8 @@ smoke: build-bin
 	./dist/$(BINARY) eval --image $(SMOKE_DIR)/gradient-64x48-8bit.png --out $(SMOKE_DIR)/looks --json \
 		-e 'const s = await img.stats(); return { meanL: s.meanL, fixed: img.levels({ black: s.p01, white: s.p99 }).look("levels") }' \
 		> $(SMOKE_DIR)/eval.json
-	grep -q '"status": "ok"' $(SMOKE_DIR)/eval.json
-	test -s $(SMOKE_DIR)/looks/look-1-levels.png
+	jq -e '.status == "ok" and (.files | length) == 1' $(SMOKE_DIR)/eval.json >/dev/null
+	test -s "$$(jq -r '.files[0].path' $(SMOKE_DIR)/eval.json)"
 	@status=0; ./dist/$(BINARY) eval -e 'return cv.nope()' >/dev/null || status=$$?; \
 		if [ "$$status" -ne 1 ]; then echo "expected exit 1 for a cv error, got $$status"; exit 1; fi
 	@echo "smoke ok"
