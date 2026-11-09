@@ -29,6 +29,9 @@ type RegionsValue struct {
 	W, H  int     // source raster size in buffer px
 	Scale float64 // scale of the source raster (buffer px per doc px)
 	Frame Frame   // the frame the raster covers; region geometry is absolute in it
+	// Fields is the schema of the items (stamped from the node by the
+	// evaluator; nil for values built outside the graph, see Schema).
+	Fields []FieldSpec
 }
 
 var _ Value = &RegionsValue{}
@@ -101,15 +104,6 @@ func (v *RegionsValue) NewRegion(id int, pix []int32) *Region {
 	return r
 }
 
-// RegionFields are the fields every region has; ops add measures such as
-// meanL, contrast, localNoise, score (detect.specks) or meanMask
-// (components).
-var RegionFields = []string{"id", "area", "x", "y", "w", "h", "cx", "cy", "aspect"}
-
-// KnownRegionFields are all field names region predicates may use.
-var KnownRegionFields = []string{"id", "area", "x", "y", "w", "h", "cx", "cy", "aspect",
-	"meanL", "contrast", "localNoise", "score", "sharpness", "meanMask", "polarity"}
-
 // Field returns a field of the region: a number, or a string for tags.
 func (r *Region) Field(name string) (any, bool) {
 	switch name {
@@ -139,41 +133,68 @@ func (r *Region) Field(name string) (any, bool) {
 	return nil, false
 }
 
-// FieldNames lists the region's fields.
-func (r *Region) FieldNames() []string {
-	out := []string{"id", "area", "x", "y", "w", "h", "cx", "cy"}
-	for k := range r.Measures {
-		out = append(out, k)
-	}
-	for k := range r.Tags {
-		out = append(out, k)
-	}
-	sort.Strings(out)
-	return out
-}
-
 func round(v float64, digits int) float64 {
 	p := math.Pow(10, float64(digits))
 	return math.Round(v*p) / p
 }
 
-// Data is the plain-data form JavaScript sees: { id, box, area, centroid,
-// …measures, …tags }. Geometry is rounded to 0.01 doc px, measures to 4
-// decimals.
-func (r *Region) Data() map[string]any {
-	m := map[string]any{
-		"id":       float64(r.ID),
-		"box":      []any{round(r.Box[0], 2), round(r.Box[1], 2), round(r.Box[2], 2), round(r.Box[3], 2)},
-		"area":     round(r.Area, 2),
-		"centroid": []any{round(r.Centroid[0], 2), round(r.Centroid[1], 2)},
+// Schema is the value's field list: Fields (stamped from its node), or for
+// a value built without a node the geometry and the first item's measures
+// and tags in name order.
+func (v *RegionsValue) Schema() []FieldSpec {
+	if v.Fields != nil {
+		return v.Fields
 	}
-	for k, v := range r.Measures {
-		m[k] = round(v, 4)
+	out := WithFields(GeometryFields)
+	if len(v.Items) == 0 {
+		return out
 	}
-	for k, v := range r.Tags {
-		m[k] = v
+	r := v.Items[0]
+	var names []string
+	for k := range r.Measures {
+		if _, geo := FindField(GeometryFields, k); !geo {
+			names = append(names, k)
+		}
 	}
-	return m
+	for k := range r.Tags {
+		names = append(names, k)
+	}
+	sort.Strings(names)
+	for _, k := range names {
+		t := "number"
+		if _, ok := r.Tags[k]; ok {
+			t = "string"
+		}
+		out = append(out, FieldSpec{Name: k, Type: t})
+	}
+	return out
+}
+
+// Data is the plain-data form JavaScript and data out see: the fields of
+// the schema, flat and in schema order ({ id, x, y, w, h, cx, cy, area,
+// aspect, …measures, …tags }). Geometry is rounded to 0.01 doc px, measures
+// to 4 decimals. A field the region lacks is omitted.
+func (r *Region) Data(fields []FieldSpec) Record {
+	rec := Record{Keys: make([]string, 0, len(fields)), Vals: make(map[string]any, len(fields))}
+	for _, f := range fields {
+		v, ok := r.Field(f.Name)
+		if !ok {
+			continue
+		}
+		switch x := v.(type) {
+		case float64:
+			switch f.Name {
+			case "id":
+			case "x", "y", "w", "h", "cx", "cy", "area":
+				v = round(x, 2)
+			default:
+				v = round(x, 4)
+			}
+		}
+		rec.Keys = append(rec.Keys, f.Name)
+		rec.Vals[f.Name] = v
+	}
+	return rec
 }
 
 // SummaryLimit is the number of items an awaited Regions value includes.
@@ -183,9 +204,10 @@ const SummaryLimit = 100
 // and the first limit items in list order.
 func (v *RegionsValue) Summary(limit int) map[string]any {
 	n := min(limit, len(v.Items))
+	fields := v.Schema()
 	items := make([]any, n)
 	for i := 0; i < n; i++ {
-		items[i] = v.Items[i].Data()
+		items[i] = v.Items[i].Data(fields)
 	}
 	return map[string]any{
 		"kind": string(KindRegions), "count": float64(len(v.Items)), "items": items,

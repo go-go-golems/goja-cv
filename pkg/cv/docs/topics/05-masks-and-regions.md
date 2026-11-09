@@ -26,17 +26,18 @@ return { coverage: await sel.coverage(), look: sel.overlay(img, { color: "lime" 
 
 ## Regions
 
-`detect.specks()` and `mask.components()` make Regions. Awaiting gives `{ count, items: [{ id, box, area, centroid, … }], frame, … }` (box and centroid are absolute doc px in the image's frame). Narrow them with:
+`detect.specks()` and `mask.components()` make Regions. Awaiting gives `{ count, items: [{ id, x, y, w, h, cx, cy, area, aspect, … }], frame, … }`: flat fields, absolute doc px in the image's frame. `x, y, w, h` is the bounding box (corner and size), `cx, cy` the centroid; the same names work in `where` and `sortBy`, and an item can be passed wherever a box or a point is expected (`img.crop(item)`, `img.mask.flood(item)`, `cv.sheet(items)`, `only(item)`). `cv.help("detect.specks")` lists each op's fields. Narrow them with:
 
 - `where({ field: { lt, lte, gt, gte, eq, ne, in } })` or `{ field: value }` (data, runs in Go, values may be params);
-- `without([ids])`, `only([ids])`, `sortBy("contrast", { desc })`, `top(n)`, `count()`;
+- `without([ids])`, `only([ids])` (ids or items), `sortBy("contrast", { desc })`, `top(n)`, `count()`;
 - `filter(r => …)` for tests that cannot be written as data (see `cv.docs.read("lambdas")`).
 
 ```js
 const specks = img.detect.specks()
 const keep = specks.where({ score: { gte: 0.5 } }).sortBy("area").top(3)
 const r = await keep
-return r.items.map(x => ({ id: x.id, area: x.area, box: x.box, score: x.score }))
+const first = r.items[0]
+return { rows: r.items.map(x => [x.id, x.cx, x.cy, x.area, x.score].join(" ")), around: await img.stats({ box: first }).pick("meanL", "area") }
 ```
 
 Region ids are stable for the same image and options (detection runs at `analysisScale`), so you can drop one by id in a later eval: `specks.without([31])`.

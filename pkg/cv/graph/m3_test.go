@@ -62,7 +62,7 @@ func m3Engine(t *testing.T) *Engine {
 			}},
 		OpDef{Name: "pred", On: KindImage, Returns: KindValue,
 			Args: []ArgSpec{{Name: "p", Type: "any", Positional: true}},
-			Validate: func(a Args) error {
+			Validate: func(a Args, _ []*Node) error {
 				if _, ok := a.Raw("p").(map[string]any); !ok {
 					return Errorf(EArgType, "pred needs an object")
 				}
@@ -198,7 +198,7 @@ func TestRasterizeKeepsAreaAtAnyScale(t *testing.T) {
 			t.Fatalf("scale %g: rasterized area %g, want %g", sc, s, want)
 		}
 	}
-	d := rv.Items[0].Data()
+	d := rv.Items[0].Data(rv.Schema()).Vals
 	if d["area"] != 221.0 || d["aspect"].(float64) < 1 {
 		t.Fatalf("data %v", d)
 	}

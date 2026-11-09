@@ -13,8 +13,6 @@ import (
 // PercentileKey is the key of percentile p in stats().percentiles.
 func PercentileKey(p float64) string { return strconv.FormatFloat(p, 'g', -1, 64) }
 
-var statsFields = []string{"meanL", "medianL", "p01", "p99", "clipLow", "clipHigh", "percentiles", "perChannel", "w", "h", "scale", "area", "coverage"}
-
 func channelData(c kernels.ChannelStats, ps []float64) map[string]any {
 	m := map[string]any{
 		"mean": c.Mean, "median": c.Median, "p01": c.P01, "p99": c.P99,
@@ -144,7 +142,7 @@ func measureOps() []graph.OpDef {
 				{Name: "bins", Type: "number", Default: 256.0, Min: graph.F(2), Max: graph.F(4096)},
 				{Name: "channel", Type: "enum:L,r,g,b", Default: "L"},
 			},
-			Fields: []string{"bins", "channel", "space", "counts", "under", "over", "total"},
+			Fields: fixedFields(histogramFields),
 			Gray: func(a graph.Args) []int {
 				if a.String("channel") == "L" {
 					return []int{0}

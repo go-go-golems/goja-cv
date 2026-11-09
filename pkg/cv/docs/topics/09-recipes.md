@@ -37,7 +37,7 @@ const dust = specks.where({ score: { gte: 0.5 } })
 mem.dust = dust
 return {
   verdict: await img.check.dust(),
-  biggest: (await dust.sortBy("area").top(3)).items.map(r => ({ id: r.id, box: r.box, score: r.score })),
+  biggest: (await dust.sortBy("area").top(3)).items.map(r => ({ id: r.id, x: r.x, y: r.y, w: r.w, h: r.h, score: r.score })),
   look: img.overlay(dust, { labels: "id" }).look("dust"),
 }
 ```
@@ -57,11 +57,11 @@ To keep a speck that is real detail, drop it by id before healing: `img.heal(mem
 ```js
 const specks = img.detect.specks()
 const top = (await specks.sortBy("area").top(1)).items[0]
-const [x, y, w, h] = top.box
-const ring = img.mask.box([x - 6, y - 6, w + 12, h + 12]).minus(img.mask.box(top.box))
+const { x, y, w, h } = top
+const ring = img.mask.box([x - 6, y - 6, w + 12, h + 12]).minus(img.mask.box(top))
 return {
   id: top.id,
-  inside: await img.stats({ box: top.box }).pick("meanL", "p99", "area"),
+  inside: await img.stats({ box: top }).pick("meanL", "p99", "area"),
   around: await img.stats({ mask: ring }).pick("meanL", "area"),
   dust: await img.stats({ mask: specks.where({ score: { gte: 0.5 } }) }).pick("meanL", "area"),
 }
@@ -97,7 +97,7 @@ const top = spots.sortBy("area").top(12)
 const first = (await top).items[0]
 return {
   sheet: cv.sheet(top, { views: [img, speck], size: 32, zoom: 4 }).look("candidates"),
-  zoom: speck.crop([Math.round(first.centroid[0]) - 16, Math.round(first.centroid[1]) - 16, 32, 32]).look({ zoom: 8, ruler: 4 }),
+  zoom: speck.crop([Math.round(first.cx) - 16, Math.round(first.cy) - 16, 32, 32]).look({ zoom: 8, ruler: 4 }),
 }
 ```
 

@@ -25,6 +25,7 @@ type Node struct {
 	Frame     Frame           // the rectangle the result covers in doc px (empty for pure data)
 	Enc       buffer.Encoding // Image: its encoding; Value: the encoding of the image it measured; else EncNone
 	Space     buffer.Space    // Image: the space of its values; Value: of its level-valued numbers; else SpaceNone
+	Fields    []FieldSpec     // Regions: the fields of its items; Value: of its rows or object (schema.go)
 }
 
 // Builder interns nodes: structurally identical calls return the same node.
@@ -137,8 +138,8 @@ func (b *Builder) call(op *OpDef, receiver NodeID, raw []any, trusted map[string
 	}
 	args := Args{op: op, vals: bd.args}
 	if op.Validate != nil {
-		if err := op.Validate(args); err != nil {
-			return CallResult{}, err
+		if err := op.Validate(args, inputs); err != nil {
+			return CallResult{}, b.reg.producerHint(err)
 		}
 	}
 	if recv != nil {
@@ -184,6 +185,7 @@ func (b *Builder) internNode(op *OpDef, args Args, inputs []*Node, nExplicit int
 	n := &Node{ID: b.next, Op: op, Inputs: ids, NExplicit: nExplicit, Args: args, Kind: op.Returns, Hash: h}
 	n.Frame = nodeFrame(op, args, inputs)
 	n.Enc, n.Space = nodeStatics(op, args, inputs)
+	n.Fields = nodeFields(op, args, inputs)
 	b.byKey[h], b.nodes[n.ID] = n, n
 	return n
 }

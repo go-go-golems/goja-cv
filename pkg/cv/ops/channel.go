@@ -63,7 +63,7 @@ func channelOps() []graph.OpDef {
 			Name: "channel", On: graph.KindImage, Returns: graph.KindImage,
 			Args: []graph.ArgSpec{{Name: "c", Type: "enum:r,g,b|number", Positional: true, Min: graph.F(0), Max: graph.F(2),
 				Doc: `the channel: "r", "g", "b" or 0, 1, 2`}},
-			Validate: func(a graph.Args) error {
+			Validate: func(a graph.Args, _ []*graph.Node) error {
 				if f, ok := a.Raw("c").(float64); ok && f != math.Trunc(f) {
 					return graph.Errorf(graph.EArgType, "channel(%g): the channel is 0, 1 or 2.", f).WithValid([]string{"r", "g", "b", "0", "1", "2"})
 				}

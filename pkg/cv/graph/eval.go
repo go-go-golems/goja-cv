@@ -442,7 +442,7 @@ func stamp(n *Node, v Value, ins []Value) Value {
 			c := *x
 			x = &c
 		}
-		x.Frame = n.Frame
+		x.Frame, x.Fields = n.Frame, n.Fields
 		return x
 	}
 	return v

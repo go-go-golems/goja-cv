@@ -29,6 +29,9 @@ type binding struct {
 	nextFunc graph.FuncID
 	track    tracker        // per-eval state (evaltrack.go)
 	opened   []graph.NodeID // sources opened with cv.open
+	// itemProto is the prototype of region items (prelude: throwing
+	// accessors for removed field names); owner goroutine only.
+	itemProto *goja.Object
 }
 
 var _ graph.Callbacks = &binding{}
@@ -68,10 +71,19 @@ func (b *binding) CallEach(ctx context.Context, id graph.FuncID, args []any) ([]
 		}
 		out := make([]any, len(args))
 		for i, a := range args {
-			v, err := fn(goja.Undefined(), toJS(vm, a))
+			arg := toJS(vm, a)
+			if o, ok := arg.(*goja.Object); ok && b.itemProto != nil {
+				if _, isRec := a.(graph.Record); isRec {
+					_ = o.SetPrototype(b.itemProto)
+				}
+			}
+			v, err := fn(goja.Undefined(), arg)
 			if err != nil {
+				if ce, ok := graph.AsError(jsError(err)); ok {
+					return nil, ce
+				}
 				return nil, graph.Errorf(graph.EEval, "the function passed to filter threw on item %d: %v", i, err).
-					WithHint("The function receives one region's data: { id, box, area, centroid, score, … }.")
+					WithHint(fmt.Sprintf("The function receives one region's data: { %s, … }.", strings.Join(graph.FieldNames(graph.GeometryFields), ", ")))
 			}
 			out[i] = graph.Normalize(v.Export())
 		}
@@ -114,6 +126,9 @@ func (b *binding) object() *goja.Object {
 	set("__look", b.look)
 	b.addDocs(o)
 	set("__fieldNames", b.fieldNames)
+	set("__removedFields", b.removedFields)
+	set("__noField", b.noField)
+	set("__itemProto", b.itemProtoJS)
 	set("__collision", b.collision)
 	set("__notArray", b.notArray)
 	return o

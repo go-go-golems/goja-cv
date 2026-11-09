@@ -194,7 +194,7 @@ func (r *Registry) UnknownMethod(k Kind, name string, path []string) *Error {
 		}
 	}
 	for _, op := range r.Ops() {
-		if op.On == k && op.Returns == KindValue && contains(op.Fields, name) {
+		if op.On == k && op.Returns == KindValue && contains(FieldNames(op.DocFields()), name) {
 			e.Hint = fmt.Sprintf("%q is a field of the Value returned by %s().", name, op.Name)
 			e.Fix = fmt.Sprintf("%s.%s().%s   // or (await %s.%s()).%s for the number", receiverVar(k), op.Name, name, receiverVar(k), op.Name, name)
 			return e

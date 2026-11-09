@@ -8,8 +8,6 @@ import (
 	"github.com/go-go-golems/goja-cv/pkg/cv/kernels"
 )
 
-var speckFields = []string{"id", "box", "area", "centroid", "aspect", "polarity", "contrast", "localNoise", "sharpness", "score", "meanL"}
-
 func speckArgs(maxArea, minContrast float64) []graph.ArgSpec {
 	return []graph.ArgSpec{
 		{Name: "maxArea", Type: "number", Unit: graph.DocPx2, Default: maxArea, Min: graph.F(1), Max: graph.F(1e6), Usual: [2]float64{4, 5000},
@@ -68,14 +66,15 @@ func detectOps() []graph.OpDef {
 				"thresholded at max(minContrast, 4σ noise) with hysteresis, labelled, at most maxArea. " +
 				"Each region has contrast, localNoise, sharpness (soft round blobs like stars are low) and score in [0, 1]; " +
 				"keep real dust with .where({ score: { gte: 0.5 } }). Regions are analysed at analysisScale (default 1), so ids and boxes are the same in preview and export.",
-			Fields: speckFields,
-			See:    []string{"heal", "check.dust", "where", "overlay"},
+			Fields:   fixedFields(speckFields),
+			Produces: speckProduces,
+			See:      []string{"heal", "check.dust", "where", "overlay"},
 		},
 		{
 			Name: "check.dust", On: graph.KindImage, Returns: graph.KindValue, Space: graph.SpaceRule{Default: buffer.SpaceEncoded}, Global: true,
 			Args:          speckArgs(200, 0.03),
 			AnalysisScale: analysisScale,
-			Fields:        []string{"verdict", "count", "candidates", "maxArea", "coverage", "noise"},
+			Fields:        fixedFields(dustFields),
 			Gray:          func(graph.Args) []int { return []int{0} },
 			Run: func(ctx context.Context, ec *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
 				src := image(in[0])

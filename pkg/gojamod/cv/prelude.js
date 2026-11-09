@@ -51,6 +51,22 @@
   // number), and Object.keys, JSON and the YAML result are unchanged. Ops
   // given such data lift it back to the node (marshal).
   const NODE = Symbol("cv.node");
+
+  // Region items are flat ({ id, x, y, w, h, cx, cy, area, aspect, … }).
+  // Names agents remember from older docs (box, centroid, meanMask) are
+  // non-enumerable accessors on one shared prototype that throw E_NO_FIELD
+  // with the literal fix: a diagnostic, not an alias (no data comes back).
+  const ITEM_PROTO = Object.create(Object.prototype);
+  for (const name of Object.keys(native.__removedFields())) {
+    Object.defineProperty(ITEM_PROTO, name, {
+      get() {
+        return native.__noField(name);
+      },
+      enumerable: false,
+      configurable: false,
+    });
+  }
+  native.__itemProto(ITEM_PROTO);
   const ARRAY_METHODS = ["slice", "map", "forEach", "reduce", "find", "findIndex", "some", "every", "sort", "indexOf", "includes", "flatMap", "at", "concat", "join", "push"];
 
   function link(v, node) {
@@ -70,6 +86,9 @@
       Object.defineProperty(v, name, { value: node[name], writable: true, configurable: true, enumerable: false });
     }
     if (node.__kind === "Regions" && Array.isArray(v.items)) {
+      for (const it of v.items) {
+        if (it !== null && typeof it === "object" && Object.getPrototypeOf(it) === Object.prototype) Object.setPrototypeOf(it, ITEM_PROTO);
+      }
       // awaited Regions are { count, items }: array methods say so
       for (const name of ARRAY_METHODS) {
         if (name in v) continue;

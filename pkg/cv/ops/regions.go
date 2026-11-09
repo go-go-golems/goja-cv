@@ -36,23 +36,19 @@ func sortByArea(items []*graph.Region) {
 
 var predOps = []string{"lt", "lte", "gt", "gte", "eq", "ne", "in"}
 
-// validatePredicate checks a where() predicate: { field: { op: value } } or
-// { field: value } (eq). Values may be lifted nodes (InputRefs).
-func validatePredicate(a graph.Args) error {
+// validatePredicate checks a where() predicate against the receiver's
+// fields: { field: { op: value } } or { field: value } (eq). Values may be
+// lifted nodes (InputRefs).
+func validatePredicate(a graph.Args, inputs []*graph.Node) error {
 	pred, ok := a.Raw("pred").(map[string]any)
 	if !ok {
-		return graph.Errorf(graph.EArgType, "where needs a predicate object such as { score: { gte: 0.5 } }.").
-			WithFix("regions.where({ score: { gte: 0.5 }, area: { lte: 120 } })")
+		return graph.Errorf(graph.EArgType, "where needs a predicate object such as { area: { gte: 4 } }.").
+			WithFix("regions.where({ area: { gte: 4, lte: 120 } })")
 	}
+	fields := receiverFields(inputs)
 	for _, f := range sortedKeys(pred) {
-		if !contains(graph.KnownRegionFields, f) {
-			e := graph.Errorf(graph.EUnknownOption, "Regions have no field %q. Fields: %s.", f, strings.Join(graph.KnownRegionFields, ", ")).
-				WithValid(graph.KnownRegionFields)
-			if sug := graph.Closest(f, graph.KnownRegionFields); sug != "" {
-				e.Hint = fmt.Sprintf("Did you mean %q?", sug)
-				e.Fix = fmt.Sprintf("where({ %s: … })", sug)
-			}
-			return e
+		if _, ok := graph.FindField(fields, f); !ok {
+			return graph.UnknownFieldError("where", f, fields, func(sug string) string { return fmt.Sprintf("where({ %s: … })", sug) })
 		}
 		cond, ok := pred[f].(map[string]any)
 		if !ok {
@@ -133,11 +129,19 @@ func compare(op string, got, want any) (bool, error) {
 	return false, graph.Errorf(graph.EArgType, "unknown comparison %q", op)
 }
 
+// receiverFields is the schema of a Regions op's receiver.
+func receiverFields(inputs []*graph.Node) []graph.FieldSpec {
+	if len(inputs) == 0 {
+		return graph.GeometryFields
+	}
+	return inputs[0].Fields
+}
+
 func matches(r *graph.Region, pred map[string]any) (bool, error) {
 	for _, f := range sortedKeys(pred) {
 		got, ok := r.Field(f)
 		if !ok {
-			return false, graph.NoField(f, r.FieldNames()).WithHint(fmt.Sprintf("These regions have the fields %s.", strings.Join(r.FieldNames(), ", ")))
+			return false, graph.Errorf(graph.ENoField, "region %d has no field %q.", r.ID, f)
 		}
 		cond, ok := pred[f].(map[string]any)
 		if !ok {
@@ -156,19 +160,27 @@ func matches(r *graph.Region, pred map[string]any) (bool, error) {
 	return true, nil
 }
 
-// idSet reads ids given as a number or a list of numbers.
+// idSet reads ids given as a number, a region item (an object with id) or
+// a list of them.
 func idSet(v any) (map[int]bool, error) {
 	out := map[int]bool{}
 	var list []any
 	switch x := v.(type) {
-	case float64:
+	case float64, map[string]any:
 		list = []any{x}
 	case []any:
 		list = x
 	default:
-		return nil, graph.Errorf(graph.EArgType, "ids must be a number or a list of numbers, got %v.", v).WithFix("without([3, 17])   // region ids from (await regions).items")
+		return nil, graph.Errorf(graph.EArgType, "ids must be a number, a region item or a list of them, got %v.", v).WithFix("without([3, 17])   // region ids from (await regions).items")
 	}
 	for _, e := range list {
+		if m, ok := e.(map[string]any); ok {
+			id, ok := m["id"]
+			if !ok {
+				return nil, graph.Errorf(graph.EArgType, "an object passed as an id needs an id field (a region item).").WithFix("only(item)   // or only(item.id)")
+			}
+			e = id
+		}
 		f, ok := e.(float64)
 		if !ok || f != math.Trunc(f) {
 			return nil, graph.Errorf(graph.EArgType, "ids must be whole numbers, got %v.", e)
@@ -178,7 +190,7 @@ func idSet(v any) (map[int]bool, error) {
 	return out, nil
 }
 
-func validateIDs(a graph.Args) error {
+func validateIDs(a graph.Args, _ []*graph.Node) error {
 	v := a.Raw("ids")
 	if isRef(v) {
 		return nil
@@ -197,7 +209,7 @@ func validateIDs(a graph.Args) error {
 func idFilterOp(name string, keep bool, doc string) graph.OpDef {
 	return graph.OpDef{
 		Name: name, On: graph.KindRegions, Returns: graph.KindRegions,
-		Args:     []graph.ArgSpec{{Name: "ids", Type: "any", Positional: true, Doc: "a region id or a list of ids"}},
+		Args:     []graph.ArgSpec{{Name: "ids", Type: "any", Positional: true, Doc: "a region id, a region item (anything with id) or a list of them"}},
 		Validate: validateIDs,
 		Run: func(_ context.Context, _ *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
 			ids, err := idSet(a.Raw("ids"))
@@ -246,20 +258,14 @@ func regionOps() []graph.OpDef {
 					if float64(len(pix)) < minPx {
 						continue
 					}
-					r := rv.NewRegion(len(rv.Items)+1, pix)
-					var s float64
-					for _, p := range pix {
-						s += float64(pl[p])
-					}
-					r.Measures["meanMask"] = s / float64(len(pix))
-					rv.Items = append(rv.Items, r)
+					rv.Items = append(rv.Items, rv.NewRegion(len(rv.Items)+1, pix))
 				}
 				sortByArea(rv.Items)
 				return rv, nil
 			},
 			Doc:    "The connected (8-neighbour) areas of the mask as Regions, largest first; ids follow raster order.",
-			Fields: graph.RegionFields,
-			See:    []string{"toMask", "where"},
+			Fields: geometryFields,
+			See:    []string{"toMask", "where", "measure"},
 		},
 		{
 			Name: "where", On: graph.KindRegions, Returns: graph.KindRegions,
@@ -292,14 +298,16 @@ func regionOps() []graph.OpDef {
 				{Name: "key", Type: "string", Positional: true, Doc: "a region field (area, score, contrast, …)"},
 				{Name: "desc", Type: "bool", Default: true, Doc: "largest first"},
 			},
-			Validate: func(a graph.Args) error {
+			Validate: func(a graph.Args, inputs []*graph.Node) error {
 				k := a.String("key")
-				if !contains(graph.KnownRegionFields, k) {
-					e := graph.Errorf(graph.EArgType, "sortBy: regions have no field %q.", k).WithValid(graph.KnownRegionFields)
-					if sug := graph.Closest(k, graph.KnownRegionFields); sug != "" {
-						e.Hint, e.Fix = fmt.Sprintf("Did you mean %q?", sug), fmt.Sprintf("sortBy(%q)", sug)
-					}
-					return e
+				fields := receiverFields(inputs)
+				f, ok := graph.FindField(fields, k)
+				if !ok {
+					return graph.UnknownFieldError("sortBy", k, fields, func(sug string) string { return fmt.Sprintf("sortBy(%q)", sug) })
+				}
+				if f.Type != "number" {
+					return graph.Errorf(graph.EArgType, "sortBy(%q): %s is a %s field; sortBy orders by a number.", k, k, f.Type).
+						WithFix(fmt.Sprintf("where({ %s: \"…\" })", k))
 				}
 				return nil
 			},
@@ -313,7 +321,7 @@ func regionOps() []graph.OpDef {
 					f, isNum := v.(float64)
 					if !ok || !isNum {
 						if ferr == nil {
-							ferr = graph.NoField(key, r.FieldNames())
+							ferr = graph.Errorf(graph.ENoField, "region %d has no number %q.", r.ID, key)
 						}
 						return 0
 					}
@@ -382,8 +390,9 @@ func regionOps() []graph.OpDef {
 			Run: func(ctx context.Context, ec *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
 				rv := regions(in[0])
 				args := make([]any, len(rv.Items))
+				fields := rv.Schema()
 				for i, r := range rv.Items {
-					args[i] = r.Data()
+					args[i] = r.Data(fields)
 				}
 				res, err := ec.Eval.CallEach(ctx, a.Func("fn"), args)
 				if err != nil {

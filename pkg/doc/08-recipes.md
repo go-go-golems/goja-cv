@@ -52,7 +52,7 @@ mem.healed = healed
 return {
   verdict: (await img.check.dust()).verdict,
   found: await dust.count(),
-  notDust: (await specks.where({ score: { lt: 0.5 } })).items.map(r => ({ id: r.id, box: r.box, sharpness: r.sharpness })),
+  notDust: (await specks.where({ score: { lt: 0.5 } })).items.map(r => ({ id: r.id, cx: r.cx, cy: r.cy, sharpness: r.sharpness })),
   after: (await healed.check.dust()).verdict,
   look: cv.compare([img.overlay(dust, { labels: "id", color: "lime" }), healed], { mode: "side" }).look("dust | healed"),
 }
@@ -81,11 +81,11 @@ return {
 
 ```js
 const speck = (await img.detect.specks().sortBy("area").top(1)).items[0]
-const [x, y, w, h] = speck.box
-const ring = img.mask.box([x - 6, y - 6, w + 12, h + 12]).minus(img.mask.box(speck.box))
+const { x, y, w, h } = speck
+const ring = img.mask.box([x - 6, y - 6, w + 12, h + 12]).minus(img.mask.box(speck))
 return {
   id: speck.id,
-  inside: await img.stats({ box: speck.box }).pick("meanL", "area"),
+  inside: await img.stats({ box: speck }).pick("meanL", "area"),
   around: await img.stats({ mask: ring }).pick("meanL", "area"),
 }
 ```

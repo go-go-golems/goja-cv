@@ -10,7 +10,7 @@ Every node has one kind, and every op says which kind it takes and returns.
 |---|---|---|
 | Image | linear float32 pixels (awaits to a summary) | `img`, `exposure`, `levels`, `within`, `heal`, `overlay`, `compare` |
 | Mask | one channel in [0, 1] | `mask.luminance`, `mask.box`, `regions.toMask()`, `a.and(b)` |
-| Regions | a list of areas with id, box, area, centroid and measures | `detect.specks`, `mask.components()`, `regions.where()` |
+| Regions | a list of areas with flat fields id, x, y, w, h, cx, cy, area, aspect and measures | `detect.specks`, `mask.components()`, `regions.where()` |
 | Value | plain data | `stats`, `histogram`, `coverage`, `count`, `stats().meanL` |
 | Param | a value the person can move | `P.slider`, `P.toggle`, `P.choice` |
 

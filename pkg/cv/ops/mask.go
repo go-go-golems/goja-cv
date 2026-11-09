@@ -98,8 +98,8 @@ func parseColor(v any, where string) ([3]float32, error) {
 	return [3]float32{float32(p[0]), float32(p[1]), float32(p[2])}, nil
 }
 
-func validateColor(arg string) func(graph.Args) error {
-	return func(a graph.Args) error {
+func validateColor(arg string) func(graph.Args, []*graph.Node) error {
+	return func(a graph.Args, _ []*graph.Node) error {
 		v := a.Raw(arg)
 		if _, ok := v.(graph.InputRef); ok || v == nil {
 			return nil
@@ -113,7 +113,7 @@ var edges = []string{"top", "bottom", "left", "right"}
 
 func isRef(v any) bool { _, ok := v.(graph.InputRef); return ok }
 
-func validateGradient(a graph.Args) error {
+func validateGradient(a graph.Args, _ []*graph.Node) error {
 	from, to := a.Raw("from"), a.Raw("to")
 	switch f := from.(type) {
 	case string:
@@ -148,7 +148,7 @@ func maskMakerOps() []graph.OpDef {
 				{Name: "below", Type: "number", Unit: graph.Level, Optional: true, Min: graph.F(-1), Max: graph.F(2), Doc: "select luminance below this level"},
 				{Name: "softness", Type: "number", Default: 0.05, Min: graph.F(0), Max: graph.F(1), Doc: "width of the smooth ramp around each threshold"},
 			},
-			Validate: func(a graph.Args) error {
+			Validate: func(a graph.Args, _ []*graph.Node) error {
 				if !a.Has("above") && !a.Has("below") {
 					return graph.Errorf(graph.EArgType, "mask.luminance needs above, below or both.").
 						WithHint("Thresholds are luminance levels in [0, 1] of the working space (encoded by default, the scale of histogram()): above selects highlights, below shadows.").

@@ -47,6 +47,7 @@ type Error struct {
 	Valid   []string `json:"valid,omitempty"` // valid alternatives (option keys, methods, enum values)
 	Line    int      `json:"line,omitempty"`  // filled by the eval tool from the JS stack
 	cause   error
+	field   string // the unknown field of an UnknownFieldError (for the producer hint)
 }
 
 var _ error = &Error{}

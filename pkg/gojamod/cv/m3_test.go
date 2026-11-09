@@ -31,7 +31,7 @@ func TestMasksAndRegionsFromJS(t *testing.T) {
 	}
 	near(t, "coverage", m["coverage"], 96.0/(64*48), 1e-6)
 	first := got["first"].(map[string]any)
-	if fmt.Sprint(first["box"]) != "[4 4 10 8]" || got["count"] != int64(2) {
+	if fmt.Sprint(first["x"], first["y"], first["w"], first["h"]) != "4 4 10 8" || got["count"] != int64(2) {
 		t.Fatalf("regions %v", got)
 	}
 	if got["fcount"] != int64(1) || got["fid"] != int64(1) || got["same"] != false {

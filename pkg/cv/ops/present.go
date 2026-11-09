@@ -151,7 +151,7 @@ func presentOps() []graph.OpDef {
 						Hint: "compare lays images out; a difference is an image of its own: subtract (signed, zero = grey with .mul(4).add(0.5)).",
 						Fix:  "a.sub(b).mul(4).add(0.5)"}}},
 			},
-			Validate: func(a graph.Args) error {
+			Validate: func(a graph.Args, _ []*graph.Node) error {
 				if n := len(a.Raw("images").([]any)); n == 0 {
 					return graph.Errorf(graph.EArgType, "cv.compare needs at least one image.").WithFix(`cv.compare([img, edited], { mode: "side" })`)
 				}
