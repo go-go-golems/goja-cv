@@ -51,3 +51,8 @@ Phase 1: literal options (commit 01e5607)
 
 Phase 2: await, look, cv.explain (commit e73cfd1)
 
+
+## 2026-11-09
+
+Phase 0a: merged origin/main v1 field fixes (merge commit 4b69185)
+

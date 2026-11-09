@@ -2799,3 +2799,7 @@ order found; the phase is in brackets.
 17. [2] `graph.Kinds` is gone; `Registry.Receivers()` lists the receiver kinds that have methods (help, the
     reference, `goja-cv ops`). With the Value ops and the `explain` op deleted, Value has no methods, so help lists
     Image, Mask and Regions.
+18. [0a] Phase 0a was done by merging `origin/main` (PR #5, `b42502b`) after Phase 2, not before Phase 0b: the v1
+    patch landed then. Only `sheet-2x2` moved (on `main`); `ruler-crop-zoom8` and `grid-gray-crop-zoom4` did not.
+    The merged `LOOKS` warning uses the v1 code and wording with Phase 2's line-tagged names (deviation 16 is
+    superseded); the v1 `DATA` warning stays until Phase 6 deletes the data items.

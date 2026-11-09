@@ -561,3 +561,92 @@ names the others), and `cv.explain(node)` describes. `cv.evaluate`, the preview 
 Goldens: none moved. Real data: identical.
 
 `git diff --stat 01e5607 e73cfd1 -- pkg cmd internal README.md`: 58 files changed, 478 insertions(+), 509 deletions(-).
+
+## Step 5: Phase 0a — merging the v1 field fixes from `main`
+
+The v1 patch (PR #5, merge commit `b42502b`) landed on `main` while Phase 3 was being planned; the coordinator asked
+for the merge at the next phase boundary. I merged `origin/main` into the branch with a merge commit (no rebase);
+that merge is Phase 0a. It brings the sheet badge fix, the ruler label gap, the `stepChroma` gate (null when
+|snr| < 1), the v1 `LOOKS`/`DATA` warnings and a GoSec-safe lookup in `regionmeasure.go`.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 1) and the coordinator's message: "The v1 patch has landed on main: PR #5,
+merge commit b42502b. Please merge it into your branch now, as the guide's Phase 0a step 3 describes. … Phase 2
+(`look()` queues and the `LOOKS` warning) should reuse the v1 warning text and code, adapted to the new queue: there
+is no `show()` any more. … Move [the patch diary] into the GCV-004 ticket as `reference/` "Diary - v1 field fixes"
+with `git mv`, update its frontmatter `Ticket: GCV-004`, and delete the V1-FIXES `index.md`. … If your gate runs [the
+real-data tests] locally, set `GOJACV_GOLD` and `GOJACV_TILES` to an empty directory … and note this in your diary."
+
+**Assistant interpretation:** Merge `origin/main` now (between Phase 2 and Phase 3), resolve conflicts keeping
+Phase 2's queue with the v1 warning code and text, gate, record it, and move the v1 diary into this ticket.
+
+**Inferred user intent:** One branch with both the v1 field fixes and API v2, so the goldens of Phase 0a and Phase 3
+move in separate commits and batch 2 starts from the merged state.
+
+**Commit (code):** `4b69185` — "Merge origin/main (v1 field fixes, PR #5) into task/gcv-004-api-v2: GCV-004 Phase 0a"
+
+### What I did
+
+- `git fetch origin && git merge --no-ff origin/main`. Two conflicts:
+  - `pkg/cvsession/processor.go`: v1 kept `show()` and its `shown:` list and named dropped looks by label; Phase 2
+    deleted `show` and queues every look. I kept the queue (returned looks first, creation order, equal looks once,
+    late looks) and adopted the v1 code (`graph.WLooks`, `graph.WData` from v1's `errors.go`) and text, adapted to
+    lines: `LOOKS line 4: 2 looks were not delivered (at most 4 per eval): line 4 look("4"), line 5 look("5"). Split
+    the work over several calls, or return fewer looks (one cv.sheet of many crops).` The v1 `DATA` warning and its
+    `notDelivered` placeholder helper are kept; the branch's own `WLooks` constant and v1's `lookList` are gone.
+  - `pkg/cv/ops/regionmeasure.go`: v1's `stepChroma (null when |snr| < 1)` doc on the branch's named `image`
+    argument, without `Static` (deleted in Phase 1).
+- v1 tests that used `show()` (`TestEvalWarnsAboutLooksBeyondTheBudget`, `TestDataSaveAndBudgets`,
+  `TestMCPLooksBeyondTheBudgetWarn`) now create unreturned looks and expect the line-tagged text; `TestLookQueue`
+  expects the v1 text.
+- The v1 diary moved: `git mv ttmp/2026/11/09/V1-FIXES/reference/01-diary-v1-field-fixes.md
+  reference/07-diary-v1-field-fixes.md`, frontmatter `Ticket: GCV-004`; `V1-FIXES/index.md` deleted.
+
+### Why
+
+- Guide Phase 0a step 3: the merge does Phase 0a; Phase 2 reuses the v1 warning; Phase 5 keeps the v1 `stepChroma`
+  rule.
+
+### What worked
+
+- Gate green after the resolution (`gofmt=0 build=0 vet=0 test=0 lint=0 logcopter=0 smoke=0`); the golden test
+  passes with `main`'s regenerated `sheet-2x2.png`.
+
+### What didn't work
+
+- After the textual resolution three v1 tests failed (they call `show()`, which Phase 2 deleted), e.g.
+  `main_test.go:55: exit 1` for `TestEvalWarnsAboutLooksBeyondTheBudget`; rewritten as above.
+
+### What I learned
+
+- The real-data tests: my gate already skips them by pointing `GOJACV_TILES` and `GOJACV_GOLD` at a directory that
+  does not exist (Step 1), which is what the patch agent did with an empty directory; the coordinator confirms they
+  fail on `main` too because `~/dustds/gold` changed after they were tuned. Re-tuning them is batch 2's.
+
+### What was tricky to build
+
+- The two `LOOKS` texts: v1 says how many looks were dropped and names them by label; Phase 2 named them by line. The
+  merged text keeps v1's wording and budget, and names each as `line N look("label")`, tagged with the first line
+  so the warning keeps the `CODE line N:` form the docs tests rely on.
+
+### What warrants a second pair of eyes
+
+- `collect` after the merge (`pkg/cvsession/processor.go`): one function now carries the queue, the dedup, the v1
+  `LOOKS` and `DATA` warnings and the late-look warning.
+
+### What should be done in the future
+
+- Phase 5 must keep the v1 `stepChroma` rule (`kernels.StepChromaMinSNR`, NaN in region measures read back as null)
+  when it rewrites `measure`.
+
+### Code review instructions
+
+- `git show 4b69185 --cc -- pkg/cvsession/processor.go pkg/cv/ops/regionmeasure.go`; validate with
+  `scripts/04-gate.sh`.
+
+### Technical details
+
+Goldens moved by the merge (from `main`, not regenerated here): `sheet-2x2.png` (4752 → 4743 bytes: the badge no
+longer covers cell 0's label). `ruler-crop-zoom8.png` and `grid-gray-crop-zoom4.png` did not move (the v1 ruler fix
+changed no existing golden).
