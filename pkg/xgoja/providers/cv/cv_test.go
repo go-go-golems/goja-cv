@@ -3,6 +3,7 @@ package cv
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -46,8 +47,12 @@ func TestCVWithMCPCommandSet(t *testing.T) {
 		t.Fatal(err)
 	}
 	testdata, _ := filepath.Abs(filepath.Join("..", "..", "..", "..", "testdata"))
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "lib.js"), []byte("await null\nreturn { got: args.x + 1 }\n"), 0o644); err != nil { // #nosec G306 -- test script
+		t.Fatal(err)
+	}
 	plan := &app.RuntimePlan{Runtime: app.RuntimeSection{Modules: []app.RuntimeModulePlan{{Provider: PackageID, Name: ModuleName, As: "cv",
-		Config: map[string]any{"root": t.TempDir(), "read": []any{testdata}}}}}}
+		Config: map[string]any{"root": root, "read": []any{testdata}}}}}}
 	commandCtx := providerapi.CommandSetContext{
 		Context: ctx, PackageID: xmcp.PackageID, Name: xmcp.CommandSetName, Mount: "mcp",
 		Providers: providers, RuntimeFactory: app.NewRuntimeFactory(providers, plan, app.HostServices{}),
@@ -80,6 +85,16 @@ func TestCVWithMCPCommandSet(t *testing.T) {
 	}
 	if img, ok := res.Content[1].(*mcpsdk.ImageContent); !ok || img.MIMEType != "image/png" {
 		t.Fatalf("content[1] = %#v", res.Content[1])
+	}
+
+	// cv.load runs a script file from the runtime's root
+	for _, code := range []string{`require("cv").load("lib.js", { x: 41 }).then(v => { globalThis.loaded = v }, e => { globalThis.loaded = String(e) }); 0`, `JSON.stringify(globalThis.loaded)`} {
+		if res, err = cs.CallTool(ctx, &mcpsdk.CallToolParams{Name: "eval", Arguments: map[string]any{"code": code}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if text := res.Content[0].(*mcpsdk.TextContent).Text; res.IsError || !strings.Contains(text, `got`) || !strings.Contains(text, `42`) {
+		t.Fatalf("cv.load in xgoja: isError=%v %q", res.IsError, text)
 	}
 }
 

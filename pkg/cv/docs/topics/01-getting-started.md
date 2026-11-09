@@ -10,6 +10,7 @@ How an eval runs: your code is the body of an async function, you `return` what 
 - Options are **literal values**. A measurement that feeds an option is awaited first: `img.levels({ white: (await img.stats()).p99 })`.
 - `const` and `let` do **not** survive to the next eval. Keep anything you need later on `mem`.
 - One eval may run 60 s. Heavy work runs in Go; JavaScript only builds graphs and handles small data.
+- A task library or a saved pipeline is a file: `await cv.load("dir/file.js", args)` runs it in the session, `cv.scripts()` lists them (`cv.docs.read("task-libraries")`). Never paste a file into an eval.
 
 ```js
 const s = await img.stats()
@@ -22,7 +23,7 @@ return { meanL: s.meanL, p01: s.p01, p99: s.p99 }
 |---|---|
 | `img` | the open image (an Image node); `img = cv.open("scan.tif")` rebinds it |
 | names | more images: `cv.open(path, { name: "ref" })` binds `ref` as a global that persists like `img`; the context block lists every name |
-| `cv` | the module: `cv.open(path, { encoding, box, origin, as })`, `cv.help(op)`, `cv.docs`, `cv.compare([...])`, `cv.explain(node)` |
+| `cv` | the module: `cv.open(path, { encoding, box, origin, name })`, `cv.load(path, args)`, `cv.help(op)`, `cv.docs`, `cv.compare([...])`, `cv.explain(node)` |
 | `mem` | a plain object that persists between evals |
 
 ```js

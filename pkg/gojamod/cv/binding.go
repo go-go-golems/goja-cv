@@ -23,10 +23,12 @@ type binding struct {
 	mu       sync.Mutex
 	warnings []graph.Warning
 
-	track     tracker        // per-eval state (evaltrack.go)
-	late      []QueuedLook   // looks created while no eval was running (evaltrack.go)
-	opened    []graph.NodeID // sources opened with cv.open
-	unhandled map[*goja.Promise]bool
+	track          tracker        // per-eval state (evaltrack.go)
+	late           []QueuedLook   // looks created while no eval was running (evaltrack.go)
+	opened         []graph.NodeID // sources opened with cv.open
+	unhandled      map[*goja.Promise]bool
+	unhandledOrder []*goja.Promise     // rejection order of unhandled
+	files          map[string][]string // script name → lines of the text last loaded under it (load.go)
 }
 
 func newBinding(vm *goja.Runtime, eng *graph.Engine) *binding {
@@ -52,6 +54,10 @@ func (b *binding) object() *goja.Object {
 	set("__placeholder", b.placeholder)
 	set("__look", b.look)
 	set("__save", b.save)
+	set("__compile", b.compile)
+	set("__pending", b.pending)
+	set("__tooDeep", b.tooDeep)
+	set("__scripts", b.scripts)
 	b.addDocs(o)
 	return o
 }

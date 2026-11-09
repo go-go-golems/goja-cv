@@ -2,8 +2,6 @@ package cvsession
 
 import (
 	"fmt"
-	"regexp"
-	"strconv"
 
 	"github.com/dop251/goja"
 	"github.com/go-go-golems/goja-cv/pkg/cv/graph"
@@ -24,8 +22,8 @@ func (n *native) object() *goja.Object {
 	set := func(name string, fn func(goja.FunctionCall) goja.Value) {
 		_ = o.Set(name, cvmod.Export(n.vm, name, fn))
 	}
-	set("pendingSaves", func(goja.FunctionCall) goja.Value { return cvmod.SavesPending(n.vm) })
-	set("saveFailure", func(goja.FunctionCall) goja.Value { return cvmod.SaveFailure(n.vm) })
+	set("pending", func(goja.FunctionCall) goja.Value { return cvmod.Pending(n.vm) })
+	set("settled", func(goja.FunctionCall) goja.Value { return cvmod.Settled(n.vm) })
 	set("checkName", n.checkName)
 	set("bindName", n.bindName)
 	set("getName", n.getName)
@@ -80,11 +78,11 @@ type failure struct {
 	Name, Code, Message, Hint, Fix string
 	Path, Valid                    []string
 	CV                             bool
-	Line, Column                   int // in the evaluated source
+	Source                         string // "" for eval code, else the loaded script file the error is in
+	Line, Column                   int    // in the evaluated source, or in the file
+	CalledFrom                     int    // when Source is a file: the eval line (evaluated source) that called into it
 	Stack                          string
 }
-
-var stackPos = regexp.MustCompile(`<eval>:(\d+):(\d+)`)
 
 // fail(e) records the eval's uncaught error (called by __cv_run).
 func (n *native) fail(c goja.FunctionCall) goja.Value {
@@ -129,9 +127,17 @@ func readFailure(vm *goja.Runtime, v goja.Value) *failure {
 	if f.Message == "" && f.Name == "" {
 		f.Message = "thrown value: " + v.String()
 	}
-	if m := stackPos.FindStringSubmatch(f.Stack); m != nil {
-		f.Line, _ = strconv.Atoi(m[1])
-		f.Column, _ = strconv.Atoi(m[2])
+	frames := cvmod.StackFrames(vm, f.Stack)
+	if len(frames) > 0 {
+		f.Source, f.Line, f.Column = frames[0].Source, frames[0].Line, frames[0].Column
+	}
+	if f.Source != "" {
+		for _, fr := range frames {
+			if fr.Source == "" {
+				f.CalledFrom = fr.Line
+				break
+			}
+		}
 	}
 	return f
 }

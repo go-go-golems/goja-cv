@@ -41,7 +41,11 @@ func planted(t *testing.T) string {
 		if plantedErr = testimage.WriteFile(filepath.Join(dir, "planted-linear.tif"), lin, 16, buffer.Meta{}); plantedErr != nil {
 			return
 		}
-		plantedErr = testimage.WriteFile(filepath.Join(dir, "planted.npy"), lin, 32, buffer.Meta{})
+		if plantedErr = testimage.WriteFile(filepath.Join(dir, "planted.npy"), lin, 32, buffer.Meta{}); plantedErr != nil {
+			return
+		}
+		// the script files the task-libraries topic loads (dust/helpers.js, …)
+		plantedErr = os.CopyFS(dir, os.DirFS(filepath.Join("testdata", "scripts")))
 	})
 	if plantedErr != nil {
 		t.Fatal(plantedErr)

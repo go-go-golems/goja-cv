@@ -70,6 +70,7 @@ type tracker struct {
 	looks    []QueuedLook
 	saved    map[string]int // workspace-relative path → line of its save (E_DUPLICATE)
 	saves    []*pendingSave
+	pending  []goja.Value // promises the eval waits for: cv.load's, and each save's settling
 }
 
 func lookupBinding(vm *goja.Runtime) (*binding, bool) {
@@ -91,7 +92,7 @@ func BeginEval(vm *goja.Runtime, ctx context.Context) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.track = tracker{active: true, ctx: ctx, seen: map[graph.NodeID]bool{}, used: map[graph.NodeID]bool{}, saved: map[string]int{}}
-	b.unhandled = nil
+	b.unhandled, b.unhandledOrder = nil, nil
 	return true
 }
 

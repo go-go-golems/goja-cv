@@ -72,5 +72,20 @@ func funcDefs() []graph.FuncDef {
 				"One save per path per eval (E_DUPLICATE); a save never follows a symlink or replaces a file the session opened (E_ACCESS); it writes a temporary file and renames it into place. Every save of an eval completes before the eval returns, awaited or not.",
 			See: []string{"open", "look"},
 		},
+		{
+			Name: "load", Bespoke: true, Usage: "await cv.load(path, args)",
+			Args: []graph.ArgSpec{
+				{Name: "path", Type: "string", Positional: true, Doc: "a .js file, found like cv.open's paths: the workspace, then each --read directory; no spaces or parentheses in the name"},
+				{Name: "args", Type: "data", Positional: true, Optional: true, Doc: "any JavaScript value, passed as it is (not copied) as the file's args; {} when left out"},
+			},
+			Doc: "Run a script file in the session: a task library that defines mem functions, or a saved pipeline. The file is the body of async function (args) { … }: top-level await and return work, const/let stay in the file, mem and img are shared. Resolves to the file's return value. " +
+				"Every call reads and runs the file again (no cache). Errors and warnings name the file and line (where: dust/helpers.js:57). The eval waits for every load it started; an unawaited load that fails is an UNHANDLED warning. Loads nest up to 32 deep.",
+			See: []string{"scripts", "mem"},
+		},
+		{
+			Name: "scripts", Bespoke: true, Usage: "cv.scripts()",
+			Doc: "The .js files cv.load can run, as rows { path, doc } sorted by path: doc is the file's first comment line. Looks four directory levels deep in the workspace and the read directories, skipping dot directories and node_modules.",
+			See: []string{"load"},
+		},
 	}
 }

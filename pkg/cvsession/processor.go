@@ -72,7 +72,7 @@ func (p *ResultProcessor) Process(_ context.Context, vm *goja.Runtime, value goj
 	if err != nil {
 		return replsession.ProcessedResult{}, err
 	}
-	providers, dropped, lookWarnings := st.collect(extraction.Providers, trace)
+	providers, dropped, lookWarnings := st.collect(vm, extraction.Providers, trace)
 
 	r := newRenderer(vm, st.eng)
 	r.providers = providerNumbers(providers)
@@ -97,7 +97,7 @@ func (p *ResultProcessor) ProcessFailure(_ context.Context, vm *goja.Runtime, ev
 	}
 	st.watchdog.disarm(vm)
 	trace := cvmod.EndEval(vm)
-	providers, _, lookWarnings := st.collect(nil, trace)
+	providers, _, lookWarnings := st.collect(vm, nil, trace)
 	var sb strings.Builder
 	sb.WriteString(encodeYAML(mapping(str("error"), st.errorNode(vm, evalErr, trace))))
 	warnings := append(st.warnings(vm, trace, nil, false), lookWarnings...)
@@ -112,7 +112,7 @@ func (p *ResultProcessor) ProcessFailure(_ context.Context, vm *goja.Runtime, ev
 // returned one keeps a note in its placeholder. Looks created by a prelude
 // are discarded (preludes have no output). It numbers the delivered looks
 // and returns the LOOKS warnings (the v1 texts, GCV-004 Phase 0a).
-func (s *state) collect(fromValue []resultcontent.Provider, trace cvmod.EvalTrace) ([]resultcontent.Provider, map[resultcontent.Provider]string, []string) {
+func (s *state) collect(vm *goja.Runtime, fromValue []resultcontent.Provider, trace cvmod.EvalTrace) ([]resultcontent.Provider, map[resultcontent.Provider]string, []string) {
 	if s.prelude.Load() {
 		return nil, nil, nil
 	}
@@ -165,9 +165,9 @@ func (s *state) collect(fromValue []resultcontent.Provider, trace cvmod.EvalTrac
 	if len(undelivered) > 0 {
 		names := make([]string, len(undelivered))
 		for i, l := range undelivered {
-			names[i] = s.lookName(l, sites[l])
+			names[i] = s.lookName(vm, l, sites[l])
 		}
-		warnings = append(warnings, s.lineTag(graph.WLooks, sites[undelivered[0]])+fmt.Sprintf("%d %s not delivered (at most %d per eval): %s. Split the work over several calls, or return fewer looks (one cv.sheet of many crops).",
+		warnings = append(warnings, s.lineTag(vm, graph.WLooks, sites[undelivered[0]])+fmt.Sprintf("%d %s not delivered (at most %d per eval): %s. Split the work over several calls, or return fewer looks (one cv.sheet of many crops).",
 			len(undelivered), plural(len(undelivered), "look was", "looks were"), s.opts.MaxLooks, strings.Join(names, ", ")))
 	}
 	for _, q := range trace.Late {
@@ -190,11 +190,9 @@ func notDelivered(l *look.Look, why string) string {
 }
 
 // lookName names a look in a warning: "line 7 look("b")".
-func (s *state) lookName(l *look.Look, site cvmod.Site) string {
-	if site.Source == "" {
-		if line := s.agentLine(site.Line); line > 0 {
-			return fmt.Sprintf("line %d %s", line, lookCall(l))
-		}
+func (s *state) lookName(vm *goja.Runtime, l *look.Look, site cvmod.Site) string {
+	if t := s.siteTag(vm, site); t != "" {
+		return t + " " + lookCall(l)
 	}
 	return lookCall(l)
 }
@@ -243,7 +241,7 @@ func (s *state) finish(vm *goja.Runtime, body string, warnings []string) string 
 func (s *state) warnings(vm *goja.Runtime, trace cvmod.EvalTrace, returned []graph.NodeID, lint bool) []string {
 	var out []string
 	for _, w := range trace.Warnings {
-		out = append(out, s.lineTag(w.Code, w.Site)+w.Message)
+		out = append(out, s.lineTag(vm, w.Code, w.Site)+w.Message)
 	}
 	if len(trace.Warnings) == 0 {
 		for _, w := range cvmod.DrainWarnings(vm) {
@@ -278,11 +276,38 @@ func dedupe(ws []string) []string {
 	return out
 }
 
-func (s *state) lineTag(code string, site cvmod.Site) string {
+// evalWhere is "line N: source" for a line of the evaluated source ("" when
+// it is outside the agent's code).
+func (s *state) evalWhere(evalLine int) string {
+	l := s.agentLine(evalLine)
+	if l <= 0 {
+		return ""
+	}
+	where := fmt.Sprintf("line %d", l)
+	if src := s.sourceLine(l); src != "" {
+		where += ": " + src
+	}
+	return where
+}
+
+// siteTag is "line N" for a site in the eval's code, "name:N" for a site
+// in a loaded script file, "" when unknown.
+func (s *state) siteTag(vm *goja.Runtime, site cvmod.Site) string {
 	if site.Source == "" {
 		if l := s.agentLine(site.Line); l > 0 {
-			return fmt.Sprintf("%s line %d: ", code, l)
+			return fmt.Sprintf("line %d", l)
 		}
+		return ""
+	}
+	if _, ok := cvmod.FileLine(vm, site.Source, 0); ok && site.Line > 0 {
+		return fmt.Sprintf("%s:%d", site.Source, site.Line)
+	}
+	return ""
+}
+
+func (s *state) lineTag(vm *goja.Runtime, code string, site cvmod.Site) string {
+	if t := s.siteTag(vm, site); t != "" {
+		return code + " " + t + ": "
 	}
 	return code + ": "
 }
@@ -339,7 +364,7 @@ func (s *state) unusedNodes(vm *goja.Runtime, trace cvmod.EvalTrace, returned []
 		if len(what) > 80 {
 			what = what[:77] + "…"
 		}
-		out = append(out, s.lineTag(graph.WUnusedNode, c.Site)+what+
+		out = append(out, s.lineTag(vm, graph.WUnusedNode, c.Site)+what+
 			" builds a node and discards it. Nodes are lazy: nothing ran. Return it, await it, look at it, or keep it in mem.")
 	}
 	return out
@@ -431,17 +456,22 @@ func (s *state) errorNode(vm *goja.Runtime, evalErr error, trace cvmod.EvalTrace
 	add := func(k string, v *yaml.Node) { n.Content = append(n.Content, str(k), v) }
 	add("code", str(code))
 	add("message", str(f.Message))
-	if l := s.agentLine(f.Line); l > 0 {
-		where := fmt.Sprintf("line %d", l)
-		if src := s.sourceLine(l); src != "" {
-			where += ": " + src
+	if f.Source != "" {
+		where := fmt.Sprintf("%s:%d", f.Source, f.Line)
+		if src, _ := cvmod.FileLine(vm, f.Source, f.Line); strings.TrimSpace(src) != "" {
+			where += ": " + strings.TrimSpace(src)
 		}
+		add("where", str(where))
+		if called := s.evalWhere(f.CalledFrom); called != "" {
+			add("called from", str(called))
+		}
+	} else if where := s.evalWhere(f.Line); where != "" {
 		add("where", str(where))
 	}
 	if len(f.Path) > 0 {
 		add("path", str(strings.Join(f.Path, " → ")))
 	}
-	if f.Hint == "" && !f.CV {
+	if f.Hint == "" && !f.CV && f.Source == "" {
 		f.Hint = jsHint(f)
 	}
 	if f.Hint != "" {
@@ -477,7 +507,7 @@ func receiverOf(src, member string) string {
 // that takes regions takes the array as its argument.
 func (s *state) explainDataMisuse(f *failure) {
 	src := s.sourceLine(s.agentLine(f.Line))
-	if f.CV || f.Name != "TypeError" || src == "" {
+	if f.CV || f.Name != "TypeError" || src == "" || f.Source != "" {
 		return
 	}
 	m := noMember.FindStringSubmatch(f.Message)

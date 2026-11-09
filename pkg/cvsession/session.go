@@ -13,6 +13,7 @@ package cvsession
 import (
 	"context"
 	_ "embed"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -70,10 +71,10 @@ type Options struct {
 	// for all content together).
 	MaxLooks     int
 	MaxLookBytes int
-	// Preludes are script files run, in order, in every new session before
-	// agent code (async function bodies like agent code: they may await and
-	// return; their results are not shown). Paths are operator input:
-	// resolved against the working directory, not the workspace.
+	// Preludes are script files loaded, in order, in every new session
+	// before agent code: await cv.load(file) (GCV-005 §6.3); their results and
+	// looks are not shown. Paths are operator input, resolved against the
+	// working directory; each must lie in Root or a Read directory.
 	Preludes []string
 	// Logger for replapi (default: disabled).
 	Logger *zerolog.Logger
@@ -115,13 +116,22 @@ func (o Options) withDefaults() (Options, error) {
 	if err != nil {
 		return o, err
 	}
-	ws.Close()
+	defer ws.Close()
 	if o.Image != "" {
 		o.Image = abs(o.Image)
 	}
 	preludes := make([]string, 0, len(o.Preludes))
 	for _, p := range o.Preludes {
-		preludes = append(preludes, abs(p))
+		p = abs(p)
+		f, _, err := ws.Open(p)
+		if err != nil {
+			if _, serr := os.Stat(p); serr != nil {
+				return o, errors.Errorf("prelude %s: %v", p, serr)
+			}
+			return o, errors.Errorf("prelude %s is outside the workspace %s and the read directories; add --read %s", p, ws.Dir(), filepath.Dir(p))
+		}
+		_ = f.Close()
+		preludes = append(preludes, p)
 	}
 	o.Preludes = preludes
 	return o, nil
@@ -200,11 +210,13 @@ func (a *App) CreateSession(ctx context.Context) (*replsession.SessionSummary, e
 	return s, nil
 }
 
-// whereLine finds the agent line of a rendered error ("where: 'line 12: …'").
-var whereLine = regexp.MustCompile(`where: '?line (\d+)`)
+// whereFile finds the file location of a rendered error in a loaded file
+// ("where: 'dust/helpers.js:57: …'").
+var whereFile = regexp.MustCompile(`where: '?((?:read\d+:)?[^\s:']+:\d+):`)
 
-// runPreludes evaluates the prelude files in session id, in order. Preludes
-// have no output: the looks they create are discarded.
+// runPreludes loads the prelude files in session id, in order (await
+// cv.load(file)). Preludes have no output: the looks they create are
+// discarded, and the context block does not mark their functions as shown.
 func (a *App) runPreludes(ctx context.Context, id string) error {
 	st, err := a.stateFor(ctx, id)
 	if err != nil {
@@ -213,25 +225,24 @@ func (a *App) runPreludes(ctx context.Context, id string) error {
 	st.prelude.Store(true)
 	defer st.prelude.Store(false)
 	for _, p := range a.opts.Preludes {
-		code, err := os.ReadFile(p)
-		if err != nil {
-			return errors.Errorf("prelude %s: %v", p, err)
-		}
-		resp, err := a.Evaluate(ctx, id, string(code))
+		code, _ := json.Marshal(p)
+		resp, err := a.Evaluate(ctx, id, "await cv.load("+string(code)+")")
 		if err != nil && (resp == nil || resp.Cell == nil) {
 			return errors.Wrapf(err, "prelude %s", filepath.Base(p))
 		}
 		if exec := resp.Cell.Execution; exec.Status != "ok" {
-			line := "?"
-			if m := whereLine.FindStringSubmatch(exec.Result); m != nil {
-				line = m[1]
-			}
 			msg := exec.Error
 			if i := strings.Index(exec.Result, "message: "); i >= 0 {
 				msg = strings.TrimSpace(strings.SplitN(exec.Result[i+len("message: "):], "\n", 2)[0])
 				msg = strings.Trim(msg, "'\"")
 			}
-			return errors.Errorf("prelude %s:%s: %s", filepath.Base(p), line, msg)
+			if m := whereFile.FindStringSubmatch(exec.Result); m != nil {
+				return errors.Errorf("prelude %s: %s", m[1], msg)
+			}
+			if strings.HasPrefix(msg, filepath.Base(p)) || strings.Contains(msg, ".js:") {
+				return errors.Errorf("prelude %s", msg) // a syntax error names the file and line itself
+			}
+			return errors.Errorf("prelude %s: %s", filepath.Base(p), msg)
 		}
 	}
 	return nil
@@ -249,11 +260,6 @@ func New(ctx context.Context, opts Options, extra ...replapi.Option) (*App, erro
 	opts, err := opts.withDefaults()
 	if err != nil {
 		return nil, err
-	}
-	for _, p := range opts.Preludes {
-		if st, err := os.Stat(p); err != nil || st.IsDir() {
-			return nil, errors.Errorf("prelude %s is not a readable file", p)
-		}
 	}
 	factory, err := NewRuntimeFactory(opts)
 	if err != nil {

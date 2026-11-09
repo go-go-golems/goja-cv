@@ -236,24 +236,35 @@ return { look: img.look("scene"), rows: t.rows, j: j.rows, again: (await cv.open
 	}
 }
 
-// TestPreludeFlag: --prelude scripts run before the code; a failing one is
-// a cv error (exit 1) naming its file and line; a missing one a usage error.
+// TestPreludeFlag: --prelude loads a script file (in --root or a --read
+// directory) before the code, in eval and run; a failing one is a cv error
+// (exit 1) naming its file and line; one outside the roots or missing is a
+// usage error.
 func TestPreludeFlag(t *testing.T) {
-	dir := t.TempDir()
+	dir, ws := t.TempDir(), t.TempDir()
 	good, bad := filepath.Join(dir, "h.js"), filepath.Join(dir, "bad.js")
-	if err := os.WriteFile(good, []byte("mem.f = x => x + 1\nreturn 'ready'\n"), 0o644); err != nil {
-		t.Fatal(err)
+	script := filepath.Join(ws, "main.js")
+	for p, text := range map[string]string{good: "mem.f = x => x + 1\nreturn 'ready'\n", bad: "\n\nnope()\n", script: "return mem.f(1)\n"} {
+		if err := os.WriteFile(p, []byte(text), 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
-	if err := os.WriteFile(bad, []byte("\n\nnope()\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if code, out, _ := runCLI(t, "eval", "--prelude", good, "-e", "return mem.f(41)"); code != exitOK || !strings.HasPrefix(out, "42") {
+	if code, out, _ := runCLI(t, "eval", "--root", ws, "--read", dir, "--prelude", good, "-e", "return mem.f(41)"); code != exitOK || !strings.HasPrefix(out, "42") {
 		t.Fatalf("prelude: exit %d\n%s", code, out)
 	}
-	if code, out, errOut := runCLI(t, "eval", "--prelude", good, "--prelude", bad, "-e", "return 1"); code != exitCVError || !strings.Contains(out+errOut, "prelude bad.js:3:") {
+	if code, out, _ := runCLI(t, "run", script, "--root", ws, "--read", dir, "--prelude", good); code != exitOK || !strings.HasPrefix(out, "2") {
+		t.Fatalf("run with a prelude: exit %d\n%s", code, out)
+	}
+	if code, out, errOut := runCLI(t, "eval", "--root", ws, "--read", dir, "--prelude", good, "--prelude", bad, "-e", "return 1"); code != exitCVError || !strings.Contains(out+errOut, "prelude bad.js:3: nope is not defined") {
 		t.Fatalf("failing prelude: exit %d\n%s\n%s", code, out, errOut)
 	}
-	if code, _, _ := runCLI(t, "eval", "--prelude", filepath.Join(dir, "nope.js"), "-e", "return 1"); code != exitUsage {
+	if code, _, errOut := runCLI(t, "eval", "--root", ws, "--prelude", good, "-e", "return 1"); code != exitUsage || !strings.Contains(errOut, "add --read "+dir) {
+		t.Fatalf("prelude outside the roots: exit %d\n%s", code, errOut)
+	}
+	if code, _, _ := runCLI(t, "eval", "--root", ws, "--read", dir, "--prelude", filepath.Join(dir, "nope.js"), "-e", "return 1"); code != exitUsage {
 		t.Fatalf("missing prelude: exit %d", code)
+	}
+	if code, _, errOut := runCLI(t, "mcp", "--root", ws, "--prelude", good); code != exitUsage || !strings.Contains(errOut, "--read") {
+		t.Fatalf("mcp prelude outside the roots: exit %d\n%s", code, errOut)
 	}
 }

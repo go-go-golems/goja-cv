@@ -37,6 +37,11 @@ error:
 | E_NO_IMAGE | no image is open | `img = cv.open("scan.tif")` |
 | E_UNKNOWN_TOPIC | no such docs topic or section | `cv.docs.list()` |
 | E_TIMEOUT | the eval ran longer than 60 s | crop before measuring, evaluate less per eval |
+| E_ACCESS | a path outside the workspace and the read directories (`cv.open`, `cv.load`) | a path inside them; the operator adds `--read DIR` |
+| SyntaxError (cv.load) | a loaded file does not compile; the message starts with `file:line:col` | fix the file at that line |
+| E_TOO_MANY (cv.load) | loads nested more than 32 deep | a file that loads itself |
+
+An error inside a loaded file has `where: 'dust/helpers.js:6: …'` and, when your eval called into the file, `called from: 'line 2: …'`.
 
 ```js error=E_UNKNOWN_OPTION
 return img.levels({ blak: 0.02 })
@@ -56,7 +61,7 @@ return await img.toGray().dilate(100).stats()   // fix: img.dilate(64).dilate(36
 - `UNUSED_NODE line N: …` a node was built and discarded (see `cv.docs.read("nodes-and-evaluation")`).
 - `LOOKS line N: …` more than 4 looks in one eval: the extra ones, named by line, were not rendered. Split the work over several calls, or return one `cv.sheet` of many crops.
 - `ITEMS line N: …` objects that look like region items lost their link (a `map` that built new objects); they are used as plain boxes.
-- `UNHANDLED: …` a promise was rejected and nothing handled it (an unawaited call that failed); await it or add `.catch`. An unawaited `cv.save` that fails fails the eval instead.
+- `UNHANDLED line N: …` a promise was rejected and never handled (an unawaited `cv.load` or async helper that failed; `file:line` when it failed in a loaded file); await it. An unawaited `cv.save` that fails fails the eval instead.
 
 ```js warns=RANGE
 const loud = img.exposure(4)

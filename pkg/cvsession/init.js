@@ -67,14 +67,17 @@
     writable: false,
     // The body starts from a promise job: goja survives an interrupt
     // (timeout) in the synchronous part of an async function only when it was
-    // started from a job. Every cv.save the eval started completes before it
-    // returns, awaited or not; an unawaited save that failed fails the eval.
+    // started from a job. Every cv.load and cv.save the eval started settles
+    // before it returns, awaited or not (also those a pending one started);
+    // an unawaited save that failed fails the eval, any other rejection
+    // nobody handled is an UNHANDLED warning.
     value: function (body) {
-      function saves() {
-        return Promise.allSettled(native.pendingSaves()).then(function () {
-          const e = native.saveFailure();
-          if (e !== null) throw e;
-        });
+      function saves(seen) {
+        const ps = native.pending();
+        if (ps.length > seen) return Promise.allSettled(ps).then(function () { return saves(ps.length); });
+        const e = native.settled();
+        if (e !== null) throw e;
+        return Promise.resolve();
       }
       return Promise.resolve()
         .then(function () {
@@ -82,12 +85,12 @@
         })
         .then(
           function (v) {
-            return saves().then(function () {
+            return saves(0).then(function () {
               return v;
             });
           },
           function (e) {
-            return saves().then(
+            return saves(0).then(
               function () {
                 throw e;
               },

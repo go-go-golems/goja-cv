@@ -466,11 +466,12 @@ func TestRawTypeErrorsOnDataNameTheOp(t *testing.T) {
 // prelude are discarded; a look created after the eval settled is named by
 // the next eval's warnings.
 func TestLookQueue(t *testing.T) {
-	prelude := filepath.Join(t.TempDir(), "prelude.js")
+	root := t.TempDir()
+	prelude := filepath.Join(root, "prelude.js")
 	if err := os.WriteFile(prelude, []byte("img.look(\"from the prelude\")\nmem.p = 1\nreturn 1"), 0o644); err != nil { // #nosec G306 -- test data
 		t.Fatal(err)
 	}
-	app, sid := newApp(t, cvsession.Options{Image: tiffPath, Preludes: []string{prelude}})
+	app, sid := newApp(t, cvsession.Options{Image: tiffPath, Root: root, Preludes: []string{prelude}})
 	captions := func(resp *replsession.EvaluateResponse) []string {
 		var out []string
 		for _, c := range resp.Content {
