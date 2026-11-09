@@ -10,8 +10,12 @@ DocType: reference
 Intent: long-term
 Owners: []
 RelatedFiles:
+    - Path: repo://pkg/cv/buffer/resample.go
+      Note: Cut and Upsample (Phase 2)
     - Path: repo://pkg/cv/graph/funcs.go
       Note: FuncDef, RegisterFunc, BindOptions (Phase 1)
+    - Path: repo://pkg/cv/graph/render.go
+      Note: render path above scale 1 (Phase 2)
     - Path: repo://pkg/cv/ops/funcs.go
       Note: look and show functions and their ArgSpecs
     - Path: repo://pkg/cv/text/text.go
@@ -22,6 +26,7 @@ LastUpdated: 2026-11-09T05:54:43.150917-05:00
 WhatFor: Reviewing and continuing the GCV-002 implementation on branch task/gcv-002-inspection-views (stacked on task/gcv-001-image-model).
 WhenToUse: Before reviewing a GCV-002 commit, or when picking up GCV-003 on top of it.
 ---
+
 
 
 # Diary - implementation
@@ -96,3 +101,67 @@ Looks behave as before. The one visible change is that region ids in overlays ar
 ### Technical details
 - Regenerate the font: `python3 ttmp/2026/11/09/GCV-002--…/scripts/01-flf-to-go-glyphs.py /opt/homebrew/Cellar/figlet/2.2.5/share/figlet/fonts/5x7.flf > pkg/cv/text/glyphs_5x7.go && gofmt -w pkg/cv/text/glyphs_5x7.go`.
 - Example error: `img.look({ box: [0, 0, 8, 8] })` → `E_UNKNOWN_OPTION`, hint "A window is content: crop the node, then look at the crop.", fix `node.crop([x, y, w, h]).look()`.
+
+## Step 2: Phase 2 - rendering above scale 1
+
+Phase 2 adds the only path that computes anything above scale 1: `Evaluator.Render` (and `Engine.Render`), which a look
+uses. It dispatches on a new `OpDef.Class`: pixel ops are computed at scale 1 over their whole frame and upsampled within
+the render window, geometric ops pass the window on, decorations run at the render scale, and data (Regions, Values) is
+evaluated as usual. Looks gain `zoom` and `interp`; whole-image looks can now be magnified within the 1568 px limit. The
+evaluator also gains evaluation-time warnings (`EvalCtx.Warn`) that survive the cache.
+
+The render path is tested with test-only decorations before any real op is a decoration (overlay becomes one in Phase 6).
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 1)
+
+**Assistant interpretation:** Implement guide Phase 2 with `render_test.go` first: the render dispatch, classes, windows, upsampling, memo keys, scale limits, evaluation-time warnings with cache replay, and look zoom/interp.
+
+**Inferred user intent:** Make magnified looks possible without ever computing a filter on invented pixels.
+
+**Commit (code):** 825c3ee - "GCV-002 Phase 2: rendering above scale 1 (Evaluator.Render, op classes, windows), EvalCtx.Warn, look zoom and interp"
+
+### What I did
+- `pkg/cv/graph/render.go`: `RenderOptions{Scale, Interp, Window, OnWarn}`, `MaxRenderScale = 16`, `Evaluator.Render`, `Engine.Render`, `renderRun` (`render`, `cached`, `key`, `decorate`), `Intersect`, `cutValue` (below scale 1 aligned to buffer px), `ImageValue.withBuffer`.
+- `registry.go`: `OpClass` (`PixelOp`, `GeometricOp`, `Decoration`) and `OpDef.Class`; `Halo`'s comment no longer says "unused".
+- `pkg/cv/buffer/resample.go`: `Interp` (nearest, linear), `ParseInterp`, `Cut`, `Upsample` (nearest maps image px i to source ⌊i/s⌋; linear samples at pixel centres).
+- `eval.go`: `EvalOptions.OnWarn`; `EvalCtx.Window` and `EvalCtx.Warn(code, message, fix)`; warnings kept per signature (`Evaluator.warns`) and replayed by `replayTree` over the evaluated graph after every Evaluate and Render, once per evaluation (`runGroup.emitted`).
+- Binding: `__evaluate` passes an `OnWarn` that records the warning with the site of the await (`noteEvalWarning`), so the session's `warnings:` block shows it with the agent's line.
+- Look: `Options{Zoom, Interp}`, `look.OptionsFrom` refuses zoom with maxSide (E_ARG_TYPE, "zoom sets the scale; maxSide fits it"); `New` checks the 1568 px limit (`zoomTooLarge`, fix `node.crop([x, y, 196, 196]).look({ zoom: 8 })   // or node.look({ zoom: 3.92 })`); charts refuse zoom ("charts have no doc px"); rendering goes through `Engine.Render`; content captions append evaluation-time warnings; `DocPxPerImagePx` prints three significant digits above scale 1 (`0.125`).
+- `ops.LookArgs`: `zoom` (number [1, 16], carries the look redirects now), `interp` (nearest | linear, default nearest); option synonyms magnify/magnification/upscale/factor/zoomFactor/scale → zoom, interpolation/resample/resampling/upsample → interp.
+- Tests: `pkg/cv/graph/render_test.go` (pixel op at 8 equals the nearest-upsampled scale-1 window exactly and runs once; linear differs; a decoration gets 8× inputs and the window, draws a 1 image-px line; memo keys by scale, interp and window; lifted Values and Regions inside a render are scale-1 data; Evaluate refuses 2, Render refuses 17 and windows outside the frame; renders below 1 cut to buffer px; macro nodes render their expansion; warnings replayed from the cache in Evaluate and Render); look tests for zoomed blocks, limits and chart refusal; binding tests for `magnify`, `interpolation`, zoom+maxSide, zoom 32, interp enum.
+
+### Why
+- Guide §7.2, §7.7 (zoom, interp, size), §7.13 and Phase 2.
+
+### What worked
+- Goldens unchanged (looks at scale ≤ 1 go through Render, which is Evaluate there).
+- `goja-cv eval -e 'return { z: img.toGray().look({ zoom: 8, label: "gray 8×" }) }'` gives `look 1: gray 8× (512×384, 1 image px = 0.125 doc px)`.
+
+### What didn't work
+- `TestRenderDataIsNotUpsampled`: "render of a Value: <nil> E_EVAL: open failed: scale 8 out of range (0, 1]" - my first Render evaluated data nodes at the requested scale; data now always evaluates at scale 1.
+- `TestEvalTimeWarningsAreReplayedFromTheCache`: "evaluation 1: warnings []" - replaying only the root's signature misses warnings of inputs when the root comes from the cache. Replay now walks the graph under the root (`replayTree`).
+- `make lint`: "missing cases in switch of type graph.OpClass: graph.PixelOp (exhaustive)" twice; added the empty `case PixelOp:`.
+
+### What I learned
+- Looks render after `Process` has written the result text, so a warning raised while a look renders cannot reach the `warnings:` block; it is appended to the look's content caption instead (deviation).
+
+### What was tricky to build
+- Warning replay with caching: a value served from the cache must report what its inputs said when they ran, but nothing should be reported twice in one evaluation. Storing warnings by signature and walking the evaluated tree once at the end (each node at the scale it was evaluated at, macro nodes skipped) does both, with a per-evaluation `emitted` set.
+- Geometric pass-through: a crop rendered at 8 is its receiver rendered in the window, re-tagged with the crop's encoding; it never runs its own `Run` above scale 1.
+
+### What warrants a second pair of eyes
+- `Evaluator.warns` is not evicted with the cache (it only holds entries for ops that warn).
+- `renderRun.decorate` evaluates non-image inputs at scale 1 through the run's scale-1 `evalRun` (so AnalysisScale and params snapshots match the pixel ops of the same render).
+- A pixel op above a decoration (`convert` of a decorated linear image) evaluates the decoration at scale 1; GCV-002's decorations work in encoded space, so `Engine.Display` adds no convert above them.
+
+### What should be done in the future
+- N/A
+
+### Code review instructions
+- Start at `pkg/cv/graph/render.go`, then `eval.go` (`EvalCtx.Warn`, `replay`, `replayTree`, `keepWarnings`), `buffer/resample.go`, `look/look.go` (`New`, `zoomTooLarge`, `image`).
+- `go test ./pkg/cv/graph -run 'Render|EvalTime' -v`; `go test ./pkg/cv/look -run Zoom -v`; `go test ./pkg/gojamod/cv -run LookOptions -v`.
+
+### Technical details
+- Render cache key: sha256("render" ‖ scale-1 signature ‖ round(scale·1e4) ‖ interp ‖ window x, y, w, h).

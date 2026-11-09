@@ -4,8 +4,8 @@
 
 - [x] Phase 1: pkg/cv/text 5x7 font from X11 misc-fixed 5x7.bdf (digits, letters, caption punctuation) with glyph tests; delete kernels.DrawDigits and look/font.go glyphs <!-- t:wz2z -->
 - [ ] Phase 1: graph.FuncDef + RegisterFunc, graph.BindOptions, ArgSpec.Redirects; register look and show with ArgSpecs (label, zoom, interp, maxSide, ruler, grid, format); delete lookOptionKeys; synonym and redirect tests <!-- t:vvf2 -->
-- [ ] Phase 2: render_test.go (pixel op at 8 == nearest-upsampled scale-1 window; Regions/Values not upsampled; test-only decoration; memo keys scale/interp/window; Evaluate refuses >1; render >16 refused) <!-- t:yxkk -->
-- [ ] Phase 2: Engine.Render with RenderOptions{Scale, Interp, Window}, OpDef.Class (pixel, geometric, decoration), macro-node dispatch, buffer.Upsample, EvalCtx.Warn with cache replay; look zoom/interp and captions below scale 1 <!-- t:h78y -->
+- [x] Phase 2: render_test.go (pixel op at 8 == nearest-upsampled scale-1 window; Regions/Values not upsampled; test-only decoration; memo keys scale/interp/window; Evaluate refuses >1; render >16 refused) <!-- t:yxkk -->
+- [x] Phase 2: Engine.Render with RenderOptions{Scale, Interp, Window}, OpDef.Class (pixel, geometric, decoration), macro-node dispatch, buffer.Upsample, EvalCtx.Warn with cache replay; look zoom/interp and captions below scale 1 <!-- t:h78y -->
 - [ ] Phase 3: crop (geometric, box type, Args.Box, integer frame, RANGE/E_ARG_RANGE nearest valid box), CROP_FIRST (first reader of Halo) and DECORATION_FIRST warnings <!-- t:nm2q -->
 - [ ] Phase 3: rulers and grid in look/ruler.go (margins, absolute labels, thinning) with golden PNG; chain captions through macro nodes <!-- t:410s -->
 - [ ] Phase 4: kernels.Binary; Image add, sub (derived), mul, abs, min, max; Image|number union operand; frame checks; gray broadcast; tests incl. lifted Value SPACE <!-- t:fblc -->
