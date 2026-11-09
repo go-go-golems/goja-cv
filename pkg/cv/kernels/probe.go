@@ -165,9 +165,15 @@ type CoreRing struct {
 	Step, Spread float64
 	SNR          float64
 	ChanSteps    []float64 // per channel (nil for one channel)
-	StepChroma   float64   // (max − min of ChanSteps) / max(|Step|, 1e-3)
+	StepChroma   float64   // (max − min of ChanSteps) / max(|Step|, 1e-3); NaN when |SNR| < StepChromaMinSNR
 	RingCoverage float64   // fraction of the ring's weight inside the buffer
 }
+
+// StepChromaMinSNR is the |snr| below which StepChroma is NaN (null in
+// JavaScript): the step is smaller than the spread of the ring, so its colour
+// cannot be attributed, and dividing by a step near 0 gives large, meaningless
+// ratios (3.25 at snr 0.12).
+const StepChromaMinSNR = 1.0
 
 // CoreRingOptions are the radii (buffer px) and the gray plane of a probe.
 type CoreRingOptions struct {
@@ -179,7 +185,8 @@ type CoreRingOptions struct {
 // mean of the gray plane in the core disk and in the ring between R1 and R2,
 // their difference (step), the 10–90 % spread of the gray plane in the ring
 // (weighted quantiles), snr = step / max(spread, 1e-3), the step of each
-// channel and how unequal they are (StepChroma). Pixels outside the buffer
+// channel and how unequal they are (StepChroma, NaN when |snr| <
+// StepChromaMinSNR). Pixels outside the buffer
 // are left out; RingCoverage says how much of the ring was inside.
 func ProbeCoreRing(ctx context.Context, b *buffer.Buffer, pts [][2]float64, o CoreRingOptions) ([]CoreRing, error) {
 	if !(o.Core > 0 && o.R1 >= o.Core && o.R2 > o.R1) {
@@ -219,7 +226,10 @@ func ProbePoint(ctx context.Context, b *buffer.Buffer, x, y float64, o CoreRingO
 			r.ChanSteps = append(r.ChanSteps, d)
 			lo, hi = math.Min(lo, d), math.Max(hi, d)
 		}
-		r.StepChroma = (hi - lo) / math.Max(math.Abs(r.Step), 1e-3)
+		r.StepChroma = math.NaN()
+		if math.Abs(r.SNR) >= StepChromaMinSNR {
+			r.StepChroma = (hi - lo) / math.Max(math.Abs(r.Step), 1e-3)
+		}
 	}
 	return r
 }
