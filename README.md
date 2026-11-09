@@ -75,6 +75,15 @@ goja-cv help concepts
 - `goja-cv help NAME` shows a guide page, a command's help, or a cv op / kind / function (`levels`, `Mask`,
   `Regions.filter`), in that order.
 - `--timeout-ms` raises the 60 s limit per eval; `--log-level debug` logs to stderr.
+- **Data for programs:** return `cv.csv(x, { name: "spots" })` or `cv.json(x)` and the CLI writes `spots.csv` /
+  `.json` next to the looks (`--json` lists them under `files` with their row counts). `--out-root DIR` lets
+  `node.save("view.tif")` and `cv.csv(x).save("t.csv")` write under DIR (TIFF and PNG record the encoding and
+  frame). `--prelude helpers.js` runs a script first, so `mem` helpers need not be pasted into every call.
+
+```bash
+goja-cv eval --json --out /tmp/specks --image TILE.tif \
+  -e 'return cv.csv(img.detect.specks({ polarity: "bright", maxArea: 2000 }), { name: "specks" })'
+```
 
 ## Use with coding agents
 
@@ -85,6 +94,9 @@ and session tools), the resources `cv://reference`, `cv://docs/<id>` and `cv://g
 - `--image FILE` opens an image at start and binds it to `img` (optional; the agent can call the `open` tool or
   `img = cv.open(path)`).
 - `--root DIR` (repeatable) limits which files `cv.open` may read. Use it.
+
+`--out-root DIR` (the only directory `save` may write under) and `--prelude FILE` work as on the CLI; data items
+larger than 256 KiB are not sent to the model, which is told to save them.
 
 ### Claude Code
 
@@ -177,12 +189,15 @@ from six per task to two, every one corrected on the next call):
   (`{ count, items }`). Awaited data still accepts node methods, but `r.count` is a number.
 - **Use `mem`** for anything needed in a later call; `const`/`let` do not survive.
 - **Return looks** to see results (`node.look("label")`, `show(node)`, `cv.compare([a, b])`), zoom into crops with
-  rulers (`img.crop([x, y, 64, 64]).look({ zoom: 8, ruler: 8 })`), and measure inside regions with
-  `img.stats({ box: [x, y, w, h] })` or `img.stats({ mask })`.
+  rulers (`img.crop([x, y, 64, 64]).look({ zoom: 8, ruler: 8 })`), and back judgements with numbers:
+  `img.measure(points)` (step, spread, snr, stepChroma of a spot against its surroundings),
+  `regions.measure(img, { ring: true }).sortBy("snr")`, `img.profile(a, b).look()`.
+- **Region items are flat** (`{ id, x, y, w, h, cx, cy, area, aspect, … }`; `x, y` a corner, `cx, cy` a centre) and
+  can be passed wherever a box, point or id is expected: `img.crop(item)`, `img.measure(items)`, `only(item)`.
 
 ## Embedding
 
-- **Go:** `pkg/cvsession` — `cvsession.New(ctx, Options{Image, Roots, EvalTimeout})`, `App.Evaluate(ctx, id, code)`,
+- **Go:** `pkg/cvsession` — `cvsession.New(ctx, Options{Image, Roots, OutRoot, Preludes, EvalTimeout})`, `App.Evaluate(ctx, id, code)`,
   `cvsession.NewMCPServer(ctx, app)`. See `goja-cv help embedding`.
 - **xgoja:** `pkg/xgoja/providers/cv` (provider package `goja-cv`, module `cv`) and
   `examples/xgoja/cv-agent/xgoja.yaml`. Provider ids must equal package IDs.
@@ -195,15 +210,15 @@ In the binary (`goja-cv help <slug>`; also MCP resources `cv://guide/<slug>`):
 |---|---|
 | `what-is-goja-cv` | what it is, when to use it, what is implemented |
 | `concepts` | kinds, lazy nodes, doc px and scales, masks vs regions, lambdas, looks, params, errors |
-| `cli` | every command and flag, look files, JSON output, exit codes |
+| `cli` | every command and flag, look and data files, saving, preludes, JSON output, exit codes |
 | `agents` | what an agent sees over MCP, the eval contract, `cv.docs`, limits, security |
 | `setup-claude-code`, `setup-codex`, `setup-pi` | client setup |
-| `recipes` | exposure, dust, measuring inside a box, masked edits, comparisons, params |
+| `recipes` | exposure, dust, measuring spots and regions, masked edits, comparisons, params |
 | `embedding` | Go API and xgoja |
 | `troubleshooting` | errors, sessions, timeouts, the goja interrupt caveat |
 
-For agents, from inside eval: `cv.docs.list()`, `cv.docs.search(text)`, `cv.docs.read(id, { section })` (nine
-topics, every example tested), and `cv.help(name)`.
+For agents, from inside eval: `cv.docs.list()`, `cv.docs.search(text)`, `cv.docs.read(id, { section })` (thirteen
+topics - among them `measuring` and `data-out` - every example tested), and `cv.help(name)`.
 
 ## Layout and development
 

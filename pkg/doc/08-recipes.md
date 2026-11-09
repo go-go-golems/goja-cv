@@ -77,16 +77,18 @@ return {
 
 `cv.docs.read("views")` lists the presets; `cv.docs.read("looks")` the look options (zoom, ruler, grid, format).
 
-## Measure inside a box or region
+## Measure spots, boxes and regions
+
+`img.measure(points)` compares a disk around each point with a ring around it (step, spread, snr, stepChroma); region items are points, so the specks' own rows come back with their coordinates. `regions.measure(img, { ring: true })` adds the same fields to every region and keeps the ids, ready for `sortBy("snr")`.
 
 ```js
-const speck = (await img.detect.specks().sortBy("area").top(1)).items[0]
-const { x, y, w, h } = speck
-const ring = img.mask.box([x - 6, y - 6, w + 12, h + 12]).minus(img.mask.box(speck))
+const specks = img.detect.specks().sortBy("area").top(3)
+const rows = await img.measure((await specks).items)
+const ranked = await specks.measure(img, { ring: true, prefix: "lin" }).sortBy("linSnr")
 return {
-  id: speck.id,
-  inside: await img.stats({ box: speck }).pick("meanL", "area"),
-  around: await img.stats({ mask: ring }).pick("meanL", "area"),
+  rows: rows.map(r => [r.cx, r.cy, r.step.toFixed(3), r.snr.toFixed(2)].join(" ")),
+  ranked: ranked.items.map(r => r.id),
+  table: cv.csv(ranked, { name: "ranked" }),
 }
 ```
 

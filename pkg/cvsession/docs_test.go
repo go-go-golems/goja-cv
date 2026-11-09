@@ -124,7 +124,7 @@ func TestGuideCodeBlocksRun(t *testing.T) {
 // looks, "js fragment" is skipped.
 func runCodeBlocks(t *testing.T, img, name, md string) int {
 	t.Helper()
-	app, sid := newApp(t, cvsession.Options{Image: img, BaseDir: filepath.Dir(img)})
+	app, sid := newApp(t, cvsession.Options{Image: img, BaseDir: filepath.Dir(img), OutRoot: t.TempDir()})
 	n := 0
 	for _, b := range jsBlocks(md) {
 		if strings.Contains(b.info, "fragment") {

@@ -92,7 +92,17 @@ var MethodRedirects = map[string]Redirect{
 	"magnify": {Hint: "Zoom is a look option, not a node: crop the window, then look at it zoomed.", Fix: "node.crop([x, y, w, h]).look({ zoom: 8 })"},
 	"ruler":   {Hint: "Rulers are a look option.", Fix: "node.look({ ruler: true })"},
 	"compare": {Hint: "compare is a cv function that takes a list of images.", Fix: `cv.compare([a, b], { mode: "side" })`},
+	"export":  saveRedirect, "write": saveRedirect, "saveAs": saveRedirect, "saveTo": saveRedirect, "writeFile": saveRedirect, "store": saveRedirect,
+	"toCSV": csvRedirect, "toCsv": csvRedirect, "csv": csvRedirect, "table": csvRedirect, "rows": csvRedirect,
+	"json": jsonRedirect, "dump": jsonRedirect, "serialize": jsonRedirect,
 }
+
+var (
+	saveRedirect = Redirect{Hint: "save writes a file under the out-root (--out-root): node.save(\"x.tif\") for an image or mask, cv.csv(x).save(\"x.csv\") for data.",
+		Fix: `node.save("x.tif")`}
+	csvRedirect  = Redirect{Hint: "cv.csv(x) is data for programs: every row, delivered as a file or text; cv.docs.read(\"data-out\").", Fix: `cv.csv(node, { name: "rows" })`}
+	jsonRedirect = Redirect{Hint: "cv.json(x) is data for programs: every item, delivered as a file or text; cv.docs.read(\"data-out\").", Fix: `cv.json(node, { name: "data" })`}
+)
 
 // levenshtein is the case-insensitive edit distance with adjacent
 // transpositions counted as one edit.

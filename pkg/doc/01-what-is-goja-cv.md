@@ -25,7 +25,11 @@ with measurements instead of guesses.
 ## What it does
 
 - **Measure.** `stats` (mean, percentiles, clipping, per channel; also inside a box or mask), `histogram`,
-  `check.dust`, `detect.specks` (regions with id, box, area, contrast, sharpness, a dust score), `coverage`.
+  `sample` (values at points), `profile` (values along a line, plotted), `measure` (a spot against a ring around it:
+  step, spread, snr, stepChroma), `regions.measure` (the same for every region, or statistics over its pixels),
+  `check.dust`, `detect.specks` (regions with flat fields id, x, y, w, h, cx, cy, area, contrast, a dust score).
+- **Data out.** `cv.csv(x)` and `cv.json(x)` hand every row to programs (files from the CLI); `node.save(path)`
+  writes images under `--out-root` with their encoding and frame.
 - **Select.** Masks from luminance, colour, boxes, ellipses, gradients and flood fill; set algebra and
   morphology; regions from masks; declarative `where` filters.
 - **Edit.** `exposure` (in linear space), `levels`, `contrast`, `gaussian`, `blend`, `within(mask, …)`, `heal`
@@ -65,13 +69,13 @@ mistakes and you do not hand them a shell.
 ## What is implemented (and what is not yet)
 
 Implemented: tone (exposure, levels, contrast, gray), blur, statistics and histograms, masks and regions,
-`within`/`blend`, dust detection and healing, inpainting, overlays and comparisons, params, looks, the eval
-session (YAML results, warnings, context block), the `cv.docs` guides, the CLI, the MCP server, an xgoja
-provider.
+`within`/`blend`, dust detection and healing, inpainting, overlays and comparisons, params, looks, point and
+region measurements, data out (JSON, CSV, saved TIFF/PNG/NPY), the eval session (YAML results, warnings, context
+block, preludes), the `cv.docs` guides, the CLI, the MCP server, an xgoja provider.
 
 Not yet: the document layer (history, `doc.apply`, `doc.propose`, undo, export of an edit history), sampled
 lambdas (`curve(fn)`, LUTs), `cv.search`, ICC profiles and EXIF orientation, raw formats. Inputs are PNG, JPEG
-and TIFF (8 or 16 bit), assumed sRGB.
+TIFF (8 or 16 bit, float), LinearRaw DNG and .npy.
 
 ## Where to go next
 
