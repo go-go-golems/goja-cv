@@ -24,6 +24,7 @@ type evalFlags struct {
 	image   string
 	out     string
 	outRoot string
+	prelude []string
 	json    bool
 	timeout int
 }
@@ -32,6 +33,7 @@ func (f *evalFlags) register(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&f.image, "image", "", "Image file to open and bind to img")
 	cmd.Flags().StringVar(&f.out, "out", "", "Directory for the delivered looks and data files (default: a new temporary directory)")
 	cmd.Flags().StringVar(&f.outRoot, "out-root", "", "The only directory save() may write under (default: saving is disabled)")
+	cmd.Flags().StringArrayVar(&f.prelude, "prelude", nil, "Script run in the session before the code (repeatable; e.g. helpers that define mem.*)")
 	cmd.Flags().BoolVar(&f.json, "json", false, "Print a JSON object instead of YAML")
 	cmd.Flags().IntVar(&f.timeout, "timeout-ms", 0, "Eval timeout in milliseconds (default 60000)")
 }
@@ -105,7 +107,12 @@ func runCode(ctx context.Context, opts *rootOptions, f *evalFlags, code string) 
 	if err := checkOutRoot(f.outRoot); err != nil {
 		return err
 	}
-	sopts := cvsession.Options{Image: f.image, OutRoot: f.outRoot, Logger: &logger}
+	for _, p := range f.prelude {
+		if st, err := os.Stat(p); err != nil || st.IsDir() {
+			return usageErr("--prelude %q is not a readable file", p)
+		}
+	}
+	sopts := cvsession.Options{Image: f.image, OutRoot: f.outRoot, Preludes: f.prelude, Logger: &logger}
 	if f.timeout > 0 {
 		sopts.EvalTimeout = msDuration(f.timeout)
 	}
@@ -116,6 +123,9 @@ func runCode(ctx context.Context, opts *rootOptions, f *evalFlags, code string) 
 	defer func() { _ = app.Close(context.Background()) }()
 	session, err := app.CreateSession(ctx)
 	if err != nil {
+		if msg := errors.Cause(err).Error(); strings.HasPrefix(msg, "prelude ") {
+			return failure(errors.New(msg)) // a script error in a prelude: exit 1 like agent code
+		}
 		return usageErr("start session: %v", errors.Cause(err))
 	}
 	resp, err := app.Evaluate(ctx, session.ID, code)

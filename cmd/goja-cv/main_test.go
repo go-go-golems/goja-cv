@@ -225,3 +225,25 @@ return {
 		}
 	}
 }
+
+// TestPreludeFlag: --prelude scripts run before the code; a failing one is
+// a cv error (exit 1) naming its file and line; a missing one a usage error.
+func TestPreludeFlag(t *testing.T) {
+	dir := t.TempDir()
+	good, bad := filepath.Join(dir, "h.js"), filepath.Join(dir, "bad.js")
+	if err := os.WriteFile(good, []byte("mem.f = x => x + 1\nreturn 'ready'\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(bad, []byte("\n\nnope()\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if code, out, _ := runCLI(t, "eval", "--prelude", good, "-e", "return mem.f(41)"); code != exitOK || !strings.HasPrefix(out, "42") {
+		t.Fatalf("prelude: exit %d\n%s", code, out)
+	}
+	if code, out, errOut := runCLI(t, "eval", "--prelude", good, "--prelude", bad, "-e", "return 1"); code != exitCVError || !strings.Contains(out+errOut, "prelude bad.js:3:") {
+		t.Fatalf("failing prelude: exit %d\n%s\n%s", code, out, errOut)
+	}
+	if code, _, _ := runCLI(t, "eval", "--prelude", filepath.Join(dir, "nope.js"), "-e", "return 1"); code != exitUsage {
+		t.Fatalf("missing prelude: exit %d", code)
+	}
+}

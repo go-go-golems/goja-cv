@@ -15,6 +15,7 @@ import (
 	_ "embed"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -80,6 +81,11 @@ type Options struct {
 	// MCPMaxDataBytes; the CLI writes every item).
 	MaxData      int
 	MaxDataBytes int
+	// Preludes are script files run, in order, in every new session before
+	// agent code (async function bodies like agent code: they may await and
+	// return; their results are not shown). Paths are operator input:
+	// resolved against BaseDir, not subject to Roots.
+	Preludes []string
 	// Logger for replapi (default: disabled).
 	Logger *zerolog.Logger
 }
@@ -127,6 +133,15 @@ func (o Options) withDefaults() (Options, error) {
 		o.OutRoot = filepath.Clean(abs)
 	}
 	o.Engine.OutRoot = o.OutRoot
+	preludes := make([]string, 0, len(o.Preludes))
+	for _, p := range o.Preludes {
+		abs, err := filepath.Abs(o.resolve(p))
+		if err != nil {
+			return o, errors.Wrapf(err, "prelude %q", p)
+		}
+		preludes = append(preludes, abs)
+	}
+	o.Preludes = preludes
 	return o, nil
 }
 
@@ -186,15 +201,52 @@ type App struct {
 	sessions []string // ids created through CreateSession, in order
 }
 
-// CreateSession creates a cv session and remembers its id (Sessions).
+// CreateSession creates a cv session, runs the preludes in it and
+// remembers its id (Sessions). A prelude that fails deletes the session and
+// is reported as "prelude FILE:LINE: …".
 func (a *App) CreateSession(ctx context.Context) (*replsession.SessionSummary, error) {
 	s, err := a.App.CreateSession(ctx)
-	if err == nil && s != nil {
-		a.mu.Lock()
-		a.sessions = append(a.sessions, s.ID)
-		a.mu.Unlock()
+	if err != nil || s == nil {
+		return s, err
 	}
-	return s, err
+	if err := a.runPreludes(ctx, s.ID); err != nil {
+		_ = a.DeleteSession(context.Background(), s.ID)
+		return nil, err
+	}
+	a.mu.Lock()
+	a.sessions = append(a.sessions, s.ID)
+	a.mu.Unlock()
+	return s, nil
+}
+
+// whereLine finds the agent line of a rendered error ("where: 'line 12: …'").
+var whereLine = regexp.MustCompile(`where: '?line (\d+)`)
+
+// runPreludes evaluates the prelude files in session id, in order.
+func (a *App) runPreludes(ctx context.Context, id string) error {
+	for _, p := range a.opts.Preludes {
+		code, err := os.ReadFile(p)
+		if err != nil {
+			return errors.Errorf("prelude %s: %v", p, err)
+		}
+		resp, err := a.Evaluate(ctx, id, string(code))
+		if err != nil && (resp == nil || resp.Cell == nil) {
+			return errors.Wrapf(err, "prelude %s", filepath.Base(p))
+		}
+		if exec := resp.Cell.Execution; exec.Status != "ok" {
+			line := "?"
+			if m := whereLine.FindStringSubmatch(exec.Result); m != nil {
+				line = m[1]
+			}
+			msg := exec.Error
+			if i := strings.Index(exec.Result, "message: "); i >= 0 {
+				msg = strings.TrimSpace(strings.SplitN(exec.Result[i+len("message: "):], "\n", 2)[0])
+				msg = strings.Trim(msg, "'\"")
+			}
+			return errors.Errorf("prelude %s:%s: %s", filepath.Base(p), line, msg)
+		}
+	}
+	return nil
 }
 
 // Sessions lists the ids of the sessions created through this app.
@@ -209,6 +261,11 @@ func New(ctx context.Context, opts Options, extra ...replapi.Option) (*App, erro
 	opts, err := opts.withDefaults()
 	if err != nil {
 		return nil, err
+	}
+	for _, p := range opts.Preludes {
+		if st, err := os.Stat(p); err != nil || st.IsDir() {
+			return nil, errors.Errorf("prelude %s is not a readable file", p)
+		}
 	}
 	factory, err := NewRuntimeFactory(opts)
 	if err != nil {
