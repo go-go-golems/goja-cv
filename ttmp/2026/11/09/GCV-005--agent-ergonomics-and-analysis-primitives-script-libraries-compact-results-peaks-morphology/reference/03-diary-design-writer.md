@@ -348,3 +348,78 @@ no known wrong statement left.
   merged: `snr>=1: peaks 105, gold covered 51/52, peaks not near gold 54`.
 - Instructions draft for revision 2: 3,458 bytes (scratchpad `instructions2.txt`).
 - Appendix B totals: 31 fixed, 2 partly fixed (F22 superseded by linting loaded files; F24 kept with bounds), 0 declined.
+
+## Step 4: Revision 3, a deletion-shaped revision
+
+The coordinator resolved revision 2's four open questions. Two are deletions: `UNUSED_NODE` goes with no replacement
+lint (so the jsparse rewrite, `__cv_drop` and `UNAWAITED` that revision 2 designed never get built), and `OpDef.Halo` goes
+with `CROP_FIRST`. The other decisions are acceptances. Because the guide was already structured, I applied the changes
+with one Python edit script that asserts every target text exists exactly once, instead of rewriting. Revision 3 is
+`d8be267` (2,398 lines, 57 fewer than revision 2).
+
+### Prompt Context
+
+**User prompt (verbatim):** "GCV-005 revision 3: a small, deletion-shaped revision. These coordinator decisions resolve your §17 open questions. [… 1. delete UNUSED_NODE entirely, no replacement lint, with the evidence in the decision record and the docs rule "a node you don't await, look at or save does nothing"; 2. delete OpDef.Halo, crop's help explains the edge effect in words; 3. sheet captions as proposed; 4. cv.save promises on the pending list via GCV-004 Phase 6; 5. no mask.regions grow option, B1 deletes nothing there; process: revision-3 history entry, update decisions, deletion checklist, phases, tests and §17, diary step 4, commit guide then diary, push, docmgr doctor, report commit hashes …]"
+
+**Assistant interpretation:** Apply five decisions, mostly deletions, consistently through the guide, and close §17.
+
+**Inferred user intent:** A simpler GCV-005 with nothing left to decide before implementation.
+
+### What I did
+
+- `git pull` (nothing new); saved revision 2 to the scratchpad; wrote `rev3.py` (section replacements and asserted
+  exact-once string replacements) and ran it on the guide.
+- Rewrote D10 ("`UNUSED_NODE` is deleted, with no replacement lint": 18 of 19 false; the one true positive silent under
+  revision 2's rule; dropped lazy nodes are no-ops in v2; loads and saves are waited for and `UNHANDLED` reports their
+  failures; rewriting agent source is the complexity to cut). Added D25 (`OpDef.Halo` deleted); D22 now points to it.
+- Replaced §4.4 ("A node that nothing uses"), §6.6 (`UNUSED_NODE` deleted; `UNHANDLED`), §7.6 (what to delete), and §10.5
+  (kept as "removed in revision 3" so references to §10.6–§10.12 stay valid). Removed the drop marker from §7.1, §7.2 and
+  §10.1, the `Halo` lines from the `peaks` and `morphOp` sketches, and halo printing from help; reworded `crop`'s help.
+- §9: item 2 is now all of `UNUSED_NODE`; item 8 is `OpDef.Halo` (the `mask.regions` `grow` item is gone); estimate
+  updated. §11, §12 (the instructions gain "a node you don't await, look at or save does nothing": 3,511 bytes), §13 (B1
+  needs only Phase 4 and can land now; A2 without the lint), §14, §15.1, §16, §17 ("Decided in revision 3", no open
+  questions), Appendix A (`cv.save` on the pending list satisfied by Phase 6; `mask.regions` without `grow`), Appendix B
+  (F10, F22, F31 rows and a revision note; totals unchanged).
+- Checked: a stale-term grep, the table pipe check, the instructions size; updated `tasks.md`, `index.md`,
+  `changelog.md`; `docmgr doctor` passed.
+
+### Why
+
+- Keeping §10.5 as a stub avoids renumbering six sections and their cross-references.
+
+### What worked
+
+- The asserting edit script: every replacement matched exactly once or stopped the run.
+
+### What didn't work
+
+- The grep afterwards found two leftovers (the §6.6 heading and the F31 row), fixed in a second small script.
+- The first `Edit` of this diary failed with "File has not been read yet"; I read the file and retried.
+
+### What I learned
+
+- With `UNUSED_NODE` gone, `collectNodes` and the uncapped `mem` walk have no purpose either.
+
+### What was tricky to build
+
+- Keeping §5.5's evidence (current state) while the design has no lint: §5.5 still explains why the warnings were
+  false, and D10 draws the conclusion.
+
+### What warrants a second pair of eyes
+
+- Risk 7: without a lint, a forgotten `await` on a wanted value shows only as a missing value in the result.
+- Whether `EvalTrace.Created` has readers besides `UNUSED_NODE` (§7.6 tells the implementer to grep before deleting it).
+
+### What should be done in the future
+
+- reMarkable upload of revision 3; implementation after GCV-004 batch 2 (B1 can start now).
+
+### Code review instructions
+
+- Read the revision-3 history row, D10, D25, §7.6, §9 and §17; `git diff 47c4470 d8be267 -- ttmp/2026/11/09/GCV-005*/design-doc/`.
+- Verify: `docmgr doctor --ticket GCV-005`.
+
+### Technical details
+
+- Edit script: scratchpad `rev3.py` (`rep` with an exact-once assertion; `section` replaces a heading's section up to
+  the next heading of the same or higher level).
