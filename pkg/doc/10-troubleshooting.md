@@ -22,7 +22,7 @@ marks the failing call), `hint` and usually `fix` (literal code). Apply the fix 
 | code | usually means |
 |---|---|
 | E_UNKNOWN_METHOD / E_NAMESPACE | wrong method name or kind (`specks.heal()` → `img.heal(specks)`); see `fix` |
-| E_UNKNOWN_OPTION | option misspelt or named differently (`min` → `above`, `radius` → `r`) |
+| E_UNKNOWN_OPTION | option misspelt or named differently (`min` → `above`, `radius` → `sigma` on a blur) |
 | E_ARG_TYPE / E_ARG_RANGE | wrong type or outside hard limits; `cv.help(op)` lists units and ranges |
 | E_WRONG_KIND | a Mask where Regions were expected, or plain data where a node was expected |
 | E_LAZY_COMPARE | a node used as a number: `(await node) > x` |

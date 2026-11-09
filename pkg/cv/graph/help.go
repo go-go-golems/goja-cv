@@ -209,6 +209,13 @@ func DescribeArgSpec(s *ArgSpec) string {
 	if s.Doc != "" {
 		out += ". " + s.Doc
 	}
+	if len(s.ValueDocs) > 0 && strings.HasPrefix(s.Type, "enum:") {
+		var docs []string
+		for _, v := range strings.Split(strings.TrimPrefix(s.Type, "enum:"), ",") {
+			docs = append(docs, v+": "+s.ValueDocs[v])
+		}
+		out += ". " + strings.Join(docs, "; ")
+	}
 	return out
 }
 

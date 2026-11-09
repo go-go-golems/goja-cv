@@ -28,10 +28,10 @@ Globals: img (the open image; img = cv.open(path) rebinds it; await img gives it
 Most used calls
 - Numbers are in the op's space: linear (exposure, blur, blend, stats, levels) or encoded (what looks show: thresholds, contrast, histogram, specks); pass { space } to change it; cv.docs.read("encodings-and-spaces").
 - await img.stats() → { meanL, p01, p99, clipLow, clipHigh, … }; img.stats({ box: [x, y, w, h] }) or img.stats({ mask }) measures only there (+ area, coverage); img.histogram().look()
-- img.exposure(ev), img.levels({ black, white, gamma }) (black/white in stats' space), img.contrast(a), img.gaussian(r), img.toGray(), img.chroma(), node.colormap("viridis")
+- img.exposure(ev), img.levels({ black, white, gamma }) (black/white in stats' space), img.contrast(a), img.gaussian(sigma), img.toGray(), img.chroma(), node.colormap("viridis")
 - node.look("label") or node.look({ label, maxSide }) inside the returned value attaches an image; show(node, opts) queues one that survives a later throw. Captions give the scale: 1 image px = S doc px.
 - cv.compare([a, b], { mode: "side" | "split" }) to see before/after; a.sub(b) is their signed difference (.mul(4).add(0.5) shows zero as grey).
-- Masks: img.mask.luminance({ above, below }), mask.box([x, y, w, h]), mask.gradient({ from: "top", to: 0.5 }), mask.color, mask.flood; a.and(b), a.or(b), a.minus(b), a.not(), m.feather(r), m.grow(r), m.coverage().
+- Masks: img.mask.luminance({ above, below }), mask.box([x, y, w, h]), mask.gradient({ from: "top", to: 0.5 }), mask.color, mask.flood; a.and(b), a.or(b), a.minus(b), a.not(), m.feather(radius), m.grow(radius), m.coverage().
 - img.within(mask, i => i.exposure(-0.4)) edits inside a mask (the function runs once, at build time).
 - Dust: img.detect.specks() → Regions; .where({ score: { gte: 0.5 } }), .sortBy("area").top(n), .without([id]), .count(); img.overlay(regions, { labels: "id" }).look(); img.heal(regions, { radius }); await img.check.dust().
 - Params: P.slider(name, { min, max, value }) can be used anywhere a number goes.

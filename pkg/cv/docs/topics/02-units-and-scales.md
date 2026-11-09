@@ -4,7 +4,7 @@ Every length, box and point is in doc px (pixels of the file, absolute in the im
 
 ## Doc px
 
-A box `[x, y, w, h]`, a point `[x, y]`, a blur radius `r`, a grow distance: all are measured in pixels of the **original** image, whatever scale an evaluation runs at. Areas (`maxArea`, `minArea`, region `area`) are in doc px². The engine rescales lengths for each evaluation, so a preview and a full-size result agree.
+A box `[x, y, w, h]`, a point `[x, y]`, a blur width `sigma`, a grow `radius`: all are measured in pixels of the **original** image, whatever scale an evaluation runs at. Areas (`maxArea`, `minArea`, region `area`) are in doc px². The engine rescales lengths for each evaluation, so a preview and a full-size result agree.
 
 ```js
 const corner = img.mask.box([0, 0, 64, 48])        // doc px
@@ -12,7 +12,7 @@ const soft = corner.feather(8)                      // 8 doc px wide ramp
 return { coverage: await soft.coverage(), explain: soft.explain() }
 ```
 
-`explain()` shows how a doc-px length maps at the evaluation scale (`r: 8 px → 2 at scale 0.25` on a large image).
+`explain()` shows how a doc-px length maps at the evaluation scale (`sigma: 8 px → 2 at scale 0.25` on a large image).
 
 ## Scales
 

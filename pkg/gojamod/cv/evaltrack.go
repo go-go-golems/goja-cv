@@ -282,7 +282,7 @@ func LookOf(v goja.Value) (*look.Look, bool) {
 }
 
 // DescribeNode is the one-line summary of node id used in result rendering:
-// "[Image #4 gaussian(r: 2 px)]".
+// "[Image #4 gaussian(sigma: 2 px)]".
 func DescribeNode(eng *graph.Engine, id graph.NodeID) string {
 	n, ok := eng.Node(id)
 	if !ok {

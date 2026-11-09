@@ -197,7 +197,7 @@ func insertedGray(n, next *Node) bool {
 	return false
 }
 
-// Describe renders a node as a call, e.g. "gaussian(r: 2 px → 0.5 at scale
+// Describe renders a node as a call, e.g. "gaussian(sigma: 2 px → 0.5 at scale
 // 0.25)". Arguments equal to their default are omitted; lifted arguments
 // show the input node id.
 func Describe(b *Builder, n *Node, scale float64, params map[string]any) string {

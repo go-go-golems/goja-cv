@@ -173,6 +173,9 @@ type ArgSpec struct {
 	// ValueSynonyms map words agents use for an enum value to the value they
 	// mean (scoped to this argument), for the did-you-mean hint and fix.
 	ValueSynonyms map[string]string
+	// ValueDocs describe the values of an enum (view presets): help lists
+	// them and an unknown value's error names them.
+	ValueDocs map[string]string
 	// Redirects map an unknown option name (looked up over every spec of the
 	// call) or an unknown enum value of this argument to the call that does
 	// it now: look({ box }) → crop, blend({ mode: "difference" }) → sub.

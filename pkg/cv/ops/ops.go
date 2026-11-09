@@ -10,6 +10,8 @@ func Register(r *graph.Registry) {
 	r.MustRegister(toneOps()...)
 	r.MustRegister(geometryOps()...)
 	r.MustRegister(arithImageOps()...)
+	r.MustRegister(filterViewOps()...)
+	r.MustRegister(viewOp())
 	r.MustRegister(channelOps()...)
 	r.MustRegister(filterOps()...)
 	r.MustRegister(measureOps()...)

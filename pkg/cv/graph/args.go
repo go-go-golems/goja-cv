@@ -508,6 +508,13 @@ func (b *binder) check(s *ArgSpec, typ string, v any, where string) (any, error)
 		} else if sug := closest(str, allowed); sug != "" {
 			e.Hint = fmt.Sprintf("Did you mean %q?", sug)
 		}
+		if len(s.ValueDocs) > 0 {
+			var docs []string
+			for _, a := range allowed {
+				docs = append(docs, a+": "+s.ValueDocs[a])
+			}
+			e.Hint = strings.TrimSpace(e.Hint + " " + strings.Join(docs, "; ") + ".")
+		}
 		return nil, e
 	case strings.HasSuffix(typ, "[]"):
 		list, ok := v.([]any)
@@ -582,8 +589,14 @@ func (b *binder) checkUnion(s *ArgSpec, typ string, v any, where string) (any, e
 		alt, ok = pick(func(a string) bool { return a == "string" || strings.HasPrefix(a, "enum:") })
 	case float64:
 		alt, ok = pick(func(a string) bool { return a == "number" })
+	case bool:
+		alt, ok = pick(func(a string) bool { return a == "bool" })
+	case []any:
+		alt, ok = pick(func(a string) bool { return strings.HasSuffix(a, "[]") || a == "box" || a == "point" })
 	default:
-		alt, ok = pick(func(a string) bool { return a != "number" && a != "string" && !strings.HasPrefix(a, "enum:") })
+		alt, ok = pick(func(a string) bool {
+			return a != "number" && a != "string" && a != "bool" && !strings.HasSuffix(a, "[]") && !strings.HasPrefix(a, "enum:")
+		})
 	}
 	if !ok {
 		names := make([]string, len(alts))
@@ -800,7 +813,9 @@ var OptionSynonyms = map[string][]string{
 	"min": {"above", "minArea", "minContrast"}, "minimum": {"above", "minArea"}, "lower": {"above"}, "from": {"above"},
 	"max": {"below", "maxArea"}, "maximum": {"below", "maxArea"}, "upper": {"below"}, "to": {"below"},
 	"threshold": {"above", "minContrast", "threshold"}, "thresh": {"above", "minContrast", "threshold"}, "cutoff": {"above", "minContrast"},
-	"radius": {"r", "radius"}, "sigma": {"r"}, "size": {"r", "maxArea", "maxSide"}, "blur": {"r"}, "kernel": {"r"}, "width": {"r"},
+	"r": {"sigma", "radius"}, "radius": {"sigma"}, "sigma": {"radius"}, "std": {"sigma"}, "stddev": {"sigma"}, "sd": {"sigma"},
+	"size": {"sigma", "radius", "maxArea", "maxSide"}, "blur": {"sigma"}, "kernel": {"sigma", "radius"}, "width": {"sigma", "radius"},
+	"distance": {"radius"}, "dist": {"radius"},
 	"maxSize": {"maxArea"}, "minSize": {"minArea"}, "area": {"maxArea", "minArea"}, "contrast": {"minContrast"},
 	"opacity": {"alpha", "opacity"}, "alpha": {"opacity", "alpha"}, "strength": {"amount", "opacity", "alpha"}, "intensity": {"amount", "opacity"},
 	"colour": {"color"}, "label": {"labels", "label"}, "showIds": {"labels"}, "ids": {"labels"},
@@ -1040,12 +1055,17 @@ func withEnumFix(err error, call string, s *ArgSpec) error {
 		return err
 	}
 	v := ce.Valid[0]
-	if strings.HasPrefix(ce.Hint, "Did you mean ") {
-		v = strings.Trim(strings.TrimSuffix(strings.TrimPrefix(ce.Hint, "Did you mean "), "?"), `"`)
+	if rest, ok := strings.CutPrefix(ce.Hint, `Did you mean "`); ok {
+		if i := strings.Index(rest, `"`); i > 0 {
+			v = rest[:i]
+		}
 	}
-	if call == "cv.open" {
+	switch {
+	case call == "cv.open":
 		ce.Fix = fmt.Sprintf("cv.open(path, { %s: %q })", s.Name, v)
-	} else {
+	case s.Positional && !strings.Contains(s.Type, "|"):
+		ce.Fix = fmt.Sprintf("%s(%q)", call, v)
+	default:
 		ce.Fix = fmt.Sprintf("%s({ %s: %q })", call, s.Name, v)
 	}
 	return ce
