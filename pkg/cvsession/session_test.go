@@ -450,3 +450,11 @@ return n`: {"code: E_NOT_ARRAY", "for (const r of regions.items)"},
 	out := text(eval(t, app, sid, `const r = await img.detect.specks(); return { n: r.count, items: r.items.length, keys: Object.keys(r).join(",") }`))
 	mustContain(t, out, "n: 41", "items: 41", "keys: 'count,docH,docW,items,kind,scale,truncated'")
 }
+
+func TestRawTypeErrorsOnDataNameTheOp(t *testing.T) {
+	app, sid := newApp(t, cvsession.Options{Image: tiffPath})
+	out := text(eval(t, app, sid, "const s = await img.stats()\nreturn s.exposure(1)"))
+	mustContain(t, out, "code: TypeError", "s is plain data here, not a node", `"exposure" is an Image method`, "fix: img.exposure(…)")
+	out = text(eval(t, app, sid, "const o = { a: 1 }\nreturn o.detect.specks()"))
+	mustContain(t, out, "code: TypeError") // not a cv name: left alone
+}

@@ -403,6 +403,8 @@ func (s *state) errorNode(vm *goja.Runtime, evalErr error, trace cvmod.EvalTrace
 	return n
 }
 
+var noMember = regexp.MustCompile(`Object has no member '([A-Za-z_$][\w$]*)'`)
+
 // receiverOf finds the expression a member was called on in a source line
 // ("rows" in "return { first: rows.slice(0, 3) }").
 func receiverOf(src, member string) string {
@@ -429,6 +431,19 @@ func (s *state) explainDataMisuse(f *failure, trace cvmod.EvalTrace) {
 	}
 	if f.CV || f.Name != "TypeError" || src == "" {
 		return
+	}
+	if m := noMember.FindStringSubmatch(f.Message); m != nil {
+		if recv := receiverOf(src, m[1]); recv != "" {
+			for _, op := range s.eng.Registry().Find(m[1]) {
+				if op.On == graph.KindNone {
+					continue
+				}
+				on := map[graph.Kind]string{graph.KindImage: "img", graph.KindMask: "mask", graph.KindRegions: "regions", graph.KindValue: "value"}[op.On]
+				f.Hint = fmt.Sprintf("%s is plain data here, not a node, so it has no %s(). %q is %s method: call it on the node.", recv, m[1], m[1], graph.A(string(op.On)))
+				f.Fix = fmt.Sprintf("%s.%s(…)", on, m[1])
+				return
+			}
+		}
 	}
 	for _, c := range trace.Collisions {
 		recv := receiverOf(src, c.Name)
