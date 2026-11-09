@@ -87,19 +87,59 @@ func QuantizeScale(s float64) float64 {
 	return q
 }
 
-// evalRun is the state of one Evaluate call: memoized signatures and values.
+// evalRun is the state of one Evaluate call at one scale: memoized
+// signatures and values. Nodes with an AnalysisScale are evaluated in a
+// sibling run at that scale, which shares the param snapshot.
 type evalRun struct {
 	e      *Evaluator
 	scale  float64
 	params map[string]any
+	group  *runGroup
 	mu     sync.Mutex
 	sigs   map[NodeID]Signature
 	vals   map[Signature]Value
 }
 
+// runGroup holds the runs of one Evaluate call, one per scale.
+type runGroup struct {
+	mu   sync.Mutex
+	runs map[float64]*evalRun
+}
+
 func (e *Evaluator) newRun(scale float64) *evalRun {
-	return &evalRun{e: e, scale: QuantizeScale(scale), params: e.params.Snapshot(),
+	r := &evalRun{e: e, scale: QuantizeScale(scale), params: e.params.Snapshot(),
 		sigs: map[NodeID]Signature{}, vals: map[Signature]Value{}}
+	r.group = &runGroup{runs: map[float64]*evalRun{r.scale: r}}
+	return r
+}
+
+// at returns the run of the same evaluation at scale (quantized).
+func (r *evalRun) at(scale float64) *evalRun {
+	if scale == r.scale {
+		return r
+	}
+	r.group.mu.Lock()
+	defer r.group.mu.Unlock()
+	if s, ok := r.group.runs[scale]; ok {
+		return s
+	}
+	s := &evalRun{e: r.e, scale: scale, params: r.params, group: r.group,
+		sigs: map[NodeID]Signature{}, vals: map[Signature]Value{}}
+	r.group.runs[scale] = s
+	return s
+}
+
+// scaleFor is the scale node n is evaluated at in run r: its AnalysisScale
+// if it has one, else r's scale.
+func (r *evalRun) scaleFor(n *Node) float64 {
+	if n.Op.AnalysisScale == nil {
+		return r.scale
+	}
+	s := n.Op.AnalysisScale(n.Args)
+	if !(s > 0) {
+		return r.scale
+	}
+	return QuantizeScale(math.Min(s, 1))
 }
 
 // Evaluate computes node id at opt.Scale.
@@ -126,6 +166,13 @@ func (r *evalRun) sig(id NodeID) Signature {
 		return s
 	}
 	n := r.e.node(id)
+	if fs := r.scaleFor(n); fs != r.scale {
+		s = r.at(fs).sig(id)
+		r.mu.Lock()
+		r.sigs[id] = s
+		r.mu.Unlock()
+		return s
+	}
 	h := sha256.New()
 	h.Write(n.Hash[:])
 	_ = binary.Write(h, binary.LittleEndian, int64(math.Round(r.scale*1e4)))
@@ -149,6 +196,9 @@ func (r *evalRun) eval(ctx context.Context, id NodeID) (Value, error) {
 		return nil, ctxError(err)
 	}
 	n := r.e.node(id)
+	if fs := r.scaleFor(n); fs != r.scale {
+		return r.at(fs).eval(ctx, id)
+	}
 	if n.Op.NoCache {
 		return r.compute(ctx, n, Signature{})
 	}

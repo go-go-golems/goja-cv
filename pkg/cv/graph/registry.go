@@ -45,6 +45,7 @@ const (
 	Unitless Unit = iota
 	DocPx         // length or coordinate in original-image pixels; scaled per evaluation
 	Fraction      // 0..1 of width/height
+	DocPx2        // area in original-image pixels²; scaled by scale² per evaluation
 )
 
 func (u Unit) String() string {
@@ -55,6 +56,8 @@ func (u Unit) String() string {
 		return "fraction"
 	case Unitless:
 		return "unitless"
+	case DocPx2:
+		return "doc px²"
 	}
 	return "unknown"
 }
@@ -62,7 +65,10 @@ func (u Unit) String() string {
 // ArgSpec declares one argument of an op.
 //
 // Types: "number", "string", "bool", "enum:a,b,c", "number[]", "string[]",
-// "object" (with Options as the allowed keys) and "any".
+// "object" (with Options as the allowed keys), "any", and node kinds such as
+// "Mask", "Regions|Mask" or "Image[]": a kind-typed argument holds a node of
+// that kind (lifted into the node's inputs like a Value argument); Run reads
+// its evaluated value with Args.Node / Args.Nodes.
 type ArgSpec struct {
 	Name       string
 	Type       string
@@ -72,6 +78,8 @@ type ArgSpec struct {
 	Positional bool       // may be passed positionally (in declaration order)
 	Variadic   bool       // a positional "...[]" argument that takes all remaining positional values
 	Hidden     bool       // set by Go only (e.g. a source file stamp); not settable or listed
+	Static     bool       // must be a literal: a node (Value/Param) is rejected
+	Len        int        // for list types: the exact number of elements (4 for a box, 2 for a point)
 	Min, Max   *float64   // hard limits: violation is E_ARG_RANGE
 	Usual      [2]float64 // soft range (zero value = none): violation is a RANGE warning
 	Options    []ArgSpec  // for "object": the allowed keys (unknown keys are E_UNKNOWN_OPTION)
@@ -103,9 +111,17 @@ type OpDef struct {
 	Lazy     bool                                       // inputs are not evaluated before Run (explain)
 	DocSize  func(args Args, inputs []*Node) (int, int) // doc size of the result; default: first input's
 	Fields   []string                                   // documented fields of a Value result (help, hints)
-	Run      RunFunc
-	Doc      string
-	See      []string
+	// Validate checks bound args at build time (after defaults and types);
+	// lifted values are still InputRefs. Errors fail the call.
+	Validate func(args Args) error
+	// AnalysisScale, when set and > 0, is the scale at which the node's
+	// inputs are evaluated whatever the evaluation scale: the node's value is
+	// then the same at preview and export. Regions ops use it so that region
+	// ids and doc-px coordinates are identities, not artefacts of the scale.
+	AnalysisScale func(args Args) float64
+	Run           RunFunc
+	Doc           string
+	See           []string
 }
 
 // Key is the registry key "On:Name".

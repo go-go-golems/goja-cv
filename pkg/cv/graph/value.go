@@ -12,7 +12,8 @@ type Value interface {
 	Bytes() int64
 }
 
-// ImageValue is an evaluated Image (or, later, Mask) node.
+// ImageValue is an evaluated Image or Mask node. A Mask is a 1-channel
+// buffer with values in [0, 1] (NewMask).
 type ImageValue struct {
 	Buf        *buffer.Buffer
 	DocW, DocH int
@@ -24,6 +25,26 @@ var _ Value = &ImageValue{}
 // NewImage wraps a buffer as an Image value.
 func NewImage(b *buffer.Buffer, docW, docH int) *ImageValue {
 	return &ImageValue{Buf: b, DocW: docW, DocH: docH, kind: KindImage}
+}
+
+// NewMask wraps a 1-channel buffer with values in [0, 1] as a Mask value.
+func NewMask(b *buffer.Buffer, docW, docH int) *ImageValue {
+	if b.C != 1 {
+		panic(fmt.Sprintf("cv: NewMask with %d channels", b.C))
+	}
+	return &ImageValue{Buf: b, DocW: docW, DocH: docH, kind: KindMask}
+}
+
+// IsMask reports whether v is a Mask value.
+func (v *ImageValue) IsMask() bool { return v.kind == KindMask }
+
+// Coverage is the mean of a mask: the fraction of the image it selects.
+func (v *ImageValue) Coverage() float64 {
+	var s float64
+	for _, p := range v.Buf.Plane(0) {
+		s += float64(p)
+	}
+	return s / float64(max(1, v.Buf.N()))
 }
 
 func (v *ImageValue) Kind() Kind {
@@ -38,10 +59,16 @@ func (v *ImageValue) Bytes() int64 { return v.Buf.Bytes() + 64 }
 // Summary is what JavaScript receives for an awaited Image: pixels never
 // cross into the VM.
 func (v *ImageValue) Summary() map[string]any {
-	return map[string]any{
-		"kind": string(v.Kind()), "w": v.Buf.W, "h": v.Buf.H, "channels": v.Buf.C,
+	m := map[string]any{
+		"kind": string(v.Kind()), "w": v.Buf.W, "h": v.Buf.H,
 		"scale": v.Buf.Scale, "docW": v.DocW, "docH": v.DocH,
 	}
+	if v.IsMask() {
+		m["coverage"] = v.Coverage()
+	} else {
+		m["channels"] = v.Buf.C
+	}
+	return m
 }
 
 // DataValue is an evaluated Value or Param node: plain data made of float64,

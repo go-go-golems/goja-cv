@@ -98,6 +98,11 @@ func (b *Builder) Intern(op *OpDef, receiver NodeID, raw []any, trusted map[stri
 		inputs[i] = in
 	}
 	args := Args{op: op, vals: bd.args}
+	if op.Validate != nil {
+		if err := op.Validate(args); err != nil {
+			return nil, nil, err
+		}
+	}
 	h := hashNode(op, args, inputs)
 
 	b.mu.Lock()

@@ -221,6 +221,8 @@ func resultToJS(vm *goja.Runtime, v graph.Value) goja.Value {
 	switch x := v.(type) {
 	case *graph.ImageValue:
 		return toJS(vm, x.Summary())
+	case *graph.RegionsValue:
+		return toJS(vm, x.Summary(graph.SummaryLimit))
 	case *graph.DataValue:
 		return toJS(vm, x.Data)
 	}

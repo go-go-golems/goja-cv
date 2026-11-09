@@ -67,13 +67,64 @@ func (a Args) number(name string) float64 {
 	return v
 }
 
-// Number reads a unitless or fraction number. Reading a DocPx argument
-// through Number panics: lengths must go through Length.
+// Number reads a unitless or fraction number. Reading a DocPx (DocPx2)
+// argument through Number panics: lengths must go through Length (Area).
 func (a Args) Number(name string) float64 {
-	if s := a.mustSpec(name); s.Unit == DocPx {
-		panic(fmt.Sprintf("cv: %s.%s is a doc-px length; read it with Args.Length", a.op.Name, name))
+	if s := a.mustSpec(name); s.Unit == DocPx || s.Unit == DocPx2 {
+		panic(fmt.Sprintf("cv: %s.%s is a doc-px %s; read it with Args.Length or Args.Area", a.op.Name, name, s.Unit))
 	}
 	return a.number(name)
+}
+
+// Area reads a DocPx2 argument converted to buffer px² at scale.
+func (a Args) Area(name string, scale float64) float64 {
+	if s := a.mustSpec(name); s.Unit != DocPx2 {
+		panic(fmt.Sprintf("cv: %s.%s is not a doc-px² area", a.op.Name, name))
+	}
+	return a.number(name) * scale * scale
+}
+
+// Lengths reads a list of DocPx numbers (a box [x, y, w, h], a point [x,
+// y]) converted to buffer px at scale. For an "any" argument it returns nil
+// when the value is not a list.
+func (a Args) Lengths(name string, scale float64) []float64 {
+	if s := a.mustSpec(name); s.Unit != DocPx {
+		panic(fmt.Sprintf("cv: %s.%s is not a doc-px list", a.op.Name, name))
+	}
+	list, ok := a.vals[name].([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]float64, len(list))
+	for i, v := range list {
+		f, ok := v.(float64)
+		if !ok {
+			panic(fmt.Sprintf("cv: %s.%s[%d] is %T, not a resolved number", a.op.Name, name, i, v))
+		}
+		out[i] = f * scale
+	}
+	return out
+}
+
+// Node reads a kind-typed argument: the evaluated value of the node passed
+// for it (nil if the argument is absent).
+func (a Args) Node(name string) Value {
+	a.mustSpec(name)
+	v, _ := a.vals[name].(Value)
+	return v
+}
+
+// Nodes reads a list of kind-typed values ("Image[]").
+func (a Args) Nodes(name string) []Value {
+	a.mustSpec(name)
+	list, _ := a.vals[name].([]any)
+	out := make([]Value, 0, len(list))
+	for _, e := range list {
+		if v, ok := e.(Value); ok {
+			out = append(out, v)
+		}
+	}
+	return out
 }
 
 // Length reads a DocPx argument converted to buffer pixels at scale (buffer
@@ -111,9 +162,11 @@ func (a Args) Bool(name string) bool {
 	return b
 }
 
-// Numbers reads a "number[]" argument.
+// Numbers reads a unitless "number[]" argument.
 func (a Args) Numbers(name string) []float64 {
-	a.mustSpec(name)
+	if s := a.mustSpec(name); s.Unit == DocPx || s.Unit == DocPx2 {
+		panic(fmt.Sprintf("cv: %s.%s is a doc-px list; read it with Args.Lengths", a.op.Name, name))
+	}
 	list, _ := a.vals[name].([]any)
 	out := make([]float64, 0, len(list))
 	for _, v := range list {
@@ -235,7 +288,12 @@ func (b *binder) lift(id NodeID, where string, want string) (any, error) {
 	if !ok {
 		return nil, Errorf(EArgType, "%s: unknown node #%d", where, id)
 	}
-	if k != KindValue && k != KindParam {
+	if isKindType(want) {
+		if !accepts(Kind(want), k) {
+			return nil, Errorf(EWrongKind, "%s wants a %s node, got a %s node.", where, want, k).
+				WithHint(kindHint(Kind(want), k))
+		}
+	} else if k != KindValue && k != KindParam {
 		return nil, Errorf(EWrongKind, "%s wants a %s, got an %s node.", where, t2noun(want), k).
 			WithHint("Only Value and Param nodes can stand in for plain values; measure the image first.").
 			WithFix(fmt.Sprintf("e.g. %s: img.stats().p01", lastSegment(where)))
@@ -246,6 +304,33 @@ func (b *binder) lift(id NodeID, where string, want string) (any, error) {
 	b.liftIdx[id] = len(b.lifted)
 	b.lifted = append(b.lifted, id)
 	return InputRef{Index: b.base + len(b.lifted) - 1}, nil
+}
+
+// isKindType reports whether typ names node kinds ("Mask", "Regions|Mask").
+func isKindType(typ string) bool {
+	if typ == "" {
+		return false
+	}
+	for _, part := range strings.Split(typ, "|") {
+		switch Kind(part) {
+		case KindImage, KindMask, KindRegions:
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+func kindHint(want, got Kind) string {
+	switch {
+	case got == KindRegions && accepts(want, KindMask):
+		return "Convert regions with .toMask()."
+	case got == KindMask && accepts(want, KindRegions):
+		return "Convert a mask with .components()."
+	case got == KindImage && accepts(want, KindMask):
+		return "Make a mask from the image, e.g. img.mask.luminance({ above: 0.5 })."
+	}
+	return ""
 }
 
 func lastSegment(where string) string {
@@ -273,7 +358,17 @@ func (b *binder) check(s *ArgSpec, typ string, v any, where string) (any, error)
 		if b == nil {
 			return nil, Errorf(EInternal, "%s: unresolved node argument", where)
 		}
+		if s.Static {
+			return nil, Errorf(EArgType, "%s must be a literal value, not a node.", where).
+				WithHint("This argument decides how the node is evaluated; it cannot depend on a measurement or a param.")
+		}
 		return b.lift(na.ID, where, typ)
+	}
+	if isKindType(typ) {
+		if val, ok := v.(Value); ok && b == nil && accepts(Kind(typ), val.Kind()) {
+			return val, nil
+		}
+		return nil, Errorf(EWrongKind, "%s needs a %s node, got %s.", where, typ, describeRaw(v))
 	}
 	if _, ok := v.(FuncArg); ok {
 		return nil, Errorf(EArgType, "%s does not accept a function.", where).
@@ -330,6 +425,10 @@ func (b *binder) check(s *ArgSpec, typ string, v any, where string) (any, error)
 		list, ok := v.([]any)
 		if !ok {
 			return nil, typeErr(where, typ, v)
+		}
+		if s.Len > 0 && len(list) != s.Len {
+			return nil, Errorf(EArgType, "%s must be a list of %d values, got %d.", where, s.Len, len(list)).
+				WithHint(lenHint(s.Len))
 		}
 		elem := strings.TrimSuffix(typ, "[]")
 		out := make([]any, len(list))
@@ -430,6 +529,16 @@ func checkKeys(specs []ArgSpec, m map[string]any, what string, fix func(sug stri
 		}
 	}
 	return nil
+}
+
+func lenHint(n int) string {
+	switch n {
+	case 2:
+		return "A point is [x, y] in doc px."
+	case 4:
+		return "A box is [x, y, w, h] in doc px."
+	}
+	return ""
 }
 
 func typeErr(where, typ string, v any) *Error {
@@ -685,11 +794,10 @@ func containsRef(v any) bool {
 func substitute(v any, ins []Value) (any, error) {
 	switch x := v.(type) {
 	case InputRef:
-		d, ok := ins[x.Index].(*DataValue)
-		if !ok {
-			return nil, Errorf(EWrongKind, "lifted input %d is %s, not data", x.Index, ins[x.Index].Kind())
+		if d, ok := ins[x.Index].(*DataValue); ok {
+			return d.Data, nil
 		}
-		return d.Data, nil
+		return ins[x.Index], nil // kind-typed argument: the evaluated node value
 	case []any:
 		if !containsRef(x) {
 			return x, nil

@@ -126,6 +126,14 @@ func DescribeArgSpec(s *ArgSpec) string {
 		parts = append(parts, "length (doc px)")
 	case s.Type == "number" && s.Unit == Fraction:
 		parts = append(parts, "fraction of width/height")
+	case s.Type == "number" && s.Unit == DocPx2:
+		parts = append(parts, "area (doc px²)")
+	case s.Type == "number[]" && s.Unit == DocPx && s.Len == 4:
+		parts = append(parts, "box [x, y, w, h] (doc px)")
+	case s.Type == "number[]" && s.Unit == DocPx && s.Len == 2:
+		parts = append(parts, "point [x, y] (doc px)")
+	case isKindType(s.Type):
+		parts = append(parts, s.Type+" node")
 	case s.Type == "object":
 		var keys []string
 		for _, o := range s.Options {

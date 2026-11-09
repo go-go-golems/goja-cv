@@ -65,6 +65,13 @@ func describeArg(b *Builder, n *Node, s *ArgSpec, v any, scale float64) string {
 	case InputRef:
 		return fmt.Sprintf("#%d", n.Inputs[x.Index])
 	case float64:
+		if s.Unit == DocPx2 {
+			out := fmtNum(x) + " px²"
+			if scale < 1 {
+				out += fmt.Sprintf(" → %s at scale %s", fmtNum(x*scale*scale), fmtNum(scale))
+			}
+			return out
+		}
 		if s.Unit == DocPx {
 			out := fmtNum(x) + " px"
 			if scale < 1 {
@@ -96,12 +103,12 @@ func describeArg(b *Builder, n *Node, s *ArgSpec, v any, scale float64) string {
 // result kind, its size at scale, and whether it is cached at that scale.
 // It computes no pixels. Nodes reached twice are printed once.
 func (e *Evaluator) Explain(id NodeID, scale float64) []string {
-	run := e.newRun(scale)
+	root := e.newRun(scale)
 	type row struct{ left, right string }
 	var rows []row
 	seen := map[NodeID]bool{}
-	var walk func(id NodeID, depth int)
-	walk = func(id NodeID, depth int) {
+	var walk func(run *evalRun, id NodeID, depth int)
+	walk = func(run *evalRun, id NodeID, depth int) {
 		n := e.node(id)
 		indent := strings.Repeat("  ", depth)
 		if seen[id] {
@@ -109,6 +116,8 @@ func (e *Evaluator) Explain(id NodeID, scale float64) []string {
 			return
 		}
 		seen[id] = true
+		parentScale := run.scale
+		run = run.at(run.scaleFor(n))
 		right := string(n.Kind)
 		if n.Kind == KindImage || n.Kind == KindMask {
 			w, h := buffer.ScaledSize(n.DocW, n.DocH, run.scale)
@@ -117,12 +126,15 @@ func (e *Evaluator) Explain(id NodeID, scale float64) []string {
 		if !n.Op.NoCache && e.cache.Contains(run.sig(id)) {
 			right += "  cached"
 		}
+		if run.scale != parentScale {
+			right += fmt.Sprintf("  (analysed at scale %s)", fmtNum(run.scale))
+		}
 		rows = append(rows, row{fmt.Sprintf("%s#%d %s", indent, id, Describe(e.b, n, run.scale, run.params)), right})
 		for _, in := range n.Inputs {
-			walk(in, depth+1)
+			walk(run, in, depth+1)
 		}
 	}
-	walk(id, 0)
+	walk(root, id, 0)
 	width := 0
 	for _, r := range rows {
 		width = max(width, len([]rune(r.left)))
