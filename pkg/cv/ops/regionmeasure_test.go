@@ -106,6 +106,13 @@ func TestRegionMeasureErrors(t *testing.T) {
 	if ce := callErr(t, e, "measure", specks.ID, graph.NodeArg{ID: img.ID}, map[string]any{"stats": []any{"maximum"}}); ce.Code != graph.EArgType || ce.Hint != `Did you mean "max"?` {
 		t.Fatalf("stats maximum: %+v", ce)
 	}
+	if ce := callErr(t, e, "measure", specks.ID, graph.NodeArg{ID: img.ID}, map[string]any{"ring": true, "ringRadii": []any{4.0, 10.0}}); ce.Code != graph.EUnknownOption || !strings.Contains(ce.Fix, "ring: [6, 12]") {
+		t.Fatalf("ringRadii on regions.measure: %+v", ce)
+	}
+	m0 := call(t, e, "mask.luminance", img.ID, map[string]any{"above": 0.75})
+	if ce := callErr(t, e, "components", m0.ID, map[string]any{"maxArea": 200.0}); ce.Code != graph.EUnknownOption || !strings.Contains(ce.Fix, "where({ area: { lte: 200 } })") {
+		t.Fatalf("components maxArea: %+v", ce)
+	}
 	crop := call(t, e, "crop", img.ID, []any{10.0, 10.0, 100.0, 100.0})
 	if ce := callErr(t, e, "measure", specks.ID, graph.NodeArg{ID: crop.ID}, map[string]any{"ring": true}); ce.Code != graph.EFrame {
 		t.Fatalf("another frame: %+v", ce)

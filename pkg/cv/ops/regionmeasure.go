@@ -307,7 +307,11 @@ func regionMeasureOp() graph.OpDef {
 			{Name: "channels", Type: "bool", Optional: true, Static: true,
 				Doc: "true: the stats per channel too (meanR, maxG, …); false: no channel steps in the ring fields"},
 			{Name: "ring", Type: "bool|number[]", Unit: graph.DocPx, Optional: true, Static: true,
-				Doc: "true or [r1, r2] (doc px): the core/ring measure at each centroid (coreMean, ringMean, step, spread, snr, stepR/G/B, stepChroma, ringCoverage)"},
+				Doc: "true or [r1, r2] (doc px): the core/ring measure at each centroid (coreMean, ringMean, step, spread, snr, stepR/G/B, stepChroma, ringCoverage)",
+				Redirects: map[string]graph.Redirect{
+					"ringRadii": {Hint: "regions.measure takes the ring radii as ring: [r1, r2] (img.measure calls them ringRadii).", Fix: "regions.measure(img, { ring: [6, 12], coreRadius: 3 })"},
+					"radius":    {Hint: "The core radius is coreRadius; the ring is ring: [r1, r2].", Fix: "regions.measure(img, { ring: true, coreRadius: 3 })"},
+				}},
 			{Name: "coreRadius", Type: "number", Unit: graph.DocPx, Optional: true, Static: true, Min: graph.F(0.5), Max: graph.F(200),
 				Doc: "core radius for ring (doc px); default per region clamp(round(√(area / π)), 2, 8) + 0.5"},
 			{Name: "prefix", Type: "string", Optional: true, Static: true, Doc: "prefix of the new field names: dog → dogMaxL, dogStep"},

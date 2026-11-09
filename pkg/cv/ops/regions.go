@@ -235,7 +235,9 @@ func regionOps() []graph.OpDef {
 		{
 			Name: "components", On: graph.KindMask, Returns: graph.KindRegions, Global: true,
 			Args: []graph.ArgSpec{
-				{Name: "minArea", Type: "number", Unit: graph.DocPx2, Default: 1.0, Min: graph.F(0), Doc: "smallest region kept, in doc px²"},
+				{Name: "minArea", Type: "number", Unit: graph.DocPx2, Default: 1.0, Min: graph.F(0), Doc: "smallest region kept, in doc px²",
+					Redirects: map[string]graph.Redirect{"maxArea": {Hint: "components keeps every region from minArea up; drop large ones with where.",
+						Fix: "mask.components({ minArea: 4 }).where({ area: { lte: 200 } })"}}},
 				{Name: "threshold", Type: "number", Default: 0.5, Min: graph.F(0), Max: graph.F(1), Doc: "mask values above this are selected"},
 				analysisScaleArg,
 			},
