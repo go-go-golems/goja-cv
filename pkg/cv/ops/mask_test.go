@@ -3,8 +3,10 @@ package ops
 import (
 	"context"
 	"math"
+	"strings"
 	"testing"
 
+	"github.com/go-go-golems/goja-cv/pkg/cv/buffer"
 	"github.com/go-go-golems/goja-cv/pkg/cv/graph"
 )
 
@@ -72,12 +74,51 @@ func TestMaskArgumentErrors(t *testing.T) {
 		}
 	}
 	m := call(t, e, "mask.box", img.ID, []any{0, 0, 10, 10})
-	_, _, err := e.Call("overlay", m.ID, []any{graph.NodeArg{ID: img.ID}, map[string]any{"color": "purple"}})
+	_, _, err := e.Call("overlay", m.ID, []any{graph.NodeArg{ID: img.ID}, map[string]any{"color": "purpleish"}})
 	if ce, ok := graph.AsError(err); !ok || ce.Code != graph.EArgType || len(ce.Valid) == 0 {
 		t.Fatalf("bad colour: %v", err)
 	}
 	_, _, err = e.Call("and", m.ID, []any{graph.NodeArg{ID: img.ID}})
 	if ce, ok := graph.AsError(err); !ok || ce.Code != graph.EWrongKind {
 		t.Fatalf("image as mask input: %v", err)
+	}
+}
+
+func TestParseColorAcceptsCSSNamesAndHex(t *testing.T) {
+	lin := func(v float64) float32 { return buffer.ToLinear(float32(v)) }
+	for in, want := range map[any][3]float64{
+		"lime":          {0, 1, 0},
+		"Lime":          {0, 1, 0},
+		"rebeccapurple": {0x66 / 255.0, 0x33 / 255.0, 0x99 / 255.0},
+		"#ff8000":       {1, 0x80 / 255.0, 0},
+		"#F80":          {1, 0x88 / 255.0, 0},
+		"red":           {1, 0.1, 0.1}, // the overlay-tuned basics are kept
+		"grey":          {0x80 / 255.0, 0x80 / 255.0, 0x80 / 255.0},
+		"gray":          {0x80 / 255.0, 0x80 / 255.0, 0x80 / 255.0},
+	} {
+		got, err := parseColor(in, "color")
+		if err != nil {
+			t.Fatalf("%v: %v", in, err)
+		}
+		for i := range got {
+			if math.Abs(float64(got[i]-lin(want[i]))) > 1e-6 {
+				t.Fatalf("%v: %v, want perceptual %v", in, got, want)
+			}
+		}
+	}
+	got, err := parseColor([]any{0.0, 1.0, 0.0}, "color")
+	if err != nil || got[1] != 1 {
+		t.Fatalf("[0, 1, 0]: %v %v", got, err)
+	}
+	for _, bad := range []string{"#12", "#ggg", "limey", "chartreuse-ish"} {
+		_, err := parseColor(bad, "color")
+		ce, ok := graph.AsError(err)
+		if !ok || ce.Code != graph.EArgType || ce.Fix == "" {
+			t.Fatalf("%q: %v", bad, err)
+		}
+	}
+	_, err = parseColor("limey", "color")
+	if ce, _ := graph.AsError(err); !strings.Contains(ce.Hint, `"lime"`) {
+		t.Fatalf("limey hint: %+v", ce)
 	}
 }

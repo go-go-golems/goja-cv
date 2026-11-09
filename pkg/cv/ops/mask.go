@@ -4,6 +4,9 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"sort"
+	"strconv"
+	"strings"
 
 	"github.com/go-go-golems/goja-cv/pkg/cv/buffer"
 	"github.com/go-go-golems/goja-cv/pkg/cv/graph"
@@ -31,34 +34,73 @@ var namedColors = map[string][3]float64{
 	"cyan": {0.1, 0.9, 1}, "magenta": {1, 0.2, 0.9}, "orange": {1, 0.55, 0.1}, "white": {1, 1, 1}, "black": {0, 0, 0},
 }
 
+// colorNames lists the names suggested in errors: the overlay-tuned basics
+// (any CSS colour name and #rgb / #rrggbb also work).
 func colorNames() []string {
-	return []string{"red", "green", "blue", "yellow", "cyan", "magenta", "orange", "white", "black"}
+	return []string{"red", "green", "blue", "yellow", "cyan", "magenta", "orange", "white", "black", "lime", "#rrggbb"}
 }
 
-// parseColor reads a colour name or a perceptual [r, g, b] in [0, 1] and
-// returns it in linear light.
+const colorFix = `color: "red"   // or a CSS name ("lime"), "#ff8800", or [1, 0, 0] (perceptual r, g, b)`
+
+// lookupColor resolves a colour name (the overlay-tuned basics first, then
+// CSS names, case-insensitive) or #rgb / #rrggbb to perceptual r, g, b.
+func lookupColor(s string) ([3]float64, bool) {
+	k := strings.ToLower(strings.TrimSpace(s))
+	if c, ok := namedColors[k]; ok {
+		return c, true
+	}
+	if v, ok := cssColors[k]; ok {
+		return [3]float64{float64(v>>16&0xff) / 255, float64(v>>8&0xff) / 255, float64(v&0xff) / 255}, true
+	}
+	if strings.HasPrefix(k, "#") {
+		h := k[1:]
+		if len(h) == 3 {
+			h = string([]byte{h[0], h[0], h[1], h[1], h[2], h[2]})
+		}
+		if len(h) == 6 {
+			if v, err := strconv.ParseUint(h, 16, 32); err == nil {
+				return [3]float64{float64(v>>16&0xff) / 255, float64(v>>8&0xff) / 255, float64(v&0xff) / 255}, true
+			}
+		}
+	}
+	return [3]float64{}, false
+}
+
+// parseColor reads a colour name, #rgb / #rrggbb, or a perceptual [r, g, b]
+// in [0, 1] and returns it in linear light.
 func parseColor(v any, where string) ([3]float32, error) {
 	var p [3]float64
 	switch x := v.(type) {
 	case string:
-		c, ok := namedColors[x]
+		c, ok := lookupColor(x)
 		if !ok {
-			return [3]float32{}, graph.Errorf(graph.EArgType, "%s = %q is not a colour name.", where, x).WithValid(colorNames()).WithFix(`color: "red"   // or [1, 0, 0] (perceptual r, g, b)`)
+			e := graph.Errorf(graph.EArgType, "%s = %q is not a colour.", where, x).WithValid(colorNames()).WithFix(colorFix)
+			all := make([]string, 0, len(cssColors))
+			for n := range cssColors {
+				all = append(all, n)
+			}
+			sort.Strings(all)
+			if sug := graph.Closest(strings.ToLower(x), all); sug != "" {
+				e.Hint = fmt.Sprintf("Did you mean %q? Any CSS colour name, #rgb or #rrggbb works.", sug)
+			} else {
+				e.Hint = "Use a CSS colour name, #rgb, #rrggbb or [r, g, b] in [0, 1]."
+			}
+			return [3]float32{}, e
 		}
 		p = c
 	case []any:
 		if len(x) != 3 {
-			return [3]float32{}, graph.Errorf(graph.EArgType, "%s must be a colour name or [r, g, b] in [0, 1].", where)
+			return [3]float32{}, graph.Errorf(graph.EArgType, "%s must be a colour name, #rrggbb or [r, g, b] in [0, 1].", where).WithFix(colorFix)
 		}
 		for i, e := range x {
 			f, ok := e.(float64)
 			if !ok || f < 0 || f > 1 {
-				return [3]float32{}, graph.Errorf(graph.EArgType, "%s must be a colour name or [r, g, b] in [0, 1].", where)
+				return [3]float32{}, graph.Errorf(graph.EArgType, "%s must be a colour name, #rrggbb or [r, g, b] in [0, 1].", where).WithFix(colorFix)
 			}
 			p[i] = f
 		}
 	default:
-		return [3]float32{}, graph.Errorf(graph.EArgType, "%s must be a colour name or [r, g, b] in [0, 1].", where).WithValid(colorNames()).WithFix(`color: "red"   // or [1, 0, 0]`)
+		return [3]float32{}, graph.Errorf(graph.EArgType, "%s must be a colour name, #rrggbb or [r, g, b] in [0, 1].", where).WithValid(colorNames()).WithFix(colorFix)
 	}
 	return [3]float32{buffer.ToLinear(float32(p[0])), buffer.ToLinear(float32(p[1])), buffer.ToLinear(float32(p[2]))}, nil
 }

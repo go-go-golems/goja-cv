@@ -21,7 +21,7 @@ const sel = img.mask.luminance({ above: 0.45 })
   .and(img.mask.gradient({ from: "top", to: 0.6 }))
   .minus(img.mask.box([0, 0, 40, 40]))
   .feather(6)
-return { coverage: await sel.coverage(), look: sel.overlay(img).look("selection") }
+return { coverage: await sel.coverage(), look: sel.overlay(img, { color: "lime" }).look("selection") }
 ```
 
 ## Regions
@@ -52,4 +52,4 @@ return { masked: await m.coverage(), blobs: await blobs.count() }
 
 ## Looking at selections
 
-`img.overlay(regions | mask, { color, alpha, labels: "id" })` draws them over the image (`regions.overlay(img)` and `mask.overlay(img)` work too). A Regions node itself has no look: return `img.overlay(regions).look()`.
+`img.overlay(regions | mask, { color, alpha, labels: "id" })` draws them over the image (colours: any CSS name such as `"lime"`, `"#ff8800"`, `"#f80"` or perceptual `[r, g, b]`) (`regions.overlay(img)` and `mask.overlay(img)` work too). A Regions node itself has no look: return `img.overlay(regions).look()`.
