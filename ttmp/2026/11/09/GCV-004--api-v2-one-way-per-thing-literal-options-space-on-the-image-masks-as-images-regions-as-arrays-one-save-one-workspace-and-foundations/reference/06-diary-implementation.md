@@ -451,3 +451,113 @@ Goldens: none moved (checked without `-update`). Real data: identical to Step 1.
 
 `git diff --stat ceb1ec4 01e5607 -- pkg cmd internal README.md`: 85 files changed, 658 insertions(+), 1550
 deletions(-).
+
+## Step 4: Phase 2 — one way to evaluate, show and explain
+
+Phase 2 leaves one spelling for each: `await` evaluates (data at scale 1; an awaited Image is its static summary
+and computes nothing), `look()` shows (every look created in an eval is delivered, up to four, and a `LOOKS` warning
+names the others), and `cv.explain(node)` describes. `cv.evaluate`, the preview scale, `show`, `cv.describe`, the
+`explain` op, `cv.isNode`, `cv.warnings`, `cv.kinds` and the `doc` stub are gone.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 1)
+
+**Assistant interpretation:** Implement guide Phase 2 (§6.5, §7.7, D8, D9, D18; §9 item 7) with docs `01`, `03`,
+`06` and the instructions. The v1 patch is not on `origin/main` yet, so the `LOOKS` warning is this branch's own.
+
+**Inferred user intent:** Remove the second ways of doing things that confused agents (85 `cv.evaluate` calls, 87
+`show` calls, looks lost silently) and make data exact.
+
+**Commit (code):** `e73cfd1` — "GCV-004 Phase 2: one way to evaluate, show and explain"
+
+### What I did
+
+- Graph: `EngineOptions.PreviewLong` and `Engine.PreviewScale` deleted; `Engine.Evaluate` with scale 0 means 1;
+  `Engine.Explain(id)` renders at scale 1; `OpDef.NoCache`, `graph.Kinds` (replaced by `Registry.Receivers()` and a
+  private display order) and `FuncDef.Global` deleted; `graph.ImageSummary(n)` builds the awaited summary from
+  statics and source metadata (`ImageValue.Summary` deleted).
+- Ops: `meta.go` (the per-kind `explain` op) deleted; `funcs.go` loses `evaluate`, `describe`, `isNode`, `warnings`,
+  `show` and gains the bespoke `explain`; `look`'s doc says looks are queued.
+- Binding: `__evaluate(id)` resolves Image/Mask promises on the owner goroutine from `ImageSummary`; Values and
+  Regions are evaluated at scale 1 (`scaleArg` gone). `__explain` replaces `__describe` (adds `graph`, `encoding`,
+  `space`; marks the node used). `__kinds` and `__warnings` deleted. Looks are queued in the eval tracker
+  (`QueuedLook` with the call site; `EvalTrace.Looks`); a look created while no eval is tracked goes to
+  `binding.late` and comes back as `EvalTrace.Late` at the next `EndEval`. `look.Look` gains `Key()` (node + options)
+  and `AgentLabel()`.
+- Session: `collect(fromValue, trace)` orders returned looks first, then creation order; folds equal keys (the
+  duplicate gets the delivered look's number); keeps `MaxLooks`; returns the `LOOKS` warnings
+  (`LOOKS line 4: 4 of 6 looks delivered; not delivered: line 4 look("4"), line 5 look("5"). Return one cv.sheet of
+  the crops, or look in two evals.`) and the late-look warning. `state.prelude` (an `atomic.Bool` set by
+  `runPreludes`) makes `collect` discard everything. `show`, `native.queue`, `state.shows`, the `shown:` block, the
+  `doc` proxy, `native.noDoc`, `ENoDocument` deleted; `init.js` no longer uses `cv.isNode`; `show`, `doc` and `P`
+  left the reserved-name list. UNUSED_NODE says "look at it" instead of "show() it".
+- xgoja: config `previewLong` and its schema entry deleted.
+- Docs: `06-looks.md` has a "Delivery" section (with a `looks=4 warns=LOOKS` block) instead of `show()`; `02`'s scale
+  table (await = scale 1, an Image = its summary); `03`'s evaluation list and `cv.explain`; `01`'s globals; `08` (no
+  `E_NO_DOCUMENT`); every `.explain()` became `cv.explain(x).graph` and every `show(...)` a `.look(...)`; guidebook
+  `02`, `04`, `08`, `09`, `10`; README; `cmd/goja-cv/root.go`'s help; MCP `Instructions` and `EvalToolDescription`.
+- Tests: `TestAwaitIsScaleOneAndImagesAreStatic` (a 2000 × 30 TIFF: `await` of an Image chain leaves
+  `TotalRuns() == 0` and its summary is the statics; `stats().w == 2000` at scale 1), `TestPart2Section3…` checks
+  every `cv.explain` field, `TestLookQueue` (unreturned look delivered, order, equal looks once, six looks → four
+  images and the `LOOKS` line, prelude looks discarded, a late look named by the next eval), `cv.evaluate` is an
+  unknown `cv` member (`TestUnknownNamesOnCv`), `TestLookBeforeThrowStillDeliversTheImage`.
+
+### Why
+
+- D8/D9/D18: agents asked for `"full"` in 77 of 79 `cv.evaluate` calls; bare `x.look()` statements were dropped
+  silently in v1; an evaluating `await img` would compute a 53-megapixel scan to report its size.
+
+### What worked
+
+- Gate green; goldens unchanged; real-data numbers identical.
+
+### What didn't work
+
+- The first test run: `docs_test.go:91: looks.md line 66: want warning LOOKS` — the docs test wants warnings in the
+  `CODE line N:` form, so the `LOOKS` warning is tagged with the line of the first look it drops.
+- `TestDocsCodeBlocksRun/nodes-and-evaluation: unexpected warnings: UNUSED_NODE … const b = a.gaussian(2)`:
+  `cv.explain(b)` did not count as using `b`; `__explain` now marks the node used.
+- `looks is 6476 characters; keep topics short`: the Delivery section pushed the topic over 6000; I tightened the
+  topic's prose (6000 − 1 characters of margin is not much; the Phase 8 sweep may want to split it).
+- The late-look test: `setTimeout` is not a session global (`ReferenceError: setTimeout is not defined`), and
+  `img.stats().then(f)` never ran `f`: the evaluation's context is cancelled when the eval ends, so the promise
+  rejects. `.then(f, f)` runs after the eval returned and creates the late look.
+- `TestSessionB`'s heal-run count: `await scan.heal(keep0)` no longer computes anything (an Image await), so the test
+  measures the heal instead.
+
+### What I learned
+
+- Promise continuations from an eval run on the owner goroutine between evals (the runtime's event loop keeps
+  running), so a late look is recorded while no eval is tracked; the tracker's `active` flag is enough to tell.
+
+### What was tricky to build
+
+- Duplicate looks: two equal looks are one delivered image, but the returned one must still show a numbered
+  placeholder; `collect` gives the duplicate the delivered look's number (`AssignNumber`) instead of rendering it.
+- Awaited summaries without a channel count: the guide's summary has `channels`, but the static arrives in Phase 4.
+  Until then the summary has no `channels` (an opened file's `fileChannels` stays); tests that read `channels` from an
+  awaited image were changed to `fileChannels` or other fields.
+
+### What warrants a second pair of eyes
+
+- `collect`'s order and budget with data items (still counted separately until Phase 6) and the alias numbering.
+- The late-look warning's wording: it cannot name a line (the site belongs to the previous eval's source).
+
+### What should be done in the future
+
+- Phase 4: add `channels` to `ImageSummary` and `cv.explain` once `Node.Channels` exists.
+- When the v1 patch lands on `main`, its `LOOKS` warning and this one must be reconciled in the merge (the guide says
+  Phase 2 reuses the v1 code and message).
+
+### Code review instructions
+
+- Start with `pkg/cvsession/processor.go` (`collect`, `lookName`), `pkg/gojamod/cv/evaltrack.go` (`noteLook`,
+  `EndEval`), `pkg/gojamod/cv/binding.go` (`evaluate`, `explain`), `pkg/cv/graph/value.go` (`ImageSummary`).
+- Validate: `scripts/04-gate.sh`; `go test ./pkg/cvsession -run TestLookQueue -count=3`.
+
+### Technical details
+
+Goldens: none moved. Real data: identical.
+
+`git diff --stat 01e5607 e73cfd1 -- pkg cmd internal README.md`: 58 files changed, 478 insertions(+), 509 deletions(-).

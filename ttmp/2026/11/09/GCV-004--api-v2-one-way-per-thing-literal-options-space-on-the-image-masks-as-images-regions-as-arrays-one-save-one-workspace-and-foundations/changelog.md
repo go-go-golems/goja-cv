@@ -46,3 +46,8 @@ Phase 0c: Args redesign (commit ceb1ec4)
 
 Phase 1: literal options (commit 01e5607)
 
+
+## 2026-11-09
+
+Phase 2: await, look, cv.explain (commit e73cfd1)
+

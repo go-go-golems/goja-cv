@@ -2790,3 +2790,12 @@ order found; the phase is in brackets.
     of a DoG ≈ 0.045 in the measuring recipe) are now literals and would raise RANGE.
 14. [1] `fields.go` keeps `__removedFields`, `__noField` and `__itemProto` (and `E_NO_FIELD` stays) until Phase 5,
     which deletes the item prototype; Phase 1 deleted `__fieldNames` only.
+15. [2] The awaited Image summary and `cv.explain` have no `channels` until Phase 4, when `Node.Channels` exists
+    (an opened file's `fileChannels` is there from the start); a mask's summary no longer has `coverage` (it was
+    evaluated; `await m.coverage()` gives it).
+16. [2] The `LOOKS` warning is tagged with the line of the first look it drops (`LOOKS line 4: 4 of 6 looks
+    delivered; not delivered: line 4 look("4"), line 5 look("5"). …`), so every warning keeps the `CODE line N:`
+    form; the v1 patch's warning was not on `main` when Phase 2 was done, so this is the branch's own code and text.
+17. [2] `graph.Kinds` is gone; `Registry.Receivers()` lists the receiver kinds that have methods (help, the
+    reference, `goja-cv ops`). With the Value ops and the `explain` op deleted, Value has no methods, so help lists
+    Image, Mask and Regions.
