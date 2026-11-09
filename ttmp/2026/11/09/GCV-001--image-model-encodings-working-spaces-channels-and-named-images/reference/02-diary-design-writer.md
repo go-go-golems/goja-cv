@@ -16,6 +16,8 @@ RelatedFiles:
       Note: GCV-002 guide (Step 2)
     - Path: ttmp/2026/11/09/GCV-003--measurement-and-data-out-sampling-profiles-region-measures-schema-export/design-doc/01-design-and-implementation-guide.md
       Note: GCV-003 guide (Step 3)
+    - Path: ttmp/2026/11/09/GCV-001--image-model-encodings-working-spaces-channels-and-named-images/reference/05-foundations-goja-cv-for-the-gcv-guides.md
+      Note: shared foundations chapter (Step 4)
 ExternalSources:
     - /Users/manuel/code/wesen/2026-11-07--dust-scanning/ttmp/2026/11/07/DUST-002--film-dust-detector-model-exploration/reference/07-goja-cv-handover-issues.md
 Summary: "Diary of writing the three design-and-implementation guides GCV-001..003 (one step per guide and per revision round)."
@@ -315,3 +317,226 @@ aliases or caps disguised as API.
 
 - `docmgr task add --ticket GCV-003 --text "…"` (13 tasks), `docmgr task add --ticket GCV-001 --text "Phase 2:
   TIFF and PNG decoders read goja-cv ImageDescription …"`, `docmgr doctor --ticket GCV-00N --stale-after 30`.
+
+## Step 4: Revision round — shared foundations and GCV-001 revision 2
+
+The review read (commit 07e569e) found 4 P1, 22 P2 and 21 P3 issues in GCV-001, and the three reviewers converged on
+missing foundations. I wrote one shared foundations chapter (`reference/05-foundations-goja-cv-for-the-gcv-guides.md`,
+§F1–§F12) that all three guides cite, with one pixel and scale vocabulary and the render rule worked through on a
+64 px × 8 crop, and then rewrote GCV-001 as revision 2 with a revision history and a disposition table appended to the
+findings.
+
+The two decisions that changed the design most: luminance-based ops now get their grey plane from linear light through
+a graph-level rule (`OpDef.Gray`), because "encoded = perceptual" does not hold for luminance (pure red 0.498 vs 0.213);
+and `perceptual` is dropped, leaving two spaces.
+
+### Prompt Context
+
+**User prompt (verbatim):** Revise the guides from the review-read findings (all P1/P2, P3 fix or decline).
+
+**Assistant interpretation:** Fix every P1 and P2 of the three findings documents, fix or decline each P3 with a
+reason, apply the cross-cutting fixes once and consistently, re-verify any code claim touched, add revision histories
+and disposition tables, update tasks, run doctor, commit per guide.
+
+**Inferred user intent:** Make the guides implementable by an intern without outside context and without
+contradictions between the three tickets.
+
+**Commit (docs):** 48e3a50 — "GCV-001: revision 2 from the review read (…)"
+
+### What I did
+
+- Read the three findings documents in full and re-verified the code they cite: `node.go:80-246` (Intern,
+  internNode, Substitute, hashNode), `kernels/mask.go:148-200` (BoxMask exact, EllipseMask 4 × 4), `explain.go:53-85`,
+  `regions.go:37` and `:67` (both `NewRegions` and `NewRegion` exist), `help.go:279-312` (UnknownMember),
+  `processor.go:420-470`, the tile's first 32 bytes with `xxd`, and the gold annotation files under `~/dustds/gold`.
+- Recomputed numbers with `python3 -I`: decode-direction density steps (0.0096 vs 0.0615), luminance vs luma (0.498 vs
+  0.213; 0.512 vs 0.471), density transmission (50 %, 25 %).
+- Created the foundations doc with `docmgr doc add --ticket GCV-001 --doc-type reference --title "Foundations - goja-cv
+  for the GCV guides"`.
+- Rewrote GCV-001: two spaces; §3.1 "linear in Q"; §3.4 two-question rule; §3.5 luminance; masks with no encoding;
+  absolute coordinates with integer origins; `Convert(from, to)` with exact functions and no `Buffer.Space`; values
+  stamped by the evaluator; `DocFrame`, `Result` as a function, `Gray`, `Internal`; statics in `internNode`;
+  placeholders copy statics; `box`/`point` types; TIFF primer with own decompression; `Info.Origin` and PNG `tEXt`;
+  macro nodes and `CallResult`; `as` only in the session wrapper; unnamed opens listed; phases reordered with a golden
+  harness in Phase 0; five new decision records; key points and a closing.
+- Appended the disposition table to `03-review-read-findings.md`; removed and re-added the 19 tasks for the new phases.
+
+### Why
+
+- A shared chapter removes three partial glossaries and the dependency on another repository's guide.
+- Computing statics inside `internNode` is the only way every creation path (Intern, Substitute, macros) agrees
+  without mutating shared nodes.
+
+### What worked
+
+- The rule "luminance from linear light, expressed in the op's space" keeps sRGB behaviour exact while keeping
+  kernels space-agnostic, so the golden diff after Phase 3 can be restricted to `levels` and mask looks.
+
+### What didn't work
+
+- `Write` refused to overwrite the GCV-002 guide because it had not been read in this context
+  (`File has not been read yet. Read it first before writing to it.`); I read it and re-sent the content.
+
+### What I learned
+
+- One review claim was wrong against the code: `RegionsValue.NewRegion` exists (`regions.go:67`); the reviewer had
+  found only `NewRegions`. The disposition table says so.
+
+### What was tricky to build
+
+- Phase order: frames must precede spaces (spaces need frames on placeholders) and decoders (windows need origins),
+  while the display change must land in the same phase as the kernel port, so the goldens move exactly once.
+
+### What warrants a second pair of eyes
+
+- The `Gray` rule's interaction with `histogram` (only channel `"L"` uses it) and with gray inputs.
+- Whether dropping `perceptual` loses a use case the colleague has.
+
+### What should be done in the future
+
+- N/A
+
+### Code review instructions
+
+- Read Foundations §F5 and GCV-001 §3.5, §7.5 and §12; then the disposition table.
+
+### Technical details
+
+- `docmgr task remove --ticket GCV-001 --id …` for each old task, then `docmgr task add` for 19 new ones;
+  `docmgr doctor --ticket GCV-001 --stale-after 30` passed.
+
+## Step 5: GCV-002 revision 2
+
+GCV-002 had 6 P1, 16 P2 and 15 P3 findings. The central fix is a third op class: crop is **geometric** (exact at any
+scale), so a decoration before a crop draws at the render scale, and render windows keep every buffer at look size.
+Sheets became layout ops at scale 1 with a static `max`, labels inside cells, and defaults that fit 36 cells
+(6 · 256 + 5 · 6 = 1566 px); captions name macros through GCV-001's macro nodes instead of a mutable `Node.Macro`.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 4)
+
+**Assistant interpretation:** Same as Step 4, for GCV-002.
+
+**Inferred user intent:** Same as Step 4.
+
+**Commit (docs):** a31654a — "GCV-002: revision 2 from the review read (…)"
+
+### What I did
+
+- Rewrote the guide around Foundations §F5; added §3.1 "Nodes and look options"; σ semantics and the DoG worked example
+  (speck/grain ratio 5.6 vs 9); `Engine.Render` with `RenderOptions{Scale, Interp, Window}` and a dispatch by class and
+  kind; `DECORATION_FIRST`; crop as geometric with an integer frame; `Image|number` operands; `levels.auto` with
+  Optional black/white and no Identity short-circuit; `Rasterize(target Frame, scale)`; picture frames for sheets and
+  compare layouts; `compare` diff removed; `FuncDef` and the "ops build nodes, functions do things now" record;
+  `EvalCtx.Warn`; `ArgSpec.Redirects`; acceptance table per issue; gold points read directly from `~/dustds/gold`.
+- Appended the disposition table; replaced the 15 tasks with 14 for the new phases; doctor passed.
+
+### Why
+
+- Without a geometric class, `img.annotate(marks).crop(box)` at zoom 8 would compute the annotation at scale 1 and
+  upsample 8 px outlines, the exact failure the ticket set out to fix.
+
+### What worked
+
+- The gold annotation files (`{tile_id}.final.json` or `.p1.json`) already have a simple schema, so no export script
+  is needed for the ranking test.
+
+### What didn't work
+
+- N/A
+
+### What I learned
+
+- In sessions `cv` is guarded by a Proxy whose unknown-member path (`UnknownMember`) already suggests `img.view(…)`
+  for Image ops; it does not consult the op synonym table, which is the actual gap.
+
+### What was tricky to build
+
+- Render windows: a geometric op at scale 8 would otherwise request an 8× upsample of the whole input (8192² for a 1024
+  tile). Carrying the window lets pixel ops be computed whole at scale 1 (cached) and upsampled only inside the window.
+
+### What warrants a second pair of eyes
+
+- The render dispatch pseudocode (§7.2), especially macro nodes and memo keys.
+- The decision to drop `compare({ mode: "diff" })` entirely.
+
+### What should be done in the future
+
+- Windowed evaluation of pixel ops for full-size DNGs (risk in §14).
+
+### Code review instructions
+
+- Read §3.4, §7.2, §7.9 and §13.6.
+
+### Technical details
+
+- Sheet arithmetic: one view → ⌊(1568 + 6)/(256 + 6)⌋ = 6 per row, 6 rows; two views → groups of 514 px, 3 per row,
+  6 rows = 18 items.
+
+## Step 6: GCV-003 revision 2
+
+GCV-003 had 5 P1, 13 P2 and 17 P3 findings. The fixes: one naming rule shared with GCV-001 (`x, y` corner, `cx, cy`
+point, `meanL`, radius options named so they cannot be read as fields, `stepChroma`); coverage is `mask.ellipse`'s 4 × 4
+supersampling, extracted into `DiskCoverage`, so measurements stay identical to the colleague's helper; one schema
+mechanism (`OpDef.Fields` as a function returning `FieldSpec`s) for Regions and Value results, with `Validate(args,
+inputs)`; goja-cv writes named data files itself; own writers with an honest round-trip table.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 4)
+
+**Assistant interpretation:** Same as Step 4, for GCV-003.
+
+**Inferred user intent:** Same as Step 4.
+
+**Commit (docs):** f6b03be — "GCV-003: revision 2 from the review read (…)"
+
+### What I did
+
+- Rewrote the guide: §3.1 coverage, §3.3 core/ring with the gray plane and `ringCoverage`, §3.5 naming table, §3.6
+  result pipeline trace and directories table; points-only `sample`/`measure`; `regions.measure` with the `mem.hot`
+  core rule and `Region.Coverage`; schema with `RemovedFields` and `Produces`; `data` argument type; `writeContent` and
+  the `--json` `files` list with the script-83 command; budgets table; writers and the format table; new decision
+  records; corrected counts (30 rows, 20 columns).
+- Appended the disposition table; replaced the 13 tasks with 14; doctor passed.
+
+### Why
+
+- Two meanings of `x, y` would have made `img.sample(rows)` fail with an error about region box corners in a ticket
+  whose purpose is one schema.
+
+### What worked
+
+- The `mask.ellipse` coverage rule, kept rather than replaced, makes the helper-equivalence test exact.
+
+### What didn't work
+
+- N/A
+
+### What I learned
+
+- `resultcontent.WriteFiles` names files `<prefix>-<N><ext>` and skips dropped items, so it cannot replace the CLI's
+  writer without an upstream change; keeping the writer in goja-cv avoids that dependency.
+
+### What was tricky to build
+
+- Content budgets: go-go-goja counts every item against one limit; the session has to enforce look and data counts
+  itself and set the transport limit to their sum.
+
+### What warrants a second pair of eyes
+
+- The `FuncDef.On` handle types (`Data`) as receivers for `save`.
+- The 256 KiB MCP data limit.
+
+### What should be done in the future
+
+- N/A
+
+### Code review instructions
+
+- Read §3.5, §7.5, §7.9, §7.10 and §13.2.
+
+### Technical details
+
+- Column count of the §7.9 example: 9 geometry fields + `dogMaxL` + 10 ring fields = 20.
