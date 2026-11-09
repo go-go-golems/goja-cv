@@ -291,3 +291,50 @@ from `task/gcv-001-image-model` and its PR targets that branch, so the stack mer
 
 ### Code review instructions
 - PR #2 diff; start with `pkg/cv/buffer/encoding.go`, `pkg/cv/graph` (space rules, `internNode` conversions), the decoder registry, and the guide's "Implementation notes (deviations)".
+
+## Step 7: GCV-002 verified; GCV-003 stacked on it
+
+The GCV-002 implementer finished all 7 phases: PR #3 (https://github.com/go-go-golems/goja-cv/pull/3), base
+`task/gcv-001-image-model`, diary `GCV-002/reference/03-diary-implementation.md` (7 steps, every skill
+section). I re-ran the gate on `f1f2282` and archived its pi runs 11–14 in dust-scanning (`1737143`). GCV-003
+branches from `task/gcv-002-inspection-views`.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 1)
+
+**Assistant interpretation:** Verify GCV-002, then GCV-003.
+
+**Inferred user intent:** All three tickets implemented, each reviewable on its own.
+
+### What I did
+- Local gate on `task/gcv-002-inspection-views` (f1f2282): build, vet, `go test ./... -count=1 -race` exit 0, `make lint` exit 0; CI test/lint/smoke pass.
+- Archived pi runs 11–14 (tile `7edbfe9c3e7ab7d6_512_1024`, 15 gold points) with `session.jsonl` and `calls.txt`; dropped the HTML transcripts (images embedded, ≈ 23 MB together; regenerable with `pi --export`).
+- Spawned the GCV-003 implementer with the hand-back's open items.
+
+### Why
+- GCV-003's region schema, FuncDefs and profile plots reuse GCV-002's `RegisterFunc`/`BindOptions`, `Render` and font.
+
+### What worked
+- pi runs: 61/54 calls and 8/2 errors before → 30/37 calls and 2/1 errors after; agents used `img.view`, ruled zooms and `cv.sheet` unprompted.
+
+### What didn't work
+- Recall on gold points did not move (9, 8 → 9, 9 of 15): ranking, not seeing, is now the limit.
+- The implementer committed once with a red gate (a `| tail` hid an unformatted file); caught before push and amended.
+
+### What I learned
+- The default speck view in encoded space only narrowly passes the ranking thresholds (median 20 / 70.4 %); linear gives 18 / 79.6 %.
+
+### What was tricky to build
+- N/A
+
+### What warrants a second pair of eyes
+- The font is derived from X11 5x7 (X Consortium license, not public domain) — check the license notice is acceptable.
+- Breaking JS changes: `img.compare` removed, `blend` arithmetic modes removed, `gaussian(sigma)`, `radius` on morphology, PNG for small colour looks.
+
+### What should be done in the future
+- GCV-003 decides the speck view's default space; windowed pixel evaluation with `Halo` (crops of a full DNG still compute full-frame).
+- User merges #2 → #3 → GCV-003's PR in order.
+
+### Code review instructions
+- PR #3; start with `pkg/cv/graph` Render/op classes, `pkg/cv/look`, `pkg/cv/text`, and the guide's deviation notes.
