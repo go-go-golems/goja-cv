@@ -407,3 +407,16 @@ func TestBareModuleRejectsAs(t *testing.T) {
 		t.Fatalf("as in a bare module: %+v", e)
 	}
 }
+
+// TestKindsComeFromTheGraph: cv.kinds is graph.Kinds, not a hand-written list.
+func TestKindsComeFromTheGraph(t *testing.T) {
+	rt := newRuntime(t)
+	got := mustRun(t, rt, `return cv.kinds.join(",")`)
+	var want []string
+	for _, k := range graph.Kinds {
+		want = append(want, string(k))
+	}
+	if got != strings.Join(want, ",") {
+		t.Fatalf("cv.kinds = %v, want %v", got, want)
+	}
+}

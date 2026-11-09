@@ -94,6 +94,7 @@ func (b *binding) object() *goja.Object {
 	set := func(name string, fn func(goja.FunctionCall) goja.Value) { _ = o.Set(name, fn) }
 	_ = o.Set("__version", Version)
 	set("__registry", b.registry)
+	set("__kinds", b.kinds)
 	set("__call", b.call)
 	set("__open", b.open)
 	set("__evaluate", b.evaluate)
@@ -208,6 +209,15 @@ func (b *binding) registry(goja.FunctionCall) goja.Value {
 	out := map[string]any{}
 	for _, k := range graph.Kinds {
 		out[string(k)] = toAny(b.eng.Registry().Methods(k))
+	}
+	return toJS(b.vm, out)
+}
+
+// __kinds() → ["Image", "Mask", …]: graph.Kinds in display order.
+func (b *binding) kinds(goja.FunctionCall) goja.Value {
+	out := make([]any, len(graph.Kinds))
+	for i, k := range graph.Kinds {
+		out[i] = string(k)
 	}
 	return toJS(b.vm, out)
 }

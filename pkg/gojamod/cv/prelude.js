@@ -305,7 +305,7 @@
 
   const cv = {
     version: native.__version,
-    kinds: ["Image", "Mask", "Regions", "Value", "Param"],
+    kinds: native.__kinds(), // graph.Kinds
     P: P,
     // open(path, { encoding, box, origin }) → Image
     open(path, opts) {
