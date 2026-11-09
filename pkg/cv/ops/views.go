@@ -72,7 +72,6 @@ func filterViewOps() []graph.OpDef {
 		{
 			Name: "highpass", On: graph.KindImage, Returns: graph.KindImage,
 			Args:   []graph.ArgSpec{sigma("sigma", "σ of the blur subtracted, doc px: keeps what differs from its surroundings at about this size", nil), polarityArg},
-			Halo:   func(a graph.Args) float64 { return 3 * a.DocLength("sigma") },
 			Expand: expandHighpass,
 			Doc:    "What differs from its surroundings at size σ: a − G_sigma(a), signed (positive where brighter), in the image's space. A derived image: show it with .mul(4).add(0.5), a diverging colormap, or view(\"signed\").",
 			See:    []string{"dog", "localContrast", "view", "sub"},
@@ -96,7 +95,6 @@ func filterViewOps() []graph.OpDef {
 				}
 				return nil
 			},
-			Halo:   func(a graph.Args) float64 { return 3 * a.DocLength("sigma2") },
 			Expand: expandDoG,
 			Doc:    "Difference of Gaussians G_sigma1(a) − G_sigma2(a) with sigma1 < sigma2, signed, in the image's space (img.as(\"linear\").dog(…) for light): the first blur suppresses grain, so small specks rank higher than with highpass. dog(1, 4) for 1–3 px specks.",
 			See:    []string{"highpass", "view"},
@@ -104,7 +102,6 @@ func filterViewOps() []graph.OpDef {
 		{
 			Name: "localContrast", On: graph.KindImage, Returns: graph.KindImage, Result: graph.DerivedEnc,
 			Args: []graph.ArgSpec{sigma("sigma", "σ of the Gaussian window, doc px, for the local mean and spread", nil)},
-			Halo: func(a graph.Args) float64 { return 3 * a.DocLength("sigma") },
 			Run: func(ctx context.Context, _ *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
 				src := image(in[0])
 				out, err := kernels.LocalContrast(ctx, src.Buf, a.Length("sigma", src.Buf.Scale))
@@ -254,7 +251,6 @@ func viewOp() graph.OpDef {
 			{Name: "size", Type: "number", Unit: graph.DocPx, Default: 3.0, Min: graph.F(0.5), Max: graph.F(200), Usual: [2]float64{1, 30},
 				Doc: "typical size of the target in doc px; the presets derive their σ from it"},
 		},
-		Halo: func(a graph.Args) float64 { return 4 * a.DocLength("size") },
 		Expand: func(x *graph.Expander, a *graph.Node, args graph.Args) ([]*graph.Node, error) {
 			name := args.String("name")
 			for _, p := range Presets {

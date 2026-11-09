@@ -49,7 +49,7 @@ func cropOp() graph.OpDef {
 		Run: func(_ context.Context, ec *graph.EvalCtx, in []graph.Value, _ graph.Args) (graph.Value, error) {
 			return cropValue(image(in[0]), ec.Node.Frame, ec.Scale)
 		},
-		Doc: "A window of the image in doc px: coordinates stay absolute (rulers on a crop at (300, 100) read 300 …). Crop last: filters after a crop see only the window. A zoomed look of a crop magnifies it: img.crop([x, y, 64, 64]).look({ zoom: 8 }).",
+		Doc: "A window of the image in doc px: coordinates stay absolute (rulers on a crop at (300, 100) read 300 …). Ops after a crop see only the crop. An op that reads a neighbourhood around each pixel has edge effects near the crop's border: a blur sees mirrored pixels, erode and dilate a clipped element, a view's scale comes from the crop. Crop first to work locally or to save time; crop last to look at part of a whole-image result. A zoomed look of a crop magnifies it: img.crop([x, y, 64, 64]).look({ zoom: 8 }).",
 		See: []string{"look", "levels", "sheet"},
 	}
 }

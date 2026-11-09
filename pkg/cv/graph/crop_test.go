@@ -93,16 +93,12 @@ func TestCropRendersAndDecorationsThroughIt(t *testing.T) {
 func TestOrderWarnings(t *testing.T) {
 	e, img := renderEngine(t, &seen{})
 	c, _ := mustCall(t, e, "crop", img, box(100, 40, 64, 64))
-	_, ws := mustCall(t, e, "gaussian", c, 3.0)
-	if len(ws) != 1 || ws[0].Code != graph.WCropFirst ||
-		ws[0].Message != "gaussian after crop sees only the 64×64 px window (and its mirrored border); put crop last. fix: img.gaussian(3).crop([100, 40, 64, 64])" {
-		t.Fatalf("gaussian after crop: %+v", ws)
-	}
+	// cropping first is how an agent works locally: nothing warns (GCV-005 D22)
 	for _, tc := range []struct {
 		name string
 		recv *graph.Node
 		raw  []any
-	}{{"exposure", c, []any{0.5}}, {"gaussian", c, []any{0.0}}} {
+	}{{"exposure", c, []any{0.5}}, {"gaussian", c, []any{0.0}}, {"gaussian", c, []any{3.0}}} {
 		if _, ws := mustCall(t, e, tc.name, tc.recv, tc.raw...); len(ws) != 0 {
 			t.Fatalf("%s after crop warned: %+v", tc.name, ws)
 		}
@@ -112,7 +108,7 @@ func TestOrderWarnings(t *testing.T) {
 		t.Fatalf("crop after gaussian warned: %+v", ws)
 	}
 	fr, _ := mustCall(t, e, "testframe", img)
-	_, ws = mustCall(t, e, "levels", fr, map[string]any{"black": 0.1})
+	_, ws := mustCall(t, e, "levels", fr, map[string]any{"black": 0.1})
 	if len(ws) != 1 || ws[0].Code != graph.WDecorationFirst || ws[0].Message != "levels after testframe sees the drawn marks; put testframe last. fix: img.levels(…).testframe(…)" {
 		t.Fatalf("levels after a decoration: %+v", ws)
 	}

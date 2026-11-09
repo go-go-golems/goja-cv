@@ -18,7 +18,6 @@ func toneOps() []graph.OpDef {
 			Args: []graph.ArgSpec{{Name: "ev", Type: "number", Positional: true, Min: graph.F(-10), Max: graph.F(10),
 				Usual: [2]float64{-3, 3}, UsualHint: exposureHint, Doc: "stops of light: linear values are multiplied by 2^ev"}},
 			Identity: func(a graph.Args) bool { return a.Number("ev") == 0 },
-			Halo:     func(graph.Args) float64 { return 0 },
 			Run: func(ctx context.Context, _ *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
 				src := image(in[0])
 				out, err := kernels.Exposure(ctx, src.Buf, a.Number("ev"))
@@ -63,7 +62,6 @@ func toneOps() []graph.OpDef {
 				}
 				return levelOr(a, "black", 0) == 0 && levelOr(a, "white", 1) == 1 && a.Number("gamma") == 1
 			},
-			Halo: func(graph.Args) float64 { return 0 },
 			Run: func(ctx context.Context, _ *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
 				src := image(in[0])
 				b, w := levelOr(a, "black", 0), levelOr(a, "white", 1)
@@ -92,7 +90,6 @@ func toneOps() []graph.OpDef {
 			Args: []graph.ArgSpec{{Name: "amount", Type: "number", Positional: true, Min: graph.F(-1), Max: graph.F(1),
 				Usual: [2]float64{-0.5, 0.5}, Doc: "scale the distance from mid-grey (0.5) by 1 + amount"}},
 			Identity: func(a graph.Args) bool { return a.Number("amount") == 0 },
-			Halo:     func(graph.Args) float64 { return 0 },
 			Run: func(ctx context.Context, _ *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
 				src := image(in[0])
 				out, err := kernels.Contrast(ctx, src.Buf, a.Number("amount"))
@@ -113,7 +110,6 @@ func toneOps() []graph.OpDef {
 				return graph.Follows
 			},
 			Args: []graph.ArgSpec{{Name: "weights", Type: "enum:rec709,average", Default: "rec709", Positional: true}},
-			Halo: func(graph.Args) float64 { return 0 },
 			Run: func(ctx context.Context, _ *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
 				src := image(in[0])
 				if src.Buf.C == 1 {

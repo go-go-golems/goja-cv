@@ -32,7 +32,7 @@ A look shows at most 1568 px on its long side. To judge a speck, crop a window a
 return img.crop([150, 20, 64, 64]).look({ zoom: 8, ruler: 8, label: "star 8×" })
 ```
 
-Filters are computed at full resolution, then magnified. A look over 1568 px is an error whose fix gives a smaller crop or a lower zoom. Crop **last**: a blur after a crop sees only the window (`CROP_FIRST`). Stretch a crop by its own pixels: `img.crop(box).levels({ auto: true })`.
+Filters are computed at full resolution, then magnified. A look over 1568 px is an error whose fix gives a smaller crop or a lower zoom. Ops after a crop see only the crop (`cv.help("crop")`). Stretch a crop by its own pixels: `img.crop(box).levels({ auto: true })`.
 
 ## Rulers and grid
 

@@ -138,3 +138,31 @@ func TestTopHatKeepsSaturatedBlobFilled(t *testing.T) {
 		t.Fatalf("closing left the hole at %v", v)
 	}
 }
+
+// Cropping first is how an agent gets a local scale or search (GCV-005
+// D22): views, blurs and morphology after a crop raise no warning.
+func TestCropFirstDoesNotWarn(t *testing.T) {
+	e, img := newEngine(t)
+	b := []any{8.0, 6.0, 40.0, 30.0}
+	c := call(t, e, "crop", img.ID, b)
+	m := call(t, e, "mask.luminance", img.ID, map[string]any{"above": 0.3})
+	mc := call(t, e, "crop", m.ID, b)
+	for _, tc := range []struct {
+		op   string
+		recv graph.NodeID
+		raw  []any
+	}{
+		{"view", c.ID, []any{"speck"}},
+		{"gaussian", c.ID, []any{2.0}},
+		{"dilate", mc.ID, []any{2.0}},
+		{"erode", mc.ID, []any{4.0, map[string]any{"line": 45.0}}},
+	} {
+		cr, err := e.Call(tc.op, tc.recv, tc.raw)
+		if err != nil {
+			t.Fatalf("%s: %v", tc.op, err)
+		}
+		if len(cr.Warnings) != 0 {
+			t.Fatalf("%s after crop warned: %+v", tc.op, cr.Warnings)
+		}
+	}
+}

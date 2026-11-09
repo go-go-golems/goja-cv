@@ -45,7 +45,7 @@ func TestHighpassAndDoGAreTheHandWrittenChains(t *testing.T) {
 		t.Fatalf("dog(4, 1): %+v", err)
 	}
 	c := call(t, e, "crop", img.ID, []any{10.0, 10.0, 64.0, 64.0})
-	if ws, _ := e.Call("highpass", c.ID, []any{3.0}); len(ws.Warnings) != 1 || !strings.HasPrefix(ws.Warnings[0].Message, "highpass after crop") {
+	if ws, _ := e.Call("highpass", c.ID, []any{3.0}); len(ws.Warnings) != 0 { // cropping first is intended (GCV-005 D22)
 		t.Fatalf("highpass after crop: %+v", ws.Warnings)
 	}
 }
