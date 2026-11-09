@@ -185,3 +185,84 @@ sed -n 410,500p pkg/cvsession/processor.go
 docmgr doc add --ticket GCV-002 --doc-type reference --title "Review read findings"
 docmgr doc add --ticket GCV-002 --doc-type reference --title "Diary - review read"
 ```
+
+## Step 2: Re-check of the P1 findings after revision 2
+
+The writer revised the guide (revision 2, commit `a31654a`), moved the pixel and scale vocabulary into a shared
+foundations chapter, and appended a disposition table to my findings. I re-checked each P1 against the new text,
+recomputed the sheet layout, traced both decoration orders through the new `renderEval`, and skimmed the P2
+dispositions against the sections they cite.
+
+All six P1 findings are resolved. Revision 2 introduces no new P1; I recorded one new P2 (box items break the static
+sheet layout) and three P3s in a "Re-check (revision 2)" section of the findings document.
+
+### Prompt Context
+
+**User prompt (verbatim):** "Re-check P1s after revision 2."
+
+**Assistant interpretation:** Verify whether each of my six P1 findings is resolved, partly resolved or not, with
+section evidence; verify the sheet arithmetic and the three op classes with render windows; check that P2s marked
+fixed are fixed; flag any new P1-level problem; append a short section and a diary step; do not edit or commit.
+
+**Inferred user intent:** Decide whether the revised GCV-002 guide can go to an implementer.
+
+### What I did
+
+- `git log --oneline -5` to find the revision commits (`48e3a50` GCV-001, `a31654a` GCV-002, `f6b03be` GCV-003).
+- Read the disposition table at the end of `01-review-read-findings.md`.
+- Read revision 2's revision history, "How to read", §1, §3 (all), §7.1–§7.11, §7.13, §8 (class and sheet records),
+  §9, §13.4, §13.6, §14.
+- Read Foundations §F4–§F5 and GCV-001 §7.8 (macro nodes); grepped GCV-001 for the `box` type and `DocFrame`.
+- Read `UnknownMember` in `pkg/gojamod/cv/help.go:279-312` to check the writer's correction to P2-16.
+- Recomputed the sheet layout: ⌊1574/262⌋ = 6, 6 · 256 + 30 = 1566; ⌊1574/520⌋ = 3, 3 · 514 + 12 = 1554.
+- Appended "Re-check (revision 2)" to `01-review-read-findings.md` with `cat >>`.
+
+### Why
+
+- The P1s were design faults, so each needed a trace through the new pseudocode, not just a check that the
+  disposition table cites a section.
+
+### What worked
+
+- Tracing `img.overlay(spots).crop(box).look({ zoom: 8 })` and the §9.3 example through `renderEval` confirmed the
+  geometric class fixes both orders.
+- The macro node from GCV-001 §7.8 resolves the caption problem cleanly: the walker never enters an expansion and no
+  shared node is changed.
+
+### What didn't work
+
+- `wc -l ttmp/2026/11/09/GCV-002*/design-doc/01-*.md` inside a `G=…` assignment failed with `open: No such file or
+  directory` (zsh does not expand the glob in an assignment); I used `G=$(ls …)` instead.
+
+### What I learned
+
+- P2-16 was partly based on a wrong premise: `cv` member misses already produce a structured `UnknownMember` error
+  that finds Image ops; the writer's note is right.
+
+### What was tricky to build
+
+- Deciding whether the box-item window rule (N1) is P1 or P2. It breaks the static layout only for box items larger
+  than `size`, and the fix is one sentence (render at a lower cell scale), so I ranked it P2.
+
+### What warrants a second pair of eyes
+
+- The render memo key includes the window W. Sheets render one window per cell, so 36 extra memo entries per sheet
+  per view; they are small, but someone should confirm they are evicted with the normal cache.
+
+### What should be done in the future
+
+- Fix N1 in §7.9 and §9.2 before Phase 6; the P3s can be folded into the same edit.
+
+### Code review instructions
+
+- Read "Re-check (revision 2)" in `01-review-read-findings.md`.
+- To check the P1 verdicts: revision 2 §3.4, §7.2, §7.7 (captions), §7.9, §9.1–§9.3; Foundations §F5; GCV-001 §7.8.
+- Nothing to build or test.
+
+### Technical details
+
+```
+36 cells, one view:  per row ⌊(1568 + 6) / (256 + 6)⌋ = 6;  6 · 256 + 5 · 6 = 1566 ≤ 1568 (both axes, labels inside)
+two views:           group = 2 · 256 + 2 = 514;  per row ⌊1574 / 520⌋ = 3 → 3 · 514 + 2 · 6 = 1554;  6 rows → 18 items
+N1 example:          box side 200, zoom 4 → 800 px cell in a 256 px layout
+```

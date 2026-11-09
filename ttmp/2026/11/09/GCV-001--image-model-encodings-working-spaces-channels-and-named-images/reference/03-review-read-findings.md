@@ -533,3 +533,72 @@ Section numbers refer to revision 2 of `design-doc/01-design-and-implementation-
 | P3-19 | fixed: full-sentence bullets | §13.1 |
 | P3-20 | fixed: key points after §7 and §12; closing §15 | §7, §12, §15 |
 | P3-21 | fixed: the optional-parameter lesson and the run-variance caveat are stated; Phase 7 names the other repository and gives an acceptance criterion | §7.10, §12 Phase 7, §13.5 |
+
+## Re-check (revision 2)
+
+Re-read of the revised guide (commit `48e3a50`), the Disposition table above, and the shared Foundations
+chapter (`05-foundations-goja-cv-for-the-gcv-guides.md`). Code baseline unchanged.
+
+### Verdict per P1
+
+| finding | verdict | evidence in revision 2 |
+|---|---|---|
+| P1-1 luminance | **partly resolved** | §3.5 and the decision record pick rule (b): "the builder feeds such ops `toGray(receiver, "rec709")` in linear space, then converts to the op's space". This is exact for `mask.luminance`, `detect.specks`, `check.dust` and `histogram("L")`. Two gaps remain: `refine` (its Image is an `Inputs` entry, not the receiver, and §7.5 step 2 replaces only "the receiver"; see N3) and `detect.specks`' `meanL`, which moves from linear to encoded space (N4). |
+| P1-2 golden harness | **resolved, with a wrong expectation** | Phase 0 step 1 writes `golden_test.go`. However, §13.3 still says that "any other difference is a bug", and that does not hold (N1). |
+| P1-3 phase order | **resolved, with a test-input gap** | §12 is reordered (golden/dead code → encodings → frames → spaces + display → decoders → macros/channels → names → docs), and each phase states its after-state. However, the Phase 3 tests need linear-encoded images, and the Phase 2 tests need a non-zero origin. Nothing can produce either before Phase 4 or 5 (N2). |
+| P1-4 lambdas / statics | **resolved** | §7.5 says statics are computed in `internNode` from `(op, args, inputs)` and that the placeholder copies its receiver's statics into hidden arguments. A Phase 3 test checks `within`, and §9.3 traces it. |
+
+### New findings introduced or exposed by revision 2
+
+No new P1. Five new P2s. N1 is the one to fix first, because without it the Phase 3 golden step fails in a way the guide tells the intern to read as a design bug.
+
+**N1 (P2). The golden diff cannot be byte-identical for sRGB looks.**
+*Location:* §13.3 "its expected differences are exactly the `levels` looks and the mask looks; any other difference is a bug"; §12 Phase 3 step 4.
+*Problem:* There are two sources of 1-code flips.
+- Today's display computes `round(LinearToSRGB(float64(v)) * 255)` in float64. The new path stores encoded values as float32 and then quantizes them. On 3 M random samples this flips 22 codes.
+- Today's kernels use the interpolated LUT (error up to 2e-5, `color.go:58-60`), while the new `Convert` uses the exact functions. A 2e-5 shift flips about 0.26 % of 8-bit codes in `contrast`, `compare`, histogram bins and `detect.specks` residuals, and it can also flip borderline specks.
+
+*Fix:* In the golden test, accept differences of at most 1 code on at most 1 % of samples for looks outside the expected list, and require identical speck counts. Alternatively, keep the LUT in `Convert` for Phase 3 and switch to the exact functions in a later commit that regenerates the goldens. Then reword §13.3.
+
+**N2 (P2). Phase 2 and Phase 3 tests need inputs that do not exist yet.**
+*Location:* Phase 3 step 1 ("no conversion for linear-encoded inputs", "`within` lambdas … on sRGB and linear images", "`SPACE` … not on linear-encoded data") and Phase 2 step 1 ("`Args.XY` shifts by a non-zero origin").
+*Problem:* The `encoding`, `box` and `origin` options arrive in Phase 4, and `encode` in Phase 5. Phase 3 also never says which encoding `open` nodes have before Phase 4.
+*Fix:* Add a test-only source op (for example `graph.RegisterTestSource`, with hidden `enc` and `frame` arguments and a fixed buffer) in Phase 2 step 1. State that before Phase 4, `open` nodes are `enc srgb · space linear`.
+
+**N3 (P2). The grey-input rule misses `refine`.**
+*Location:* §7.5 step 2 "If `op.Gray(args)` is true and the receiver has three channels, the receiver is replaced"; §9.2 `inputs[0] = Intern(toGray, …)`.
+*Problem:* `refine` is `On: KindMask` with `Inputs: [Image]` (`pkg/cv/ops/mask.go:353`). Its guide image is `in[1]`, and `PerceptualLuminance` is deleted in Phase 3, so `refine` would receive a 3-channel encoded image.
+*Fix:* Make `Gray` name the input index, or apply it to "the first Image input". Add `refine` on a colour image to the Phase 3 test that checks the pure-red numbers.
+
+**N4 (P2). `detect.specks` `meanL` changes space on sRGB images, and this is not listed.**
+*Location:* §7.5 defaults row "`MeanL` is reported in the same space"; §12 after-state "sRGB images behave as before except `levels` and mask display".
+*Problem:* Today `meanL` is linear luminance (`specks.go:175`, `detect.go:37`). With the encoded default it becomes sRGB_encode(Y), which is a numeric change in every speck item.
+*Fix:* Add `meanL` to the list of behaviour changes in §7.5, §11 and §12, or report it in linear space through a second grey input.
+
+**N5 (P2). Stamping statics after `Run` can mutate shared cached values, and macro-node statics are computed independently of their expansion.**
+*Location:* §7.2 "the evaluator stamps `Frame` and `Enc` from the node after `Run` returns"; §7.8 "Evaluating a macro node evaluates its last input and returns that value".
+*Problem:* Several paths return an input's value object rather than a new one:
+- the `Identity` shortcut returns `ins[0]` (`eval.go:291-292`);
+- `toGray` returns `src` for 1-channel images (`ops/tone.go:82`);
+- a macro node returns its last input's value.
+
+Stamping these objects in place rewrites another node's cached value. In addition, a macro node's `Enc` and `Space` come from its own `Result` (default `KeepEnc`), so a derived macro such as `highpass` that does not declare `DerivedEnc` gets the receiver's encoding. Looks and `stats` would then convert it through the sRGB curve.
+
+*Fix:* Stamp a shallow copy whenever the returned value is one of the inputs. Define the statics of a macro node as those of its last input, computed in `internNode`.
+
+### Dispositions of the P2s
+
+I spot-checked every P2 marked "fixed" against revision 2. Each one is addressed in the section the table names:
+- §7.2 `Convert(…, from, to)` and no `Buffer.Space`;
+- the `DocFrame` field;
+- `as` handled only in `init.js` (§7.10);
+- the `Identity` check on `SPACE` (§7.6);
+- the TIFF primer and in-parser decompression (§7.3);
+- `Info.Origin` and PNG `tEXt`;
+- the two-question rule;
+- three new decision records;
+- the absolute CVJS-001 path and the context-block definition in Foundations §F1 and §F8.
+
+The only qualification is P2-8. The stamping design that fixes it introduces N5.
+
+**Correction to my own finding P2-10.** `NewRegion` does exist, as the method `(*RegionsValue).NewRegion` at `pkg/cv/graph/regions.go:67`. My grep pattern `func NewRegion` did not match methods. The Disposition note is right, and the corresponding row of the verification table above is wrong.

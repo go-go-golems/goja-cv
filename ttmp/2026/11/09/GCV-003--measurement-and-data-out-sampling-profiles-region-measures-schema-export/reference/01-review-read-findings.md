@@ -617,3 +617,55 @@ Section numbers refer to revision 2 of `design-doc/01-design-and-implementation-
 | P3-15 | fixed: `dataout.Data` | §7.9 |
 | P3-16 | fixed: "sortBy sorts largest first" | §7.4 |
 | P3-17 | fixed: absolute coordinates via GCV-001 `origin` in the hand-over line | §11 |
+
+## Re-check (revision 2)
+
+I re-read revision 2 of the guide (commit `f6b03be`), the shared Foundations chapter
+(`GCV-001…/reference/05-foundations-goja-cv-for-the-gcv-guides.md`), GCV-001 §7.3-7.4 and GCV-002 §7.8, §7.10 and §7.13,
+and checked the claims about the colleague's helper against `84-cv-helpers.js` and `pkg/cv/kernels/mask.go`.
+
+### The five P1 findings
+
+| finding | verdict | evidence in revision 2 |
+|---|---|---|
+| P1-1 foundations | resolved | "How to read this guide" points to Foundations §F3, §F4, §F6, §F8, §F9 and to the GCV-001/002 sections it relies on. Foundations defines kinds, interning, the binder, lifting, awaiting, the owner goroutine, data lambdas, the context block, roots, the result pipeline, the planted scan, gold points and the pi harness. §3.6 adds a four-step pipeline trace and the directories table. |
+| P1-2 coverage | resolved | §3.1: "it tests a 4 × 4 grid of sub-pixel points … `kernels.DiskCoverage` … used by `EllipseMask` and by every measurement"; a decision record; §13.1 and §13.2 compare against `mask.ellipse`. Checked: the helper's masks (`84-cv-helpers.js:36-37`) are `EllipseMask` with centre `x + bw/2` and the test `dx² + dy² ≤ 1` on sub-points `i + (s + 0.5)/4` (`mask.go:178-195`). With half-integer centres and radii no sub-point lies exactly on a circle, so the supersampled weights agree. `minus` (min(a, 1 − b)) equals cov(r2) − cov(r1) for a 6 px ring. The planted scan is 256 × 192, so the helper's `await stats()` runs at scale 1 like `measure`. Caveats in P3-18 and P3-19. |
+| P1-3 file naming | resolved | §7.9: `writeLooks` becomes `writeContent` in goja-cv, keeps `look-<n>-<slug>` and dropped-item reporting, writes data as `<name>.<ext>`; `--json` lists `files` with `path`; script 83's command has `--json`, `--image`, `polarity: "bright"`. New gap: P2-14 (agent-supplied names are not sanitized). |
+| P1-4 naming | resolved | §3.5 naming table; rows name points `cx, cy`; GCV-001 §7.4 states the same rule with a decision record ("GCV-003's result rows name points `cx, cy`"); GCV-002 §7.8 annotate uses `{ box: item }`, `{ point: item }`. Small leftover: P3-20. |
+| P1-5 writers | resolved | §7.10 adds `tiffwrite.go` (uint8/16, float32, tag 270), PNG chunk insertion (`gAMA`/`sRGB`/`tEXt`) and an NPY writer, with a format × depth table that says NPY keeps values only and JPEG is sRGB-only; Phase 6 tests match the table. GCV-001 §7.3 decoders read exactly these (`tEXt`, `gAMA`, tag 270, Deflate via `compress/zlib`). Leftovers: P3-21, P3-22, P3-23. |
+
+### Claims about the colleague's helper
+
+- **Coverage = `mask.ellipse` 4 × 4 supersampling:** verified (above).
+- **Default core radius = `mem.hot`:** the radius rule matches with one small exception, and the centring claim is wrong (P2-15). The helper computes `max(2, min(8, round(√(area / 3.14))))` (`84-cv-helpers.js:57`); the guide uses π instead of 3.14. Region areas are integers at scale 1, and the two formulas round differently only at area 95 in the clamp range (√(95/π) = 5.499, √(95/3.14) = 5.500).
+
+### P2 dispositions
+
+All thirteen P2 findings are fixed as described. Two remarks:
+
+- **P2-4:** the budget table says the 256 KiB data limit is applied by "the session after rendering". goja-cv has no hook after go-go-goja's Render. The limit has to run inside `Data.ResultContent`, or in a wrapper provider that `collect` installs. One sentence fixes this.
+- **P2-8:** fixed for the radius; the centring sentence is wrong (P2-15).
+
+### New findings
+
+No new P1. New P2 and P3 findings:
+
+**P2-14 CLI data file names are agent-supplied and unsanitized.** §7.9 says "data items are written as `<name>.<ext>` from their caption" into `--out`. As written, `cv.csv(x, { name: "../../x" })` writes outside `--out`, which contradicts the record "files written only under an out-root". Fix: declare `name` as an identifier (`[A-Za-z0-9_-]{1,64}`), refuse anything else at bind time with `E_ARG_TYPE`, and state the default name when `name` is omitted (§7.10 calls `cv.csv(ranked)` without one).
+
+**P2-15 The helper's centring is not "a sub-pixel difference".** §7.4 says `regions.measure` "centres on the exact centroid instead of the rounded one, a sub-pixel difference". `mem.hot` passes `Math.round(centroid)` to `mem.probe`, which centres on (x + 0.5, y + 0.5). Centroids are continuous coordinates (pixel i's centre is i + 0.5), so the helper's centre is round(cx) + 0.5. That lies 0 to 1 px right of and below the true centroid, +0.5 px on average per axis. A one-pixel blob at pixel 1312 has cx = 1312.5 and is probed at 1313.5, one pixel off, with a core radius of 2.5. Fix: say this precisely in §7.4 and §11. Tell the colleague that their helper's numbers carry this bias, which is one more reason for §13.4's re-measured ranges. Either use 3.14 in the radius formula or say the formulas differ at area 95.
+
+**P3-18 `DiskCoverage` cannot replace `EllipseMask`.** `mask.ellipse` takes any box, so rx ≠ ry in general (`mask.go:178`), and `DiskCoverage(px, py, cx, cy, r)` cannot express that. Fix: share `EllipseCoverage(px, py, cx, cy, rx, ry)`, with disks as rx = ry.
+
+**P3-19 "Exactly" equal to `StatsWeighted` is too strong.** §13.1 and Phase 3 require equality "exactly". Whole-image and window sums add in different orders, so means agree to float rounding, not bit for bit. Fix: write "within 1e-9".
+
+**P3-20 Radius argument names across the three guides.** GCV-002's `highpass(r)` and `dog(r1, r2)` use `r`, `r1`, `r2`, while §3.5 says radii are named `radius`, `coreRadius`, `ringRadii`. Fix: rename them in GCV-002, or narrow the rule to "options of the measurement ops".
+
+**P3-21 Saved masks do not round-trip.** §7.10: "Masks are saved … with no encoding note (they reopen as `srgb`-implied gray images…)". Masks display their values directly (GCV-001 line 290), so writing them with the linear note (`gAMA` 1.0, `encoding=linear`) makes them reopen with the same numbers. That removes a special case from a table whose record says files carry their meaning.
+
+**P3-22 Two sets of test and production writers.** GCV-001 Phase 4 adds TIFF/NPY fixture writers to `internal/testimage`, and GCV-003 Phase 6 adds production writers and deletes `buffer.WriteFile`, which `internal/testimage/testimage.go:42,45` and `planted.go:127` call. Fix: GCV-003 Phase 6 switches `internal/testimage` to the new writers and deletes the GCV-001 fixture writers they duplicate.
+
+**P3-23 Minor gaps in the save and data contracts:**
+
+- No default `depth` per format is given.
+- §7.9 says the `data` argument type "tells the binder not to lift awaited data". The lift happens earlier, in the prelude's `marshal` (`prelude.js:103`), so say the prelude skips `marshal` for `data` arguments.
+- `--json` `rows` requires the CLI to count CSV records or JSON items itself; say so.

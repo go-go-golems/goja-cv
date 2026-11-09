@@ -108,3 +108,88 @@ true, mechanisms general rather than special-cased, phases executable without qu
 
 - Versions: goja-cv HEAD `72911b1`, guide at `b30efec`; go-go-goja `v0.10.8-0.20261109062017-5e1ba117462e`.
 - Example evidence for P2-5: `ranked = hot.measure(dog, { stats: ["max"], prefix: "dog" }).measure(img, { ring: true }).sortBy("snr").top(30)` has at most 30 rows and 9 + 1 + 9 = 19 columns, while the guide's placeholder says "213 rows × 21 columns".
+
+## Step 2: Re-check of the P1 findings after revision 2
+
+The writer revised the guide (revision 2, commit `f6b03be`), appended a disposition table to the findings, and moved
+shared vocabulary into a Foundations chapter in GCV-001. I re-checked each P1 against the new text and the code,
+verified the two helper claims the coordinator singled out, skimmed every P2 disposition, and looked for new P1-level
+problems in file naming, the writers and the naming rule across the three guides. All five P1s are resolved, and I
+found no new P1. The new findings are two P2 (P2-14: unsanitized data file names; P2-15: the helper's centring bias)
+and six P3 (P3-18 to P3-23). They are in the "Re-check (revision 2)" section of the findings doc.
+
+### Prompt Context
+
+**User prompt (verbatim):** "Re-check P1s after revision 2."
+
+**Assistant interpretation:** Mark each of the five P1 findings resolved, partly resolved or not, with quotes. Verify
+the claims that `DiskCoverage` equals `mask.ellipse`'s 4 × 4 supersampling and that the default core radius equals
+`mem.hot`'s. Look for P2s marked fixed that are not. Report any new P1. Append a short section to the findings doc,
+add a diary step, and do not edit the guide or commit.
+
+**Inferred user intent:** Confirm that the guide can go to an implementer, and catch anything the revision broke.
+
+### What I did
+
+- Read revision 2 §1-§16 and the disposition table.
+- Read Foundations §F4, §F8, §F9 and §F10, checked its section list against the P1-1 term table, and grepped it for
+  each term.
+- Read GCV-001 §7.3 (decoders, saved-file metadata), §7.4 (box/point types), the masks decision and Phase 4. Read
+  GCV-002 §7.8 (annotate), §7.10 (`FuncDef`) and §7.13 (`EvalCtx.Warn`).
+- Re-checked `EllipseMask` (`pkg/cv/kernels/mask.go:173-200`) against the helper's masks (`84-cv-helpers.js:36-37`) and
+  the `minus` op.
+- Checked `Engine.PreviewScale` (`engine.go:158-171`, `PreviewLong` 1600) and the planted scan size
+  (`internal/testimage/planted.go:13-14`, 256 × 192). Both show the helper's `await stats()` runs at scale 1.
+- Compared the radius formulas numerically: `python3 -I -c "…"` over areas 1-999 printed `[95]`, with √(95/π) =
+  5.499 and √(95/3.14) = 5.500.
+- Worked out the helper's centring from `mem.hot` (`84-cv-helpers.js:56`) and `NewRegion` (`regions.go:97`).
+- Appended "Re-check (revision 2)" to `01-review-read-findings.md` with `cat >>`, since the writer had modified the file.
+
+### Why
+
+- The coordinator asked for verdicts per P1 and a check of the helper claims before the guide goes to an implementer.
+
+### What worked
+
+- The P1 fixes are concrete and consistent across tickets:
+  - GCV-001's decoders read exactly what GCV-003's writers write (tag 270, `gAMA`, `sRGB`, `tEXt`).
+  - GCV-001 §7.4 states the same `x, y` / `cx, cy` rule as GCV-003 §3.5.
+  - GCV-002 §7.10 and §7.13 supply `FuncDef.On` and `EvalCtx.Warn`.
+
+### What didn't work
+
+- Nothing failed in this step. The findings doc had been modified by the writer, so I appended with a shell heredoc
+  instead of rewriting the file.
+
+### What I learned
+
+- The helper's `Math.round(centroid)` followed by the probe's +0.5 inscribed-box convention shifts the probe centre
+  by +0.5 px on average per axis (0 to 1 px), so the playbook numbers carry a small systematic bias.
+- With half-integer centres and radii, the 4 × 4 sub-points never lie exactly on the circle, so floating-point
+  differences between `x² + y² ≤ r²` and the normalized test cannot flip a sub-point.
+
+### What was tricky to build
+
+- Deciding whether "a sub-pixel difference" was acceptable wording. A full pixel at a 2.5 px core radius is not
+  sub-pixel. Because §13.4 already re-measures the playbook ranges, I filed it as P2, not P1.
+
+### What warrants a second pair of eyes
+
+- P2-14 (data file name sanitization). It is a one-line rule, but it is a write path outside `--out-root`.
+- Whether the colleague should be told about the helper's centring bias before the playbook ranges are re-measured.
+
+### What should be done in the future
+
+- Apply P2-14 and P2-15 to the guide. Fold the P3s into the next revision, or leave them to the implementer.
+
+### Code review instructions
+
+- Read the "Re-check (revision 2)" section at the end of `01-review-read-findings.md`.
+- Check P2-15 by reading `84-cv-helpers.js:56` (`Math.round` of the centroid) next to `regions.go:97` (centroid =
+  index + 0.5) and the §13.2 mapping (probe centre = x + 0.5).
+
+### Technical details
+
+- Helper centre for a region: round(cx) + 0.5. For cx ∈ [n − 0.5, n + 0.5) it is n + 0.5, so the offset from cx lies in
+  (0, 1].
+- Radius formulas differ only at area 95 in the clamp range [2, 8].

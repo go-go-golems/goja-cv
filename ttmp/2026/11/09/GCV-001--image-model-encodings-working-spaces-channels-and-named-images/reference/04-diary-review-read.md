@@ -179,3 +179,115 @@ w = 0.92 → 0.48 / 0.26; 0.7 → 2.15 / 1.17; 0.5 → 4.45 / 2.47; 0.3 → 8.54
 
 Decode-direction speck example (P3-3): sRGB_decode(0.15) − sRGB_decode(0.10) = 0.0096;
 sRGB_decode(0.65) − sRGB_decode(0.60) = 0.0615; ratio 6.4.
+
+## Step 2: Re-check of the P1s after revision 2
+
+The writer revised the guide (commit `48e3a50`), added a Disposition table to my findings doc and wrote a shared
+Foundations chapter. I re-read the revised §3.3–3.7, §7.2, §7.5–7.8, §9, §12 and §13.3, checked each P1 against the
+new text, spot-checked the P2 dispositions, and looked for problems the revision itself introduced, especially in
+the phase plan and in the luminance and space decisions. I appended a "Re-check (revision 2)" section to the
+findings doc. I did not edit the guide and did not commit anything.
+
+Verdict: P1-4 is resolved. P1-2 and P1-3 are resolved structurally, but each leaves a gap (N1 golden expectation, N2
+test inputs). P1-1 is partly resolved (N3 `refine`, N4 specks `meanL`). There is no new P1. There are five new P2s
+(N1–N5). I also withdrew one sub-claim of my P2-10 (`NewRegion` exists as a method).
+
+### Prompt Context
+
+**User prompt (verbatim):** "Re-check P1s after revision 2."
+
+**Assistant interpretation:** For each of the four P1s, say whether revision 2 resolves it fully, partly or not at
+all, quoting the section. Check that no P2 marked "fixed" is actually still open. Report any new P1-level problem,
+especially in the phase plan and the luminance/space decisions. Append the results to the findings doc and add this
+diary step.
+
+**Inferred user intent:** Decide whether GCV-001 can go to an implementer now, or whether it needs another
+revision round first.
+
+**Commit (code):** N/A. Docs only. The coordinator commits.
+
+### What I did
+
+- Ran `git log --oneline` and `git show --stat 48e3a50`. Listed the headings of the revised guide with
+  `grep -n "^## \|^### "`.
+- Read the Disposition table (`03-review-read-findings.md`, after the Related section).
+- Read revised §3.3–3.7, §7.2, §7.5 (OpDef, resolution, statics, lambdas, defaults, convert), §7.6–7.8, §9.1–9.4,
+  §12 and §13.1–13.3.
+- Checked the code paths that the new design touches:
+  - `pkg/cv/graph/eval.go:280-300`: the `Identity` shortcut returns `ins[0]`.
+  - `pkg/cv/ops/tone.go:82`: `toGray` returns `src`.
+  - `pkg/cv/ops/mask.go:353-364`: `refine`'s Image is an input, not the receiver.
+  - `pkg/cv/ops/detect.go:10,37`: specks `meanL`.
+  - `pkg/cv/graph/regions.go:64-67`: the `NewRegion` method.
+- Grepped the guide for `Origin`, `tEXt`, `lzw`, `PackBits`, `` `as` `` and `refine`. Grepped Foundations for its
+  headings, "context block", lifting and the CVJS-001 path.
+- Measured 8-bit rounding flips with numpy on 3 M random samples:
+  - float64 vs float32 storage of encoded values: 22 flips;
+  - a 2e-5 (LUT-sized) perturbation: 7660 flips (0.26 %).
+- Appended "Re-check (revision 2)" to the findings doc with a verdict table, N1–N5 and the P2-10 correction.
+
+### Why
+
+- The coordinator needs a per-P1 verdict to decide whether to hand GCV-001 to an implementer.
+- Revisions that add mechanisms (the grey-input rule, evaluator stamping, macro nodes) can introduce problems the
+  first review could not see. That is why I re-read the code paths those mechanisms touch.
+
+### What worked
+
+- The Disposition table made the P2 spot-check quick. Each row names a section, and every claim I checked held.
+- The rounding experiment turned "the goldens will probably differ slightly" into a number: N1 is real, not
+  speculative.
+
+### What didn't work
+
+- My original P2-10 claimed `NewRegion` does not exist. It does: `func (v *RegionsValue) NewRegion(id int, pix
+  []int32) *Region` at `regions.go:67`. My first-pass grep `grep -rn "func NewRegion"` cannot match a method with a
+  receiver. I recorded the correction in the findings doc.
+- `grep -n … $D/design-doc/01*.md` printed `ugrep: warning: …01*.md: No such file or directory`. The glob was
+  quoted by the variable expansion, so I used the full file name instead.
+
+### What I learned
+
+- The evaluator already returns input value objects in two places: the `Identity` shortcut and `toGray` on 1-channel
+  images. Any design that writes into returned values has to copy first.
+- Switching from the 2e-5 LUT to the exact transfer functions is a visible change at 8-bit resolution, even though it
+  is numerically tiny.
+
+### What was tricky to build
+
+- Ranking N1. Golden failures on nearly every look would block Phase 3, and the guide tells the intern to read them
+  as a defaults bug. I ranked it P2 rather than P1 because the harness already reports the maximum code difference,
+  which makes the failure easy to diagnose, and the fix is one tolerance rule. I put it at the top of the new
+  findings.
+- Seeing that the grey-input rule misses `refine` needed the op's shape (`On: KindMask`, `Inputs: [Image]`). The
+  guide's rule text only mentions "the receiver".
+
+### What warrants a second pair of eyes
+
+- N1: whether to accept a tolerance in the golden test, or keep the LUT in Phase 3 so the goldens stay byte-identical,
+  is a judgement call for the writer.
+- N5: whether macro-node statics should be copied from the expansion output, or declared by each macro, affects
+  GCV-002's `highpass`, `dog` and `view`.
+
+### What should be done in the future
+
+- After N1–N5 are addressed, a five-minute check of §7.5 step 2, §7.8 and §13.3 is enough. A full re-read is not
+  needed.
+
+### Code review instructions
+
+- Start with "Re-check (revision 2)" at the end of `03-review-read-findings.md`.
+- Verify N3 with `sed -n 353,365p pkg/cv/ops/mask.go`, N5 with `sed -n 288,293p pkg/cv/graph/eval.go` and
+  `sed -n 79,83p pkg/cv/ops/tone.go`, and N4 with `grep -n meanL pkg/cv/ops/detect.go`.
+- Re-run the rounding experiment from the Technical details below.
+
+### Technical details
+
+```python
+import numpy as np
+rng=np.random.default_rng(1); v=rng.random(3_000_000).astype(np.float32); x=v.astype(np.float64)
+enc=np.where(x<=0.0031308,12.92*x,1.055*np.power(x,1/2.4)-0.055)
+old=np.round(enc*255); new=np.round(enc.astype(np.float32)*np.float32(255))
+print((old!=new).sum())                                                         # 22
+print((np.round((enc+rng.uniform(-2e-5,2e-5,enc.size))*255)!=old).sum())       # 7660
+```

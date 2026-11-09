@@ -626,3 +626,44 @@ Section numbers refer to revision 2 of `design-doc/01-design-and-implementation-
 | P3-13 | fixed: glyphs from X11 misc-fixed `5x7.bdf` (public domain) | §7.12 |
 | P3-14 | fixed: opacity redirect and the `{ space: "linear" }` note | §7.4, §10 |
 | P3-15 | fixed: `zoom` is a redirect to `crop(…).look({ zoom })`; `normalize` → `levels` | §10 |
+
+## Re-check (revision 2)
+
+I re-read revision 2 of the guide (commit `a31654a`), Foundations §F4–§F5, and GCV-001 §7.4, §7.5 and §7.8 as
+revised (`48e3a50`). The guide was not edited.
+
+### The six P1 findings
+
+| finding | verdict | evidence |
+|---|---|---|
+| P1-1 vocabulary | resolved | Foundations §F5 defines doc px, frame, buffer px, scale, evaluation, preview, look and render scale, image px, with the 64 px × 8 → 512 + 28 px margins → 568 example; "screen px" is gone (§3.3 "8 × 8 block of image px"); "How to read this guide" points to §F5. |
+| P1-2 decoration order | resolved | §3.4 "Three classes of ops under zoom"; §7.2 `renderEval` dispatches Regions/Value (not upsampled), Decoration (inputs rendered at s, `Run` with `ec.Window`), GeometricOp (`W' := W ∩ frame`, passes s on), macro node (last input), pixel op (eval at 1, cut W, upsample). Traced both orders: `annotate → crop` (§9.3) and `crop → annotate` give 1 image px lines; §7.1's `img.overlay(spots).crop(box).look({ zoom: 8 })` works. `DECORATION_FIRST` covers pixel ops after a decoration. |
+| P1-3 macro captions | resolved | No mutable field. GCV-001 §7.8 now interns a macro node `[receiver, expansion output]`; the caption walker follows `Inputs[0]` to the receiver and prints `view(speck)`; expansion nodes stay shared with hand-written chains; GCV-001 §7.8 and GCV-002 agree; decision record "captions show macro names" states the issue 22 deviation. |
+| P1-4 sheet size at build | resolved | §7.9 "Size at build time": static `max`, default = what fits; frame laid out at intern time (§9.2); `SHEET_TRUNCATED` at evaluation through the new `EvalCtx.Warn` (§7.13). |
+| P1-5 sheet arithmetic | resolved | Labels inside the cell. One view: ⌊(1568 + 6) / 262⌋ = 6 per row, 6 · 256 + 5 · 6 = 1566 ≤ 1568 both ways, so 36 cells. Two views: group 2 · 256 + 2 = 514, ⌊1574 / 520⌋ = 3 groups per row (3 · 514 + 2 · 6 = 1554), 6 rows, so 18 items. I recomputed both; the example is replaced by one view of 36 items; §13.6 issue 3 asserts it. |
+| P1-6 sheet vs decoration | resolved | §1 and §3.4 list only overlay and annotate as decorations; §7.9 "It is a layout op, not a decoration", `AnalysisScale` 1, `await` returns the scale-1 sheet; cells come from `Engine.Render`, so decorated views draw thin lines in cells too. |
+
+### P2 dispositions
+
+I checked P2-1 to P2-16 against the cited sections; all are fixed as the table says. My P2-16 premise was partly
+wrong: `cv` member misses already go through `UnknownMember` (`pkg/gojamod/cv/help.go:279-312`), which finds Image
+ops, as the disposition notes. P2-9's `box` type and `DocFrame` are now in GCV-001 (§7.4 table, §7.5 `OpDef`).
+
+### New findings introduced by revision 2
+
+No new P1.
+
+- **N1 (P2). Box items break the static sheet layout.** §7.9 keeps "boxes are centred on the box centre with window
+  side `max(w, h, size)`", and §9.2 renders each cell with `Engine.Render(v, {Scale: zoom, Window: win})`. A 200 px
+  hair box at zoom 4 gives an 800 px cell inside a layout of 256 px cells. Fix: render such windows at scale `zoom ·
+  size / side` so every cell is `size · zoom` px, and say so in §7.9 and §9.2.
+- **N2 (P3). The memory claim is overstated.** §3.4 says "No buffer is larger than the look, at most 1568 × 1568
+  image px", and the decision record says "windows keep buffers at look size". Pixel ops are still evaluated at scale 1
+  over the whole frame (§7.2 default case, §F5 step 3, §14 first risk: 638 MB per DNG buffer). Only upsampled and
+  decorated buffers are bounded. Reword both to say that.
+- **N3 (P3). Cell labels overflow small cells.** A label `7 (1337, 131)` at font size 2 is about 156 × 14 px; at
+  `zoom: 1` or `size: 32, zoom: 2` the cell is 64 px. State a rule (font size 1, then id only, when the label is wider
+  than the cell).
+- **N4 (P3). `sheet.Run` calls `Engine.Render`, but `Run` sees an `EvalCtx` whose handle is the `Evaluator`.** Put
+  `Render` on the `Evaluator` (with `Engine.Render` delegating), and round each cell window's origin to integer doc px
+  (centroids are fractional, `regions.go:97`), so the nearest-neighbour cut is exact.
