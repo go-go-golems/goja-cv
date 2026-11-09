@@ -426,6 +426,9 @@ func t2noun(t string) string {
 // non-nil, NodeArgs are lifted; with b nil (evaluation time, after
 // substitution) they are an error.
 func (b *binder) check(s *ArgSpec, typ string, v any, where string) (any, error) {
+	if typ == "data" { // a node or plain data, kept as given (cv.json, cv.csv)
+		return v, nil
+	}
 	if na, ok := v.(NodeArg); ok {
 		if b == nil {
 			return nil, Errorf(EInternal, "%s: unresolved node argument", where)

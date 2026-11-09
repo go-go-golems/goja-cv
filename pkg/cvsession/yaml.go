@@ -41,7 +41,8 @@ type renderer struct {
 	vm        *goja.Runtime
 	eng       *graph.Engine
 	getDesc   goja.Callable
-	providers map[resultcontent.Provider]int // other providers → content number
+	providers map[resultcontent.Provider]int    // other providers → content number
+	dropped   map[resultcontent.Provider]string // providers left out by the session's budgets → why
 	props     int
 	nodes     []graph.NodeID
 	stack     map[*goja.Object]bool
@@ -92,10 +93,16 @@ func (r *renderer) render(v goja.Value, depth int) *yaml.Node {
 		return str(cvmod.DescribeNode(r.eng, id) + " (lazy: await it, or return node.look())")
 	}
 	if l, ok := cvmod.LookOf(obj); ok {
+		if why, ok := r.dropped[l]; ok {
+			return str("[not delivered: " + strings.TrimSuffix(strings.TrimPrefix(l.String(), "["), "]") + " — " + why + "]")
+		}
 		return str(l.String())
 	}
 	if p, ok := resultcontent.ProviderOf(obj); ok {
 		desc := resultcontent.Describe(p)
+		if why, ok := r.dropped[p]; ok && reflect.TypeOf(p).Comparable() {
+			return str("[not delivered: " + desc + " — " + why + "]")
+		}
 		if n, ok := r.providers[p]; ok && reflect.TypeOf(p).Comparable() {
 			return str(strings.TrimSpace(fmt.Sprintf("[content %d: %s]", n, desc)))
 		}

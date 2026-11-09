@@ -176,3 +176,43 @@ type Record struct {
 
 // Map returns the record's values as a plain map.
 func (r Record) Map() map[string]any { return r.Vals }
+
+// OrderBySchema gives the object of a Value, or each row of a list of rows,
+// the key order of the node's schema (keys outside it follow, sorted), so
+// awaited measurement rows read cx, cy, … like the docs.
+func OrderBySchema(v any, fields []FieldSpec) any {
+	if len(fields) == 0 {
+		return v
+	}
+	order := func(m map[string]any) any {
+		rec := Record{Vals: m}
+		seen := map[string]bool{}
+		for _, f := range fields {
+			if _, ok := m[f.Name]; ok {
+				rec.Keys = append(rec.Keys, f.Name)
+				seen[f.Name] = true
+			}
+		}
+		for _, k := range sortedKeys(m) {
+			if !seen[k] {
+				rec.Keys = append(rec.Keys, k)
+			}
+		}
+		return rec
+	}
+	switch x := v.(type) {
+	case map[string]any:
+		return order(x)
+	case []any:
+		out := make([]any, len(x))
+		for i, e := range x {
+			if m, ok := e.(map[string]any); ok {
+				out[i] = order(m)
+			} else {
+				out[i] = e
+			}
+		}
+		return out
+	}
+	return v
+}

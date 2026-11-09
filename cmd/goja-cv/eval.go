@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/go-go-golems/go-go-goja/pkg/replsession"
+	"github.com/go-go-golems/go-go-goja/pkg/resultcontent"
 	"github.com/go-go-golems/goja-cv/pkg/cvsession"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
@@ -70,21 +73,23 @@ func newEvalCommand(opts *rootOptions) *cobra.Command {
 	return cmd
 }
 
-// lookFile is one look written to disk.
-type lookFile struct {
+// contentFile is one delivered content item written to disk (a look or a
+// data item), or one that was not delivered.
+type contentFile struct {
 	Caption  string `json:"caption"`
 	MIMEType string `json:"mimeType"`
 	Bytes    int    `json:"bytes"`
+	Rows     *int   `json:"rows,omitempty"` // data: CSV records or JSON array items
 	Path     string `json:"path,omitempty"`
 	Dropped  string `json:"dropped,omitempty"`
 }
 
 type jsonResult struct {
-	Status  string     `json:"status"`
-	Result  string     `json:"result"`
-	Error   string     `json:"error,omitempty"`
-	Console []string   `json:"console,omitempty"`
-	Looks   []lookFile `json:"looks,omitempty"`
+	Status  string        `json:"status"`
+	Result  string        `json:"result"`
+	Error   string        `json:"error,omitempty"`
+	Console []string      `json:"console,omitempty"`
+	Files   []contentFile `json:"files,omitempty"`
 }
 
 func runCode(ctx context.Context, opts *rootOptions, f *evalFlags, code string) error {
@@ -117,13 +122,13 @@ func runCode(ctx context.Context, opts *rootOptions, f *evalFlags, code string) 
 	if err != nil && (resp == nil || resp.Cell == nil) {
 		return failure(err)
 	}
-	looks, err := writeLooks(resp, f.out)
+	files, err := writeContent(resp, f.out)
 	if err != nil {
 		return failure(err)
 	}
 	exec := resp.Cell.Execution
 	if f.json {
-		out := jsonResult{Status: exec.Status, Result: exec.Result, Error: exec.Error, Looks: looks}
+		out := jsonResult{Status: exec.Status, Result: exec.Result, Error: exec.Error, Files: files}
 		for _, c := range exec.Console {
 			out.Console = append(out.Console, fmt.Sprintf("[%s] %s", c.Kind, c.Message))
 		}
@@ -133,7 +138,7 @@ func runCode(ctx context.Context, opts *rootOptions, f *evalFlags, code string) 
 			return failure(err)
 		}
 	} else {
-		printText(opts.stdout, resp, looks)
+		printText(opts.stdout, resp, files)
 	}
 	if exec.Status != "ok" {
 		return silentFailure()
@@ -141,7 +146,7 @@ func runCode(ctx context.Context, opts *rootOptions, f *evalFlags, code string) 
 	return nil
 }
 
-func printText(w io.Writer, resp *replsession.EvaluateResponse, looks []lookFile) {
+func printText(w io.Writer, resp *replsession.EvaluateResponse, files []contentFile) {
 	exec := resp.Cell.Execution
 	fmt.Fprintln(w, strings.TrimRight(exec.Result, "\n"))
 	if len(exec.Console) > 0 {
@@ -151,18 +156,20 @@ func printText(w io.Writer, resp *replsession.EvaluateResponse, looks []lookFile
 		}
 		printYAML(w, "console", list)
 	}
-	if len(looks) > 0 {
-		files := &yaml.Node{Kind: yaml.MappingNode}
-		for _, l := range looks {
+	if len(files) > 0 {
+		list := &yaml.Node{Kind: yaml.MappingNode}
+		for _, l := range files {
 			v := l.Path
 			if v == "" {
 				v = "dropped: " + l.Dropped
+			} else if l.Rows != nil {
+				v += fmt.Sprintf(" (%d rows)", *l.Rows)
 			}
-			files.Content = append(files.Content,
+			list.Content = append(list.Content,
 				&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: l.Caption},
 				&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: v})
 		}
-		printYAML(w, "files", files)
+		printYAML(w, "files", list)
 	}
 }
 
@@ -175,57 +182,88 @@ func printYAML(w io.Writer, key string, value *yaml.Node) {
 	fmt.Fprintf(w, "\n%s", b)
 }
 
-var lookCaption = regexp.MustCompile(`^look (\d+): (.*?)(?: — | \()`)
+var (
+	lookCaption = regexp.MustCompile(`^look (\d+): (.*?)(?: — | \()`)
+	dataCaption = regexp.MustCompile(`^data ([A-Za-z0-9_-]{1,64})(\.[a-z]+)$`)
+)
 
-// writeLooks writes the rendered looks of resp into dir (a new temporary
-// directory when dir is empty) and returns one entry per content ref.
-func writeLooks(resp *replsession.EvaluateResponse, dir string) ([]lookFile, error) {
+// writeContent writes the delivered content of resp into dir (a new
+// temporary directory when dir is empty): looks as look-<n>-<slug>.<ext>,
+// data items as <name>.<ext> from their caption (a second item of the same
+// name gets -2). Items that were not delivered are listed with the reason.
+func writeContent(resp *replsession.EvaluateResponse, dir string) ([]contentFile, error) {
 	refs := resp.Cell.Execution.Content
 	if len(refs) == 0 {
 		return nil, nil
 	}
 	if dir == "" {
-		d, err := os.MkdirTemp("", "goja-cv-looks-")
+		d, err := os.MkdirTemp("", "goja-cv-out-")
 		if err != nil {
-			return nil, errors.Wrap(err, "create look directory")
+			return nil, errors.Wrap(err, "create output directory")
 		}
 		dir = d
 	} else if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, errors.Wrap(err, "create --out directory")
 	}
-	var out []lookFile
+	var out []contentFile
+	used := map[string]int{}
 	for _, ref := range refs {
-		lf := lookFile{Caption: ref.Caption, MIMEType: ref.MIMEType, Bytes: ref.Bytes, Dropped: ref.Dropped}
+		cf := contentFile{Caption: ref.Caption, MIMEType: ref.MIMEType, Bytes: ref.Bytes, Dropped: ref.Dropped}
 		if ref.Index < 0 || ref.Index >= len(resp.Content) {
-			if lf.Dropped == "" {
-				lf.Dropped = "not delivered"
+			if cf.Dropped == "" {
+				cf.Dropped = "not delivered"
 			}
-			out = append(out, lf)
+			out = append(out, cf)
 			continue
 		}
 		item := resp.Content[ref.Index]
-		name := fmt.Sprintf("content-%d", ref.Provider)
-		if m := lookCaption.FindStringSubmatch(item.Caption); m != nil {
+		name, ext := fmt.Sprintf("content-%d", ref.Provider), resultcontent.ExtensionForMIME(item.MIMEType)
+		switch m := lookCaption.FindStringSubmatch(item.Caption); {
+		case m != nil:
 			name = "look-" + m[1] + "-" + slug(m[2])
+		default:
+			if d := dataCaption.FindStringSubmatch(item.Caption); d != nil {
+				name = d[1]
+				rows := countRows(item.MIMEType, item.Data)
+				cf.Rows = &rows
+			}
 		}
-		ext := ".bin"
-		switch item.MIMEType {
-		case "image/jpeg":
-			ext = ".jpg"
-		case "image/png":
-			ext = ".png"
+		if used[name+ext]++; used[name+ext] > 1 {
+			name = fmt.Sprintf("%s-%d", name, used[name+ext])
 		}
 		abs, err := filepath.Abs(filepath.Join(dir, name+ext))
 		if err != nil {
 			return nil, err
 		}
-		if err := os.WriteFile(abs, item.Data, 0o644); err != nil {
-			return nil, errors.Wrap(err, "write look")
+		if err := os.WriteFile(abs, item.Data, 0o644); err != nil { // #nosec G306 -- result files for the person running the CLI
+			return nil, errors.Wrap(err, "write content")
 		}
-		lf.Path = abs
-		out = append(out, lf)
+		cf.Path = abs
+		out = append(out, cf)
 	}
 	return out, nil
+}
+
+// countRows counts CSV records (without the header) or JSON array items
+// (1 for any other JSON value).
+func countRows(mime string, data []byte) int {
+	switch mime {
+	case "text/csv":
+		recs, err := csv.NewReader(bytes.NewReader(data)).ReadAll()
+		if err != nil || len(recs) == 0 {
+			return 0
+		}
+		return len(recs) - 1
+	case "application/json":
+		var v any
+		if json.Unmarshal(data, &v) == nil {
+			if l, ok := v.([]any); ok {
+				return len(l)
+			}
+		}
+		return 1
+	}
+	return 0
 }
 
 var nonSlug = regexp.MustCompile(`[^a-zA-Z0-9]+`)

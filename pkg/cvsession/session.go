@@ -39,8 +39,14 @@ const (
 	DefaultMaxResultChars = 9000
 	// DefaultMaxLooks is the number of images one eval delivers.
 	DefaultMaxLooks = 4
-	// DefaultMaxLookBytes bounds the total bytes of the images of one eval.
+	// DefaultMaxLookBytes bounds the total bytes of the content of one eval.
 	DefaultMaxLookBytes = 8 << 20
+	// DefaultMaxData is the number of data items (cv.json, cv.csv) one eval
+	// delivers.
+	DefaultMaxData = 4
+	// MCPMaxDataBytes is the size above which the MCP server replaces a data
+	// item by a note to save it (data enters the model's context).
+	MCPMaxDataBytes = 256 << 10
 	// ENoDocument is the error code of any use of doc before the document layer exists.
 	ENoDocument = "E_NO_DOCUMENT"
 	// ENoImage is the error code of using img when no image is open.
@@ -65,9 +71,15 @@ type Options struct {
 	EvalTimeout time.Duration
 	// MaxResultChars caps the YAML result (default 9000).
 	MaxResultChars int
-	// MaxLooks and MaxLookBytes bound the images of one eval (default 4, 8 MiB).
+	// MaxLooks and MaxLookBytes bound the images of one eval (default 4, 8 MiB
+	// for all content together).
 	MaxLooks     int
 	MaxLookBytes int
+	// MaxData bounds the data items of one eval (default 4); MaxDataBytes,
+	// when > 0, replaces a larger data item by a note (the mcp command sets
+	// MCPMaxDataBytes; the CLI writes every item).
+	MaxData      int
+	MaxDataBytes int
 	// Logger for replapi (default: disabled).
 	Logger *zerolog.Logger
 }
@@ -84,6 +96,9 @@ func (o Options) withDefaults() (Options, error) {
 	}
 	if o.MaxLookBytes <= 0 {
 		o.MaxLookBytes = DefaultMaxLookBytes
+	}
+	if o.MaxData <= 0 {
+		o.MaxData = DefaultMaxData
 	}
 	if o.BaseDir == "" {
 		wd, err := os.Getwd()
@@ -122,10 +137,11 @@ func (o Options) resolve(p string) string {
 	return filepath.Join(o.BaseDir, p)
 }
 
-// ContentLimits are the resultcontent limits of the session: at most MaxLooks
-// images and MaxLookBytes bytes per eval.
+// ContentLimits are the resultcontent limits of the session: MaxLooks looks
+// and MaxData data items (the session enforces each count in collect) and
+// MaxLookBytes bytes per eval.
 func (o Options) ContentLimits() resultcontent.Limits {
-	return resultcontent.Limits{MaxItems: o.MaxLooks, MaxTotalBytes: o.MaxLookBytes}
+	return resultcontent.Limits{MaxItems: o.MaxLooks + o.MaxData, MaxTotalBytes: o.MaxLookBytes}
 }
 
 // SessionPolicy is the replsession policy of cv sessions: raw execution (the

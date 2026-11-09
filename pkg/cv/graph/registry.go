@@ -150,7 +150,8 @@ var (
 //
 // Types: "number", "string", "bool", "enum:a,b,c", "number[]", "string[]",
 // "box" ([x, y, w, h] or an object with x, y, w, h), "point" ([x, y] or an
-// object with cx, cy), unions of these such as "point|number", "object"
+// object with cx, cy), "data" (a node or plain data, kept as given: the
+// argument of cv.json and cv.csv), unions such as "point|number", "object"
 // (with Options as the allowed keys), "any", and node kinds such as
 // "Mask", "Regions|Mask" or "Image[]": a kind-typed argument holds a node of
 // that kind (lifted into the node's inputs like a Value argument); Run reads

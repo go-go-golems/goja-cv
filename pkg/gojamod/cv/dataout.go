@@ -2,6 +2,8 @@ package cvmod
 
 import (
 	"context"
+	"fmt"
+	"strconv"
 
 	"github.com/dop251/goja"
 	"github.com/go-go-golems/go-go-goja/pkg/runtimebridge"
@@ -85,4 +87,150 @@ func (b *binding) saveNode(c goja.FunctionCall) goja.Value {
 		}
 		return s.Data(), nil
 	})
+}
+
+// dataObject is the JavaScript face of a Data handle: a dynamic object
+// whose exported value is the handle (a result-content provider), with the
+// properties name, format and save.
+type dataObject struct {
+	*dataout.Data
+	b *binding
+}
+
+var _ goja.DynamicObject = &dataObject{}
+
+func (o *dataObject) Get(key string) goja.Value {
+	switch key {
+	case "save":
+		return o.b.vm.ToValue(func(c goja.FunctionCall) goja.Value { return o.b.saveData(o.Data, c.Argument(0), c.Argument(1)) })
+	case "name":
+		return o.b.vm.ToValue(o.Name())
+	case "format":
+		return o.b.vm.ToValue(o.Format())
+	}
+	return nil
+}
+
+func (o *dataObject) Set(string, goja.Value) bool { return false }
+func (o *dataObject) Has(key string) bool         { return key == "save" || key == "name" || key == "format" }
+func (o *dataObject) Delete(string) bool          { return false }
+func (o *dataObject) Keys() []string              { return nil }
+
+// DataOf reports whether v is a Data handle.
+func DataOf(v goja.Value) (*dataout.Data, bool) {
+	obj, ok := v.(*goja.Object)
+	if !ok || obj == nil {
+		return nil, false
+	}
+	d, ok := obj.Export().(*dataObject)
+	if !ok || d == nil {
+		return nil, false
+	}
+	return d.Data, true
+}
+
+// __data(format, x, opts) → a Data handle: cv.json and cv.csv. A node is
+// kept (evaluated when delivered); anything else is plain data converted
+// now, keeping object key order (awaited data is not lifted back to its
+// node: what the agent sees, edits included, is written).
+func (b *binding) dataJS(c goja.FunctionCall) goja.Value {
+	format := c.Argument(0).String()
+	f, ok := b.eng.Registry().Func(format)
+	if !ok {
+		b.throw(graph.Errorf(graph.EInternal, "no %s function registered", format))
+	}
+	x := c.Argument(1)
+	var raw any
+	node := graph.NodeID(0)
+	if id, ok := NodeOf(x); ok {
+		node = id
+		raw = graph.NodeArg{ID: id}
+	} else {
+		raw = exportOrdered(b.vm, x, 0, map[*goja.Object]bool{})
+	}
+	vals := []any{raw}
+	if o := exportArg(c.Argument(2)); o != nil {
+		vals = append(vals, fromJS(o))
+	}
+	a, _, err := graph.BindOptions(f.CallName(), f.Args, vals)
+	if err != nil {
+		b.throw(err)
+	}
+	o := dataout.Options{}
+	if a.Has("name") {
+		o.Name = a.String("name")
+	}
+	if a.Has("columns") {
+		o.Columns = a.Strings("columns")
+	}
+	d, err := dataout.New(b.eng, format, node, raw, o)
+	if err != nil {
+		b.throw(err)
+	}
+	if node != 0 {
+		b.noteUsed(node)
+	}
+	return b.vm.NewDynamicObject(&dataObject{Data: d, b: b})
+}
+
+// saveData is data.save(path): a promise of { path, format, bytes, rows,
+// replaced }.
+func (b *binding) saveData(d *dataout.Data, path, opts goja.Value) goja.Value {
+	a := b.bindFunc("save", path, opts)
+	p := a.String("path")
+	if a.Has("depth") {
+		b.throw(graph.Errorf(graph.EUnknownOption, "data.save takes no depth: depth is for images.").WithFix(fmt.Sprintf("data.save(%q)", p)))
+	}
+	root := b.eng.Options().OutRoot
+	return b.async(func(ctx context.Context, _ func(graph.Warning)) (any, error) {
+		s, err := d.Save(ctx, root, p)
+		if err != nil {
+			return nil, err
+		}
+		return s.Data(), nil
+	})
+}
+
+// exportOrdered converts a JavaScript value into plain data for a Data
+// handle: objects become graph.Records in their key order, arrays lists,
+// nodes and looks their one-line description.
+func exportOrdered(vm *goja.Runtime, v goja.Value, depth int, seen map[*goja.Object]bool) any {
+	if v == nil || goja.IsUndefined(v) || goja.IsNull(v) {
+		return nil
+	}
+	obj, ok := v.(*goja.Object)
+	if !ok {
+		return graph.Normalize(v.Export())
+	}
+	if _, ok := NodeOf(obj); ok {
+		return obj.String()
+	}
+	if l, ok := LookOf(obj); ok {
+		return l.String()
+	}
+	if _, ok := goja.AssertFunction(obj); ok {
+		return "[Function]"
+	}
+	if depth > 32 || seen[obj] {
+		return "[Circular]"
+	}
+	seen[obj] = true
+	defer delete(seen, obj)
+	if obj.ClassName() == "Array" {
+		n := int(obj.Get("length").ToInteger())
+		out := make([]any, n)
+		for i := 0; i < n; i++ {
+			out[i] = exportOrdered(vm, obj.Get(strconv.Itoa(i)), depth+1, seen)
+		}
+		return out
+	}
+	if obj.ClassName() != "Object" {
+		return graph.Normalize(obj.Export())
+	}
+	keys := obj.Keys()
+	rec := graph.Record{Keys: keys, Vals: make(map[string]any, len(keys))}
+	for _, k := range keys {
+		rec.Vals[k] = exportOrdered(vm, obj.Get(k), depth+1, seen)
+	}
+	return rec
 }

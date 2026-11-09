@@ -85,7 +85,7 @@ available to scripts. --root limits the files cv.open may read (default: any pat
 
 func newMCPServer(ctx context.Context, opts *rootOptions, f *mcpFlags) (*cvsession.MCPServer, func(), error) {
 	logger := opts.logger()
-	sopts := cvsession.Options{Image: f.image, Roots: f.roots, OutRoot: f.outRoot, Logger: &logger}
+	sopts := cvsession.Options{Image: f.image, Roots: f.roots, OutRoot: f.outRoot, MaxDataBytes: cvsession.MCPMaxDataBytes, Logger: &logger}
 	if f.timeout > 0 {
 		sopts.EvalTimeout = msDuration(f.timeout)
 	}

@@ -125,6 +125,7 @@ func (b *binding) object() *goja.Object {
 	set("__placeholder", b.placeholder)
 	set("__look", b.look)
 	set("__save", b.saveNode)
+	set("__data", b.dataJS)
 	b.addDocs(o)
 	set("__fieldNames", b.fieldNames)
 	set("__removedFields", b.removedFields)
@@ -408,49 +409,9 @@ func resultToJS(vm *goja.Runtime, v graph.Value, n *graph.Node) (goja.Value, err
 		}
 		return toJS(vm, s), nil
 	case *graph.DataValue:
-		return toJS(vm, inSchemaOrder(x.Data, n.Fields)), nil
+		return toJS(vm, graph.OrderBySchema(x.Data, n.Fields)), nil
 	}
 	return goja.Undefined(), nil
-}
-
-// inSchemaOrder gives the object of a Value, or each row of a list of rows,
-// the key order of the node's schema (keys outside it follow, sorted), so
-// awaited measurement rows read cx, cy, … like the docs.
-func inSchemaOrder(v any, fields []graph.FieldSpec) any {
-	if len(fields) == 0 {
-		return v
-	}
-	order := func(m map[string]any) any {
-		rec := graph.Record{Vals: m}
-		seen := map[string]bool{}
-		for _, f := range fields {
-			if _, ok := m[f.Name]; ok {
-				rec.Keys = append(rec.Keys, f.Name)
-				seen[f.Name] = true
-			}
-		}
-		for _, k := range sortedKeys(m) {
-			if !seen[k] {
-				rec.Keys = append(rec.Keys, k)
-			}
-		}
-		return rec
-	}
-	switch x := v.(type) {
-	case map[string]any:
-		return order(x)
-	case []any:
-		out := make([]any, len(x))
-		for i, e := range x {
-			if m, ok := e.(map[string]any); ok {
-				out[i] = order(m)
-			} else {
-				out[i] = e
-			}
-		}
-		return out
-	}
-	return v
 }
 
 // __describe(id) → {id, kind, op, call, label, frame, path}

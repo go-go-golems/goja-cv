@@ -363,6 +363,15 @@
       return native.__describe(requireNode(node, "cv.describe").__id);
     },
     isNode: isNode,
+    // json(x, { name }) / csv(x, { name, columns }) → a Data handle: content
+    // for programs (CLI: a file), or .save(path) under --out-root. Plain
+    // data is passed as it is (not lifted back to its node).
+    json(x, opts) {
+      return native.__data("json", x, opts === undefined ? null : opts);
+    },
+    csv(x, opts) {
+      return native.__data("csv", x, opts === undefined ? null : opts);
+    },
     // warnings({ clear }) lists RANGE warnings collected while building nodes.
     warnings(opts) {
       return native.__warnings(!!(opts && opts.clear));

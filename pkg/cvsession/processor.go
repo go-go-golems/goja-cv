@@ -72,10 +72,11 @@ func (p *ResultProcessor) Process(_ context.Context, vm *goja.Runtime, value goj
 	if err != nil {
 		return replsession.ProcessedResult{}, err
 	}
-	providers := st.collect(extraction.Providers)
+	providers, dropped := st.collect(extraction.Providers)
 
 	r := newRenderer(vm, st.eng)
 	r.providers = providerNumbers(providers)
+	r.dropped = dropped
 	var sb strings.Builder
 	if value == nil || goja.IsUndefined(value) {
 		sb.WriteString("# nothing returned: end the code with `return …` to see a value (the last expression is not returned).")
@@ -99,7 +100,7 @@ func (p *ResultProcessor) ProcessFailure(_ context.Context, vm *goja.Runtime, ev
 	}
 	st.watchdog.disarm(vm)
 	trace := cvmod.EndEval(vm)
-	providers := st.collect(nil)
+	providers, _ := st.collect(nil)
 	var sb strings.Builder
 	sb.WriteString(encodeYAML(mapping(str("error"), st.errorNode(vm, evalErr, trace))))
 	if len(st.shows) > 0 {
@@ -110,10 +111,18 @@ func (p *ResultProcessor) ProcessFailure(_ context.Context, vm *goja.Runtime, ev
 	return replsession.ProcessedResult{Text: st.finish(vm, sb.String(), warnings), Providers: providers}, nil
 }
 
-// collect appends the queued shows to the value's providers (once each) and
-// numbers every look (owner).
-func (s *state) collect(fromValue []resultcontent.Provider) []resultcontent.Provider {
-	out := make([]resultcontent.Provider, 0, len(fromValue)+len(s.shows))
+// numbered is a Data handle: the session gives it its content number and
+// the byte limit for content.
+type numbered interface {
+	SetNumber(n, maxBytes int)
+}
+
+// collect appends the queued shows to the value's providers (once each),
+// keeps at most MaxLooks looks and MaxData data items (later ones are left
+// out and their placeholders say why), numbers every look and gives every
+// data item its content number and byte limit (owner).
+func (s *state) collect(fromValue []resultcontent.Provider) ([]resultcontent.Provider, map[resultcontent.Provider]string) {
+	all := make([]resultcontent.Provider, 0, len(fromValue)+len(s.shows))
 	seen := map[*look.Look]bool{}
 	for _, p := range fromValue {
 		if l, ok := p.(*look.Look); ok {
@@ -122,20 +131,41 @@ func (s *state) collect(fromValue []resultcontent.Provider) []resultcontent.Prov
 			}
 			seen[l] = true
 		}
-		out = append(out, p)
+		all = append(all, p)
 	}
 	for _, l := range s.shows {
 		if !seen[l] {
 			seen[l] = true
-			out = append(out, l)
+			all = append(all, l)
 		}
 	}
-	for _, p := range out {
-		if l, ok := p.(*look.Look); ok {
-			s.number(l)
+	out := make([]resultcontent.Provider, 0, len(all))
+	dropped := map[resultcontent.Provider]string{}
+	looks, data := 0, 0
+	for _, p := range all {
+		switch p.(type) {
+		case *look.Look:
+			if looks++; looks > s.opts.MaxLooks {
+				dropped[p] = fmt.Sprintf("more than %d looks in one eval; return fewer, or one cv.sheet of many crops", s.opts.MaxLooks)
+				continue
+			}
+		case numbered:
+			if data++; data > s.opts.MaxData {
+				dropped[p] = fmt.Sprintf("more than %d data items in one eval; return one table with every row", s.opts.MaxData)
+				continue
+			}
+		}
+		out = append(out, p)
+	}
+	for i, p := range out {
+		switch x := p.(type) {
+		case *look.Look:
+			s.number(x)
+		case numbered:
+			x.SetNumber(i+1, s.opts.MaxDataBytes)
 		}
 	}
-	return out
+	return out, dropped
 }
 
 func providerNumbers(providers []resultcontent.Provider) map[resultcontent.Provider]int {
