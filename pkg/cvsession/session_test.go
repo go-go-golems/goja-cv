@@ -357,11 +357,11 @@ return {
 	if resp.Cell.Execution.Status != "ok" {
 		t.Fatalf("status %s:\n%s", resp.Cell.Execution.Status, out)
 	}
-	mustContain(t, out, "n: 41", "keys: [count, docH, docW, items, kind, scale, truncated]", "json: [count, docH, docW, items, kind, scale, truncated]",
+	mustContain(t, out, "n: 41", "keys: [count, frame, items, kind, scale, truncated]", "json: [count, frame, items, kind, scale, truncated]",
 		"dust: 40", "filtered: 40", "explain: true", "after: 0", "healedDirect: 0", "look 1: all", "isNode: false", "brighter: true")
 	mustNotContain(t, out, "where:", "UNUSED_NODE")
 	// returning awaited data renders exactly the data
-	out = text(eval(t, app, sid, `const r = await img.detect.specks(); return { count: r.count, truncated: r.truncated, w: r.docW }`))
+	out = text(eval(t, app, sid, `const r = await img.detect.specks(); return { count: r.count, truncated: r.truncated, w: r.frame[2] }`))
 	mustContain(t, out, "{count: 41, truncated: false, w: 256}")
 	out = text(eval(t, app, sid, `const s = await img.stats(); return s`))
 	mustNotContain(t, out, "levels", "exposure", "pick:")
@@ -385,8 +385,8 @@ func TestArgumentErrorsHaveFixesAndWarningsFold(t *testing.T) {
 	app, sid := newApp(t, cvsession.Options{Image: tiffPath})
 	for code, want := range map[string][]string{
 		`return await img.mask.luminance({}).coverage()`:                                    {"code: E_ARG_TYPE", "perceptual luminance in [0, 1]", "fix: 'img.mask.luminance({ above: 0.7 })"},
-		`return await img.mask.flood([500, 10]).coverage()`:                                 {"code: E_ARG_RANGE", "fix: 'img.mask.flood([32, 24], { tol: 0.05 })'"},
-		`return await img.mask.gradient({ from: "up" }).coverage()`:                         {"fix: 'img.mask.gradient({ from: \"top\", to: 0.45 })'"},
+		`return await img.mask.flood([500, 10]).coverage()`:                                 {"code: E_ARG_RANGE", "fix: img.mask.flood([63, 10])"},
+		`return await img.mask.gradient({ from: "up" }).coverage()`:                         {"fix: 'mask.gradient({ from: \"top\" })'"},
 		`return await img.overlay(img.mask.box([0, 0, 9, 9]), { color: "chartreuse-ish" })`: {"fix: 'color: \"red\""},
 	} {
 		mustContain(t, text(eval(t, app, sid, code)), want...)
@@ -448,7 +448,7 @@ return n`: {"code: E_NOT_ARRAY", "for (const r of regions.items)"},
 	}
 	// the data itself is unchanged
 	out := text(eval(t, app, sid, `const r = await img.detect.specks(); return { n: r.count, items: r.items.length, keys: Object.keys(r).join(",") }`))
-	mustContain(t, out, "n: 41", "items: 41", "keys: 'count,docH,docW,items,kind,scale,truncated'")
+	mustContain(t, out, "n: 41", "items: 41", "keys: 'count,frame,items,kind,scale,truncated'")
 }
 
 func TestRawTypeErrorsOnDataNameTheOp(t *testing.T) {

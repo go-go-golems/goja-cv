@@ -79,7 +79,7 @@ func TestHealRemovesPlantedSpecks(t *testing.T) {
 			t.Fatalf("%s: check.dust after heal: %v", method, cd)
 		}
 		// heal at preview scale is consistent (same regions, rasterized at 0.5)
-		if v := evalValue(t, e, healed, 0.5).(*graph.ImageValue); v.Buf.W != 128 || v.DocW != 256 {
+		if v := evalValue(t, e, healed, 0.5).(*graph.ImageValue); v.Buf.W != 128 || v.Frame.W != 256 {
 			t.Fatalf("%s at 0.5: %v", method, v.Buf)
 		}
 	}

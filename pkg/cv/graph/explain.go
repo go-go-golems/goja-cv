@@ -144,7 +144,7 @@ func (e *Evaluator) Explain(id NodeID, scale float64) []string {
 		run = run.at(run.scaleFor(n))
 		right := string(n.Kind)
 		if n.Kind == KindImage || n.Kind == KindMask {
-			w, h := buffer.ScaledSize(n.DocW, n.DocH, run.scale)
+			w, h := buffer.ScaledSize(n.Frame.W, n.Frame.H, run.scale)
 			right += fmt.Sprintf(" %d×%d", w, h)
 		}
 		if !n.Op.NoCache && e.cache.Contains(run.sig(id)) {

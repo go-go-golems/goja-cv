@@ -83,7 +83,7 @@ func New(eng *graph.Engine, id graph.NodeID, opt Options) (*Look, error) {
 	switch n.Kind {
 	case graph.KindImage, graph.KindMask:
 		l.scale = eng.ScaleForLong(id, maxLong)
-		l.w, l.h = buffer.ScaledSize(n.DocW, n.DocH, l.scale)
+		l.w, l.h = buffer.ScaledSize(n.Frame.W, n.Frame.H, l.scale)
 	case graph.KindValue:
 		if n.Op.Name != "histogram" {
 			return nil, lookKindError(n)

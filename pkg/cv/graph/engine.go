@@ -136,7 +136,7 @@ func (e *Engine) Placeholder(receiver NodeID) (*Node, error) {
 	if r.Kind != op.Returns {
 		return nil, Errorf(EWrongKind, "builder lambdas take %s; the receiver is %s.", A(string(op.Returns)), A(string(r.Kind)))
 	}
-	n, _, err := e.b.Intern(op, 0, nil, map[string]any{"for": float64(receiver), "w": r.DocW, "h": r.DocH})
+	n, _, err := e.b.Intern(op, 0, nil, map[string]any{"for": float64(receiver), "frame": r.Frame.Data()})
 	return n, err
 }
 
@@ -163,7 +163,7 @@ func (e *Engine) ScaleForLong(id NodeID, long int) float64 {
 	if !ok {
 		return 1
 	}
-	l := max(n.DocW, n.DocH)
+	l := max(n.Frame.W, n.Frame.H)
 	if l <= 0 || l <= long {
 		return 1
 	}

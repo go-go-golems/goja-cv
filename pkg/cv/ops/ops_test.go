@@ -44,8 +44,8 @@ func evalData(t *testing.T, e *graph.Engine, n *graph.Node, scale float64) any {
 
 func TestStatsLevelsLiftingOnTestImage(t *testing.T) {
 	e, img := newEngine(t)
-	if img.DocW != 64 || img.DocH != 48 || e.PreviewScale(img.ID) != 1 {
-		t.Fatalf("source %dx%d preview %g", img.DocW, img.DocH, e.PreviewScale(img.ID))
+	if img.Frame != (graph.Frame{W: 64, H: 48}) || e.PreviewScale(img.ID) != 1 {
+		t.Fatalf("source %dx%d preview %g", img.Frame.W, img.Frame.H, e.PreviewScale(img.ID))
 	}
 	s := call(t, e, "stats", img.ID)
 	st := evalData(t, e, s, 1).(map[string]any)
@@ -246,9 +246,16 @@ func TestStatsInsideBoxAndMask(t *testing.T) {
 	if _, ok := whole["area"]; ok {
 		t.Fatal("whole-image stats should not report area")
 	}
-	if _, err := e.Evaluate(ctx, call(t, e, "stats", img.ID, map[string]any{"box": []any{500.0, 500.0, 4.0, 4.0}}).ID, graph.EvalOptions{Scale: 1}); err == nil ||
+	// a box outside the frame is refused when the node is built, with the nearest valid box as the fix
+	_, _, err = e.Call("stats", img.ID, []any{map[string]any{"box": []any{500.0, 500.0, 4.0, 4.0}}})
+	if ce, ok := graph.AsError(err); !ok || ce.Code != graph.EArgRange || ce.Fix != "img.stats({ box: [60, 44, 4, 4] })" {
+		t.Fatalf("box outside the frame: %v", err)
+	}
+	// an empty mask inside the frame selects no pixels
+	empty := call(t, e, "mask.box", img.ID, []any{10.0, 10.0, 0.0, 0.0})
+	if _, err := e.Evaluate(ctx, call(t, e, "stats", img.ID, map[string]any{"mask": graph.NodeArg{ID: empty.ID}}).ID, graph.EvalOptions{Scale: 1}); err == nil ||
 		!strings.Contains(err.Error(), "selects no pixels") {
-		t.Fatalf("empty box: %v", err)
+		t.Fatalf("empty selection: %v", err)
 	}
 }
 

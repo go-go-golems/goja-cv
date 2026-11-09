@@ -24,14 +24,14 @@ func testRegistry(t *testing.T) (*Registry, *atomic.Int64) {
 				{Name: "w", Type: "number", Default: 40.0},
 				{Name: "h", Type: "number", Default: 20.0},
 			},
-			DocSize: func(a Args, _ []*Node) (int, int) { return a.Int("w"), a.Int("h") },
+			DocFrame: func(a Args, _ []*Node) Frame { return Frame{W: a.Int("w"), H: a.Int("h")} },
 			Run: func(_ context.Context, ec *EvalCtx, _ []Value, a Args) (Value, error) {
 				w, h := buffer.ScaledSize(a.Int("w"), a.Int("h"), ec.Scale)
 				b := buffer.New(w, h, 1, ec.Scale)
 				for i := range b.Pix {
 					b.Pix[i] = float32(a.Number("v"))
 				}
-				return NewImage(b, a.Int("w"), a.Int("h")), nil
+				return NewImage(b), nil
 			}},
 		OpDef{Name: "scale", On: KindImage, Returns: KindImage,
 			Args:     []ArgSpec{{Name: "k", Type: "number", Positional: true, Min: F(-100), Max: F(100), Usual: [2]float64{0, 4}}},
@@ -42,7 +42,7 @@ func testRegistry(t *testing.T) (*Registry, *atomic.Int64) {
 				for i, v := range src.Buf.Pix {
 					out.Pix[i] = v * float32(a.Number("k"))
 				}
-				return NewImage(out, src.DocW, src.DocH), nil
+				return NewImage(out), nil
 			}},
 		OpDef{Name: "radius", On: KindImage, Returns: KindValue,
 			Args: []ArgSpec{{Name: "r", Type: "number", Unit: DocPx, Positional: true}, {Name: "bad", Type: "bool", Default: false}},
@@ -76,7 +76,7 @@ func testRegistry(t *testing.T) (*Registry, *atomic.Int64) {
 				for i := range out.Pix {
 					out.Pix[i] = (1-wt)*x.Buf.Pix[i] + wt*y.Buf.Pix[i]
 				}
-				return NewImage(out, x.DocW, x.DocH), nil
+				return NewImage(out), nil
 			}},
 		OpDef{Name: "fail", On: KindImage, Returns: KindImage,
 			Run: func(context.Context, *EvalCtx, []Value, Args) (Value, error) {

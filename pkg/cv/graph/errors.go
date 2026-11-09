@@ -26,6 +26,7 @@ const (
 	EEval             = "E_EVAL"        // a kernel or IO failure during evaluation
 	EInternal         = "E_INTERNAL"    // a bug: an op panicked
 	EPlaceholder      = "E_PLACEHOLDER" // a builder lambda's placeholder node was evaluated outside its builder
+	EFrame            = "E_FRAME"       // images combined by one op cover different frames
 	WUnusedNode       = "UNUSED_NODE"
 	WRange            = "RANGE"
 	WCut              = "CUT"

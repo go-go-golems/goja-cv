@@ -21,7 +21,7 @@ func filterOps() []graph.OpDef {
 				if err != nil {
 					return nil, err
 				}
-				return graph.NewImage(out, src.DocW, src.DocH), nil
+				return graph.NewImage(out), nil
 			},
 			Doc: "Separable Gaussian blur in linear light; r is the standard deviation in doc px.",
 			See: []string{"exposure"},

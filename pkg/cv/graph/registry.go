@@ -65,7 +65,9 @@ func (u Unit) String() string {
 // ArgSpec declares one argument of an op.
 //
 // Types: "number", "string", "bool", "enum:a,b,c", "number[]", "string[]",
-// "object" (with Options as the allowed keys), "any", and node kinds such as
+// "box" ([x, y, w, h] or an object with x, y, w, h), "point" ([x, y] or an
+// object with cx, cy), unions of these such as "point|number", "object"
+// (with Options as the allowed keys), "any", and node kinds such as
 // "Mask", "Regions|Mask" or "Image[]": a kind-typed argument holds a node of
 // that kind (lifted into the node's inputs like a Value argument); Run reads
 // its evaluated value with Args.Node / Args.Nodes.
@@ -79,7 +81,8 @@ type ArgSpec struct {
 	Variadic   bool       // a positional "...[]" argument that takes all remaining positional values
 	Hidden     bool       // set by Go only (e.g. a source file stamp); not settable or listed
 	Static     bool       // must be a literal: a node (Value/Param) is rejected
-	Len        int        // for list types: the exact number of elements (4 for a box, 2 for a point)
+	Len        int        // for list types: the exact number of elements
+	InFrame    bool       // "box"/"point": a box must overlap, a point lie in, the receiver's frame (E_ARG_RANGE)
 	Min, Max   *float64   // hard limits: violation is E_ARG_RANGE
 	Usual      [2]float64 // soft range (zero value = none): violation is a RANGE warning
 	Options    []ArgSpec  // for "object": the allowed keys (unknown keys are E_UNKNOWN_OPTION)
@@ -103,14 +106,14 @@ type OpDef struct {
 	Inputs   []Kind // extra node inputs beyond the receiver, passed positionally first
 	Args     []ArgSpec
 	Returns  Kind
-	Space    string                                     // "linear" | "perceptual" | "geometry" | "analysis" | "source" | "data"
-	Identity func(args Args) bool                       // neutral arguments: the receiver is returned unchanged
-	Halo     func(args Args) float64                    // doc px of border a tile needs (for tiled export; unused in M1)
-	Global   bool                                       // needs the whole image (stats, histogram)
-	NoCache  bool                                       // never cached (explain reads cache state)
-	Lazy     bool                                       // inputs are not evaluated before Run (explain)
-	DocSize  func(args Args, inputs []*Node) (int, int) // doc size of the result; default: first input's
-	Fields   []string                                   // documented fields of a Value result (help, hints)
+	Space    string                                // "linear" | "perceptual" | "geometry" | "analysis" | "source" | "data"
+	Identity func(args Args) bool                  // neutral arguments: the receiver is returned unchanged
+	Halo     func(args Args) float64               // doc px of border a tile needs (for tiled export; unused in M1)
+	Global   bool                                  // needs the whole image (stats, histogram)
+	NoCache  bool                                  // never cached (explain reads cache state)
+	Lazy     bool                                  // inputs are not evaluated before Run (explain)
+	DocFrame func(args Args, inputs []*Node) Frame // the result's frame; nil: the first input with a non-empty frame
+	Fields   []string                              // documented fields of a Value result (help, hints)
 	// Validate checks bound args at build time (after defaults and types);
 	// lifted values are still InputRefs. Errors fail the call.
 	Validate func(args Args) error

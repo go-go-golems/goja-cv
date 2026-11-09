@@ -27,7 +27,7 @@ func runSpecks(ctx context.Context, ec *graph.EvalCtx, src *graph.ImageValue, a 
 	if err != nil {
 		return nil, nil, err
 	}
-	rv := graph.NewRegions(src.Buf.W, src.Buf.H, ec.Scale, src.DocW, src.DocH)
+	rv := graph.NewRegions(src.Buf.W, src.Buf.H, ec.Scale, src.Frame)
 	for i, s := range res.Specks {
 		r := rv.NewRegion(i+1, s.Pix)
 		r.Measures["contrast"] = s.Contrast
@@ -99,7 +99,7 @@ func detectOps() []graph.OpDef {
 				}
 				out := map[string]any{
 					"verdict": verdict, "count": float64(count), "candidates": float64(len(rv.Items)),
-					"maxArea": maxArea, "coverage": area / float64(src.DocW*src.DocH), "noise": res.Noise,
+					"maxArea": maxArea, "coverage": area / float64(src.Frame.W*src.Frame.H), "noise": res.Noise,
 				}
 				if count > 0 {
 					out["hint"] = "img.heal(img.detect.specks().where({ score: { gte: 0.5 } }), { radius: 3 })"

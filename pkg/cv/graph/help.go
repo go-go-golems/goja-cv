@@ -128,10 +128,25 @@ func DescribeArgSpec(s *ArgSpec) string {
 		parts = append(parts, "fraction of width/height")
 	case s.Type == "number" && s.Unit == DocPx2:
 		parts = append(parts, "area (doc px²)")
-	case s.Type == "number[]" && s.Unit == DocPx && s.Len == 4:
-		parts = append(parts, "box [x, y, w, h] (doc px)")
-	case s.Type == "number[]" && s.Unit == DocPx && s.Len == 2:
-		parts = append(parts, "point [x, y] (doc px)")
+	case s.Type == "box" || s.Type == "point" || isUnionType(s.Type):
+		var alts []string
+		for _, t := range strings.Split(s.Type, "|") {
+			switch {
+			case t == "box":
+				alts = append(alts, "box [x, y, w, h] or { x, y, w, h }")
+			case t == "point":
+				alts = append(alts, "point [x, y] or { cx, cy }")
+			case strings.HasPrefix(t, "enum:"):
+				alts = append(alts, strings.Join(quoteSplit(strings.TrimPrefix(t, "enum:")), " | "))
+			default:
+				alts = append(alts, t)
+			}
+		}
+		d := strings.Join(alts, " | ")
+		if s.Unit == DocPx {
+			d += " (doc px)"
+		}
+		parts = append(parts, d)
 	case isKindType(s.Type):
 		parts = append(parts, s.Type+" node")
 	case s.Type == "object":

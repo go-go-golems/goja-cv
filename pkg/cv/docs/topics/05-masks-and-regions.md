@@ -26,7 +26,7 @@ return { coverage: await sel.coverage(), look: sel.overlay(img, { color: "lime" 
 
 ## Regions
 
-`detect.specks()` and `mask.components()` make Regions. Awaiting gives `{ count, items: [{ id, box, area, centroid, … }], docW, docH, … }`. Narrow them with:
+`detect.specks()` and `mask.components()` make Regions. Awaiting gives `{ count, items: [{ id, box, area, centroid, … }], frame, … }` (box and centroid are absolute doc px in the image's frame). Narrow them with:
 
 - `where({ field: { lt, lte, gt, gte, eq, ne, in } })` or `{ field: value }` (data, runs in Go, values may be params);
 - `without([ids])`, `only([ids])`, `sortBy("contrast", { desc })`, `top(n)`, `count()`;

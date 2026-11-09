@@ -21,7 +21,7 @@ func toneOps() []graph.OpDef {
 				if err != nil {
 					return nil, err
 				}
-				return graph.NewImage(out, src.DocW, src.DocH), nil
+				return graph.NewImage(out), nil
 			},
 			Doc: "Change exposure by ev stops in linear light.",
 			See: []string{"levels", "contrast", "stats"},
@@ -50,7 +50,7 @@ func toneOps() []graph.OpDef {
 				if err != nil {
 					return nil, err
 				}
-				return graph.NewImage(out, src.DocW, src.DocH), nil
+				return graph.NewImage(out), nil
 			},
 			Doc: "Map the black and white input levels to 0 and 1 and bend the midtones with gamma.",
 			See: []string{"stats", "curve", "contrast"},
@@ -67,7 +67,7 @@ func toneOps() []graph.OpDef {
 				if err != nil {
 					return nil, err
 				}
-				return graph.NewImage(out, src.DocW, src.DocH), nil
+				return graph.NewImage(out), nil
 			},
 			Doc: "Increase (amount > 0) or decrease contrast around perceptual mid-grey.",
 			See: []string{"levels", "exposure"},
@@ -85,7 +85,7 @@ func toneOps() []graph.OpDef {
 				if err != nil {
 					return nil, err
 				}
-				return graph.NewImage(out, src.DocW, src.DocH), nil
+				return graph.NewImage(out), nil
 			},
 			Doc: "Convert to a single-channel image of weighted linear channels.",
 			See: []string{"stats"},

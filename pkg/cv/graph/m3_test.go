@@ -24,7 +24,7 @@ func m3Engine(t *testing.T) *Engine {
 						m.Pix[y*m.W+x] = 1
 					}
 				}
-				return NewMask(m, src.DocW, src.DocH), nil
+				return NewMask(m), nil
 			}},
 		OpDef{Name: "blobs", On: KindImage, Returns: KindRegions,
 			Args: []ArgSpec{
@@ -35,7 +35,7 @@ func m3Engine(t *testing.T) *Engine {
 			AnalysisScale: func(a Args) float64 { return a.Raw("analysisScale").(float64) },
 			Run: func(_ context.Context, ec *EvalCtx, in []Value, a Args) (Value, error) {
 				src := in[0].(*ImageValue)
-				rv := NewRegions(src.Buf.W, src.Buf.H, ec.Scale, src.DocW, src.DocH)
+				rv := NewRegions(src.Buf.W, src.Buf.H, ec.Scale, src.Frame)
 				b := a.Lengths("box", ec.Scale)
 				var pix []int32
 				for y := int(b[1]); y < int(b[1]+b[3]); y++ {
@@ -58,7 +58,7 @@ func m3Engine(t *testing.T) *Engine {
 						out.Pix[i] = out.Pix[i]*(1-w) + float32(a.Number("v"))*w
 					}
 				}
-				return NewImage(out, src.DocW, src.DocH), nil
+				return NewImage(out), nil
 			}},
 		OpDef{Name: "pred", On: KindImage, Returns: KindValue,
 			Args: []ArgSpec{{Name: "p", Type: "any", Positional: true}},
@@ -171,7 +171,7 @@ func TestAnalysisScaleMakesRegionsScaleFree(t *testing.T) {
 // TestRasterizeKeepsAreaAtAnyScale: regions found at one scale rasterize to
 // masks whose sum (in target px²) is the doc area times scale².
 func TestRasterizeKeepsAreaAtAnyScale(t *testing.T) {
-	rv := NewRegions(100, 60, 1, 100, 60)
+	rv := NewRegions(100, 60, 1, Frame{W: 100, H: 60})
 	var pix []int32
 	for y := 7; y < 20; y++ {
 		for x := 13; x < 30; x++ {

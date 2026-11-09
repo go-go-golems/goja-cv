@@ -64,8 +64,7 @@ func runStats(ctx context.Context, ec *graph.EvalCtx, in []graph.Value, a graph.
 		w = m
 	}
 	if a.Has("box") {
-		sx, sy := graph.AxisScales(src)
-		b := a.XY("box", sx, sy)
+		b := a.XY("box", src)
 		bm := kernels.BoxMask(src.Buf.W, src.Buf.H, src.Buf.Scale, b[0], b[1], b[2], b[3]).Plane(0)
 		if w == nil {
 			w = bm
@@ -84,9 +83,10 @@ func runStats(ctx context.Context, ec *graph.EvalCtx, in []graph.Value, a graph.
 	}
 	ws, err := kernels.StatsWeighted(ctx, src.Buf, w, ps)
 	if err == kernels.ErrEmptySelection {
-		return nil, graph.Errorf(graph.EArgRange, "stats: the mask/box selects no pixels of this %d×%d image.", src.DocW, src.DocH).
-			WithHint("Boxes are [x, y, w, h] in doc px inside the image; check a mask with await mask.coverage().").
-			WithFix(fmt.Sprintf("img.stats({ box: [0, 0, %d, %d] })", max(1, src.DocW/2), max(1, src.DocH/2)))
+		f := src.Frame
+		return nil, graph.Errorf(graph.EArgRange, "stats: the mask/box selects no pixels of this image (frame %s).", f).
+			WithHint("Boxes are [x, y, w, h] in doc px, absolute in the image's frame; check a mask with await mask.coverage().").
+			WithFix(fmt.Sprintf("img.stats({ box: [%d, %d, %d, %d] })", f.X, f.Y, max(1, f.W/2), max(1, f.H/2)))
 	}
 	if err != nil {
 		return nil, err
@@ -103,15 +103,15 @@ func selectionWeights(ctx context.Context, v graph.Value, src *graph.ImageValue)
 	var m *buffer.Buffer
 	switch x := v.(type) {
 	case *graph.RegionsValue:
-		if x.DocW != src.DocW || x.DocH != src.DocH {
-			return nil, graph.Errorf(graph.EWrongKind, "stats: the regions belong to a %d×%d image, this one is %d×%d.", x.DocW, x.DocH, src.DocW, src.DocH)
+		if err := graph.SameFrame("stats", x.Frame, src.Frame); err != nil {
+			return nil, err
 		}
 		var err error
 		if m, err = x.Rasterize(ctx, src.Buf.W, src.Buf.H, src.Buf.Scale); err != nil {
 			return nil, err
 		}
 	case *graph.ImageValue:
-		if err := sameSize("stats", src, x); err != nil {
+		if err := sameFrame("stats", src, x); err != nil {
 			return nil, err
 		}
 		m = x.Buf
@@ -131,7 +131,7 @@ func measureOps() []graph.OpDef {
 				{Name: "percentiles", Type: "number[]", Default: []any{}, Min: graph.F(0), Max: graph.F(1),
 					Doc: "extra luminance/channel percentiles as fractions, e.g. [0.005, 0.995]"},
 				{Name: "mask", Type: "Regions|Mask", Optional: true, Doc: "measure only inside this mask (weighted by it) or these regions"},
-				{Name: "box", Type: "number[]", Unit: graph.DocPx, Len: 4, Optional: true, Doc: "measure only inside [x, y, w, h] (doc px); combines with mask"},
+				{Name: "box", Type: "box", Unit: graph.DocPx, Optional: true, InFrame: true, Doc: "measure only inside [x, y, w, h] (doc px, absolute in the image's frame); combines with mask"},
 			},
 			Fields: statsFields,
 			Run:    runStats,

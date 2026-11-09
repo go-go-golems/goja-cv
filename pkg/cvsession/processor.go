@@ -486,9 +486,9 @@ func (s *state) contextBlock(vm *goja.Runtime) *yaml.Node {
 		if !ok {
 			continue
 		}
-		desc := fmt.Sprintf("%s (%d×%d)", filepath.Base(node.Args.String("path")), node.DocW, node.DocH)
+		desc := fmt.Sprintf("%s (%s)", filepath.Base(node.Args.String("path")), node.Frame.Size())
 		if info, ok := graph.SourceInfo(node); ok && info["bitDepth"] != nil && info["format"] != nil {
-			desc = fmt.Sprintf("%s (%d×%d, %v-bit %s)", info["file"], node.DocW, node.DocH, info["bitDepth"], strings.ToUpper(fmt.Sprint(info["format"])))
+			desc = fmt.Sprintf("%s (%s, %v-bit %s)", info["file"], node.Frame.Size(), info["bitDepth"], strings.ToUpper(fmt.Sprint(info["format"])))
 		}
 		if id == imgID {
 			desc = "img = " + desc

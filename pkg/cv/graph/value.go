@@ -13,26 +13,27 @@ type Value interface {
 }
 
 // ImageValue is an evaluated Image or Mask node. A Mask is a 1-channel
-// buffer with values in [0, 1] (NewMask).
+// buffer with values in [0, 1] (NewMask). Frame is the node's static frame;
+// the evaluator stamps it after Run, which only creates the value.
 type ImageValue struct {
-	Buf        *buffer.Buffer
-	DocW, DocH int
-	kind       Kind
+	Buf   *buffer.Buffer
+	Frame Frame
+	kind  Kind
 }
 
 var _ Value = &ImageValue{}
 
 // NewImage wraps a buffer as an Image value.
-func NewImage(b *buffer.Buffer, docW, docH int) *ImageValue {
-	return &ImageValue{Buf: b, DocW: docW, DocH: docH, kind: KindImage}
+func NewImage(b *buffer.Buffer) *ImageValue {
+	return &ImageValue{Buf: b, kind: KindImage}
 }
 
 // NewMask wraps a 1-channel buffer with values in [0, 1] as a Mask value.
-func NewMask(b *buffer.Buffer, docW, docH int) *ImageValue {
+func NewMask(b *buffer.Buffer) *ImageValue {
 	if b.C != 1 {
 		panic(fmt.Sprintf("cv: NewMask with %d channels", b.C))
 	}
-	return &ImageValue{Buf: b, DocW: docW, DocH: docH, kind: KindMask}
+	return &ImageValue{Buf: b, kind: KindMask}
 }
 
 // IsMask reports whether v is a Mask value.
@@ -61,7 +62,7 @@ func (v *ImageValue) Bytes() int64 { return v.Buf.Bytes() + 64 }
 func (v *ImageValue) Summary() map[string]any {
 	m := map[string]any{
 		"kind": string(v.Kind()), "w": v.Buf.W, "h": v.Buf.H,
-		"scale": v.Buf.Scale, "docW": v.DocW, "docH": v.DocH,
+		"scale": v.Buf.Scale, "frame": v.Frame.Data(),
 	}
 	if v.IsMask() {
 		m["coverage"] = v.Coverage()

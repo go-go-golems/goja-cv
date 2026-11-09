@@ -343,14 +343,14 @@ func resultToJS(vm *goja.Runtime, v graph.Value, n *graph.Node) goja.Value {
 	return goja.Undefined()
 }
 
-// __describe(id) → {id, kind, op, call, label, docW, docH, path}
+// __describe(id) → {id, kind, op, call, label, frame, path}
 func (b *binding) describe(c goja.FunctionCall) goja.Value {
 	n := b.nodeArg(c.Argument(0))
 	scale := b.eng.PreviewScale(n.ID)
 	d := map[string]any{
 		"id": float64(n.ID), "kind": string(n.Kind), "op": n.Op.Name, "label": graph.Label(n),
-		"call": graph.Describe(b.eng.Builder(), n, scale, b.eng.Params().Snapshot()),
-		"docW": float64(n.DocW), "docH": float64(n.DocH),
+		"call":  graph.Describe(b.eng.Builder(), n, scale, b.eng.Params().Snapshot()),
+		"frame": n.Frame.Data(),
 		"path":  toAny(b.eng.Path(n.ID)),
 		"scale": scale,
 	}

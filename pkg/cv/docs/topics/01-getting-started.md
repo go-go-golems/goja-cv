@@ -28,8 +28,8 @@ return { meanL: s.meanL, p01: s.p01, p99: s.p99 }
 
 ```js
 mem.base = await img.stats().pick("meanL", "p99")
-const info = await img      // file, format, bitDepth, docW, docH, …
-return { base: mem.base, file: info.file, bitDepth: info.bitDepth, size: [info.docW, info.docH] }
+const info = await img      // file, format, bitDepth, frame [x, y, w, h], …
+return { base: mem.base, file: info.file, bitDepth: info.bitDepth, frame: info.frame }
 ```
 
 ## Seeing images

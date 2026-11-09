@@ -240,7 +240,7 @@ func regionOps() []graph.OpDef {
 				if err != nil {
 					return nil, err
 				}
-				rv := graph.NewRegions(m.Buf.W, m.Buf.H, ec.Scale, m.DocW, m.DocH)
+				rv := graph.NewRegions(m.Buf.W, m.Buf.H, ec.Scale, m.Frame)
 				minPx := a.Area("minArea", ec.Scale)
 				for _, pix := range comps {
 					if float64(len(pix)) < minPx {
@@ -367,7 +367,7 @@ func regionOps() []graph.OpDef {
 						return nil, err
 					}
 				}
-				return graph.NewMask(m, rv.DocW, rv.DocH), nil
+				return graph.NewMask(m), nil
 			},
 			Doc: "The regions as a Mask at the evaluation scale (exact area coverage), optionally grown.",
 			See: []string{"components", "grow"},
@@ -401,7 +401,7 @@ func regionOps() []graph.OpDef {
 
 // rasterize draws rv at the buffer size of scale.
 func rasterize(ctx context.Context, rv *graph.RegionsValue, scale float64) (*buffer.Buffer, error) {
-	w, h := buffer.ScaledSize(rv.DocW, rv.DocH, scale)
+	w, h := buffer.ScaledSize(rv.Frame.W, rv.Frame.H, scale)
 	return rv.Rasterize(ctx, w, h, scale)
 }
 

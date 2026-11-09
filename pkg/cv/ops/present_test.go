@@ -33,8 +33,8 @@ func TestOverlayAndCompare(t *testing.T) {
 	}
 	healed := call(t, e, "heal", img.ID, graph.NodeArg{ID: specks.ID})
 	side := call(t, e, "compare", img.ID, []any{graph.NodeArg{ID: healed.ID}})
-	if side.DocW != 2*256+compareGap || side.DocH != 192 {
-		t.Fatalf("side doc size %d×%d", side.DocW, side.DocH)
+	if side.Frame.W != 2*256+compareGap || side.Frame.H != 192 {
+		t.Fatalf("side doc size %d×%d", side.Frame.W, side.Frame.H)
 	}
 	sv := evalValue(t, e, side, 1).(*graph.ImageValue)
 	hb := evalValue(t, e, healed, 1).(*graph.ImageValue).Buf

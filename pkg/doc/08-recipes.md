@@ -25,7 +25,7 @@ agent-facing versions are in `cv.docs.read("recipes")`.
 const s = await img.stats()
 const info = await img
 return {
-  file: info.file, bitDepth: info.bitDepth, size: [info.docW, info.docH],
+  file: info.file, bitDepth: info.bitDepth, frame: info.frame,
   meanL: s.meanL, p01: s.p01, p99: s.p99, crushed: s.clipLow, blown: s.clipHigh,
   histogram: img.histogram().look("histogram"),
 }

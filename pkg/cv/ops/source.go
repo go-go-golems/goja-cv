@@ -19,7 +19,7 @@ func sourceOps() []graph.OpDef {
 				{Name: "bits", Type: "number", Hidden: true, Optional: true},
 				{Name: "channels", Type: "number", Hidden: true, Optional: true},
 			},
-			DocSize: func(a graph.Args, _ []*graph.Node) (int, int) { return a.Int("w"), a.Int("h") },
+			DocFrame: func(a graph.Args, _ []*graph.Node) graph.Frame { return graph.Frame{W: a.Int("w"), H: a.Int("h")} },
 			Run: func(ctx context.Context, ec *graph.EvalCtx, _ []graph.Value, a graph.Args) (graph.Value, error) {
 				src, err := ec.Eval.Sources().Load(ctx, a.String("path"), a.String("stamp"))
 				if err != nil {
@@ -29,7 +29,7 @@ func sourceOps() []graph.OpDef {
 				if err != nil {
 					return nil, err
 				}
-				return graph.NewImage(buf, src.Pyr.DocW(), src.Pyr.DocH()), nil
+				return graph.NewImage(buf), nil
 			},
 			Doc: "Open an image file as a source node (decoded on first evaluation, sRGB → linear float32).",
 			See: []string{"stats", "explain"},
@@ -50,10 +50,9 @@ func sourceOps() []graph.OpDef {
 			Name: graph.PlaceholderOp, On: graph.KindNone, Returns: graph.KindImage, Space: "source",
 			Args: []graph.ArgSpec{
 				{Name: "for", Type: "number", Hidden: true},
-				{Name: "w", Type: "number", Hidden: true},
-				{Name: "h", Type: "number", Hidden: true},
+				{Name: "frame", Type: "number[]", Hidden: true, Doc: "the receiver's frame [x, y, w, h]"},
 			},
-			DocSize: func(a graph.Args, _ []*graph.Node) (int, int) { return a.Int("w"), a.Int("h") },
+			DocFrame: func(a graph.Args, _ []*graph.Node) graph.Frame { return frameArg(a, "frame") },
 			Run: func(context.Context, *graph.EvalCtx, []graph.Value, graph.Args) (graph.Value, error) {
 				return nil, graph.Errorf(graph.EPlaceholder, "This is the placeholder image a within() function receives; it only stands for the masked image while the function builds its edit.").
 					WithHint("Use the function's return value. Do not keep the placeholder in a variable outside the function.").
