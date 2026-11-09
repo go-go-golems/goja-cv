@@ -45,7 +45,7 @@ Each look is numbered (the number is burned into its top-left corner) and its ca
 ## Finding things
 
 - `cv.docs.list()` lists the topics; `cv.docs.search("dust heal")` finds sections; `cv.docs.read("recipes", { section: "Remove dust" })` reads one.
-- `cv.help()` lists the ops per kind; `cv.help("levels")` describes one op (arguments, units, defaults, ranges).
+- `cv.help()` lists the ops per kind; `cv.help("levels")` describes one op (arguments, units, defaults, ranges); `cv.help("Mask")` lists a kind's methods; `cv.help("Regions.filter")` one method of a kind. It never throws: unknown names return `{ found: false, didYouMean }`.
 - Errors carry a literal `fix:`; apply it (see `cv.docs.read("errors")`).
 
 ```js

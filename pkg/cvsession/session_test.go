@@ -320,3 +320,15 @@ func TestConcurrentEvalsKeepTheirOwnSource(t *testing.T) {
 		}
 	}
 }
+
+// TestBatchedHelpNeverThrows is pi run 2 call 17: one unknown name used to
+// kill the whole eval.
+func TestBatchedHelpNeverThrows(t *testing.T) {
+	app, sid := newApp(t, cvsession.Options{Image: tiffPath})
+	resp := eval(t, app, sid, `return [await cv.help("overlay"), await cv.help("mask.luminance"), await cv.help("Mask.coverage"), await cv.help("Regions.explain"), cv.help("evaluate"), cv.help("nope")]`)
+	out := text(resp)
+	if resp.Cell.Execution.Status != "ok" {
+		t.Fatalf("status %s:\n%s", resp.Cell.Execution.Status, out)
+	}
+	mustContain(t, out, "overlay:", "mask.luminance:", "coverage:", "explain:", "evaluate:", "found: false", "name: nope")
+}

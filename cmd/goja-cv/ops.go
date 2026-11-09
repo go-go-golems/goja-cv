@@ -115,40 +115,24 @@ func newHelpOpCommand(opts *rootOptions) *cobra.Command {
 			if sub, _, err := root.Find(args); err == nil && sub != root {
 				return sub.Help()
 			}
-			h, err := cvmod.DefaultRegistry().Help(args[0])
+			h := cvmod.Help(cvmod.DefaultRegistry(), args[0])
+			var err error
+			if asJSON {
+				err = writeJSON(opts.stdout, h)
+			} else {
+				err = writeYAML(opts.stdout, h)
+			}
 			if err != nil {
-				printHelpError(opts.stdout, err, asJSON)
+				return err
+			}
+			if found, ok := h["found"].(bool); ok && !found {
 				return silentFailure()
 			}
-			if asJSON {
-				return writeJSON(opts.stdout, h)
-			}
-			return writeYAML(opts.stdout, h)
+			return nil
 		},
 	}
 	cmd.Flags().BoolVar(&asJSON, "json", false, "Print JSON")
 	return cmd
-}
-
-func printHelpError(w io.Writer, err error, asJSON bool) {
-	ce, ok := graph.AsError(err)
-	if !ok {
-		ce = &graph.Error{Code: graph.EInternal, Message: err.Error()}
-	}
-	m := map[string]any{"code": ce.Code, "message": ce.Message}
-	for k, v := range map[string]string{"hint": ce.Hint, "fix": ce.Fix} {
-		if v != "" {
-			m[k] = v
-		}
-	}
-	if len(ce.Valid) > 0 {
-		m["valid"] = ce.Valid
-	}
-	if asJSON {
-		_ = writeJSON(w, map[string]any{"error": m})
-		return
-	}
-	_ = writeYAML(w, map[string]any{"error": m})
 }
 
 func writeYAML(w io.Writer, v any) error {

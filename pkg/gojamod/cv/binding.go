@@ -9,7 +9,6 @@ import (
 
 	"github.com/dop251/goja"
 	"github.com/go-go-golems/go-go-goja/pkg/runtimebridge"
-	"github.com/go-go-golems/goja-cv/pkg/cv/docs"
 	"github.com/go-go-golems/goja-cv/pkg/cv/graph"
 )
 
@@ -386,17 +385,7 @@ func (b *binding) help(c goja.FunctionCall) goja.Value {
 	if a := c.Argument(0); !goja.IsUndefined(a) && !goja.IsNull(a) {
 		name = a.String()
 	}
-	h, err := b.eng.Registry().Help(name)
-	if err != nil {
-		b.throw(err)
-	}
-	if name == "" {
-		h["params"] = "P.slider(name, { min, max, value, step, label, unit }), P.toggle(name, { value }), P.choice(name, { options, value })"
-		h["sources"] = toAny([]string{"cv.open(path)"})
-		h["docs"] = "Guides: cv.docs.list(), cv.docs.search(text), cv.docs.read(id, { section }). Start with cv.docs.read(\"getting-started\")."
-		h["topics"] = toAny(docs.IDs())
-	}
-	return toJS(b.vm, h)
+	return toJS(b.vm, Help(b.eng.Registry(), name))
 }
 
 // __warnings(clear) → [{code, message}]

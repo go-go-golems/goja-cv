@@ -55,8 +55,12 @@ return await loud.stats().meanL
 
 ## Help
 
-`cv.help("op")` gives the arguments with units, defaults, usual ranges and limits; an unknown name has a did-you-mean.
+`cv.help(name)` never throws, so you can ask for several names in one eval. It takes an op (`"levels"`, `"detect.specks"`: arguments with units, defaults, usual ranges and limits), a kind (`"Mask"`: its methods with one line each), `Kind.method` (`"Regions.filter"`) or a cv function (`"evaluate"`, `"compare"`, `"docs"`, `"show"`). An unknown name returns `{ found: false, name, didYouMean, hint }`.
 
 ```js
-return cv.help("detect.specks")
+const names = ["detect.specks", "Mask", "Regions.filter", "evaluate", "mask.stats"]
+return names.map(n => {
+  const h = cv.help(n)
+  return h.found === false ? { n, didYouMean: h.didYouMean, hint: h.hint } : { n, keys: Object.keys(h) }
+})
 ```

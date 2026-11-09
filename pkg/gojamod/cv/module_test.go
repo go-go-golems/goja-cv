@@ -176,9 +176,11 @@ func TestHelp(t *testing.T) {
 	if got["ev"] != "number in [-10, 10], usual [-3, 3], required, positional. stops: linear values are multiplied by 2^ev" || got["usage"] != "exposure(ev)" {
 		t.Fatalf("help exposure: %#v", got)
 	}
-	e := mustFail(t, rt, "E_UNKNOWN_METHOD", `return cv.help("blur")`)
-	if e.Fix != `cv.help("gaussian")` {
-		t.Fatalf("help synonym: %+v", e)
+	// cv.help never throws (agents batch help calls): unknown names return
+	// { found: false, didYouMean }.
+	miss := mustRun(t, rt, `return cv.help("blur")`).(map[string]any)
+	if miss["found"] != false || miss["didYouMean"].([]any)[0] != "gaussian" {
+		t.Fatalf("help synonym: %+v", miss)
 	}
 }
 
