@@ -222,8 +222,8 @@ func runRegionMeasure(ctx context.Context, _ *graph.EvalCtx, in []graph.Value, a
 				idx, w := regionWeights(rv, r, raster, sameRaster)
 				for pi, plane := range planes {
 					suffix := "L"
-					if pi > 0 {
-						suffix = []string{"R", "G", "B"}[pi-1]
+					if pi > 0 && pi <= 3 { // planes: gray, then R, G, B
+						suffix = string("RGB"[pi-1])
 					}
 					s, err := kernels.StatsOf(ctx, plane, idx, w, b.Scale)
 					if err != nil {
