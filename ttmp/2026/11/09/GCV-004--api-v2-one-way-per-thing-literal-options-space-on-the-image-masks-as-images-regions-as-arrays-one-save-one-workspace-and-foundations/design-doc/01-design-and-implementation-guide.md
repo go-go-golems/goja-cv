@@ -76,8 +76,8 @@ ExternalSources:
     - /Users/manuel/code/wesen/2026-11-07--dust-scanning/ttmp/2026/11/08/CVJS-001--js-eval-cv-api-for-agents-compare-9-implementations/various/pi-runs
     - /Users/manuel/code/wesen/2026-11-07--dust-scanning/ttmp/2026/11/08/CVJS-001--js-eval-cv-api-for-agents-compare-9-implementations/scripts/06-pi-cv-agent/run.sh
     - /Users/manuel/code/wesen/2026-11-07--dust-scanning/ttmp/2026/11/07/DUST-002--film-dust-detector-model-exploration/scripts/84-cv-helpers.js
-Summary: "Intern guide for GCV-004 (revision 2): an architecture tour of goja-cv, then API v2 (literal options; space on the image with the receiver deciding and masks never converted; one luminance; masks as one-channel images; regions as arrays linked by [node, index]; await only, look only, one cv.save; one os.Root workspace plus read-only --read directories; pruned synonyms) and the foundations that make the review-found bug classes unwritable, with phases 0a-8, tests, a pi validation plan and the review disposition."
-LastUpdated: 2026-11-09T22:00:00-05:00
+Summary: "Intern guide for GCV-004 (revision 3): an architecture tour of goja-cv, then API v2 (literal options; space on the image with the receiver deciding and masks never converted; one luminance; masks as one-channel images; regions as arrays linked by [node, index]; await only, look only, one cv.save; one os.Root workspace plus read-only --read directories; pruned synonyms) and the foundations that make the review-found bug classes unwritable, with phases 0a-8, tests, a pi validation plan and the review disposition."
+LastUpdated: 2026-11-10T00:30:00-05:00
 WhatFor: "Understanding goja-cv end to end and implementing GCV-004 phase by phase."
 WhenToUse: "Read before touching the binder, the space rules, masks, regions, data out, path handling or the JavaScript surface; read section 2 first if you are new to goja-cv."
 ---
@@ -89,6 +89,7 @@ WhenToUse: "Read before touching the binder, the space rules, masks, regions, da
 | date | revision | what changed |
 |---|---|---|
 | 2026-11-09 | 1 | First version, written from the code on `task/gcv-004-api-v2` (stacked on GCV-001..003, including the review fixes `4c79173`, `cd5f46c`, `319a6fc`) and the evidence in `reference/01-…` and `scripts/02-pi-names-typed.py`. |
+| 2026-11-09 | 3 | The user's answers to revision 2's four open questions (§17, now "Decided"): `stepChroma` is `null` when \|snr\| < 1, not 2; saves keep refusing every symlink in the final path component; the pinned behaviour for files that change after `cv.open` is deliberate; relative `cv.open` paths resolve in the workspace first, then each `--read` directory in flag order. Phase 0a may be done by merging a v1 patch from `origin/main`, and Phase 2 then reuses its `LOOKS` warning. |
 | 2026-11-09 | 2 | Revised from the review read (`reference/04-review-read-findings.md`, 37 findings) and the coordinator's decisions on revision 1's open questions (sent with the revision request; recorded as D11 and D15–D19). P1 fixes: two-image ops take the larger channel count (F1); inputs declared as masks are never space-converted (F2); item links are `[node, index]` (F3); saves never follow a symlink and never replace an opened file, compared with `os.SameFile` (F4). New concepts: "the receiver decides" (§4.3), one luminance (§4.3), the index link (§4.5), read-only `--read` directories and a required `--root` for `mcp` (§4.6). Dropped: `--read-only` and inline delivery. Changed: `cv.open`'s binding option is `name`; `colormap` follows; `measure` sizes its core and ring from each item; awaiting an Image evaluates nothing; `as(open, linear)` reuses the pyramid level; a `LOOKS` warning; `stepChroma` gated by snr. Phases: Phase 0a for two v1 rendering bugs, Phase 0b for the foundations, a separate Phase 0c for the `Args` redesign. New decision records D15–D21 (D11 rewritten for the read directories); the review disposition is Appendix A. |
 
 ## How to read this guide
@@ -604,7 +605,10 @@ agent saved is therefore always reopenable by the path `cv.save` returned.
 Real data often lives elsewhere: the colleague reads tiles from `~/dustdet/cv_tiles` and labels from `~/dustds`. A
 symlink from the workspace to them does not help, because `os.Root` refuses links that leave the root. So a session
 may also have **read directories**, each given with a repeatable `--read DIR` and opened as its own `os.Root`.
-`cv.open` reads from them by absolute path; nothing is ever written there.
+`cv.open` reads from them by absolute path, or by a relative path that the workspace does not have: a relative
+`cv.open` path is looked up in the workspace first, then in each read directory in flag order, and the first that
+has the file wins. `cv.save` resolves only in the workspace; nothing is ever written to a read directory. Relative
+reopening matters: reopening files was the main source of the 23 `E_ACCESS` errors.
 
 `goja-cv mcp` requires `--root`: an MCP server is started by a client in whatever directory it likes, possibly
 serving over HTTP, and should not write there by default. `goja-cv eval` and `run` default `--root` to the current
@@ -908,7 +912,7 @@ Rules:
   `r` when it has one (gold points), otherwise the equivalent radius √(area / π) of a region; the ring is
   [1.5 r, 2.5 r]. An explicit `coreRadius` or `ringRadii` overrides. Plain points (`[x, y]`, `{ cx, cy }`) have no
   radius: they need `coreRadius` (`E_ARG_TYPE` with the fix `{ coreRadius: 3 }`). `stepChroma` is `null` when the
-  step does not stand out of the grain (|snr| < 2).
+  step is smaller than the local spread (|snr| < 1).
 - `img.mask.regions(items, { grow })` replaces `regions.toMask({ grow })`; the mask has the image's frame.
 - `where`, `sortBy`, `top`, `only`, `without`, `count` and `filter` are gone. A property of an unawaited Regions node
   is `E_NOT_AWAITED` with the fix `(await regions).<name>`; for an image method name such as `overlay`, the fix is
@@ -994,8 +998,10 @@ Rules:
   identity (`E_ACCESS`); a file the session saved and reopened may be saved again. Overwriting any other existing
   file is allowed and reported as `replaced: true`. Files are written to a temporary name and renamed into place, so
   a failed save leaves no partial file.
-- Relative paths resolve in the workspace (`--root`; required for `mcp`, the current directory for `eval` and `run`).
-  `cv.open` also reads absolute paths in a read directory (`--read DIR`, repeatable). `..` and symlinks that leave
+- Relative `cv.save` paths resolve in the workspace (`--root`; required for `mcp`, the current directory for `eval`
+  and `run`). A relative `cv.open` path is looked up in the workspace first, then in each read directory (`--read
+  DIR`, repeatable) in flag order; the first that has the file wins. `cv.open` also takes absolute paths in any of
+  them. `..` and symlinks that leave
   their directory are `E_ACCESS`. An absolute path that reaches a directory through an outside alias (for example
   `/home/me/data` linked to `/data`) is refused unless it is written with the directory's own name.
 
@@ -1393,9 +1399,14 @@ names: `coreRingFields`, `pkg/cv/ops/measurement.go:140-159`; `newRegionFields`,
   given, else [1.5 r, 2.5 r]. A centre without a radius and without `coreRadius` is `E_ARG_TYPE` with the fix
   `img.measure(points, { coreRadius: 3 })`. Evidence: on a gold point with r = 63 (DUST-002 `reference/08`), a fixed
   3 px core gave snr 0.12; core and ring sized from r gave 0.56.
-- **stepChroma.** `(max − min of the channel steps) / |step|` is meaningful only when the step stands out of the
-  grain. It is `null` when |snr| < 2 (today it divides by `max(|step|, 1e-3)`, `measurement.go:155`, and gave 3.25 at
-  snr 0.12, which reads as a strongly coloured speck). The field doc says so.
+- **stepChroma.** `(max − min of the channel steps) / |step|` is meaningful only when the step can be told from the
+  grain. It is `null` when |snr| < 1: below 1 the step is smaller than the local spread, so its colour cannot be
+  attributed to the spot (today it divides by `max(|step|, 1e-3)`, `measurement.go:155`, and gave 3.25 at snr 0.12,
+  which reads as a strongly coloured speck). The gate is 1, not 2: labelled dust has a median snr of 2.17 (GCV-003
+  deviation 19), so a gate at 2 would null the colour reading for about half of the dust, and that reading is what
+  validation needs. The field doc in `coreRingFields` says: "(max − min of the channel steps) / |step|: 0 for a
+  neutral spot (dust), larger for coloured ones; null when |snr| < 1 (the step is within the grain)". A v1 patch on
+  `main` applies the same rule now; the v2 rewrite of `measure` keeps it.
 - The point form `img.measure({ points, ringRadii })` and `regions.measure(img, …)` go; `ring: [r1, r2]` becomes
   `ringRadii`. `E_FIELD_EXISTS` stays (use `prefix`).
 
@@ -1480,7 +1491,9 @@ type Location struct{ Root int; Rel string } // Root 0 = the workspace, 1… = r
 `EngineOptions.Workspace *Workspace` replaces `BaseDir` and `OutRoot`; `cvsession.Options.Root` and `Read` replace
 `Roots`, `OutRoot` and `BaseDir` (`session.go:61-68`).
 
-**Resolving a path.** A relative path names a file in the workspace. An absolute path is tried against each root's
+**Resolving a path.** For `cv.save`, a relative path names a file in the workspace. For `cv.open`, a relative path
+is tried in the workspace, then in each read directory in flag order (`root.Stat(rel)`); the first root that has the
+file wins, and none having it is `E_ARG_TYPE` "no such file" listing the roots searched. An absolute path is tried against each root's
 `dir` and `resolved` (`filepath.Rel`, refusing a leading `..`): the workspace first, then the read directories in
 order; none matching is `E_ACCESS` "outside the workspace and the read directories" with both lists. Everything else
 (symlinks that leave a root, dangling links pointing outside, `..` inside a link target) is refused by `os.Root`
@@ -1494,7 +1507,9 @@ and `buffer.DecodeFile` take an `*os.File` instead of a path, `pkg/cv/buffer/dec
 source store keys by `SourceKey{Location, Stamp, Box, Enc}` and opens through the workspace when it decodes. When it
 decodes, it compares the file's current stamp with the key's; if the file changed since `cv.open` (another process,
 or a save by this session) and its pyramid is not yet loaded, decoding fails with `E_EVAL` "the file changed since it
-was opened; open it again". A pyramid already loaded stays pinned and keeps serving the old node.
+was opened; open it again". A pyramid already loaded stays pinned and keeps serving the old node. This is
+deliberate (decided in revision 3): a node's pixels never change under it once read, and a reopen gives the new file
+as a new node.
 
 **`cv.save(path, x, { depth })`.**
 
@@ -1517,7 +1532,8 @@ save(path, x, opts):                                   (owner goroutine: every c
 ```
 
 `Lstat` does not follow the final link, so a symlink alias (`alias.tif → scan.tif`) is refused before anything is
-compared; `os.SameFile` catches hard links and directories reached through links inside the root. The set of opened
+compared. Every symlink in the final path component is refused, including links that stay inside the workspace and
+point at files the session never opened (decided in revision 3: simpler, and nobody has needed the exception); `os.SameFile` catches hard links and directories reached through links inside the root. The set of opened
 files excludes files the session itself wrote, so save → reopen → save works. The rename makes a failed or
 interrupted save leave the old file intact. The returned `path` is workspace-relative, so `cv.open(saved.path)` always
 works.
@@ -1527,7 +1543,7 @@ works.
 | flag | commands | meaning |
 |---|---|---|
 | `--root DIR` | `eval`, `run`, `mcp` | the workspace (read and write); required for `mcp`, default the current directory for `eval` and `run` |
-| `--read DIR` | `eval`, `run`, `mcp` (repeatable) | a read-only directory `cv.open` may read by absolute path |
+| `--read DIR` | `eval`, `run`, `mcp` (repeatable) | a read-only directory `cv.open` reads by absolute path, or by relative path after the workspace (flag order) |
 | `--image FILE` | `eval`, `run`, `mcp` | opened at session start and bound to `img`; must lie in the workspace or a read directory |
 | `--out DIR` | `eval`, `run` | where the CLI writes delivered looks for the person (default: a temporary directory) |
 
@@ -1938,7 +1954,7 @@ Each record states the context, the options considered, the decision, its ration
   read; each is its own `os.Root`, so the standard library does all containment. The CLI default is safe because a
   person typed the command in that directory.
 - **Pros:** saves always reopen; data stays where it is; no write outside one named directory. **Cons:** one more flag
-  to learn; absolute paths are needed for read directories.
+  to learn; a relative name that exists in both the workspace and a read directory opens the workspace's file.
 - **Consequences:** `--out-root` and the repeatable `--root` go; the setup pages show `--root` and `--read`; the pi
   harness's `--root OUT/img` keeps working. A save never follows a symlink and never replaces a file the session
   opened and did not write, compared by `os.SameFile` (F4), and writes through a temporary name.
@@ -2026,7 +2042,8 @@ Each record states the context, the options considered, the decision, its ration
 - **Pros:** right-sized by default; no silent fixed radius. **Cons:** a bare point needs `coreRadius` (one literal
   fix); results on regions differ from GCV-003's clamped default (`clamp(round(√(area / π)), 2, 8) + 0.5`), so the
   gated hot-list test thresholds are re-measured in Phase 5.
-- **Consequences:** `stepChroma` is `null` when |snr| < 2 (§7.6), fixing the v1 report of 3.25 at snr 0.12.
+- **Consequences:** `stepChroma` is `null` when |snr| < 1 (§7.6), fixing the v1 report of 3.25 at snr 0.12 while
+  keeping the colour reading for labelled dust (median snr 2.17); the same rule ships as a v1 patch on `main`.
 - **Status:** accepted.
 
 ### D18. Awaiting an Image returns its static summary and evaluates nothing (open question 4 of revision 1)
@@ -2212,7 +2229,11 @@ Go:   binding.save(path, x, opts):                 (owner goroutine)
 
 ```
 Workspace.locate(p, forWrite):
-    if !IsAbs(p): rel := Clean(p); rel starts with ".." → E_ACCESS; return (workspace, rel)
+    if !IsAbs(p):
+        rel := Clean(p); rel starts with ".." → E_ACCESS
+        if forWrite: return (workspace, rel)
+        for root in [workspace] + reads (flag order): if root.r.Stat(rel) succeeds → return (root, rel)
+        → E_ARG_TYPE "no such file", listing the roots searched
     roots := forWrite ? [workspace] : [workspace] + reads
     for each root, for base in [root.dir, root.resolved]:
         r := filepath.Rel(base, Clean(p)); r does not start with ".." → return (root, r)
@@ -2333,6 +2354,11 @@ takes awaited arrays).
    its box would overlap the previous label or the other axis's first label. Regenerate `sheet-2x2.png`,
    `ruler-crop-zoom8.png` and `grid-gray-crop-zoom4.png` (and any other golden with rulers that the test run names)
    with `-update`, and list each in the diary with its reason.
+3. A v1 patch on `main` fixes the badge, the ruler labels, the `stepChroma` gate and adds a `LOOKS` warning for looks
+   dropped beyond `MaxLooks`. If `origin/main` has that patch when implementation starts, Phase 0a is done by merging
+   `origin/main` into this branch (a merge commit, no rebase); the golden moves happen in that merge and the diary
+   lists them. Phase 2's `LOOKS` warning then reuses the v1 warning's code and message, and Phase 5 keeps the v1
+   `stepChroma` rule.
 
 **Phase 0b — foundations without API change.**
 1. Tests: a test-only op whose `Validate`, `DocFrame` and `Run` panic, and a test hook that makes a binding function
@@ -2374,7 +2400,8 @@ takes awaited arrays).
    six looks give four images and a `LOOKS` warning naming the other two by line, and the two are not rendered; a
    prelude's looks are discarded; `cv.explain` fields; `cv.evaluate` is an unknown `cv` member like any other.
 2. Implement: delete §9 item 7, including the xgoja provider's `previewLong`; Image awaits from statics; the look
-   queue in the eval tracker; the `LOOKS` warning; `cv.explain`; `init.js` stops using `cv.isNode`. Docs: `01`, `03`,
+   queue in the eval tracker; the `LOOKS` warning (reusing the v1 warning when Phase 0a merged it from `main`);
+   `cv.explain`; `init.js` stops using `cv.isNode`. Docs: `01`, `03`,
    `06`, instructions.
 
 **Phase 3 — space on the image.**
@@ -2414,7 +2441,8 @@ takes awaited arrays).
    refused with the op's fix; `img.measure(items)` equals the old `regions.measure(img, { ring: true })` fields when
    given the old radii, and sizes core and ring from `r` or area otherwise; `img.measure(points)` without
    `coreRadius` is the error with its fix; `img.measure(measured, { stats: ["mean"] })` adds stats without touching
-   the ring fields; `stepChroma` is `null` when |snr| < 2 (a flat patch with per-channel noise);
+   the ring fields; `stepChroma` is `null` when |snr| < 1 (a flat patch with per-channel noise) and a number at
+   snr 1.5;
    `img.mask.regions(items, { grow })` equals the old `toMask`; a sheet over an array is sized by its length;
    `cv.save` of awaited items writes no `__cvref`; `E_TOO_MANY` still applies.
 2. Implement: the `items` type and op, `Region.Shape` (`Pixels`, `Box`, `Disk`), the moved-item check, the `ITEMS`
@@ -2425,7 +2453,9 @@ takes awaited arrays).
 
 **Phase 6 — one save, one workspace.**
 1. Tests: path resolution for relative and absolute paths in the workspace and in read directories, `..`, `/tmp`
-   versus `/private/tmp`, an outside alias (refused, with both names in the error); a symlink inside pointing inside
+   versus `/private/tmp`, an outside alias (refused, with both names in the error); a relative `cv.open` path found
+   in the workspace, in the second read directory only, in both (the workspace wins), and in none (the error lists the
+   roots); a relative `cv.save` path is always in the workspace; a symlink inside pointing inside
    (allowed for reading, refused for saving: "saves do not follow links"), inside pointing outside (refused), a
    dangling link pointing outside (refused, the P1 case), a symlinked directory outside (refused); `cv.save` for every
    extension and every mismatch of §6.7; `E_DUPLICATE`; saving over an opened file is `E_ACCESS`, also through a hard
@@ -2639,16 +2669,17 @@ preview scale for `await`, evaluating awaited Images, `show` as the display call
 inline delivery in a read-only mode, two roots, accepting mixed region sets, two luminances, `as` as `cv.open`'s
 binding option.
 
-**Open questions for review.**
+**Decided in revision 3** (the user accepted the coordinator's recommendations for revision 2's open questions):
 
-1. `cv.save` refuses to write through any symlink in the final path component. Should a link that stays inside the
-   workspace and points at a file the session did not open be allowed?
-2. A source whose file changed after `cv.open` but before its first decode fails with "the file changed"; one already
-   decoded keeps serving the old pixels. Is the pinned behaviour acceptable, or should a changed stamp always fail?
-3. `stepChroma` is `null` below |snr| 2. Is 2 the right gate for the colleague's tiles, where labelled dust has a median
-   snr of 2.17 (GCV-003 deviation 19)? Half of the labelled dust would then report no neutrality number.
-4. Should `--read` accept relative paths for `cv.open` (resolved in the first read directory that has the file), or
-   stay absolute-only as designed?
+1. Saves refuse every symlink in the final path component, including links inside the workspace (§7.8).
+2. A file that changes after `cv.open` fails with "the file changed" before its first decode and keeps its old pixels
+   after it; this pinned behaviour is deliberate (§7.8).
+3. `stepChroma` is `null` when |snr| < 1, not 2, so labelled dust (median snr 2.17) keeps its colour reading (§7.6,
+   D17); a v1 patch on `main` applies the same rule.
+4. A relative `cv.open` path resolves in the workspace first, then in each `--read` directory in flag order; the first
+   that has the file wins; `cv.save` stays workspace-only (§4.6, §7.8).
+
+There are no open questions left in this revision.
 
 ## 18. References
 
@@ -2685,7 +2716,7 @@ prescribes the reviewer's fix or an equivalent; "partly" means the intent is met
 | F8 xgoja provider | P2 | fixed: in the layer diagram; `Workspace` is an engine option; config `root`/`read`; Phases 2 and 6 | §2.1, §7.1, §7.8, §12 |
 | F9 `isJSThrow`, interrupts | P2 | fixed: `isGojaPanic` with `goja.Value`, `*Exception`, `*InterruptedError`, `*StackOverflowError`; timeout test | §7.11, Phase 0b |
 | F10 dropped looks silent | P2 | fixed: `LOOKS` warning naming each dropped look; only delivered looks render | §6.5, §7.7, D9, §11, Phase 2 |
-| F11 `stepChroma` unstable | P2 | fixed: `null` when \|snr\| < 2 (the gate rather than a noise-relative divisor; the threshold is open question 3 of §17) | §6.4, §7.6, D17, Phase 5 |
+| F11 `stepChroma` unstable | P2 | fixed: `null` when \|snr\| < 1 (the gate rather than a noise-relative divisor; the threshold of 1 was decided in revision 3, §17) | §6.4, §7.6, D17, Phase 5 |
 | F12 `as` means two things | P2 | fixed: `cv.open`'s option is `name` | §6.6, D21 |
 | F13 overwrite rule blocks iteration | P2 | fixed: only files opened and not written by the session are protected; changed-file rule for undecoded sources | §6.7, §7.8 |
 | F14 copies from brackets and encoded sources | P2 | fixed: `openLinear` rewrite and `as` folding; risk 4 covers memory; D18 | §7.4, §10.1, §17 |
