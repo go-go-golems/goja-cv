@@ -39,3 +39,8 @@ Step 6: Phase 6 writers and save (commit c0e2180)
 
 Step 7: Phase 7 data out (commit 58c0480)
 
+
+## 2026-11-09
+
+Step 8: Phase 8 preludes (commit 8d6245c)
+

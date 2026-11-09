@@ -449,3 +449,54 @@ data too large for a conversation becomes a note telling the agent to save it.
 
 ### Technical details
 - The calibration command: `goja-cv eval --json --out /tmp/specks --image TILE.tif -e 'return cv.csv(img.detect.specks({ polarity: "bright", maxArea: 2000 }), { name: "specks" })'` → `files: [{ caption: "data specks.csv", mimeType: "text/csv", rows: N, path: "/tmp/specks/specks.csv" }]`.
+
+## Step 8: Phase 8 - preludes
+
+`goja-cv eval --prelude helpers.js -e '…'` runs helper scripts in the session before the agent's code, so the
+colleague's `mem` helpers no longer need re-pasting into every CLI call. Preludes run with the semantics of agent code
+(they may `await` and `return`), in every new session, MCP sessions created later included.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 1)
+
+**Assistant interpretation:** Guide Phase 8 (§7.11, issue 23b).
+
+**Inferred user intent:** Helpers defined once are available in every CLI run and every MCP session.
+
+**Commit (code):** 8d6245c - "GCV-003 Phase 8: --prelude on eval, run and mcp"
+
+### What I did
+- `cvsession.Options.Preludes` (resolved against BaseDir to absolute paths; `New` refuses a missing file).
+- `App.CreateSession` runs `runPreludes` after replapi creates the session: each file through `App.Evaluate` (the wrapped async body), status checked; on failure the session is deleted and the error is `prelude bad.js:2: nope is not defined` (line from the rendered `where: 'line N: …'`, message from the YAML).
+- CLI: `--prelude` (repeatable, `StringArray`) on `eval`, `run`, `mcp`; a failing prelude exits 1 like agent code; a missing file exits 2.
+- Tests: `TestPreludesRunInEverySession` (two preludes in order, one awaiting; mem listed in the context block; prelude result not printed; an MCP session made with `create_session` has the helpers; the failing prelude's message and no leftover session; missing file), `TestPreludeFlag` (CLI).
+
+### Why
+- Guide §7.11, Phase 8.
+
+### What worked
+- replmcp's `create_session` tool calls the `CreateSession` of the app it was given, which is cvsession's override, so later MCP sessions run the preludes without touching go-go-goja.
+
+### What didn't work
+- staticcheck `QF1008: could remove embedded field "App" from selector` on `a.App.DeleteSession`; the call goes through the promoted method.
+- My first test parsed the new session id from create_session's text wrongly (`session "sionId" does not exist`); it uses a regexp for `session-<uuid>`.
+
+### What I learned
+- Running preludes through `App.Evaluate` gives them the same error rendering, line mapping and context block as agent code for free; the cost is that they appear in the session's history.
+
+### What was tricky to build
+- Extracting FILE:LINE from the processed failure: the line exists only in the rendered YAML (`where: 'line 2: const x = nope.y'`), so `runPreludes` reads it with a regexp and takes the message line.
+
+### What warrants a second pair of eyes
+- Prelude cells are part of the session history (`history` tool).
+
+### What should be done in the future
+- N/A
+
+### Code review instructions
+- `pkg/cvsession/session.go` (`Preludes`, `CreateSession`, `runPreludes`), `cmd/goja-cv/eval.go`, `cmd/goja-cv/mcp.go`.
+- `go test ./pkg/cvsession -run Prelude -v`; `go test ./cmd/goja-cv -run Prelude -v`.
+
+### Technical details
+- `goja-cv eval --image tile.tif --prelude scripts/84-cv-helpers.js -e 'return await mem.probe(1337, 131, 3)'`.
