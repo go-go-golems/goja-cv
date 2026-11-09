@@ -102,7 +102,7 @@ func (p *ResultProcessor) ProcessFailure(_ context.Context, vm *goja.Runtime, ev
 	trace := cvmod.EndEval(vm)
 	providers := st.collect(nil)
 	var sb strings.Builder
-	sb.WriteString(encodeYAML(mapping(str("error"), st.errorNode(vm, evalErr))))
+	sb.WriteString(encodeYAML(mapping(str("error"), st.errorNode(vm, evalErr, trace))))
 	if len(st.shows) > 0 {
 		sb.WriteString("\n\n")
 		sb.WriteString(encodeYAML(mapping(str("shown"), lookList(st.shows))))
@@ -331,7 +331,7 @@ func probePromises(vm *goja.Runtime) bool {
 }
 
 // errorNode renders the eval's failure in the shape of Part 2 §11 (owner).
-func (s *state) errorNode(vm *goja.Runtime, evalErr error) *yaml.Node {
+func (s *state) errorNode(vm *goja.Runtime, evalErr error, trace cvmod.EvalTrace) *yaml.Node {
 	f := s.failure
 	msg := ""
 	if evalErr != nil {
@@ -362,6 +362,7 @@ func (s *state) errorNode(vm *goja.Runtime, evalErr error) *yaml.Node {
 		s.broken = true
 		f.Hint = brokenMessage
 	}
+	s.explainDataMisuse(f, trace)
 	code := f.Code
 	if code == "" {
 		code = f.Name
@@ -400,6 +401,49 @@ func (s *state) errorNode(vm *goja.Runtime, evalErr error) *yaml.Node {
 		add("valid", v)
 	}
 	return n
+}
+
+// receiverOf finds the expression a member was called on in a source line
+// ("rows" in "return { first: rows.slice(0, 3) }").
+func receiverOf(src, member string) string {
+	re := regexp.MustCompile(`([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\.` + regexp.QuoteMeta(member) + `\s*\(`)
+	if m := re.FindStringSubmatch(src); m != nil {
+		return m[1]
+	}
+	return ""
+}
+
+// explainDataMisuse turns errors caused by treating awaited cv data like its
+// node into a hint and a literal fix: E_NOT_ARRAY gets the real receiver in
+// its fix, and a raw TypeError from calling a data field that shadows a node
+// method (await specks; specks.count()) is explained.
+func (s *state) explainDataMisuse(f *failure, trace cvmod.EvalTrace) {
+	src := s.sourceLine(s.agentLine(f.Line))
+	if f.Member != "" && strings.Contains(f.Fix, "RECV") {
+		recv := receiverOf(src, f.Member)
+		if recv == "" {
+			recv = "regions"
+		}
+		f.Fix = strings.ReplaceAll(f.Fix, "RECV", recv)
+		return
+	}
+	if f.CV || f.Name != "TypeError" || src == "" {
+		return
+	}
+	for _, c := range trace.Collisions {
+		recv := receiverOf(src, c.Name)
+		if recv == "" {
+			continue
+		}
+		what := "a value"
+		if _, err := strconv.ParseFloat(c.Value, 64); err == nil {
+			what = "a number"
+		}
+		f.Hint = fmt.Sprintf("After await, %s is data: %s.%s is %s (%s), not a method. Read it, or call %s() on the %s node before awaiting it.",
+			recv, recv, c.Name, what, c.Value, c.Name, c.Kind)
+		f.Fix = recv + "." + c.Name
+		return
+	}
 }
 
 func jsHint(f *failure) string {

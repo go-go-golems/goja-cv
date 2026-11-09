@@ -113,6 +113,8 @@ func (b *binding) object() *goja.Object {
 	set("__look", b.look)
 	b.addDocs(o)
 	set("__fieldNames", b.fieldNames)
+	set("__collision", b.collision)
+	set("__notArray", b.notArray)
 	return o
 }
 

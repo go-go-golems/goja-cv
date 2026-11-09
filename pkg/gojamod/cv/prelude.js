@@ -49,6 +49,7 @@
   // number), and Object.keys, JSON and the YAML result are unchanged. Ops
   // given such data lift it back to the node (marshal).
   const NODE = Symbol("cv.node");
+  const ARRAY_METHODS = ["slice", "map", "forEach", "reduce", "find", "findIndex", "some", "every", "sort", "indexOf", "includes", "flatMap", "at", "concat", "join", "push"];
 
   function link(v, node) {
     if (v === null || typeof v !== "object" || !node || !Object.isExtensible(v)) return v;
@@ -57,8 +58,22 @@
     const names = tab ? Object.keys(tab) : [];
     names.push("look");
     for (const name of names) {
-      if (name in v || name === "then") continue;
+      if (name === "then") continue;
+      if (name in v) {
+        // a data field shadows the method (awaited Regions: count); noted so
+        // the session can explain a later "is not a function"
+        if (Object.prototype.hasOwnProperty.call(v, name) && typeof v[name] !== "function") native.__collision(name, node.__kind, String(v[name]));
+        continue;
+      }
       Object.defineProperty(v, name, { value: node[name], writable: true, configurable: true, enumerable: false });
+    }
+    if (node.__kind === "Regions" && Array.isArray(v.items)) {
+      // awaited Regions are { count, items }: array methods say so
+      for (const name of ARRAY_METHODS) {
+        if (name in v) continue;
+        Object.defineProperty(v, name, { value: () => native.__notArray(name), writable: true, configurable: true, enumerable: false });
+      }
+      if (!(Symbol.iterator in v)) Object.defineProperty(v, Symbol.iterator, { value: () => native.__notArray("iterator"), configurable: true });
     }
     return v;
   }

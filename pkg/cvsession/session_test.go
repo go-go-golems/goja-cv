@@ -414,3 +414,39 @@ func TestUnknownNamesOnCvAndP(t *testing.T) {
 	out := text(eval(t, app, sid, `return { v: typeof cv.version, open: typeof cv.open, then: cv.then === undefined, json: JSON.stringify(cv).length > 2, keys: Object.keys(cv).includes("docs"), has: "info" in cv, p: typeof P.slider, pp: cv.P === P }`))
 	mustContain(t, out, "v: string", "open: function", "then: true", "json: true", "keys: true", "has: false", "p: function", "pp: true")
 }
+
+// TestAwaitedRegionsMisuseGetsStructuredErrors: pi run 3 calls 7 and 8, run 4
+// call 5, verbatim.
+func TestAwaitedRegionsMisuseGetsStructuredErrors(t *testing.T) {
+	app, sid := newApp(t, cvsession.Options{Image: planted(t)})
+	for code, want := range map[string][]string{
+		// run 3 call 7: count is data after await
+		`const dust = await img.check.dust({});
+const specks = await img.detect.specks({});
+const cnt = await specks.count();
+return { cnt }`: {"code: TypeError", "where: 'line 3: const cnt = await specks.count();'",
+			"After await, specks is data: specks.count is a number (41), not a method.", "fix: specks.count"},
+		// run 4 call 5
+		`const specks = img.detect.specks();
+const all = await specks.sortBy("area");
+return { total: all.count ? await all.count() : null }`: {"After await, all is data: all.count is a number (41)", "fix: all.count"},
+		// run 3 call 8: awaited top(n) used as an array
+		`const specks = await img.detect.specks({});
+const rows = await specks.top(1000);
+return { first: rows.slice(0, 3) }`: {"code: E_NOT_ARRAY", "where: 'line 3: return { first: rows.slice(0, 3) }'",
+			"Awaited Regions are { count, items: [...] }", "fix: rows.items.slice(…)"},
+		`const rows = await img.detect.specks()
+const ids = rows.map(r => r.id)
+return ids`: {"code: E_NOT_ARRAY", "fix: rows.items.map(…)"},
+		`const rows = await img.detect.specks()
+let n = 0
+for (const r of rows) n++
+return n`: {"code: E_NOT_ARRAY", "for (const r of regions.items)"},
+	} {
+		out := text(eval(t, app, sid, code))
+		mustContain(t, out, want...)
+	}
+	// the data itself is unchanged
+	out := text(eval(t, app, sid, `const r = await img.detect.specks(); return { n: r.count, items: r.items.length, keys: Object.keys(r).join(",") }`))
+	mustContain(t, out, "n: 41", "items: 41", "keys: 'count,docH,docW,items,kind,scale,truncated'")
+}

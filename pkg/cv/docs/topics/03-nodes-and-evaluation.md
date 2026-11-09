@@ -54,6 +54,18 @@ return { all: specks.count, dust: await dust.count(), look: img.overlay(dust).lo
 
 Data wins where names collide: `specks.count` is the number; the method form is `img.detect.specks().count()`. Ops recompute the node, so after a param moved they see the new value, not the awaited snapshot.
 
+Awaited Regions are an object `{ count, items: [...] }`, not an array: the list is `.items`.
+
+```js error=TypeError
+const specks = await img.detect.specks()
+return await specks.count()        // hint: specks.count is a number (41), not a method; fix: specks.count
+```
+
+```js error=E_NOT_ARRAY
+const rows = await img.detect.specks().top(5)
+return rows.slice(0, 2)            // fix: rows.items.slice(…)
+```
+
 ## UNUSED_NODE
 
 A node built as a statement and never returned, awaited, looked at, stored in `mem` or used by another node did nothing. The result then carries a warning with your line:
