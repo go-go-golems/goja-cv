@@ -42,7 +42,7 @@ return { full: await img.detect.specks().count(), half: await fast.count() }
 
 ## Frames
 
-An image's **frame** is the rectangle it covers in doc px, `[x, y, w, h]`: `(await img).frame`. A whole file starts at (0, 0). A window read with `cv.open(path, { box: [x, y, w, h] })` keeps the file's coordinates, and `cv.open(path, { origin: [x, y] })` declares where a file that is itself a window starts. Boxes and points you pass and region boxes and centroids you read are absolute in that frame; a box outside it is `E_ARG_RANGE` with the nearest valid box as the fix. Images, masks and regions combined by one op must share a frame (`E_FRAME`).
+An image's **frame** is the rectangle it covers in doc px, `[x, y, w, h]`: `(await img).frame`. A whole file starts at (0, 0). A window read with `cv.open(path, { box: [x, y, w, h] })` keeps the file's coordinates, and `cv.open(path, { origin: [x, y] })` declares where a file that is itself a window starts. Boxes and points you pass and region boxes (`x, y, w, h`) and centroids (`cx, cy`) you read are absolute in that frame; a box outside it is `E_ARG_RANGE` with the nearest valid box as the fix. Images, masks and regions combined by one op must share a frame (`E_FRAME`).
 
 ```js
 const f = (await img).frame

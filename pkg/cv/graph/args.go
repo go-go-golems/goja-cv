@@ -426,6 +426,9 @@ func t2noun(t string) string {
 // non-nil, NodeArgs are lifted; with b nil (evaluation time, after
 // substitution) they are an error.
 func (b *binder) check(s *ArgSpec, typ string, v any, where string) (any, error) {
+	if typ == "data" { // a node or plain data, kept as given (cv.json, cv.csv)
+		return v, nil
+	}
 	if na, ok := v.(NodeArg); ok {
 		if b == nil {
 			return nil, Errorf(EInternal, "%s: unresolved node argument", where)
@@ -813,7 +816,9 @@ var OptionSynonyms = map[string][]string{
 	"min": {"above", "minArea", "minContrast"}, "minimum": {"above", "minArea"}, "lower": {"above"}, "from": {"above"},
 	"max": {"below", "maxArea"}, "maximum": {"below", "maxArea"}, "upper": {"below"}, "to": {"below"},
 	"threshold": {"above", "minContrast", "threshold"}, "thresh": {"above", "minContrast", "threshold"}, "cutoff": {"above", "minContrast"},
-	"r": {"sigma", "radius"}, "radius": {"sigma"}, "sigma": {"radius"}, "std": {"sigma"}, "stddev": {"sigma"}, "sd": {"sigma"},
+	"r": {"sigma", "radius", "coreRadius"}, "radius": {"sigma", "coreRadius"}, "sigma": {"radius"}, "core": {"coreRadius"}, "coreR": {"coreRadius"},
+	"annulus": {"ringRadii"}, "background": {"ringRadii"}, "ring": {"ringRadii"}, "rings": {"ringRadii"}, "ringRadius": {"ringRadii"},
+	"thickness": {"width"}, "fields": {"columns"}, "bits": {"depth"}, "bitDepth": {"depth"}, "std": {"sigma"}, "stddev": {"sigma"}, "sd": {"sigma"},
 	"size": {"sigma", "radius", "maxArea", "maxSide"}, "blur": {"sigma"}, "kernel": {"sigma", "radius"}, "width": {"sigma", "radius"},
 	"distance": {"radius"}, "dist": {"radius"},
 	"maxSize": {"maxArea"}, "minSize": {"minArea"}, "area": {"maxArea", "minArea"}, "contrast": {"minContrast"},

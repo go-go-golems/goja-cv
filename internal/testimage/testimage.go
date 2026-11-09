@@ -2,10 +2,13 @@
 package testimage
 
 import (
+	"bytes"
 	"context"
+	"os"
 	"path/filepath"
 
 	"github.com/go-go-golems/goja-cv/pkg/cv/buffer"
+	"github.com/pkg/errors"
 )
 
 // Size of the gradient test image.
@@ -39,17 +42,37 @@ func Gradient() *buffer.Buffer {
 // Write writes all test images into dir.
 func Write(ctx context.Context, dir string) error {
 	b := Gradient()
-	if err := writeSRGB(ctx, filepath.Join(dir, TIFF16), b, "tiff16"); err != nil {
+	if err := writeSRGB(ctx, filepath.Join(dir, TIFF16), b, buffer.FormatTIFF, 16); err != nil {
 		return err
 	}
-	return writeSRGB(ctx, filepath.Join(dir, PNG8), b, "png8")
+	return writeSRGB(ctx, filepath.Join(dir, PNG8), b, buffer.FormatPNG, 8)
 }
 
-// writeSRGB writes linear-light b as an sRGB-encoded file.
-func writeSRGB(ctx context.Context, path string, b *buffer.Buffer, format string) error {
+// writeSRGB writes linear-light b as an sRGB-encoded file with goja-cv's
+// writers (the ones save uses).
+func writeSRGB(ctx context.Context, path string, b *buffer.Buffer, f buffer.Format, depth int) error {
 	enc, err := buffer.Convert(ctx, b, buffer.EncSRGB, buffer.SpaceLinear, buffer.SpaceEncoded)
 	if err != nil {
 		return err
 	}
-	return buffer.WriteFile(ctx, path, enc, format)
+	var out bytes.Buffer
+	if err := buffer.Encode(ctx, &out, enc, f, depth, buffer.Meta{Encoding: buffer.EncSRGB}); err != nil {
+		return err
+	}
+	return os.WriteFile(path, out.Bytes(), 0o644) // #nosec G306 -- test images
+}
+
+// WriteFile writes b as is (its values are the file's values) with
+// goja-cv's own writers, the format from the extension, at depth (0: the
+// format's default), recording meta where the format holds it.
+func WriteFile(path string, b *buffer.Buffer, depth int, meta buffer.Meta) error {
+	f, ok := buffer.FormatOf(path)
+	if !ok {
+		return errors.Errorf("no writer for %s", path)
+	}
+	var out bytes.Buffer
+	if err := buffer.Encode(context.Background(), &out, b, f, depth, meta); err != nil {
+		return err
+	}
+	return os.WriteFile(path, out.Bytes(), 0o644) // #nosec G306 -- test images
 }

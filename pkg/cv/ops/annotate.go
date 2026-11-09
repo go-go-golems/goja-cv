@@ -295,7 +295,7 @@ func annotateOp() graph.OpDef {
 				Doc: "list of marks in absolute doc px: { circle: [x, y, r] }, { point: [x, y] }, { box: [x, y, w, h] }, { polyline: [[x, y], …] }, { text, at: [x, y] }; each may have color (display colour) and label"},
 			{Name: "width", Type: "number", Default: 1.0, Min: graph.F(1), Max: graph.F(8), Doc: "line width in image px (stays thin at any zoom)"},
 		},
-		Validate: func(a graph.Args) error {
+		Validate: func(a graph.Args, _ []*graph.Node) error {
 			_, err := parseMarks(a.Raw("marks"))
 			return err
 		},

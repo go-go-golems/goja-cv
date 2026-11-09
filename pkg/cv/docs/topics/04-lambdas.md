@@ -22,7 +22,7 @@ You can also pass an edited node directly: `img.within(mask, img.exposure(-0.5))
 
 ## Data lambdas: Regions.filter
 
-`regions.filter(r => …)` calls your function with each region's data (`{ id, box, area, centroid, contrast, localNoise, sharpness, score, … }`) at evaluation time, on the JavaScript thread. Fine for hundreds of regions.
+`regions.filter(r => …)` calls your function with each region's data (`{ id, x, y, w, h, cx, cy, area, aspect, contrast, localNoise, sharpness, score, … }`) at evaluation time, on the JavaScript thread. Fine for hundreds of regions.
 
 ```js
 const specks = img.detect.specks()

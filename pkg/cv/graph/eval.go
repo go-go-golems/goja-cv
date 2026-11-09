@@ -82,12 +82,11 @@ type Evaluator struct {
 	mu    sync.Mutex
 	runs  map[NodeID]int
 	total int
-	warns map[Signature][]Warning // evaluation-time warnings of cached values
 }
 
 // NewEvaluator wires an evaluator to its graph, params, cache and sources.
 func NewEvaluator(b *Builder, params *ParamStore, cache *Cache, sources *SourceStore) *Evaluator {
-	return &Evaluator{b: b, params: params, cache: cache, sources: sources, runs: map[NodeID]int{}, warns: map[Signature][]Warning{}}
+	return &Evaluator{b: b, params: params, cache: cache, sources: sources, runs: map[NodeID]int{}}
 }
 
 // SetCallbacks installs the runner for JavaScript data lambdas.
@@ -183,9 +182,7 @@ func (r *evalRun) replay(sig Signature) {
 	if r.group.onWarn == nil {
 		return
 	}
-	r.e.mu.Lock()
-	ws := r.e.warns[sig]
-	r.e.mu.Unlock()
+	ws := r.e.cache.Warnings(sig)
 	if len(ws) == 0 {
 		return
 	}
@@ -201,14 +198,10 @@ func (r *evalRun) replay(sig Signature) {
 	}
 }
 
-// keepWarnings stores the warnings a run raised with its value's signature.
+// keepWarnings stores the warnings a run raised with its value's signature
+// (in the cache, so they live as long as the value).
 func (e *Evaluator) keepWarnings(sig Signature, ws []Warning) {
-	if len(ws) == 0 {
-		return
-	}
-	e.mu.Lock()
-	e.warns[sig] = ws
-	e.mu.Unlock()
+	e.cache.SetWarnings(sig, ws)
 }
 
 // at returns the run of the same evaluation at scale (quantized).
@@ -405,8 +398,13 @@ func (r *evalRun) compute(ctx context.Context, n *Node, sig Signature) (Value, e
 		}
 		return out, nil
 	}
-	r.e.keepWarnings(sig, ec.warnings())
-	r.e.cache.Put(sig, out)
+	ws := ec.warnings()
+	r.e.keepWarnings(sig, ws)
+	if !r.e.cache.Put(sig, out) && r.group.onWarn != nil { // too large to cache: nothing to replay, report now
+		for _, w := range ws {
+			r.group.onWarn(w)
+		}
+	}
 	return out, nil
 }
 
@@ -442,7 +440,7 @@ func stamp(n *Node, v Value, ins []Value) Value {
 			c := *x
 			x = &c
 		}
-		x.Frame = n.Frame
+		x.Frame, x.Fields = n.Frame, n.Fields
 		return x
 	}
 	return v

@@ -235,7 +235,7 @@ func Describe(b *Builder, n *Node, scale float64, params map[string]any) string 
 		if s.Default != nil && reflect.DeepEqual(v, normalize(s.Default)) {
 			continue
 		}
-		if s.Name == SpaceArg && v == n.Op.Space.Default.String() {
+		if s.Name == SpaceArg && v == n.Op.DefaultSpace(n.Args).String() {
 			continue // the op's default space
 		}
 		parts = append(parts, s.Name+": "+describeArg(b, n, s, v, scale))

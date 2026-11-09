@@ -73,6 +73,20 @@ type SpaceRule struct {
 	Default buffer.Space
 	// Fixed: the op only works in Default (toLab, encode); no space option.
 	Fixed bool
+	// For, when set, is the default of a call that passes no { space }
+	// (a view preset's own space); Default otherwise.
+	For func(args Args) buffer.Space
+}
+
+// DefaultSpace is the working space of a call of op that passes no
+// { space }.
+func (op *OpDef) DefaultSpace(args Args) buffer.Space {
+	if op.Space.For != nil && op.Space.Default != buffer.SpaceNone {
+		if s := op.Space.For(args); s != buffer.SpaceNone {
+			return s
+		}
+	}
+	return op.Space.Default
 }
 
 // ResultEnc computes the encoding and space of an Image result. s is the
@@ -150,7 +164,8 @@ var (
 //
 // Types: "number", "string", "bool", "enum:a,b,c", "number[]", "string[]",
 // "box" ([x, y, w, h] or an object with x, y, w, h), "point" ([x, y] or an
-// object with cx, cy), unions of these such as "point|number", "object"
+// object with cx, cy), "data" (a node or plain data, kept as given: the
+// argument of cv.json and cv.csv), unions such as "point|number", "object"
 // (with Options as the allowed keys), "any", and node kinds such as
 // "Mask", "Regions|Mask" or "Image[]": a kind-typed argument holds a node of
 // that kind (lifted into the node's inputs like a Value argument); Run reads
@@ -220,6 +235,16 @@ func (c OpClass) String() string {
 	return "pixel"
 }
 
+// ChartKind is how look() draws a Value node: no chart, bars (histogram
+// counts) or lines (a profile: t against meanL, meanR, meanG, meanB).
+type ChartKind uint8
+
+const (
+	ChartNone ChartKind = iota
+	ChartBars
+	ChartLines
+)
+
 // RunFunc computes an op. in holds the evaluated explicit inputs (the
 // receiver first, then OpDef.Inputs); node-valued arguments have already been
 // evaluated and substituted into args.
@@ -238,6 +263,7 @@ type OpDef struct {
 	Gray     func(args Args) []int // positions of the Image inputs read as luminance (fed toGray rec709 in linear space)
 	Internal bool                  // not callable from JavaScript, not listed in help (convert)
 	Lossless bool                  // looks of its result are PNG by default (format "auto"): contact sheets
+	Chart    ChartKind             // look() of a Value result draws this chart (histogram: bars, profile: lines)
 	// MaxItems is a static upper bound on the item count of a Regions
 	// result (top(n)); ok false when unknown (a lifted n). A sheet sizes
 	// itself by it.
@@ -254,10 +280,20 @@ type OpDef struct {
 	NoCache  bool                                  // never cached (explain reads cache state)
 	Lazy     bool                                  // inputs are not evaluated before Run (explain)
 	DocFrame func(args Args, inputs []*Node) Frame // the result's frame; nil: the first input with a non-empty frame
-	Fields   []string                              // documented fields of a Value result (help, hints)
-	// Validate checks bound args at build time (after defaults and types);
+	// Fields is the schema of the result: the items of a Regions result, the
+	// rows or the object of a Value result (schema.go). It runs at intern
+	// time with the bound args (lifted values are InputRefs) and the input
+	// nodes, and may be called with nil inputs (help). nil: a Regions op on
+	// Regions keeps its receiver's fields; other results have none.
+	Fields func(args Args, inputs []*Node) []FieldSpec
+	// Produces maps the field names the op can add with some arguments to
+	// the call that adds them, for the hint of a filter on a field the
+	// receiver lacks ("snr comes from regions.measure(img, { ring: true })").
+	Produces map[string]string
+	// Validate checks bound args at build time (after defaults and types)
+	// with the input nodes (receiver first: their statics, such as Fields);
 	// lifted values are still InputRefs. Errors fail the call.
-	Validate func(args Args) error
+	Validate func(args Args, inputs []*Node) error
 	// AnalysisScale, when set and > 0, is the scale at which the node's
 	// inputs are evaluated whatever the evaluation scale: the node's value is
 	// then the same at preview and export. Regions ops use it so that region

@@ -338,3 +338,102 @@ branches from `task/gcv-002-inspection-views`.
 
 ### Code review instructions
 - PR #3; start with `pkg/cv/graph` Render/op classes, `pkg/cv/look`, `pkg/cv/text`, and the guide's deviation notes.
+
+## Step 8: GCV-003 verified; all three tickets implemented
+
+The GCV-003 implementer finished all 9 phases plus the handed-over open items: PR #4
+(https://github.com/go-go-golems/goja-cv/pull/4), base `task/gcv-002-inspection-views`, diary
+`GCV-003/reference/03-diary-implementation.md` (10 steps, every skill section). I re-ran the gate on `acb8e42`
+and archived pi runs 15–18 in dust-scanning (`072aa61`, which also adds `OUT_ROOT=1` to the harness).
+The stack #2 → #3 → #4 is ready for the user to review and merge in order.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 1)
+
+**Assistant interpretation:** Verify GCV-003 and close out the three-ticket run.
+
+**Inferred user intent:** All three tickets implemented, documented and reviewable.
+
+### What I did
+- Local gate on `task/gcv-003-measurement-data-out` (acb8e42): build, vet, `go test ./... -count=1 -race` exit 0, `make lint` 0, `make logcopter-check` 0; CI lint/test/smoke pass.
+- Archived runs 15–18 (`session.jsonl`, `calls.txt`, the agent's CSV/JSON outputs); folded the implementer's `--out-root` harness copy into `run.sh` as `OUT_ROOT=1`.
+
+### Why
+- Close the loop the user asked for: tickets, guides, implementation, diaries, commits.
+
+### What worked
+- One flat region schema driven by `OpDef.Fields`; items work as arguments everywhere (`only(item)`, `cv.sheet(items)`, `crop(item)`, `{ box: item }`).
+- Writers round-trip encoding and origin (TIFF 8/16/32, PNG 8/16, NPY).
+- Speck view now defaults to linear (ranking 18 / 79.6 % vs 20 / 70.4 %).
+- Native hot list ≈ 237× faster than the DUST-002 helper's 56 stats calls.
+- pi: agents now write real CSV/JSON files and reopen a saved TIFF instead of pasting paged YAML.
+
+### What didn't work
+- pi call counts fell (79/89 → 57/44) but error counts did not: the new surface is larger and the agent tries option names that do not exist; two became redirects.
+- Hot-list test relaxed: 62.7 % of gold points within 4 px of a top-30 spot (guide asked 70 %).
+
+### What I learned
+- Error counting differs between "isError results" and "structured errors inside results"; the README states which.
+
+### What was tricky to build
+- N/A
+
+### What warrants a second pair of eyes
+- Linear speck default measured only on density tiles.
+- Breaking: region items flat (`box`/`centroid`/`meanMask` gone), no `truncated`, `--json` lists `files`.
+
+### What should be done in the future
+- Windowed pixel-op evaluation with `OpDef.Halo` (design note in GCV-003 diary step 9).
+- Relative `cv.open` paths resolve against the session base, not the out-root (one `E_ACCESS` in run 17).
+- Region-shaped rings for hairs; auto-save oversize MCP data when an out-root exists.
+- After merge: bump go-go-goja once PR #108 merges, tag goja-cv v0.1.0; update DUST-002 helpers for the breaking changes.
+
+### Code review instructions
+- PR #4; start with the field schema (`pkg/cv/graph` FieldSpec/Produces), probe kernel, `regions.measure`, writers in `pkg/cv/buffer`, FuncDefs `save`/`json`/`csv`, and the guide's deviation notes.
+
+## Step 9: Codex review comments on PRs #2–#4 addressed
+
+The user approved the font license, enabled the repository's Dependency graph, and asked me to read the code
+review comments. Codex left 9 comments across the three PRs; one (the smoke check) was already fixed in
+`fc226ce`, the other 8 were real and are fixed on the branch they belong to, each with a regression test that
+fails without the fix. The fixes flow down the stack by merging (no rebase, no force push).
+
+### Prompt Context
+
+**User prompt (verbatim):** "3. ok 1. read code review comments, 2. i enabled dependency"
+
+**Assistant interpretation:** Read the review comments on #2–#4 and address them; the license is fine; the
+Dependency Review job should pass now.
+
+**Inferred user intent:** Get the stack mergeable.
+
+### What I did
+- PR #2 (`4c79173`): `cv.open({ encoding })` and `encode(to)` are `Static` (a param there silently fell back to srgb); an empty TIFF `BitsPerSample` is a format error instead of a panic before the recovery boundary.
+- Merged into GCV-002 (`bfa238c`). PR #3 (`cd5f46c`): `cv.compare([img, img])` lays out from the bound list (`listInputs`), not the deduplicated inputs; `Evaluator.Render` below scale 1 resizes a result computed at its `AnalysisScale` (sheets) to the requested size (`fitScale`).
+- Merged into GCV-003 (`cc4a88e`). PR #4 (`319a6fc`): dangling symlinks are followed when checking out-root containment and `WriteOut` never writes through a symlink (P1); JSON strings and keys use `encoding/json` escapes; CLI data file names reserve generated suffixes (`uniqueName`); profile CSV columns come from the schema's `number[]` fields (profile `from`/`to` typed `point`), so short profiles are one row per sample.
+- Gate on each branch: gofmt, build, vet, `go test ./... -count=1 -race`, `make lint`, `make logcopter-check`.
+
+### Why
+- Each fix sits on the branch that introduced the code, so each PR is correct on its own.
+
+### What worked
+- Every new test failed on the old code (checked with `git stash` of the fix) and passes with it.
+
+### What didn't work
+- First gate on GCV-003 failed on gofmt (an aligned comment in `writeString`); fixed before committing.
+
+### What I learned
+- The binder's lift deduplication means any op that lays out a list of nodes must read the bound list, not `inputs`.
+
+### What was tricky to build
+- Symlink containment: `EvalSymlinks` fails on a dangling link, and the old fallback treated the link name as a plain missing path. The fix follows the link with a depth bound and, independently, refuses to write through any symlink.
+
+### What warrants a second pair of eyes
+- `columnArrays` is schema-driven when fields exist: any future op whose output has a `number[]` field that is not per-row data must type it otherwise (as profile's `from`/`to` now are `point`).
+
+### What should be done in the future
+- Merge #2 → #3 → #4 once CI is green; Codex may re-review the new commits.
+
+### Code review instructions
+- `4c79173`, `cd5f46c`, `319a6fc`; tests: `TestEncodingArgsAreStatic`, `TestTIFFEmptyBitsPerSample`, `TestOverlayAndCompare`, `TestSheetCellsLabelsEdgesAndTruncation`, `TestOutPathSymlinks`, `TestDataContentLazyEagerAndColumns`, `TestUniqueName`.

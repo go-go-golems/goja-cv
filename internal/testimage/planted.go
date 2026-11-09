@@ -124,5 +124,5 @@ func PlantedScan() (*buffer.Buffer, Planted) {
 // WritePlanted writes the planted scan as a 16-bit sRGB TIFF to path.
 func WritePlanted(ctx context.Context, path string) (Planted, error) {
 	b, p := PlantedScan()
-	return p, writeSRGB(ctx, path, b, "tiff16")
+	return p, writeSRGB(ctx, path, b, buffer.FormatTIFF, 16)
 }

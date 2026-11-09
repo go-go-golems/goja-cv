@@ -62,7 +62,7 @@ func m3Engine(t *testing.T) *Engine {
 			}},
 		OpDef{Name: "pred", On: KindImage, Returns: KindValue,
 			Args: []ArgSpec{{Name: "p", Type: "any", Positional: true}},
-			Validate: func(a Args) error {
+			Validate: func(a Args, _ []*Node) error {
 				if _, ok := a.Raw("p").(map[string]any); !ok {
 					return Errorf(EArgType, "pred needs an object")
 				}
@@ -198,11 +198,56 @@ func TestRasterizeKeepsAreaAtAnyScale(t *testing.T) {
 			t.Fatalf("scale %g: rasterized area %g, want %g", sc, s, want)
 		}
 	}
-	d := rv.Items[0].Data()
+	d := rv.Items[0].Data(rv.Schema()).Vals
 	if d["area"] != 221.0 || d["aspect"].(float64) < 1 {
 		t.Fatalf("data %v", d)
 	}
-	if s := rv.Summary(10); s["count"] != 1.0 || s["truncated"] != false {
+	if s, err := rv.Summary(); err != nil || s["count"] != 1.0 || len(s["items"].([]any)) != 1 {
 		t.Fatalf("summary %v", s)
+	}
+}
+
+func TestAwaitingTooManyRegionsIsAnError(t *testing.T) {
+	rv := NewRegions(1, 1, 1, Frame{W: 1, H: 1})
+	rv.Items = make([]*Region, MaxRegionItems+1)
+	for i := range rv.Items {
+		rv.Items[i] = &Region{ID: i + 1}
+	}
+	_, err := rv.Summary()
+	if ce, ok := AsError(err); !ok || ce.Code != ETooMany || !strings.Contains(ce.Fix, "top(1000)") || !strings.Contains(ce.Message, "100001 regions") {
+		t.Fatalf("summary of %d regions: %v", len(rv.Items), err)
+	}
+	rv.Items = rv.Items[:MaxRegionItems]
+	if s, err := rv.Summary(); err != nil || len(s["items"].([]any)) != MaxRegionItems {
+		t.Fatalf("summary at the limit: %v", err)
+	}
+}
+
+// TestCacheWarningsLeaveWithTheirEntry: evaluation-time warnings are kept
+// with the cached value and dropped when it is evicted or too large.
+func TestCacheWarningsLeaveWithTheirEntry(t *testing.T) {
+	c := NewCache(100)
+	v := &DataValue{Data: 1.0} // Bytes() > 0
+	n := v.Bytes()
+	k := func(i byte) Signature { return Signature{i} }
+	w := []Warning{{Code: "X", Message: "m"}}
+	c.SetWarnings(k(1), w)
+	if !c.Put(k(1), v) || len(c.Warnings(k(1))) != 1 {
+		t.Fatal("warnings not kept with their value")
+	}
+	for i := byte(2); int64(i-1)*n <= 100; i++ {
+		c.SetWarnings(k(i), w)
+		c.Put(k(i), v)
+	}
+	if c.Contains(k(1)) || c.Warnings(k(1)) != nil {
+		t.Fatal("an evicted value kept its warnings")
+	}
+	big := NewCache(1)
+	big.SetWarnings(k(9), w)
+	if big.Put(k(9), v) || big.Warnings(k(9)) != nil {
+		t.Fatal("a value too large for the cache kept its warnings")
+	}
+	if len(c.warns) > len(c.items) {
+		t.Fatalf("%d warning entries for %d values", len(c.warns), len(c.items))
 	}
 }

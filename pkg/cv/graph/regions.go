@@ -2,6 +2,7 @@ package graph
 
 import (
 	"context"
+	"image"
 	"math"
 	"sort"
 
@@ -29,6 +30,9 @@ type RegionsValue struct {
 	W, H  int     // source raster size in buffer px
 	Scale float64 // scale of the source raster (buffer px per doc px)
 	Frame Frame   // the frame the raster covers; region geometry is absolute in it
+	// Fields is the schema of the items (stamped from the node by the
+	// evaluator; nil for values built outside the graph, see Schema).
+	Fields []FieldSpec
 }
 
 var _ Value = &RegionsValue{}
@@ -101,15 +105,6 @@ func (v *RegionsValue) NewRegion(id int, pix []int32) *Region {
 	return r
 }
 
-// RegionFields are the fields every region has; ops add measures such as
-// meanL, contrast, localNoise, score (detect.specks) or meanMask
-// (components).
-var RegionFields = []string{"id", "area", "x", "y", "w", "h", "cx", "cy", "aspect"}
-
-// KnownRegionFields are all field names region predicates may use.
-var KnownRegionFields = []string{"id", "area", "x", "y", "w", "h", "cx", "cy", "aspect",
-	"meanL", "contrast", "localNoise", "score", "sharpness", "meanMask", "polarity"}
-
 // Field returns a field of the region: a number, or a string for tags.
 func (r *Region) Field(name string) (any, bool) {
 	switch name {
@@ -139,58 +134,93 @@ func (r *Region) Field(name string) (any, bool) {
 	return nil, false
 }
 
-// FieldNames lists the region's fields.
-func (r *Region) FieldNames() []string {
-	out := []string{"id", "area", "x", "y", "w", "h", "cx", "cy"}
-	for k := range r.Measures {
-		out = append(out, k)
-	}
-	for k := range r.Tags {
-		out = append(out, k)
-	}
-	sort.Strings(out)
-	return out
-}
-
 func round(v float64, digits int) float64 {
 	p := math.Pow(10, float64(digits))
 	return math.Round(v*p) / p
 }
 
-// Data is the plain-data form JavaScript sees: { id, box, area, centroid,
-// …measures, …tags }. Geometry is rounded to 0.01 doc px, measures to 4
-// decimals.
-func (r *Region) Data() map[string]any {
-	m := map[string]any{
-		"id":       float64(r.ID),
-		"box":      []any{round(r.Box[0], 2), round(r.Box[1], 2), round(r.Box[2], 2), round(r.Box[3], 2)},
-		"area":     round(r.Area, 2),
-		"centroid": []any{round(r.Centroid[0], 2), round(r.Centroid[1], 2)},
+// Schema is the value's field list: Fields (stamped from its node), or for
+// a value built without a node the geometry and the first item's measures
+// and tags in name order.
+func (v *RegionsValue) Schema() []FieldSpec {
+	if v.Fields != nil {
+		return v.Fields
 	}
-	for k, v := range r.Measures {
-		m[k] = round(v, 4)
+	out := WithFields(GeometryFields)
+	if len(v.Items) == 0 {
+		return out
 	}
-	for k, v := range r.Tags {
-		m[k] = v
+	r := v.Items[0]
+	var names []string
+	for k := range r.Measures {
+		if _, geo := FindField(GeometryFields, k); !geo {
+			names = append(names, k)
+		}
 	}
-	return m
+	for k := range r.Tags {
+		names = append(names, k)
+	}
+	sort.Strings(names)
+	for _, k := range names {
+		t := "number"
+		if _, ok := r.Tags[k]; ok {
+			t = "string"
+		}
+		out = append(out, FieldSpec{Name: k, Type: t})
+	}
+	return out
 }
 
-// SummaryLimit is the number of items an awaited Regions value includes.
-const SummaryLimit = 100
+// Data is the plain-data form JavaScript and data out see: the fields of
+// the schema, flat and in schema order ({ id, x, y, w, h, cx, cy, area,
+// aspect, …measures, …tags }). Geometry is rounded to 0.01 doc px, measures
+// to 4 decimals. A field the region lacks is omitted.
+func (r *Region) Data(fields []FieldSpec) Record {
+	rec := Record{Keys: make([]string, 0, len(fields)), Vals: make(map[string]any, len(fields))}
+	for _, f := range fields {
+		v, ok := r.Field(f.Name)
+		if !ok {
+			continue
+		}
+		switch x := v.(type) {
+		case float64:
+			switch f.Name {
+			case "id":
+			case "x", "y", "w", "h", "cx", "cy", "area":
+				v = round(x, 2)
+			default:
+				v = round(x, 4)
+			}
+		}
+		rec.Keys = append(rec.Keys, f.Name)
+		rec.Vals[f.Name] = v
+	}
+	return rec
+}
+
+// MaxRegionItems is a safety limit on the items of an awaited Regions value:
+// a pathological mask (every grain a region) would otherwise become a
+// multi-gigabyte JavaScript array.
+const MaxRegionItems = 100000
 
 // Summary is what JavaScript receives for an awaited Regions node: the count
-// and the first limit items in list order.
-func (v *RegionsValue) Summary(limit int) map[string]any {
-	n := min(limit, len(v.Items))
-	items := make([]any, n)
-	for i := 0; i < n; i++ {
-		items[i] = v.Items[i].Data()
+// and every item in list order. More than MaxRegionItems items is
+// E_TOO_MANY.
+func (v *RegionsValue) Summary() (map[string]any, error) {
+	if len(v.Items) > MaxRegionItems {
+		return nil, Errorf(ETooMany, "%d regions; await at most %d.", len(v.Items), MaxRegionItems).
+			WithHint("Keep the regions you need before awaiting: rank and cut, or count them without awaiting the items.").
+			WithFix(`regions.sortBy("area").top(1000)   // or await regions.count()`)
+	}
+	fields := v.Schema()
+	items := make([]any, len(v.Items))
+	for i, r := range v.Items {
+		items[i] = r.Data(fields)
 	}
 	return map[string]any{
 		"kind": string(KindRegions), "count": float64(len(v.Items)), "items": items,
-		"truncated": len(v.Items) > n, "scale": v.Scale, "frame": v.Frame.Data(),
-	}
+		"scale": v.Scale, "frame": v.Frame.Data(),
+	}, nil
 }
 
 // Raster is where a buffer lies in doc px: the doc position of its
@@ -222,45 +252,21 @@ func FrameRaster(f Frame, scale float64) Raster {
 // soft-edged when the target is coarser than the source; pixels outside the
 // target are skipped. Values are clamped to [0, 1].
 func (v *RegionsValue) Rasterize(ctx context.Context, t Raster) (*buffer.Buffer, error) {
-	w, h := t.W, t.H
-	out := buffer.New(w, h, 1, t.SX)
+	out := buffer.New(t.W, t.H, 1, t.SX)
 	pl := out.Plane(0)
-	sx, sy := v.axisScales()
-	same := w == v.W && h == v.H && t.OX == float64(v.Frame.X) && t.OY == float64(v.Frame.Y) && t.SX == sx && t.SY == sy
-	// source pixel x covers doc [Frame.X + x/sx, Frame.X + (x+1)/sx): in target px, (doc − OX)·SX
-	ax, bx := t.SX/sx, (float64(v.Frame.X)-t.OX)*t.SX
-	ay, by := t.SY/sy, (float64(v.Frame.Y)-t.OY)*t.SY
 	for k, r := range v.Items {
 		if k%64 == 0 {
 			if err := ctx.Err(); err != nil {
 				return nil, err
 			}
 		}
-		for _, p := range r.Pix {
-			x, y := int(p)%v.W, int(p)/v.W
-			if same {
-				pl[int(p)] = 1
-				continue
+		v.overlap(r, t, func(i int, a float32, set bool) {
+			if set {
+				pl[i] = 1
+			} else {
+				pl[i] += a
 			}
-			x0, x1 := float64(x)*ax+bx, float64(x+1)*ax+bx
-			y0, y1 := float64(y)*ay+by, float64(y+1)*ay+by
-			if x1 <= 0 || y1 <= 0 || x0 >= float64(w) || y0 >= float64(h) {
-				continue
-			}
-			for ty := max(0, int(math.Floor(y0))); ty < int(math.Ceil(y1)) && ty < h; ty++ {
-				oy := math.Min(y1, float64(ty+1)) - math.Max(y0, float64(ty))
-				if oy <= 0 {
-					continue
-				}
-				for tx := max(0, int(math.Floor(x0))); tx < int(math.Ceil(x1)) && tx < w; tx++ {
-					ox := math.Min(x1, float64(tx+1)) - math.Max(x0, float64(tx))
-					if ox <= 0 {
-						continue
-					}
-					pl[ty*w+tx] += float32(ox * oy)
-				}
-			}
-		}
+		})
 	}
 	for i, p := range pl {
 		if p > 1 {
@@ -268,4 +274,78 @@ func (v *RegionsValue) Rasterize(ctx context.Context, t Raster) (*buffer.Buffer,
 		}
 	}
 	return out, nil
+}
+
+// Coverage is one region's weights on target: the bounding window of its
+// pixels in target px (clipped to the target) and, row-major over it, the
+// area overlap of each target pixel with the region (clamped to 1), the rule
+// of Rasterize for one region. regions.measure weighs pixels with it when
+// the regions were found on a different raster than the image measured.
+func (v *RegionsValue) Coverage(r *Region, t Raster) (image.Rectangle, []float32) {
+	full := image.Rect(0, 0, t.W, t.H)
+	var rect image.Rectangle
+	v.overlap(r, t, func(i int, _ float32, _ bool) {
+		p := image.Rect(i%t.W, i/t.W, i%t.W+1, i/t.W+1)
+		if rect.Empty() {
+			rect = p
+		} else {
+			rect = rect.Union(p)
+		}
+	})
+	rect = rect.Intersect(full)
+	if rect.Empty() {
+		return rect, nil
+	}
+	w := make([]float32, rect.Dx()*rect.Dy())
+	v.overlap(r, t, func(i int, a float32, set bool) {
+		x, y := i%t.W-rect.Min.X, i/t.W-rect.Min.Y
+		if set {
+			w[y*rect.Dx()+x] = 1
+		} else {
+			w[y*rect.Dx()+x] += a
+		}
+	})
+	for i, a := range w {
+		if a > 1 {
+			w[i] = 1
+		}
+	}
+	return rect, w
+}
+
+// overlap calls emit for each target pixel (index into t) a source pixel of
+// r overlaps, with the overlap area; set is true when the target is the
+// source raster itself (the pixel is the region's, weight 1).
+func (v *RegionsValue) overlap(r *Region, t Raster, emit func(i int, a float32, set bool)) {
+	w, h := t.W, t.H
+	sx, sy := v.axisScales()
+	same := w == v.W && h == v.H && t.OX == float64(v.Frame.X) && t.OY == float64(v.Frame.Y) && t.SX == sx && t.SY == sy
+	// source pixel x covers doc [Frame.X + x/sx, Frame.X + (x+1)/sx): in target px, (doc − OX)·SX
+	ax, bx := t.SX/sx, (float64(v.Frame.X)-t.OX)*t.SX
+	ay, by := t.SY/sy, (float64(v.Frame.Y)-t.OY)*t.SY
+	for _, p := range r.Pix {
+		if same {
+			emit(int(p), 1, true)
+			continue
+		}
+		x, y := int(p)%v.W, int(p)/v.W
+		x0, x1 := float64(x)*ax+bx, float64(x+1)*ax+bx
+		y0, y1 := float64(y)*ay+by, float64(y+1)*ay+by
+		if x1 <= 0 || y1 <= 0 || x0 >= float64(w) || y0 >= float64(h) {
+			continue
+		}
+		for ty := max(0, int(math.Floor(y0))); ty < int(math.Ceil(y1)) && ty < h; ty++ {
+			oy := math.Min(y1, float64(ty+1)) - math.Max(y0, float64(ty))
+			if oy <= 0 {
+				continue
+			}
+			for tx := max(0, int(math.Floor(x0))); tx < int(math.Ceil(x1)) && tx < w; tx++ {
+				ox := math.Min(x1, float64(tx+1)) - math.Max(x0, float64(tx))
+				if ox <= 0 {
+					continue
+				}
+				emit(ty*w+tx, float32(ox*oy), false)
+			}
+		}
+	}
 }

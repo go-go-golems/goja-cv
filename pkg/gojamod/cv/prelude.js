@@ -51,6 +51,22 @@
   // number), and Object.keys, JSON and the YAML result are unchanged. Ops
   // given such data lift it back to the node (marshal).
   const NODE = Symbol("cv.node");
+
+  // Region items are flat ({ id, x, y, w, h, cx, cy, area, aspect, … }).
+  // Names agents remember from older docs (box, centroid, meanMask) are
+  // non-enumerable accessors on one shared prototype that throw E_NO_FIELD
+  // with the literal fix: a diagnostic, not an alias (no data comes back).
+  const ITEM_PROTO = Object.create(Object.prototype);
+  for (const name of Object.keys(native.__removedFields())) {
+    Object.defineProperty(ITEM_PROTO, name, {
+      get() {
+        return native.__noField(name);
+      },
+      enumerable: false,
+      configurable: false,
+    });
+  }
+  native.__itemProto(ITEM_PROTO);
   const ARRAY_METHODS = ["slice", "map", "forEach", "reduce", "find", "findIndex", "some", "every", "sort", "indexOf", "includes", "flatMap", "at", "concat", "join", "push"];
 
   function link(v, node) {
@@ -58,7 +74,7 @@
     Object.defineProperty(v, NODE, { value: node });
     const tab = tables[node.__kind];
     const names = tab ? Object.keys(tab) : [];
-    names.push("look");
+    names.push("look", "save");
     for (const name of names) {
       if (name === "then") continue;
       if (name in v) {
@@ -70,6 +86,9 @@
       Object.defineProperty(v, name, { value: node[name], writable: true, configurable: true, enumerable: false });
     }
     if (node.__kind === "Regions" && Array.isArray(v.items)) {
+      for (const it of v.items) {
+        if (it !== null && typeof it === "object" && Object.getPrototypeOf(it) === Object.prototype) Object.setPrototypeOf(it, ITEM_PROTO);
+      }
       // awaited Regions are { count, items }: array methods say so
       for (const name of ARRAY_METHODS) {
         if (name in v) continue;
@@ -227,6 +246,11 @@
         return function (opts) {
           return native.__look(t.__id, opts === undefined ? null : opts);
         };
+      case "save":
+        // save(path, { depth }) → a promise of the saved file (under --out-root)
+        return function (path, opts) {
+          return native.__save(t.__id, path === undefined ? null : path, opts === undefined ? null : opts);
+        };
     }
     if (PROBES.has(prop)) return undefined;
     if (t.__kind === "Param") {
@@ -258,7 +282,7 @@
     has(t, prop) {
       if (typeof prop !== "string") return false;
       const tab = tables[t.__kind];
-      return prop === "then" || prop === "__id" || prop === "__kind" || prop === "look" || !!(tab && tab[prop]);
+      return prop === "then" || prop === "__id" || prop === "__kind" || prop === "look" || prop === "save" || !!(tab && tab[prop]);
     },
     ownKeys() {
       return [];
@@ -339,6 +363,15 @@
       return native.__describe(requireNode(node, "cv.describe").__id);
     },
     isNode: isNode,
+    // json(x, { name }) / csv(x, { name, columns }) → a Data handle: content
+    // for programs (CLI: a file), or .save(path) under --out-root. Plain
+    // data is passed as it is (not lifted back to its node).
+    json(x, opts) {
+      return native.__data("json", x, opts === undefined ? null : opts);
+    },
+    csv(x, opts) {
+      return native.__data("csv", x, opts === undefined ? null : opts);
+    },
     // warnings({ clear }) lists RANGE warnings collected while building nodes.
     warnings(opts) {
       return native.__warnings(!!(opts && opts.clear));

@@ -46,7 +46,7 @@ func openFrame(a graph.Args, _ []*graph.Node) graph.Frame {
 	return f
 }
 
-func validateOpen(a graph.Args) error {
+func validateOpen(a graph.Args, _ []*graph.Node) error {
 	if a.Has("box") && a.Has("origin") {
 		return graph.Errorf(graph.EArgType, "cv.open: box already sets the origin; pass box or origin, not both.").
 			WithHint("box reads a window in file px and the frame starts at its corner; origin declares where a file that is itself a window starts.").

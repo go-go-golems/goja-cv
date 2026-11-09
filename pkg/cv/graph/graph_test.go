@@ -52,7 +52,9 @@ func testRegistry(t *testing.T) (*Registry, *atomic.Int64) {
 				}
 				return &DataValue{Data: a.Length("r", in[0].(*ImageValue).Buf.Scale)}, nil
 			}},
-		OpDef{Name: "sum", On: KindImage, Returns: KindValue, Fields: []string{"sum", "mean"},
+		OpDef{Name: "sum", On: KindImage, Returns: KindValue, Fields: func(Args, []*Node) []FieldSpec {
+			return []FieldSpec{{Name: "sum", Type: "number"}, {Name: "mean", Type: "number"}}
+		},
 			Args: []ArgSpec{{Name: "delay", Type: "number", Default: 0.0}},
 			Run: func(_ context.Context, _ *EvalCtx, in []Value, a Args) (Value, error) {
 				if d := a.Number("delay"); d > 0 {

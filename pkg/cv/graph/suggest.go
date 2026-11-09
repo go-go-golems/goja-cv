@@ -26,7 +26,15 @@ var Synonyms = map[string]string{
 	"average":       "stats",
 	"statistics":    "stats",
 	"stat":          "stats",
-	"measure":       "stats",
+	"probe":         "measure",
+	"ring":          "measure",
+	"contrastAt":    "measure",
+	"valueAt":       "sample",
+	"pixel":         "sample",
+	"at":            "sample",
+	"lineProfile":   "profile",
+	"line":          "profile",
+	"trace":         "profile",
 	"hist":          "histogram",
 	"histo":         "histogram",
 	"clone":         "heal",
@@ -84,7 +92,17 @@ var MethodRedirects = map[string]Redirect{
 	"magnify": {Hint: "Zoom is a look option, not a node: crop the window, then look at it zoomed.", Fix: "node.crop([x, y, w, h]).look({ zoom: 8 })"},
 	"ruler":   {Hint: "Rulers are a look option.", Fix: "node.look({ ruler: true })"},
 	"compare": {Hint: "compare is a cv function that takes a list of images.", Fix: `cv.compare([a, b], { mode: "side" })`},
+	"export":  saveRedirect, "write": saveRedirect, "saveAs": saveRedirect, "saveTo": saveRedirect, "writeFile": saveRedirect, "store": saveRedirect,
+	"toCSV": csvRedirect, "toCsv": csvRedirect, "csv": csvRedirect, "table": csvRedirect, "rows": csvRedirect,
+	"json": jsonRedirect, "dump": jsonRedirect, "serialize": jsonRedirect,
 }
+
+var (
+	saveRedirect = Redirect{Hint: "save writes a file under the out-root (--out-root): node.save(\"x.tif\") for an image or mask, cv.csv(x).save(\"x.csv\") for data.",
+		Fix: `node.save("x.tif")`}
+	csvRedirect  = Redirect{Hint: "cv.csv(x) is data for programs: every row, delivered as a file or text; cv.docs.read(\"data-out\").", Fix: `cv.csv(node, { name: "rows" })`}
+	jsonRedirect = Redirect{Hint: "cv.json(x) is data for programs: every item, delivered as a file or text; cv.docs.read(\"data-out\").", Fix: `cv.json(node, { name: "data" })`}
+)
 
 // levenshtein is the case-insensitive edit distance with adjacent
 // transpositions counted as one edit.
@@ -194,7 +212,7 @@ func (r *Registry) UnknownMethod(k Kind, name string, path []string) *Error {
 		}
 	}
 	for _, op := range r.Ops() {
-		if op.On == k && op.Returns == KindValue && contains(op.Fields, name) {
+		if op.On == k && op.Returns == KindValue && !needsArgs(op) && contains(FieldNames(op.DocFields()), name) {
 			e.Hint = fmt.Sprintf("%q is a field of the Value returned by %s().", name, op.Name)
 			e.Fix = fmt.Sprintf("%s.%s().%s   // or (await %s.%s()).%s for the number", receiverVar(k), op.Name, name, receiverVar(k), op.Name, name)
 			return e
@@ -308,4 +326,15 @@ func NoField(field string, keys []string) *Error {
 		e.Hint = "Fields: " + strings.Join(keys, ", ") + "."
 	}
 	return e
+}
+
+// needsArgs reports whether op has a required argument (so op() alone is
+// not a call the agent can copy).
+func needsArgs(op *OpDef) bool {
+	for _, a := range op.Args {
+		if !a.Hidden && a.Default == nil && !a.Optional && !a.Variadic {
+			return true
+		}
+	}
+	return false
 }

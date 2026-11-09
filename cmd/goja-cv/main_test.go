@@ -59,11 +59,11 @@ func TestRunScriptJSONAndExitCodes(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &res); err != nil {
 		t.Fatalf("json: %v\n%s", err, out)
 	}
-	if res.Status != "ok" || !strings.HasPrefix(res.Result, "42") || len(res.Looks) != 1 || len(res.Console) != 1 {
+	if res.Status != "ok" || !strings.HasPrefix(res.Result, "42") || len(res.Files) != 1 || len(res.Console) != 1 {
 		t.Fatalf("result %+v", res)
 	}
-	if _, err := os.Stat(res.Looks[0].Path); err != nil || filepath.Base(res.Looks[0].Path) != "look-1-dark.png" {
-		t.Fatalf("look %+v: %v", res.Looks[0], err)
+	if _, err := os.Stat(res.Files[0].Path); err != nil || filepath.Base(res.Files[0].Path) != "look-1-dark.png" {
+		t.Fatalf("look %+v: %v", res.Files[0], err)
 	}
 
 	// cv error: printed, exit 1; looks shown before the throw are still written
@@ -82,6 +82,7 @@ func TestRunScriptJSONAndExitCodes(t *testing.T) {
 		"bad kind":      {"ops", "--kind", "Foo"},
 		"remote http":   {"mcp", "--http", "0.0.0.0:3999"},
 		"bad root":      {"mcp", "--root", filepath.Join(dir, "nope")},
+		"bad out-root":  {"eval", "--out-root", filepath.Join(dir, "nope"), "-e", "return 1"},
 	} {
 		if code, out, errOut := runCLI(t, args...); code != exitUsage {
 			t.Fatalf("%s: exit %d, want 2\n%s\n%s", name, code, out, errOut)
@@ -161,5 +162,101 @@ func TestMCPCommandServer(t *testing.T) {
 	text, _ = call(`img = cv.open("/etc/hosts")`)
 	if !strings.Contains(text, "code: E_ACCESS") {
 		t.Fatalf("roots: %s", text)
+	}
+}
+
+// TestDataFilesFromEval: data items are written as <name>.<ext> next to the
+// looks, a second item of the same name gets -2, --json lists them under
+// files with their row counts, and save writes under --out-root.
+func TestDataFilesFromEval(t *testing.T) {
+	dir := t.TempDir()
+	out, root := filepath.Join(dir, "out"), filepath.Join(dir, "root")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	code, stdout, errOut := runCLI(t, "eval", "--image", tiffPath, "--out", out, "--out-root", root, "--json", "-e", `
+const regs = img.mask.luminance({ above: 0.5 }).components()
+const saved = await cv.csv(regs).save("tables/regs.csv")
+return {
+  look: img.look("scene"),
+  spots: cv.csv(regs, { name: "spots" }),
+  again: cv.csv(regs.top(1), { name: "spots" }),
+  raw: cv.json([{ b: 1, a: 2 }, { b: 3, a: 4 }], { name: "probe" }),
+  anon: cv.json({ n: 1 }),
+  saved: saved.rows,
+}`)
+	if code != exitOK {
+		t.Fatalf("exit %d\n%s\n%s", code, stdout, errOut)
+	}
+	var res jsonResult
+	if err := json.Unmarshal([]byte(stdout), &res); err != nil {
+		t.Fatalf("json: %v\n%s", err, stdout)
+	}
+	byName := map[string]contentFile{}
+	for _, f := range res.Files {
+		byName[filepath.Base(f.Path)] = f
+	}
+	for _, name := range []string{"look-1-scene.png", "spots.csv", "spots-2.csv", "probe.json", "data-5.json"} {
+		if _, ok := byName[name]; !ok {
+			t.Fatalf("no %s in %+v\n%s", name, res.Files, res.Result)
+		}
+	}
+	if r := byName["probe.json"].Rows; r == nil || *r != 2 {
+		t.Fatalf("probe rows %v", r)
+	}
+	if r := byName["spots-2.csv"].Rows; r == nil || *r != 1 {
+		t.Fatalf("spots-2 rows %v", r)
+	}
+	probe, _ := os.ReadFile(byName["probe.json"].Path)
+	if string(probe) != `[{"b":1,"a":2},{"b":3,"a":4}]`+"\n" {
+		t.Fatalf("probe.json keeps key order: %s", probe)
+	}
+	csvData, _ := os.ReadFile(byName["spots.csv"].Path)
+	if !strings.HasPrefix(string(csvData), "id,x,y,w,h,cx,cy,area,aspect\n") {
+		t.Fatalf("spots.csv header: %s", csvData)
+	}
+	saved, err := os.ReadFile(filepath.Join(root, "tables", "regs.csv"))
+	if err != nil || string(saved) != string(csvData) {
+		t.Fatalf("saved csv: %v\n%s", err, saved)
+	}
+	for _, s := range []string{"spots: '[content 2: data spots.csv (9 columns of components)]'", "raw: '[content 4: data probe.json (2 items)]'", "anon: '[content 5: data data-5.json (1 keys)]'"} {
+		if !strings.Contains(res.Result, s) {
+			t.Fatalf("result lacks %q:\n%s", s, res.Result)
+		}
+	}
+}
+
+// TestPreludeFlag: --prelude scripts run before the code; a failing one is
+// a cv error (exit 1) naming its file and line; a missing one a usage error.
+func TestPreludeFlag(t *testing.T) {
+	dir := t.TempDir()
+	good, bad := filepath.Join(dir, "h.js"), filepath.Join(dir, "bad.js")
+	if err := os.WriteFile(good, []byte("mem.f = x => x + 1\nreturn 'ready'\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(bad, []byte("\n\nnope()\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if code, out, _ := runCLI(t, "eval", "--prelude", good, "-e", "return mem.f(41)"); code != exitOK || !strings.HasPrefix(out, "42") {
+		t.Fatalf("prelude: exit %d\n%s", code, out)
+	}
+	if code, out, errOut := runCLI(t, "eval", "--prelude", good, "--prelude", bad, "-e", "return 1"); code != exitCVError || !strings.Contains(out+errOut, "prelude bad.js:3:") {
+		t.Fatalf("failing prelude: exit %d\n%s\n%s", code, out, errOut)
+	}
+	if code, _, _ := runCLI(t, "eval", "--prelude", filepath.Join(dir, "nope.js"), "-e", "return 1"); code != exitUsage {
+		t.Fatalf("missing prelude: exit %d", code)
+	}
+}
+
+// TestUniqueName: generated names are reserved, so items named a, a and a-2
+// never overwrite each other (review of PR #4).
+func TestUniqueName(t *testing.T) {
+	used := map[string]bool{}
+	var got []string
+	for _, n := range []string{"a", "a", "a-2", "a"} {
+		got = append(got, uniqueName(used, n, ".csv"))
+	}
+	if want := []string{"a.csv", "a-2.csv", "a-2-2.csv", "a-3.csv"}; strings.Join(got, " ") != strings.Join(want, " ") {
+		t.Fatalf("got %v, want %v", got, want)
 	}
 }

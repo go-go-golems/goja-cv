@@ -6,6 +6,14 @@ import "github.com/go-go-golems/goja-cv/pkg/cv/graph"
 // something other than a node. look and show share the look options; the
 // look package reads them by name (look.OptionsFrom).
 
+// DataKind is the receiver name of functions on Data handles (cv.json,
+// cv.csv) in the registry.
+const DataKind = "Data"
+
+// dataNameArg is the name option of cv.json and cv.csv.
+var dataNameArg = graph.ArgSpec{Name: "name", Type: "string", Optional: true,
+	Doc: "the item's name, letters, digits, - and _ (the CLI writes name.csv / name.json); default data-<N>, N its content number"}
+
 // MaxLookSide is the largest look side when fitting (the engine's default
 // LookLong).
 const MaxLookSide = 1568
@@ -42,7 +50,7 @@ func funcDefs() []graph.FuncDef {
 	return []graph.FuncDef{
 		{
 			Name: "look", On: []string{string(graph.KindImage), string(graph.KindMask), string(graph.KindValue)}, Args: LookArgs(),
-			Doc: "An image of the node to return in the result (Image, Mask, histogram). Numbered, with what it shows and its scale in the caption.",
+			Doc: "An image of the node to return in the result (Image, Mask; a histogram as bars, a profile as lines). Numbered, with what it shows and its scale in the caption.",
 			See: []string{"show", "compare", "overlay"},
 		},
 		{
@@ -72,6 +80,36 @@ func funcDefs() []graph.FuncDef {
 		{
 			Name: "warnings", Bespoke: true, Usage: "cv.warnings({ clear })",
 			Doc: "Build-time warnings collected while building nodes (they also appear under warnings: in every result).",
+		},
+		{
+			Name: "json", Bespoke: true, Usage: "cv.json(x, { name })",
+			Args: []graph.ArgSpec{
+				{Name: "x", Type: "data", Positional: true, Doc: "a Value or Regions node (every item, evaluated at scale 1 when delivered) or plain data (as you see it, edits included)"},
+				dataNameArg,
+			},
+			Doc: "Data for programs as JSON: returned from an eval it is delivered as content (MCP: text; CLI: the file name.json in --out), or saved with .save(path). Region items and measurement rows keep their schema's field order.",
+			See: []string{"csv", "save"},
+		},
+		{
+			Name: "csv", Bespoke: true, Usage: "cv.csv(x, { name, columns })",
+			Args: []graph.ArgSpec{
+				{Name: "x", Type: "data", Positional: true, Doc: "a Value or Regions node or plain data: a list of objects is one row each, a profile one row per sample"},
+				dataNameArg,
+				{Name: "columns", Type: "string[]", Optional: true, Doc: "the columns to write, in order (default: the schema's fields, or the keys in first-seen order)"},
+			},
+			Doc: "Data for programs as CSV with a header row: Regions give one row per region in schema order (id, x, y, w, h, cx, cy, area, aspect, …); nested values are JSON in their cell. Delivered as content or saved with .save(path).",
+			See: []string{"json", "save"},
+		},
+		{
+			Name: "save", On: []string{string(graph.KindImage), string(graph.KindMask), DataKind},
+			Args: []graph.ArgSpec{
+				{Name: "path", Type: "string", Positional: true, Doc: "file path relative to the out-root (--out-root); the extension picks the format: .tif, .png, .npy, .jpg for images, .csv or .json for data"},
+				{Name: "depth", Type: "number", Optional: true, Doc: "bits per sample: TIFF 16 (default), 8 or 32 (float); PNG 16 or 8; NPY 32 (float) or 16"},
+			},
+			Usage: "node.save(path, { depth }) · cv.csv(x).save(path)",
+			Doc: "Write an image (evaluated at scale 1, its encoding and frame origin recorded in TIFF and PNG) or a Data handle to a file under the out-root; " +
+				"resolves to { path, format, depth, encoding, frame, bytes, replaced }. Without --out-root saving is disabled (E_ACCESS).",
+			See: []string{"json", "csv", "look"},
 		},
 		{
 			Name: "show", Global: true, Args: LookArgs(), Bespoke: true,

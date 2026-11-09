@@ -41,12 +41,11 @@ func TestOpenEncodingsWindowsAndOrigins(t *testing.T) {
 		t.Fatal(err)
 	}
 	plainTIF := filepath.Join(dir, "plain.tif")
-	if err := testimage.WriteTIFF(plainTIF, src, testimage.TIFFOptions{Bits: 16}); err != nil {
+	if err := testimage.WriteFile(plainTIF, src, 16, buffer.Meta{}); err != nil {
 		t.Fatal(err)
 	}
 	windowTIF := filepath.Join(dir, "window.tif")
-	if err := testimage.WriteTIFF(windowTIF, src, testimage.TIFFOptions{Bits: 16,
-		Description: buffer.FormatMetadata(buffer.EncLinear, &[2]int{1536, 1024})}); err != nil {
+	if err := testimage.WriteFile(windowTIF, src, 16, buffer.Meta{Encoding: buffer.EncLinear, Origin: &[2]int{1536, 1024}}); err != nil {
 		t.Fatal(err)
 	}
 	dng := filepath.Join(dir, "scan.dng")
@@ -54,7 +53,7 @@ func TestOpenEncodingsWindowsAndOrigins(t *testing.T) {
 		t.Fatal(err)
 	}
 	npy := filepath.Join(dir, "tile.npy")
-	if err := testimage.WriteNPY(npy, src, "<f4"); err != nil {
+	if err := testimage.WriteFile(npy, src, 32, buffer.Meta{}); err != nil {
 		t.Fatal(err)
 	}
 	e := graph.NewEngine(NewRegistry(), graph.EngineOptions{})

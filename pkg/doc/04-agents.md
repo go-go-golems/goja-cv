@@ -82,4 +82,5 @@ every remaining error corrected on the next call.
 
 - "Use cv.docs.search and cv.help(name) when unsure; apply the `fix:` of an error."
 - "Keep nodes in variables; await only to read data; store what you need later on mem."
-- "Return looks to see results; measure inside boxes with img.stats({ box })."
+- "Return looks to see results; back judgements with img.measure(points) or regions.measure(img, { ring: true })."
+- "Return cv.csv(x) when a program needs every row; save files with node.save(path) (needs --out-root)."

@@ -25,7 +25,7 @@ Every node has one kind, and every op says which kinds it takes and returns.
 |---|---|---|
 | Image | float32 pixels with an encoding (srgb or linear) and a frame (await gives a summary, never pixels) | `img`, `exposure`, `levels`, `within`, `heal`, `overlay` |
 | Mask | one channel of weights in [0, 1] | `img.mask.luminance`, `img.mask.box`, `regions.toMask()` |
-| Regions | discrete areas with id, box, area, centroid and measures | `img.detect.specks()`, `mask.components()` |
+| Regions | discrete areas with flat fields id, x, y, w, h (box), cx, cy (centroid), area, aspect and measures | `img.detect.specks()`, `mask.components()` |
 | Value | plain data: numbers, objects, arrays | `stats`, `histogram`, `coverage`, `count` |
 | Param | a value a person can move | `P.slider`, `P.toggle`, `P.choice` |
 
@@ -76,7 +76,7 @@ const specks = img.detect.specks().where({ score: { gte: 0.5 } }).sortBy("area")
 return {
   coverage: await sel.coverage(),
   inside: await img.stats({ mask: sel }).pick("meanL", "area"),
-  biggest: (await specks).items.map(r => ({ id: r.id, box: r.box })),
+  biggest: (await specks).items.map(r => ({ id: r.id, x: r.x, y: r.y, w: r.w, h: r.h })),
 }
 ```
 

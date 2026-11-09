@@ -15,6 +15,7 @@ import (
 	_ "embed"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -39,10 +40,14 @@ const (
 	DefaultMaxResultChars = 9000
 	// DefaultMaxLooks is the number of images one eval delivers.
 	DefaultMaxLooks = 4
-	// DefaultMaxLookBytes bounds the total bytes of the images of one eval.
+	// DefaultMaxLookBytes bounds the total bytes of the content of one eval.
 	DefaultMaxLookBytes = 8 << 20
-	// EAccess is the error code of cv.open on a path outside the allowed roots.
-	EAccess = "E_ACCESS"
+	// DefaultMaxData is the number of data items (cv.json, cv.csv) one eval
+	// delivers.
+	DefaultMaxData = 4
+	// MCPMaxDataBytes is the size above which the MCP server replaces a data
+	// item by a note to save it (data enters the model's context).
+	MCPMaxDataBytes = 256 << 10
 	// ENoDocument is the error code of any use of doc before the document layer exists.
 	ENoDocument = "E_NO_DOCUMENT"
 	// ENoImage is the error code of using img when no image is open.
@@ -55,6 +60,10 @@ type Options struct {
 	Image string
 	// Roots, when non-empty, are the only directories cv.open may read from.
 	Roots []string
+	// OutRoot is the only directory save may write under (relative paths
+	// resolve against BaseDir; empty: saving is disabled). It is separate
+	// from the read roots.
+	OutRoot string
 	// BaseDir resolves relative paths (default: the working directory).
 	BaseDir string
 	// Engine options for each session's engine (BaseDir is filled from BaseDir).
@@ -63,9 +72,20 @@ type Options struct {
 	EvalTimeout time.Duration
 	// MaxResultChars caps the YAML result (default 9000).
 	MaxResultChars int
-	// MaxLooks and MaxLookBytes bound the images of one eval (default 4, 8 MiB).
+	// MaxLooks and MaxLookBytes bound the images of one eval (default 4, 8 MiB
+	// for all content together).
 	MaxLooks     int
 	MaxLookBytes int
+	// MaxData bounds the data items of one eval (default 4); MaxDataBytes,
+	// when > 0, replaces a larger data item by a note (the mcp command sets
+	// MCPMaxDataBytes; the CLI writes every item).
+	MaxData      int
+	MaxDataBytes int
+	// Preludes are script files run, in order, in every new session before
+	// agent code (async function bodies like agent code: they may await and
+	// return; their results are not shown). Paths are operator input:
+	// resolved against BaseDir, not subject to Roots.
+	Preludes []string
 	// Logger for replapi (default: disabled).
 	Logger *zerolog.Logger
 }
@@ -82,6 +102,9 @@ func (o Options) withDefaults() (Options, error) {
 	}
 	if o.MaxLookBytes <= 0 {
 		o.MaxLookBytes = DefaultMaxLookBytes
+	}
+	if o.MaxData <= 0 {
+		o.MaxData = DefaultMaxData
 	}
 	if o.BaseDir == "" {
 		wd, err := os.Getwd()
@@ -102,6 +125,23 @@ func (o Options) withDefaults() (Options, error) {
 		roots = append(roots, filepath.Clean(abs))
 	}
 	o.Roots = roots
+	if o.OutRoot != "" {
+		abs, err := filepath.Abs(o.resolve(o.OutRoot))
+		if err != nil {
+			return o, errors.Wrapf(err, "out-root %q", o.OutRoot)
+		}
+		o.OutRoot = filepath.Clean(abs)
+	}
+	o.Engine.OutRoot = o.OutRoot
+	preludes := make([]string, 0, len(o.Preludes))
+	for _, p := range o.Preludes {
+		abs, err := filepath.Abs(o.resolve(p))
+		if err != nil {
+			return o, errors.Wrapf(err, "prelude %q", p)
+		}
+		preludes = append(preludes, abs)
+	}
+	o.Preludes = preludes
 	return o, nil
 }
 
@@ -112,10 +152,11 @@ func (o Options) resolve(p string) string {
 	return filepath.Join(o.BaseDir, p)
 }
 
-// ContentLimits are the resultcontent limits of the session: at most MaxLooks
-// images and MaxLookBytes bytes per eval.
+// ContentLimits are the resultcontent limits of the session: MaxLooks looks
+// and MaxData data items (the session enforces each count in collect) and
+// MaxLookBytes bytes per eval.
 func (o Options) ContentLimits() resultcontent.Limits {
-	return resultcontent.Limits{MaxItems: o.MaxLooks, MaxTotalBytes: o.MaxLookBytes}
+	return resultcontent.Limits{MaxItems: o.MaxLooks + o.MaxData, MaxTotalBytes: o.MaxLookBytes}
 }
 
 // SessionPolicy is the replsession policy of cv sessions: raw execution (the
@@ -160,15 +201,52 @@ type App struct {
 	sessions []string // ids created through CreateSession, in order
 }
 
-// CreateSession creates a cv session and remembers its id (Sessions).
+// CreateSession creates a cv session, runs the preludes in it and
+// remembers its id (Sessions). A prelude that fails deletes the session and
+// is reported as "prelude FILE:LINE: …".
 func (a *App) CreateSession(ctx context.Context) (*replsession.SessionSummary, error) {
 	s, err := a.App.CreateSession(ctx)
-	if err == nil && s != nil {
-		a.mu.Lock()
-		a.sessions = append(a.sessions, s.ID)
-		a.mu.Unlock()
+	if err != nil || s == nil {
+		return s, err
 	}
-	return s, err
+	if err := a.runPreludes(ctx, s.ID); err != nil {
+		_ = a.DeleteSession(context.Background(), s.ID)
+		return nil, err
+	}
+	a.mu.Lock()
+	a.sessions = append(a.sessions, s.ID)
+	a.mu.Unlock()
+	return s, nil
+}
+
+// whereLine finds the agent line of a rendered error ("where: 'line 12: …'").
+var whereLine = regexp.MustCompile(`where: '?line (\d+)`)
+
+// runPreludes evaluates the prelude files in session id, in order.
+func (a *App) runPreludes(ctx context.Context, id string) error {
+	for _, p := range a.opts.Preludes {
+		code, err := os.ReadFile(p)
+		if err != nil {
+			return errors.Errorf("prelude %s: %v", p, err)
+		}
+		resp, err := a.Evaluate(ctx, id, string(code))
+		if err != nil && (resp == nil || resp.Cell == nil) {
+			return errors.Wrapf(err, "prelude %s", filepath.Base(p))
+		}
+		if exec := resp.Cell.Execution; exec.Status != "ok" {
+			line := "?"
+			if m := whereLine.FindStringSubmatch(exec.Result); m != nil {
+				line = m[1]
+			}
+			msg := exec.Error
+			if i := strings.Index(exec.Result, "message: "); i >= 0 {
+				msg = strings.TrimSpace(strings.SplitN(exec.Result[i+len("message: "):], "\n", 2)[0])
+				msg = strings.Trim(msg, "'\"")
+			}
+			return errors.Errorf("prelude %s:%s: %s", filepath.Base(p), line, msg)
+		}
+	}
+	return nil
 }
 
 // Sessions lists the ids of the sessions created through this app.
@@ -183,6 +261,11 @@ func New(ctx context.Context, opts Options, extra ...replapi.Option) (*App, erro
 	opts, err := opts.withDefaults()
 	if err != nil {
 		return nil, err
+	}
+	for _, p := range opts.Preludes {
+		if st, err := os.Stat(p); err != nil || st.IsDir() {
+			return nil, errors.Errorf("prelude %s is not a readable file", p)
+		}
 	}
 	factory, err := NewRuntimeFactory(opts)
 	if err != nil {

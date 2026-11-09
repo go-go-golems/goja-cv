@@ -29,6 +29,9 @@ type binding struct {
 	nextFunc graph.FuncID
 	track    tracker        // per-eval state (evaltrack.go)
 	opened   []graph.NodeID // sources opened with cv.open
+	// itemProto is the prototype of region items (prelude: throwing
+	// accessors for removed field names); owner goroutine only.
+	itemProto *goja.Object
 }
 
 var _ graph.Callbacks = &binding{}
@@ -68,10 +71,19 @@ func (b *binding) CallEach(ctx context.Context, id graph.FuncID, args []any) ([]
 		}
 		out := make([]any, len(args))
 		for i, a := range args {
-			v, err := fn(goja.Undefined(), toJS(vm, a))
+			arg := toJS(vm, a)
+			if o, ok := arg.(*goja.Object); ok && b.itemProto != nil {
+				if _, isRec := a.(graph.Record); isRec {
+					_ = o.SetPrototype(b.itemProto)
+				}
+			}
+			v, err := fn(goja.Undefined(), arg)
 			if err != nil {
+				if ce, ok := graph.AsError(jsError(err)); ok {
+					return nil, ce
+				}
 				return nil, graph.Errorf(graph.EEval, "the function passed to filter threw on item %d: %v", i, err).
-					WithHint("The function receives one region's data: { id, box, area, centroid, score, … }.")
+					WithHint(fmt.Sprintf("The function receives one region's data: { %s, … }.", strings.Join(graph.FieldNames(graph.GeometryFields), ", ")))
 			}
 			out[i] = graph.Normalize(v.Export())
 		}
@@ -112,8 +124,13 @@ func (b *binding) object() *goja.Object {
 	set("__builders", b.builders)
 	set("__placeholder", b.placeholder)
 	set("__look", b.look)
+	set("__save", b.saveNode)
+	set("__data", b.dataJS)
 	b.addDocs(o)
 	set("__fieldNames", b.fieldNames)
+	set("__removedFields", b.removedFields)
+	set("__noField", b.noField)
+	set("__itemProto", b.itemProtoJS)
 	set("__collision", b.collision)
 	set("__notArray", b.notArray)
 	return o
@@ -360,13 +377,22 @@ func (b *binding) evaluate(c goja.FunctionCall) goja.Value {
 				_ = reject(errorObject(vm, err))
 				return
 			}
-			_ = resolve(resultToJS(vm, v, n))
+			res, err := resultToJS(vm, v, n)
+			if err != nil {
+				ce, _ := graph.AsError(err)
+				if ce != nil && len(ce.Path) == 0 {
+					ce.Path = b.eng.Path(n.ID)
+				}
+				_ = reject(errorObject(vm, err))
+				return
+			}
+			_ = resolve(res)
 		})
 	}()
 	return vm.ToValue(promise)
 }
 
-func resultToJS(vm *goja.Runtime, v graph.Value, n *graph.Node) goja.Value {
+func resultToJS(vm *goja.Runtime, v graph.Value, n *graph.Node) (goja.Value, error) {
 	switch x := v.(type) {
 	case *graph.ImageValue:
 		s := x.Summary()
@@ -375,13 +401,17 @@ func resultToJS(vm *goja.Runtime, v graph.Value, n *graph.Node) goja.Value {
 				s[k] = val
 			}
 		}
-		return toJS(vm, s)
+		return toJS(vm, s), nil
 	case *graph.RegionsValue:
-		return toJS(vm, x.Summary(graph.SummaryLimit))
+		s, err := x.Summary()
+		if err != nil {
+			return nil, err
+		}
+		return toJS(vm, s), nil
 	case *graph.DataValue:
-		return toJS(vm, x.Data)
+		return toJS(vm, graph.OrderBySchema(x.Data, n.Fields)), nil
 	}
-	return goja.Undefined()
+	return goja.Undefined(), nil
 }
 
 // __describe(id) → {id, kind, op, call, label, frame, path}

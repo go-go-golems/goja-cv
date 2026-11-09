@@ -10,7 +10,7 @@ Every node has one kind, and every op says which kind it takes and returns.
 |---|---|---|
 | Image | linear float32 pixels (awaits to a summary) | `img`, `exposure`, `levels`, `within`, `heal`, `overlay`, `compare` |
 | Mask | one channel in [0, 1] | `mask.luminance`, `mask.box`, `regions.toMask()`, `a.and(b)` |
-| Regions | a list of areas with id, box, area, centroid and measures | `detect.specks`, `mask.components()`, `regions.where()` |
+| Regions | a list of areas with flat fields id, x, y, w, h, cx, cy, area, aspect and measures | `detect.specks`, `mask.components()`, `regions.where()` |
 | Value | plain data | `stats`, `histogram`, `coverage`, `count`, `stats().meanL` |
 | Param | a value the person can move | `P.slider`, `P.toggle`, `P.choice` |
 
@@ -54,7 +54,7 @@ return { all: specks.count, dust: await dust.count(), look: img.overlay(dust).lo
 
 Data wins where names collide: `specks.count` is the number; the method form is `img.detect.specks().count()`. Ops recompute the node, so after a param moved they see the new value, not the awaited snapshot.
 
-Awaited Regions are an object `{ count, items: [...] }`, not an array: the list is `.items`.
+Awaited Regions are an object `{ count, items: [...] }`, not an array: the list is `.items`, and it holds every region (up to 100000; more is `E_TOO_MANY`). The YAML result shows at most 48 items of a list; return `cv.json(x)` or `cv.csv(x)` to hand a program all of them.
 
 ```js error=TypeError
 const specks = await img.detect.specks()

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/go-go-golems/goja-cv/internal/testimage"
+	"github.com/go-go-golems/goja-cv/pkg/cv/buffer"
 	"github.com/go-go-golems/goja-cv/pkg/cvsession"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -15,7 +16,7 @@ func TestNamedImagesPersistAndAreListed(t *testing.T) {
 	dir := t.TempDir()
 	src, _ := testimage.PlantedScan()
 	npy := filepath.Join(dir, "tile.npy")
-	if err := testimage.WriteNPY(npy, src, "<f4"); err != nil {
+	if err := testimage.WriteFile(npy, src, 32, buffer.Meta{}); err != nil {
 		t.Fatal(err)
 	}
 	dng := filepath.Join(dir, "raw.dng")
@@ -68,7 +69,7 @@ func TestMCPOpenToolWithNameAndEncoding(t *testing.T) {
 	dir := t.TempDir()
 	lin := filepath.Join(dir, "lin.tif")
 	src, _ := testimage.PlantedScan()
-	if err := testimage.WriteTIFF(lin, src, testimage.TIFFOptions{Bits: 16}); err != nil {
+	if err := testimage.WriteFile(lin, src, 16, buffer.Meta{}); err != nil {
 		t.Fatal(err)
 	}
 	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "open",

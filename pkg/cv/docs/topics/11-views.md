@@ -48,7 +48,7 @@ return { plain: img.crop(box).levels({ auto: true }).look({ zoom: 4, label: "str
 
 ## Presets
 
-`img.view(name, { size })` builds a named view; `size` (doc px, default 3) is the typical size of what you look for, and the presets derive their σ from it. The caption says `view(speck)`; `explain()` shows the expansion.
+`img.view(name, { size })` builds a named view; `size` (doc px, default 3) is the typical size of what you look for, and the presets derive their σ from it. The caption says `view(speck)`; `explain()` shows the expansion. `speck` and `speckColor` work in linear space (on density tiles a labelled speck ranks higher there: 18th against 20th), the others in encoded space; pass `{ space }` to choose.
 
 | name | what it shows | use it for |
 |---|---|---|

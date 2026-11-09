@@ -116,9 +116,9 @@ type Look struct {
 	interp buffer.Interp
 	ruler  float64
 	grid   float64
-	png    bool // encode as PNG (the format rule, decided at creation)
-	w, h   int  // rendered size
-	chart  bool // a Value node rendered as a chart
+	png    bool            // encode as PNG (the format rule, decided at creation)
+	w, h   int             // rendered size
+	chart  graph.ChartKind // a Value node rendered as a chart (ChartNone: an image)
 	n      atomic.Int64
 
 	mu    sync.Mutex
@@ -131,8 +131,9 @@ var (
 )
 
 // New creates a look of node id. Image and Mask nodes render as images;
-// Value nodes whose data has a numeric "counts" array (histogram) render as a
-// bar chart. Other kinds are E_WRONG_KIND. It does not evaluate anything.
+// Value nodes whose op declares a chart (OpDef.Chart: histogram bars, profile
+// lines) render as that chart. Other kinds are E_WRONG_KIND. It does not
+// evaluate anything.
 func New(eng *graph.Engine, id graph.NodeID, opt Options) (*Look, error) {
 	n, ok := eng.Node(id)
 	if !ok {
@@ -176,13 +177,13 @@ func New(eng *graph.Engine, id graph.NodeID, opt Options) (*Look, error) {
 			l.png = n.Kind == graph.KindMask || l.scale > 1 || n.Op.Lossless || (l.w <= smallLook && l.h <= smallLook)
 		}
 	case graph.KindValue:
-		if n.Op.Name != "histogram" {
+		if n.Op.Chart == graph.ChartNone {
 			return nil, lookKindError(n)
 		}
 		if opt.Zoom != 0 || opt.Ruler != 0 || opt.Grid != 0 {
 			return nil, graph.Errorf(graph.EArgType, "look of a chart takes no zoom, ruler or grid: charts have no doc px.").WithFix("node.look()")
 		}
-		l.chart, l.scale, l.png = true, 1, true
+		l.chart, l.scale, l.png = n.Op.Chart, 1, true
 		l.w, l.h = chartSize(maxLong)
 	case graph.KindRegions, graph.KindParam, graph.KindNone:
 		return nil, lookKindError(n)
@@ -210,7 +211,7 @@ func zoomTooLarge(n *graph.Node, zoom float64, limit int) error {
 }
 
 func lookKindError(n *graph.Node) error {
-	e := graph.Errorf(graph.EWrongKind, "look() renders Image and Mask nodes (and histograms); %s is %s node.", graph.Label(n), graph.A(string(n.Kind)))
+	e := graph.Errorf(graph.EWrongKind, "look() renders Image and Mask nodes (and histograms and profiles as charts); %s is %s node.", graph.Label(n), graph.A(string(n.Kind)))
 	e.Hint = "Await a Value node to read its data; look at the image it was computed from."
 	switch n.Kind {
 	case graph.KindValue:
@@ -283,7 +284,7 @@ func (l *Look) Caption() string {
 	if l.label != "" && l.label != l.chain {
 		what = l.label + " — " + l.chain
 	}
-	if l.chart {
+	if l.chart != graph.ChartNone {
 		return fmt.Sprintf("%s: %s (%d×%d chart)", head, what, l.w, l.h)
 	}
 	size := fmt.Sprintf("%d×%d", l.w, l.h)
@@ -375,6 +376,9 @@ func (l *Look) image(ctx context.Context) (draw.Image, error) {
 		}
 		return dm, nil
 	case *graph.DataValue:
+		if l.chart == graph.ChartLines {
+			return renderLines(x.Data, l.w, l.h)
+		}
 		return renderChart(x.Data, l.w, l.h)
 	}
 	return nil, errors.Errorf("look: unexpected value %T", v)

@@ -1,6 +1,7 @@
 package ops
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
@@ -92,7 +93,11 @@ func TestOverlayAndCompare(t *testing.T) {
 	if dir := os.Getenv("CV_LOOK_DIR"); dir != "" {
 		for name, n := range map[string]*graph.Node{"overlay": ov, "side": side, "diff": diff} {
 			v := evalValue(t, e, n, 1).(*graph.ImageValue)
-			if err := buffer.WriteFile(context.Background(), filepath.Join(dir, name+".png"), v.Buf, "png8"); err != nil {
+			var out bytes.Buffer
+			if err := buffer.EncodePNG(context.Background(), &out, v.Buf, 8, buffer.Meta{}); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, name+".png"), out.Bytes(), 0o644); err != nil { // #nosec G306 -- looks for a person
 				t.Fatal(err)
 			}
 		}

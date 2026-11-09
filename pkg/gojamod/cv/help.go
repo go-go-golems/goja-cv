@@ -148,7 +148,12 @@ func kindHelp(reg *graph.Registry, k graph.Kind) map[string]any {
 	for _, f := range reg.FuncsOn(k) {
 		methods[f.Name] = oneLine(f.Doc)
 	}
-	return map[string]any{"kind": string(k), "methods": methods, "usage": fmt.Sprintf("cv.help(\"%s.<method>\") or cv.help(\"<method>\") describes one.", k)}
+	out := map[string]any{"kind": string(k), "methods": methods, "usage": fmt.Sprintf("cv.help(\"%s.<method>\") or cv.help(\"<method>\") describes one.", k)}
+	if k == graph.KindRegions {
+		out["fields"] = toAny(graph.FieldNames(graph.GeometryFields))
+		out["items"] = "Awaited Regions are { count, items, frame }; every item has these flat fields (x, y, w, h: the bounding box; cx, cy: the centroid; doc px) plus the measures of the op that made it (cv.help(\"detect.specks\").fields). Pass an item where a box, a point or an id is expected."
+	}
+	return out
 }
 
 func opHelp(reg *graph.Registry, name string, k graph.Kind) map[string]any {

@@ -28,6 +28,7 @@ const (
 	EPlaceholder      = "E_PLACEHOLDER" // a builder lambda's placeholder node was evaluated outside its builder
 	EFrame            = "E_FRAME"       // images combined by one op cover different frames
 	EFormat           = "E_FORMAT"      // a file feature goja-cv does not read
+	ETooMany          = "E_TOO_MANY"    // an awaited result would be too large for JavaScript
 	WUnusedNode       = "UNUSED_NODE"
 	WRange            = "RANGE"
 	WCropFirst        = "CROP_FIRST"       // a filter with a halo after a crop sees only the window
@@ -47,6 +48,7 @@ type Error struct {
 	Valid   []string `json:"valid,omitempty"` // valid alternatives (option keys, methods, enum values)
 	Line    int      `json:"line,omitempty"`  // filled by the eval tool from the JS stack
 	cause   error
+	field   string // the unknown field of an UnknownFieldError (for the producer hint)
 }
 
 var _ error = &Error{}

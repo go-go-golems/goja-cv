@@ -41,7 +41,8 @@ type renderer struct {
 	vm        *goja.Runtime
 	eng       *graph.Engine
 	getDesc   goja.Callable
-	providers map[resultcontent.Provider]int // other providers → content number
+	providers map[resultcontent.Provider]int    // other providers → content number
+	dropped   map[resultcontent.Provider]string // providers left out by the session's budgets → why
 	props     int
 	nodes     []graph.NodeID
 	stack     map[*goja.Object]bool
@@ -92,10 +93,16 @@ func (r *renderer) render(v goja.Value, depth int) *yaml.Node {
 		return str(cvmod.DescribeNode(r.eng, id) + " (lazy: await it, or return node.look())")
 	}
 	if l, ok := cvmod.LookOf(obj); ok {
+		if why, ok := r.dropped[l]; ok {
+			return str("[not delivered: " + strings.TrimSuffix(strings.TrimPrefix(l.String(), "["), "]") + " — " + why + "]")
+		}
 		return str(l.String())
 	}
 	if p, ok := resultcontent.ProviderOf(obj); ok {
 		desc := resultcontent.Describe(p)
+		if why, ok := r.dropped[p]; ok && reflect.TypeOf(p).Comparable() {
+			return str("[not delivered: " + desc + " — " + why + "]")
+		}
 		if n, ok := r.providers[p]; ok && reflect.TypeOf(p).Comparable() {
 			return str(strings.TrimSpace(fmt.Sprintf("[content %d: %s]", n, desc)))
 		}
@@ -145,7 +152,7 @@ func (r *renderer) primitive(v goja.Value) *yaml.Node {
 		return scalar(FormatNumber(x))
 	case string:
 		if len(x) > maxStringLen {
-			return str(x[:maxStringLen] + fmt.Sprintf("… (%d more characters)", len(x)-maxStringLen))
+			return str(x[:maxStringLen] + fmt.Sprintf("… (%d more characters; return cv.json(x) for all)", len(x)-maxStringLen))
 		}
 		return str(x)
 	}
@@ -170,7 +177,7 @@ func (r *renderer) array(obj *goja.Object, depth int) *yaml.Node {
 	}
 	flow(n)
 	if more := length - shown; more > 0 {
-		comment := fmt.Sprintf("… %d more", more)
+		comment := fmt.Sprintf("… %d more (return cv.json(x) for all)", more)
 		if n.Style == yaml.FlowStyle {
 			n.LineComment = comment
 		} else {
@@ -280,7 +287,7 @@ func capText(text string, maxLen int) string {
 	if len(text) <= maxLen {
 		return text
 	}
-	note := fmt.Sprintf("# %s: the result is %d characters; only the first %d are shown. Return less: pick fields, slice arrays, or summarize.", graph.WCut, len(text), maxLen)
+	note := fmt.Sprintf("# %s: the result is %d characters; only the first %d are shown. Return less: pick fields, slice arrays, or summarize; return cv.json(x) or cv.csv(x) for complete data.", graph.WCut, len(text), maxLen)
 	limit := maxLen - len(note) - 1
 	if limit < 0 {
 		limit = 0

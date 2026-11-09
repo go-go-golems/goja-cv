@@ -2,6 +2,7 @@ package graph
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/go-go-golems/goja-cv/pkg/cv/buffer"
@@ -93,8 +94,11 @@ func (r *Registry) Help(name string) (map[string]any, error) {
 		}
 		entry["inputs"] = ins
 	}
-	if len(op.Fields) > 0 {
-		entry["fields"] = toAnyList(op.Fields)
+	if fs := op.DocFields(); len(fs) > 0 {
+		entry["fields"] = toAnyList(FieldNames(fs))
+	}
+	if len(op.Produces) > 0 {
+		entry["produces"] = toAnyList(sortedNames(op.Produces))
 	}
 	if len(op.See) > 0 {
 		entry["see"] = toAnyList(op.See)
@@ -239,4 +243,13 @@ func fmtDefault(v any) string {
 		}
 	}
 	return fmt.Sprintf("%v", v)
+}
+
+func sortedNames(m map[string]string) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }

@@ -115,11 +115,21 @@ func listItems(v []any) ([]sheetItem, error) {
 	out := make([]sheetItem, len(v))
 	for i, e := range v {
 		it := sheetItem{id: strconv.Itoa(i)}
-		if b, ok := boxOf(e); ok {
+		if m, ok := e.(map[string]any); ok { // a region item or a row: labelled by its id
+			if id, ok := num(m["id"]); ok {
+				it.id = strconv.FormatFloat(id, 'f', -1, 64)
+			}
+		}
+		p, isPoint := pointOf(e)
+		b, isBox := boxOf(e)
+		switch {
+		case isPoint && isBox: // a region item: centred on its centroid, sized by its box
+			it.cx, it.cy, it.w, it.h = p[0], p[1], b[2], b[3]
+		case isBox:
 			it.cx, it.cy, it.w, it.h = b[0]+b[2]/2, b[1]+b[3]/2, b[2], b[3]
-		} else if p, ok := pointOf(e); ok {
+		case isPoint:
 			it.cx, it.cy = p[0], p[1]
-		} else {
+		default:
 			return nil, graph.Errorf(graph.EArgType, "cv.sheet items[%d] must be a point [x, y] or { cx, cy }, or a box [x, y, w, h] or { x, y, w, h } (doc px).", i).
 				WithFix(`cv.sheet([[120, 80], [200, 40, 16, 16]], { views: img })`)
 		}
@@ -284,7 +294,7 @@ func sheetOp() graph.OpDef {
 		Space: graph.SpaceRule{Default: buffer.SpaceEncoded, Fixed: true}, // cells show what looks show
 		Args: []graph.ArgSpec{
 			{Name: "items", Type: "Regions|any[]", Positional: true,
-				Doc: "Regions (one cell per region, centred on its centroid), or a list of points [x, y] / boxes [x, y, w, h] in doc px"},
+				Doc: "Regions (one cell per region, centred on its centroid), or a list of points ([x, y] or { cx, cy }: measurement rows), boxes ([x, y, w, h] or { x, y, w, h }) or region items (centred on cx, cy, labelled with id), doc px"},
 			{Name: "views", Type: "Image|Image[]", Doc: "what each cell shows: an image node, or a list (one cell per view, side by side, for each item)"},
 			{Name: "size", Type: "number", Unit: graph.DocPx, Default: 64.0, Min: graph.F(4), Max: graph.F(1024), Static: true,
 				Doc: "side of the square window around each item, doc px (a larger box widens its window and lowers its scale)"},
@@ -295,7 +305,7 @@ func sheetOp() graph.OpDef {
 			{Name: "labels", Type: "enum:id,index,none", Optional: true, Doc: "cell label: the region id (default for Regions), the list index (default for lists) or none; with the centre in doc px"},
 			{Name: "stretch", Type: "enum:none,cell", Default: "none", Doc: "cell: stretch each cell by its own p01/p99 (levels({ auto: true }) per cell)"},
 		},
-		Validate: func(a graph.Args) error {
+		Validate: func(a graph.Args, _ []*graph.Node) error {
 			if !a.Has("views") {
 				return graph.Errorf(graph.EArgType, "cv.sheet needs views: the image (or images) each cell shows.").
 					WithFix(`cv.sheet(regions, { views: img.view("speck") })`)

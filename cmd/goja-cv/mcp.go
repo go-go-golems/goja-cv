@@ -22,6 +22,8 @@ type mcpFlags struct {
 	allowRemote bool
 	image       string
 	roots       []string
+	outRoot     string
+	prelude     []string
 	timeout     int
 }
 
@@ -49,6 +51,9 @@ available to scripts. --root limits the files cv.open may read (default: any pat
 					return usageErr("--image: %v", err)
 				}
 			}
+			if err := checkOutRoot(f.outRoot); err != nil {
+				return err
+			}
 			for _, r := range f.roots {
 				if st, err := os.Stat(r); err != nil || !st.IsDir() {
 					return usageErr("--root %q is not a directory", r)
@@ -74,13 +79,15 @@ available to scripts. --root limits the files cv.open may read (default: any pat
 	cmd.Flags().BoolVar(&f.allowRemote, "allow-remote", false, "Allow a non-loopback --http address (there is no authentication)")
 	cmd.Flags().StringVar(&f.image, "image", "", "Image file to open in the default session and bind to img")
 	cmd.Flags().StringSliceVar(&f.roots, "root", nil, "Directory cv.open may read from (repeatable)")
+	cmd.Flags().StringVar(&f.outRoot, "out-root", "", "The only directory save() may write under (default: saving is disabled)")
+	cmd.Flags().StringArrayVar(&f.prelude, "prelude", nil, "Script run in every new session before agent code (repeatable)")
 	cmd.Flags().IntVar(&f.timeout, "timeout-ms", 0, "Eval timeout in milliseconds (default 60000)")
 	return cmd
 }
 
 func newMCPServer(ctx context.Context, opts *rootOptions, f *mcpFlags) (*cvsession.MCPServer, func(), error) {
 	logger := opts.logger()
-	sopts := cvsession.Options{Image: f.image, Roots: f.roots, Logger: &logger}
+	sopts := cvsession.Options{Image: f.image, Roots: f.roots, OutRoot: f.outRoot, Preludes: f.prelude, MaxDataBytes: cvsession.MCPMaxDataBytes, Logger: &logger}
 	if f.timeout > 0 {
 		sopts.EvalTimeout = msDuration(f.timeout)
 	}

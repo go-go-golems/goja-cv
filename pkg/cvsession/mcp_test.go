@@ -3,6 +3,7 @@ package cvsession_test
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -279,5 +280,21 @@ func TestAppEvaluateKeepsSessionNotFound(t *testing.T) {
 	_, err := app.Evaluate(context.Background(), "probe", "return 1")
 	if !errors.Is(err, replsession.ErrSessionNotFound) {
 		t.Fatalf("err %v does not wrap replsession.ErrSessionNotFound", err)
+	}
+}
+
+// TestMCPDataContent: a data item reaches MCP clients as text content; over
+// the MCP byte limit it is a note to save it; looks and data have separate
+// budgets.
+func TestMCPDataContent(t *testing.T) {
+	img := planted(t)
+	cs := connect(t, cvsession.Options{Image: img, BaseDir: filepath.Dir(img), MaxDataBytes: cvsession.MCPMaxDataBytes})
+	text, images, isErr := callEval(t, cs, `return { a: img.look("a"), rows: cv.json([{ x: 1 }, { x: 2 }], { name: "rows" }) }`)
+	if isErr || len(images) != 1 || !strings.Contains(text, `[{"x":1},{"x":2}]`) || !strings.Contains(text, "[content 2: data rows.json (2 items)]") {
+		t.Fatalf("data as text content:\n%s", text)
+	}
+	text, _, _ = callEval(t, cs, `return cv.csv(Array.from({ length: 6000 }, (_, i) => ({ i, a: "0123456789012345678901234567890123456789", b: i * 0.5 })), { name: "big" })`)
+	if !strings.Contains(text, "too large for the conversation") || !strings.Contains(text, `.save("big.csv")`) {
+		t.Fatalf("300 KiB item:\n%.600s", text)
 	}
 }

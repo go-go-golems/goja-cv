@@ -181,7 +181,7 @@ func TestRecordedMetadata(t *testing.T) {
 
 	// PNG: gAMA 1.0 means linear (unless an sRGB chunk says otherwise); tEXt goja-cv carries both
 	var pb bytes.Buffer
-	if err := buffer.EncodePNG(context.Background(), &pb, src, 16); err != nil {
+	if err := buffer.EncodePNG(context.Background(), &pb, src, 16, buffer.Meta{}); err != nil {
 		t.Fatal(err)
 	}
 	gama := make([]byte, 4)

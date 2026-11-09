@@ -26,7 +26,7 @@ func cropOp(on graph.Kind) graph.OpDef {
 		Name: "crop", On: on, Returns: on, Class: graph.GeometricOp,
 		Args: []graph.ArgSpec{{Name: "box", Type: "box", Unit: graph.DocPx, Positional: true, Static: true, InFrame: true,
 			Doc: "[x, y, w, h] in doc px (absolute, in the frame of the file); rounded outward to whole px and clipped to the image"}},
-		Validate: func(a graph.Args) error {
+		Validate: func(a graph.Args, _ []*graph.Node) error {
 			b := a.Box("box")
 			if !(b[2] > 0 && b[3] > 0) {
 				return graph.Errorf(graph.EArgRange, "crop box [%g, %g, %g, %g] has no area: w and h must be above 0.", b[0], b[1], b[2], b[3]).

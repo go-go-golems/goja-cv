@@ -43,7 +43,8 @@ func fromJS(v any) any {
 }
 
 // toJS deep-copies plain Go data into fresh JavaScript values, so scripts can
-// never mutate cached Go data. Object keys are sorted.
+// never mutate cached Go data. Object keys are sorted, except a
+// graph.Record's, which keep their (schema) order.
 func toJS(vm *goja.Runtime, v any) goja.Value {
 	switch x := v.(type) {
 	case nil:
@@ -57,6 +58,12 @@ func toJS(vm *goja.Runtime, v any) goja.Value {
 		sort.Strings(keys)
 		for _, k := range keys {
 			_ = o.Set(k, toJS(vm, x[k]))
+		}
+		return o
+	case graph.Record:
+		o := vm.NewObject()
+		for _, k := range x.Keys {
+			_ = o.Set(k, toJS(vm, x.Vals[k]))
 		}
 		return o
 	case []any:
@@ -79,4 +86,28 @@ func toJS(vm *goja.Runtime, v any) goja.Value {
 		return vm.NewArray(items...)
 	}
 	return vm.ToValue(v)
+}
+
+// jsError turns an exception that carries a cv error object (thrown by the
+// binding, e.g. E_NO_FIELD) back into a *graph.Error; other errors are
+// returned unchanged.
+func jsError(err error) error {
+	ex, ok := err.(*goja.Exception)
+	if !ok {
+		return err
+	}
+	o, ok := ex.Value().(*goja.Object)
+	if !ok || o == nil {
+		return err
+	}
+	get := func(k string) string {
+		if v := o.Get(k); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+			return v.String()
+		}
+		return ""
+	}
+	if get("cv") != "true" || get("code") == "" {
+		return err
+	}
+	return &graph.Error{Code: get("code"), Message: get("message"), Hint: get("hint"), Fix: get("fix")}
 }

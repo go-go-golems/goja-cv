@@ -25,10 +25,6 @@ type WeightedStats struct {
 // averages, and percentiles are weighted quantiles that reduce to NumPy's
 // linear interpolation when all weights are equal.
 func StatsWeighted(ctx context.Context, b *buffer.Buffer, w []float32, percentiles []float64) (*WeightedStats, error) {
-	return statsWeighted(ctx, b, w, percentiles)
-}
-
-func statsWeighted(ctx context.Context, b *buffer.Buffer, w []float32, percentiles []float64) (*WeightedStats, error) {
 	n := b.N()
 	if len(w) != n {
 		return nil, errors.Errorf("weights have %d values for %d pixels", len(w), n)

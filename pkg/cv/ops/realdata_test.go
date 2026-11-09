@@ -69,7 +69,7 @@ func TestRealTileReEncodedAsLinear(t *testing.T) {
 	}
 	lin1 := evalImage(t, e, tile)
 	vPath := filepath.Join(t.TempDir(), realTile+"_v.tif")
-	if err := testimage.WriteTIFF(vPath, lin1.Buf, testimage.TIFFOptions{Bits: 16}); err != nil {
+	if err := testimage.WriteFile(vPath, lin1.Buf, 16, buffer.Meta{}); err != nil {
 		t.Fatal(err)
 	}
 	v := mustOpen(t, e, vPath, map[string]any{"encoding": "linear"})

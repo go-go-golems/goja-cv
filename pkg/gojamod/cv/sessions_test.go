@@ -55,14 +55,14 @@ func TestSessionB(t *testing.T) {
 	}
 	largest := r1["largest"].([]any)
 	first := largest[0].(map[string]any)
-	for _, k := range []string{"id", "box", "area", "contrast", "score", "localNoise", "polarity"} {
+	for _, k := range []string{"id", "x", "y", "w", "h", "cx", "cy", "area", "contrast", "score", "localNoise", "polarity"} {
 		if _, ok := first[k]; !ok {
 			t.Fatalf("speck item lacks %q: %v", k, first)
 		}
 	}
 	star := r1["star"].(map[string]any)
 	starID := star["id"]
-	if c := star["centroid"].([]any); fmt.Sprint(c) != "[200.56 46.56]" && !(c[0].(float64) > 198 && c[0].(float64) < 203) {
+	if cx, _ := star["cx"].(float64); !(cx > 198 && cx < 203) {
 		t.Fatalf("lowest-score region is not the star: %v", star)
 	}
 	if look := r1["look"].(map[string]any); look["kind"] != "Image" || look["channels"] != int64(3) {

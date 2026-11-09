@@ -2,6 +2,7 @@ package ops
 
 import (
 	"math"
+	"strings"
 	"testing"
 
 	"github.com/go-go-golems/goja-cv/pkg/cv/graph"
@@ -92,11 +93,14 @@ func TestRegionPredicateErrors(t *testing.T) {
 		code string
 		hint string
 	}{
-		{"where", []any{map[string]any{"scroe": map[string]any{"gte": 1}}}, graph.EUnknownOption, `Did you mean "score"?`},
+		{"where", []any{map[string]any{"aera": map[string]any{"gte": 1}}}, graph.EUnknownOption, `Did you mean "area"?`},
+		{"where", []any{map[string]any{"score": map[string]any{"gte": 1}}}, graph.EUnknownOption, "score comes from img.detect.specks()."},
+		{"where", []any{map[string]any{"centroid": 1}}, graph.ENoField, ""},
 		{"where", []any{map[string]any{"area": map[string]any{"gtee": 1}}}, graph.EUnknownOption, `Did you mean "gte"?`},
 		{"where", []any{map[string]any{"area": map[string]any{"lt": "big"}}}, graph.EArgType, ""},
 		{"where", []any{5}, graph.EArgType, ""},
-		{"sortBy", []any{"aera"}, graph.EArgType, `Did you mean "area"?`},
+		{"sortBy", []any{"aera"}, graph.EUnknownOption, `Did you mean "area"?`},
+		{"sortBy", []any{"box"}, graph.ENoField, ""},
 		{"without", []any{"x"}, graph.EArgType, ""},
 		{"filter", []any{3}, graph.EArgType, ""},
 	} {
@@ -106,9 +110,13 @@ func TestRegionPredicateErrors(t *testing.T) {
 			t.Fatalf("%s %v: %+v", tc.op, tc.raw, err)
 		}
 	}
-	// a field that exists in general but not on these regions fails at evaluation
-	_, err := e.Evaluate(t.Context(), call(t, e, "where", comps.ID, map[string]any{"score": map[string]any{"gte": 0.5}}).ID, graph.EvalOptions{Scale: 1})
-	if ce, ok := graph.AsError(err); !ok || ce.Code != graph.ENoField {
-		t.Fatalf("missing field: %v", err)
+	// a field of another op fails at build time, naming the op that adds it
+	ce := callErr(t, e, "where", comps.ID, map[string]any{"score": map[string]any{"gte": 0.5}})
+	if ce.Code != graph.EUnknownOption || ce.Fix != "img.detect.specks()" || !strings.Contains(ce.Message, "id, x, y, w, h, cx, cy, area, aspect") {
+		t.Fatalf("score on components: %+v", ce)
+	}
+	// removed names carry the literal fix
+	if ce := callErr(t, e, "where", comps.ID, map[string]any{"box": 1}); ce.Code != graph.ENoField || !strings.Contains(ce.Fix, "r.x, r.y, r.w, r.h") {
+		t.Fatalf("box: %+v", ce)
 	}
 }
