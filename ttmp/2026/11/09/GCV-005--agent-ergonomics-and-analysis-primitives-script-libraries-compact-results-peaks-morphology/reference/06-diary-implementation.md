@@ -875,3 +875,99 @@ Budget (§7.8): 0.5 s per 1024² tile with [2, 4, 8] — met (95 ms at snr 1, 16
 the 60 s eval timeout; the op's doc says "about 0.1–0.2 s per megapixel with three radii".
 
 `git diff --stat 6a2e4af 0e04924`: 22 files, +1,219 / −19.
+
+## Step 8: Phase B3 — gold tests, the gold-metrics script, Part B documentation
+
+B3 measures peaks, top-hats and line openings on the colleague's gold tiles, relative to the hot list the annotator
+agents used, and finishes what agents read about Part B: the instructions' peaks line and a model task library built
+on peaks.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 7) "B3: recipes and real-data tests — The recipes, the instructions line and the task-library model, as the guide specifies. The gated tests the guide names, including `TestRealTopHatSaturated` and `TestRealLineOpening`."
+
+**Assistant interpretation:** §14.4's five gated tests with GCV-004's relative pattern, §15.2's script, §12.1's peaks
+line, §12.3's library in testdata, the guidebook recipe and the task-libraries topic.
+
+**Inferred user intent:** know, with numbers, whether peaks beat the hot list on gold before agents are told to use it.
+
+**Commit (code):** 965358c — "GCV-005 B3: gold tests for peaks, top-hats and line openings; peaks in the instructions and the model library"
+
+### What I did
+
+- `pkg/cv/ops/peaks_gold_test.go`: a `goldSession` per labelled tile (its own engine; tile opened with
+  `encoding: "linear"`, gold shifted by the sidecar origin), the DUST-002 hot list (speck view > 0.3, components of at
+  least 4 px), the helpers' probe snap (best snr within 2 px, core 3, ring [6, 12]), and the five tests of §14.4. Gold
+  `r` is the label's extent (covered within max(r, 3) px, the prototype's and the hot list's rule); a gold point is
+  measured with a core of r / 2 (dark-area ring mean, saturated core maximum), per GCV-004's re-tune.
+- `scripts/01-gold-metrics.sh`: runs those tests and the real-tile benchmark, prints the numbers.
+- `Instructions`: "Find spots: await img.as("linear").peaks({ radius: [2, 4, 8] }) → disks …" and "take it from data
+  (peaks, items, measure)"; 3,776 bytes.
+- Model library: `pkg/cvsession/testdata/scripts/dust/helpers.js`, `pkg/doc/08-recipes.md` ("Write a task library")
+  and the `14-task-libraries` example are §12.3's (`mem.tile`, `mem.spots` = peaks + speck step, `mem.sheet`), with
+  `mem.img = img; mem.lin = img.as("linear")` at load so the library works before `mem.tile`; `03-cli.md`'s prelude
+  example calls `mem.spots({ snr: 1.4 })`; the playbook pattern names `peaks`.
+- `15-spots`'s line-removal example uses radius 12 (see What didn't work).
+
+### Why
+
+- The tests compare methods on the same points in one run and log their numbers, so label drift moves both sides.
+- `mem.img`/`mem.lin` defaults: the docs tests run the library on the planted scan without a tile; on gold tiles
+  `mem.tile` replaces both.
+
+### What worked
+
+- Position, coverage, dark areas and saturated blobs passed the guide's targets on the first run (numbers below).
+
+### What didn't work
+
+- `TestRealLineOpening` at the guide's radius 10: elongated components 40 → 3, but dust coverage 164 → 160 (97.6 %,
+  target 98 %). The lost points: two saturated blobs (fit radius 18.5 and 28.2, which hold 20 px segments) and three
+  smaller ones whose component changed shape. Radii tried: 12 → 40 → 8, 164 → 163; 15 → 40 → 15, 164 → 164; 20 →
+  40 → 28, 164 → 164. The test and the doc example use 12; the targets are unchanged. Recorded as a deviation for the
+  coordinator.
+- `TestRealTopHatSaturated` panicked first: `stats` has no `max`; it reads `percentiles: [1]`.
+
+### What I learned
+
+- Peaks' positions are about three times tighter than the snapped hot list's (median 0.36 vs 0.99 px), and the p90s
+  are equal (1.70 vs 1.68): the hot list's best cases are as good, its typical case is not.
+- The snr sweep is steep: 95.8 % / 90.5 % / 70.5 % / 45.8 % coverage at 0.5 / 1 / 1.4 / 2, with 5,298 / 354 / 43 / 10
+  peaks per tile (median).
+
+### What was tricky to build
+
+- The probe snap evaluates one `measure` call per tile over 13 grid points per hot spot, and picks the best per spot by
+  position in the result (the items keep their order).
+
+### What warrants a second pair of eyes
+
+- "Not near gold" counts candidates farther than max(r, 3) from every gold point of any type (dust, hair, scratch).
+- The saturated subset uses gold r ≥ 6 (the fit radius) as the guide says; that is a speck radius of about 3.
+
+### What should be done in the future
+
+- Phase V decides the default snr from these numbers; the coordinator decides on the line radius.
+
+### Code review instructions
+
+- `pkg/cv/ops/peaks_gold_test.go`; `bash ttmp/2026/11/09/GCV-005--*/scripts/01-gold-metrics.sh`.
+- `git show 965358c -- pkg/cvsession/reference.go pkg/cvsession/testdata/scripts/dust/helpers.js`.
+- Gate: `gate=0`; all real-data tests: `go test ./pkg/cv/ops -run TestReal` ok.
+
+### Technical details
+
+`scripts/01-gold-metrics.sh` on 15 labelled tiles, 190 dust points (gold of 2026-11-09):
+
+| metric | peaks | hot list (speck view 0.3) |
+|---|---|---|
+| position, dust r ≤ 6 (172 points): matched within r, median / p90 distance | 162, 0.36 / 1.70 px ([2, 4], snr 0.5) | 147, 0.99 / 1.68 px (probe-snapped) |
+| coverage within max(r, 3), snr ≥ 0.5 | 182 (95.8 %), 5,298 peaks/tile, 5,271 not near gold | |
+| snr ≥ 1 | 172 (90.5 %), 354 (58–921), 346 not near gold | 164 (86.3 %), 71 (11–192), 65 not near gold |
+| snr ≥ 1.4 | 134 (70.5 %), 43 (10–140), 35 not near gold | |
+| snr ≥ 2 | 87 (45.8 %), 10 (1–43), 7 not near gold | |
+| dark-area dust (ring < tile p25), 33 points | 31 | 31 |
+| saturated or large dust, 63 points | top-hat (r 12) 60; peaks [2, 4, 8, 16] 60 | 59 |
+| line openings on the speck view (r 12): elongated components | 40 → 8 | |
+| … dust covered | 164 → 163 | |
+| peaks time per tile ([2, 4, 8], snr 1, through the graph) | median 0.081 s, max 0.104 s | |

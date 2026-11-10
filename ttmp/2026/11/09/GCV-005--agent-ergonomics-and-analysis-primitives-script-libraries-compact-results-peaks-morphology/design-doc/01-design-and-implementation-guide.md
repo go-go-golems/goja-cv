@@ -2530,3 +2530,13 @@ details and numbers.
     `golden_test.go` while their PNGs stayed; both matched exactly.
 38. **Peaks on a crop equal the whole image's to rounding** (~1e-5 in snr far from the crop's border): the row prefix
     sums and the coverage weights start at the crop's corner.
+
+### Phase B3 (commit `965358c`)
+
+39. **`TestRealLineOpening` uses line openings of radius 12, not 10.** At radius 10 the dust coverage fell from 164 to 160
+    points (97.6 %, target 98 %; two saturated blobs hold 20 px segments); radius 12 gives elongated components 40 → 8 and
+    coverage 164 → 163. The targets are unchanged; the coordinator decides. `spots`' line-removal example uses 12.
+40. **`scripts/01-gold-metrics.sh` runs the gated Go tests** (`pkg/cv/ops/peaks_gold_test.go`) and prints their numbers,
+    instead of a `goja-cv run` driver writing CSVs: the tests compute every metric of §15.2 through the same ops.
+41. **The model library sets `mem.img = img` and `mem.lin = img.as("linear")` at load**, so it works on the session's
+    image before `mem.tile` (the docs tests run it on the planted scan); otherwise it is §12.3's.
