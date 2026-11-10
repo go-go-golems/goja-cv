@@ -2,10 +2,8 @@ package cvsession
 
 import (
 	"fmt"
-	"path/filepath"
 	"regexp"
 	"strconv"
-	"strings"
 
 	"github.com/dop251/goja"
 	"github.com/go-go-golems/goja-cv/pkg/cv/graph"
@@ -23,16 +21,17 @@ func newNative(vm *goja.Runtime, st *state) *native { return &native{vm: vm, st:
 
 func (n *native) object() *goja.Object {
 	o := n.vm.NewObject()
-	_ = o.Set("checkPath", n.checkPath)
-	_ = o.Set("queue", n.queue)
-	_ = o.Set("checkName", n.checkName)
-	_ = o.Set("bindName", n.bindName)
-	_ = o.Set("getName", n.getName)
-	_ = o.Set("setName", n.setName)
-	_ = o.Set("asKey", n.asKey)
-	_ = o.Set("noDoc", n.noDoc)
-	_ = o.Set("fail", n.fail)
-	_ = o.Set("unknownMember", n.unknownMember)
+	set := func(name string, fn func(goja.FunctionCall) goja.Value) {
+		_ = o.Set(name, cvmod.Export(n.vm, name, fn))
+	}
+	set("pendingSaves", func(goja.FunctionCall) goja.Value { return cvmod.SavesPending(n.vm) })
+	set("saveFailure", func(goja.FunctionCall) goja.Value { return cvmod.SaveFailure(n.vm) })
+	set("checkName", n.checkName)
+	set("bindName", n.bindName)
+	set("getName", n.getName)
+	set("setName", n.setName)
+	set("fail", n.fail)
+	set("unknownMember", n.unknownMember)
 	return o
 }
 
@@ -62,29 +61,8 @@ func (n *native) throw(e *graph.Error) {
 	panic(obj)
 }
 
-// checkPath(path) throws E_ACCESS when path is outside the session roots.
-func (n *native) checkPath(c goja.FunctionCall) goja.Value {
-	roots := n.st.opts.Roots
-	if len(roots) == 0 {
-		return goja.Undefined()
-	}
-	p := c.Argument(0)
-	if goja.IsUndefined(p) || goja.IsNull(p) {
-		return goja.Undefined() // cv.open reports the missing path itself
-	}
-	abs := filepath.Clean(n.st.opts.resolve(p.String()))
-	for _, r := range roots {
-		if graph.Within(r, abs) {
-			return goja.Undefined()
-		}
-	}
-	n.throw(graph.Errorf(graph.EAccess, "cv.open(%q): the path is outside the directories this session may read.", p.String()).
-		WithHint("Allowed roots: " + strings.Join(roots, ", ")))
-	return nil
-}
-
 // unknownMember(obj, name, members) throws the structured unknown-name error
-// for cv.name / P.name.
+// for cv.name.
 func (n *native) unknownMember(c goja.FunctionCall) goja.Value {
 	var members []string
 	if arr, ok := c.Argument(2).Export().([]any); ok {
@@ -97,33 +75,9 @@ func (n *native) unknownMember(c goja.FunctionCall) goja.Value {
 	return nil
 }
 
-// queue(look) adds a look to the current eval's shows.
-func (n *native) queue(c goja.FunctionCall) goja.Value {
-	l, ok := cvmod.LookOf(c.Argument(0))
-	if !ok {
-		n.throw(graph.Errorf(graph.EArgType, "show() takes a node or a look; got %s.", c.Argument(0).String()).
-			WithFix(`show(img.exposure(0.3), { label: "brighter" })`))
-	}
-	for _, x := range n.st.shows {
-		if x == l {
-			return goja.Undefined()
-		}
-	}
-	n.st.shows = append(n.st.shows, l)
-	return goja.Undefined()
-}
-
-func (n *native) noDoc(c goja.FunctionCall) goja.Value {
-	n.throw(graph.Errorf(ENoDocument, "doc.%s: the document layer (history, apply, propose, export) is not available in this version.", c.Argument(0).String()).
-		WithHint("Work on img and look at results with node.look() or show(node); keep values in mem.").
-		WithFix("return { after: img.exposure(0.3).look(\"after\") }"))
-	return nil
-}
-
 // failure is an uncaught error of the current eval, read from the thrown value.
 type failure struct {
 	Name, Code, Message, Hint, Fix string
-	Member                         string // the member an E_NOT_ARRAY call used
 	Path, Valid                    []string
 	CV                             bool
 	Line, Column                   int // in the evaluated source
@@ -169,7 +123,6 @@ func readFailure(vm *goja.Runtime, v goja.Value) *failure {
 	}
 	f.Name, f.Code, f.Message = get("name"), get("code"), get("message")
 	f.Hint, f.Fix = get("hint"), get("fix")
-	f.Member = get("member")
 	f.Path, f.Valid = list("path"), list("valid")
 	f.CV = obj.Get("cv") != nil && obj.Get("cv").ToBoolean()
 	f.Stack = get("stack")

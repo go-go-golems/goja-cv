@@ -25,12 +25,11 @@ func encodedOf(t *testing.T, e *graph.Engine, n *graph.Node) *buffer.Buffer {
 
 func TestOverlayAndCompare(t *testing.T) {
 	e, img, _ := plantedEngine(t)
-	specks := call(t, e, "where", call(t, e, "detect.specks", img.ID).ID, map[string]any{"score": map[string]any{"gte": DustScore}})
-	ov := call(t, e, "overlay", img.ID, graph.NodeArg{ID: specks.ID}, map[string]any{"labels": "id", "color": "red"})
-	same := call(t, e, "overlay", specks.ID, graph.NodeArg{ID: img.ID}, map[string]any{"labels": "id", "color": "red"})
+	specks := filtered(t, e, call(t, e, "detect.specks", img.ID), isDust)
+	ov := call(t, e, "overlay", img.ID, specks, map[string]any{"labels": "id", "color": "red"})
 	ob := evalValue(t, e, ov, 1).(*graph.ImageValue).Buf
-	if sb := evalValue(t, e, same, 1).(*graph.ImageValue).Buf; len(sb.Pix) != len(ob.Pix) || sb.Pix[1234] != ob.Pix[1234] {
-		t.Fatal("regions.overlay(img) differs from img.overlay(regions)")
+	if _, err := e.Call("overlay", call(t, e, "detect.specks", img.ID).ID, []any{graph.NodeArg{ID: img.ID}}); err == nil {
+		t.Fatal("regions.overlay(img): there is one overlay, on the image")
 	}
 	src := encodedOf(t, e, img) // overlays and compare run in encoded space
 	// box outlines are drawn in red: count strongly red pixels that were not
@@ -44,7 +43,7 @@ func TestOverlayAndCompare(t *testing.T) {
 	if n < 40*12 {
 		t.Fatalf("only %d red outline pixels for 40 boxes", n)
 	}
-	healed := call(t, e, "heal", img.ID, graph.NodeArg{ID: specks.ID})
+	healed := call(t, e, "heal", img.ID, specks)
 	pair := []any{graph.NodeArg{ID: img.ID}, graph.NodeArg{ID: healed.ID}}
 	side := call(t, e, "compare", 0, pair)
 	if side.Frame.W != 2*256+compareGap || side.Frame.H != 192 || !side.Frame.Picture {
@@ -72,10 +71,10 @@ func TestOverlayAndCompare(t *testing.T) {
 		t.Fatal("split")
 	}
 	_, err := e.Call("compare", 0, []any{pair, map[string]any{"mode": "diff"}})
-	if ce, ok := graph.AsError(err); !ok || ce.Code != graph.EArgType || ce.Fix != "a.sub(b).mul(4).add(0.5)" {
+	if ce, ok := graph.AsError(err); !ok || ce.Code != graph.EArgType || ce.Fix != `cv.compare({ mode: "side" })` {
 		t.Fatalf("compare diff: %+v", err)
 	}
-	if _, err := e.Call("compare", 0, []any{[]any{graph.NodeArg{ID: specks.ID}}}); err == nil {
+	if _, err := e.Call("compare", 0, []any{[]any{graph.NodeArg{ID: call(t, e, "detect.specks", img.ID).ID}}}); err == nil {
 		t.Fatal("regions accepted as an image to compare")
 	}
 	if _, err := e.Call("compare", img.ID, []any{[]any{graph.NodeArg{ID: healed.ID}}}); err == nil {

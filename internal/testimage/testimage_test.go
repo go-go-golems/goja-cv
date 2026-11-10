@@ -3,6 +3,7 @@ package testimage
 import (
 	"context"
 	"math"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -18,7 +19,12 @@ func TestCommittedTestdataMatchesGenerator(t *testing.T) {
 		bits int
 		tol  float64
 	}{{TIFF16, 16, 1e-4}, {PNG8, 8, 1.0 / 60}} {
-		enc, info, err := buffer.DecodeFile(context.Background(), filepath.Join("..", "..", "testdata", tc.file), buffer.DecodeOptions{})
+		f, err := os.Open(filepath.Join("..", "..", "testdata", tc.file))
+		if err != nil {
+			t.Fatalf("%s: %v (run `make testdata`)", tc.file, err)
+		}
+		enc, info, err := buffer.DecodeFile(context.Background(), f, buffer.DecodeOptions{})
+		_ = f.Close()
 		if err != nil {
 			t.Fatalf("%s: %v (run `make testdata`)", tc.file, err)
 		}

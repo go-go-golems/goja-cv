@@ -15,15 +15,16 @@ import (
 
 	"github.com/go-go-golems/goja-cv/pkg/cv/buffer"
 	"github.com/go-go-golems/goja-cv/pkg/cv/graph"
+	"github.com/go-go-golems/goja-cv/pkg/cv/graph/graphtest"
 	"github.com/go-go-golems/goja-cv/pkg/cv/ops"
 	"github.com/go-go-golems/goja-cv/pkg/cv/text"
 )
 
-var testTIFF = filepath.Join("..", "..", "..", "testdata", "gradient-64x48-16bit.tif")
+var testTIFF, _ = filepath.Abs(filepath.Join("..", "..", "..", "testdata", "gradient-64x48-16bit.tif"))
 
 func newEngine(t *testing.T, path string) (*graph.Engine, *graph.Node) {
 	t.Helper()
-	e := graph.NewEngine(ops.NewRegistry(), graph.EngineOptions{})
+	e := graph.NewEngine(ops.NewRegistry(), graphtest.Options(t))
 	img, err := e.Open(path, nil)
 	if err != nil {
 		t.Fatal(err)

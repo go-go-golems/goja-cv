@@ -16,7 +16,7 @@ import (
 //     computes on the drawn marks (levels({ auto }) counts the tint).
 
 func (b *Builder) orderWarnings(op *OpDef, args Args, recv *Node) []Warning {
-	if op.Class != PixelOp || op.Internal || op.Lazy || (op.On != KindImage && op.On != KindMask) {
+	if op.Class != PixelOp || op.Internal || op.Lazy || op.On != KindImage {
 		return nil
 	}
 	var ws []Warning
@@ -45,7 +45,7 @@ func (b *Builder) inChain(n *Node, match func(*Node) bool) *Node {
 		if match(n) {
 			return n
 		}
-		if n.NExplicit == 0 || len(n.Inputs) == 0 {
+		if !n.HasReceiver() {
 			return nil
 		}
 		n, _ = b.Node(n.Inputs[0])
@@ -54,15 +54,7 @@ func (b *Builder) inChain(n *Node, match func(*Node) bool) *Node {
 }
 
 // hasHalo reports whether the op reads a border around each output pixel
-// with these arguments (a lifted length counts as one).
-func hasHalo(op *OpDef, args Args) (out bool) { //nolint:nonamedreturns // recover needs a named result
-	if op.Halo == nil {
-		return false
-	}
-	defer func() {
-		if recover() != nil {
-			out = true // a lifted argument (param, measurement): assume a halo
-		}
-	}()
-	return op.Halo(args) > 0
+// with these arguments.
+func hasHalo(op *OpDef, args Args) bool {
+	return op.Halo != nil && op.Halo(args) > 0
 }

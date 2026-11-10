@@ -12,7 +12,7 @@ Small defects are hard to see in a stretched photograph: a 3 px speck sits among
 - `img.dog(sigma1, sigma2)` (sigma1 < sigma2) is `gaussian(sigma1) − gaussian(sigma2)`: the first blur also removes the finest grain, so small specks rank higher. `dog(1, 4)` suits specks of 1–3 px.
 - `{ polarity: "bright" }` keeps only the positive part, `"dark"` only the negative part (as positive values), `"both"` (the default) keeps the sign.
 
-Both work on the values a look shows (encoded space) unless you pass `{ space: "linear" }`. Their result is a signed, derived image: its stored value is its value.
+Both work in their receiver's space: on `img`, the values a look shows; on `img.as("linear")`, light. Their result is a signed, derived image: its stored value is its value.
 
 ```js
 const hp = img.highpass(3)
@@ -26,7 +26,7 @@ A look clamps to [0, 1], so a signed image needs a mapping: add 0.5 to make zero
 
 ```js
 const g = img.toGray("average")
-const d = g.sub(g.gaussian(3, { space: "encoded" }))
+const d = g.sub(g.gaussian(3))
 return {
   grey: d.mul(4).add(0.5).look("signed, grey"),
   colour: d.colormap("diverging").look("signed, diverging"),
@@ -39,7 +39,7 @@ return {
 
 ## Stretch
 
-`levels({ auto: true })` maps the image's own 1st and 99th percentiles to black and white (`auto: [0.005, 0.995]` for other percentiles). After a crop it stretches by the crop's pixels: `img.crop(box).levels({ auto: true })` is the per-window stretch. A fixed stretch is `levels({ black, white })`, and `white` may be a measurement: `d.levels({ black: 0, white: d.stats().p99.mul(5) })`.
+`levels({ auto: true })` maps the image's own 1st and 99th percentiles to black and white (`auto: [0.005, 0.995]` for other percentiles). After a crop it stretches by the crop's pixels: `img.crop(box).levels({ auto: true })` is the per-window stretch. A fixed stretch is `levels({ black, white })`, and `white` may come from a measurement awaited first: `d.levels({ black: 0, white: 5 * (await d.stats()).p99 })`.
 
 ```js
 const box = [150, 20, 64, 64]
@@ -48,7 +48,7 @@ return { plain: img.crop(box).levels({ auto: true }).look({ zoom: 4, label: "str
 
 ## Presets
 
-`img.view(name, { size })` builds a named view; `size` (doc px, default 3) is the typical size of what you look for, and the presets derive their σ from it. The caption says `view(speck)`; `explain()` shows the expansion. `speck` and `speckColor` work in linear space (on density tiles a labelled speck ranks higher there: 18th against 20th), the others in encoded space; pass `{ space }` to choose.
+`img.view(name, { size })` builds a named view; `size` (doc px, default 3) is the typical size of what you look for, and the presets derive their σ from it. The caption says `view(speck)`; `cv.explain` shows the expansion. `speck` and `speckColor` compute in linear light (`img.as("linear")`; on density tiles a labelled speck ranks higher there: 18th against 20th), the others in the image's space.
 
 | name | what it shows | use it for |
 |---|---|---|

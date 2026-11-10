@@ -2,6 +2,7 @@ package ops
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"path/filepath"
 	"strings"
@@ -9,14 +10,15 @@ import (
 
 	"github.com/go-go-golems/goja-cv/pkg/cv/buffer"
 	"github.com/go-go-golems/goja-cv/pkg/cv/graph"
+	"github.com/go-go-golems/goja-cv/pkg/cv/graph/graphtest"
 	"github.com/go-go-golems/goja-cv/pkg/cv/kernels"
 )
 
-var testTIFF = filepath.Join("..", "..", "..", "testdata", "gradient-64x48-16bit.tif")
+var testTIFF, _ = filepath.Abs(filepath.Join("..", "..", "..", "testdata", "gradient-64x48-16bit.tif"))
 
 func newEngine(t *testing.T) (*graph.Engine, *graph.Node) {
 	t.Helper()
-	e := graph.NewEngine(NewRegistry(), graph.EngineOptions{})
+	e := graph.NewEngine(NewRegistry(), graphtest.Options(t))
 	img, err := e.Open(testTIFF, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -43,46 +45,55 @@ func evalData(t *testing.T, e *graph.Engine, n *graph.Node, scale float64) any {
 	return v.(*graph.DataValue).Data
 }
 
-func TestStatsLevelsLiftingOnTestImage(t *testing.T) {
+// statOf evaluates a Value node at scale 1 and reads one of its fields: the
+// literal an agent gets with (await node).name.
+func statOf(t *testing.T, e *graph.Engine, n *graph.Node, name string) float64 {
+	t.Helper()
+	m := evalData(t, e, n, 1).(map[string]any)
+	f, ok := m[name].(float64)
+	if !ok {
+		t.Fatalf("%s.%s is %v", n.Op.Name, name, m[name])
+	}
+	return f
+}
+
+func TestStatsLevelsOnTestImage(t *testing.T) {
 	e, img := newEngine(t)
-	if img.Frame != (graph.Frame{W: 64, H: 48}) || e.PreviewScale(img.ID) != 1 {
-		t.Fatalf("source %dx%d preview %g", img.Frame.W, img.Frame.H, e.PreviewScale(img.ID))
+	if img.Frame != (graph.Frame{W: 64, H: 48}) {
+		t.Fatalf("source %dx%d", img.Frame.W, img.Frame.H)
 	}
 	s := call(t, e, "stats", img.ID)
 	st := evalData(t, e, s, 1).(map[string]any)
 	if st["w"] != 64.0 || st["clipLow"].(float64) <= 0 {
 		t.Fatalf("stats: %v", st)
 	}
-	p01 := call(t, e, "field", s.ID, "p01")
-	p99 := call(t, e, "field", s.ID, "p99")
-	fixed := call(t, e, "levels", img.ID, map[string]any{"black": graph.NodeArg{ID: p01.ID}, "white": graph.NodeArg{ID: p99.ID}})
+	fixed := call(t, e, "levels", img.ID, map[string]any{"black": statOf(t, e, s, "p01"), "white": statOf(t, e, s, "p99")})
 	fs := evalData(t, e, call(t, e, "stats", fixed.ID), 1).(map[string]any)
-	// levels maps each channel; luminance is a weighted sum, so its
-	// percentiles land near (not exactly on) 0 and 1 for a colour image...
-	if math.Abs(fs["p01"].(float64)) > 0.01 || math.Abs(fs["p99"].(float64)-1) > 0.02 {
+	// levels maps each channel; luminance is encode(Y), Y a weighted sum of
+	// linear light, so its percentiles land near (not exactly on) 0 and 1
+	// for a colour image...
+	if math.Abs(fs["p01"].(float64)) > 0.04 || math.Abs(fs["p99"].(float64)-1) > 0.02 {
 		t.Fatalf("levels from stats: p01 %v p99 %v", fs["p01"], fs["p99"])
 	}
 	// ...and exactly for a gray one (the map is monotone).
 	gray := call(t, e, "toGray", img.ID)
 	gs := call(t, e, "stats", gray.ID)
-	gfixed := call(t, e, "levels", gray.ID, map[string]any{"black": graph.NodeArg{ID: call(t, e, "field", gs.ID, "p01").ID}, "white": graph.NodeArg{ID: call(t, e, "field", gs.ID, "p99").ID}})
+	gfixed := call(t, e, "levels", gray.ID, map[string]any{"black": statOf(t, e, gs, "p01"), "white": statOf(t, e, gs, "p99")})
 	gfs := evalData(t, e, call(t, e, "stats", gfixed.ID), 1).(map[string]any)
 	if math.Abs(gfs["p01"].(float64)) > 2e-3 || math.Abs(gfs["p99"].(float64)-1) > 2e-3 {
 		t.Fatalf("gray levels from stats: p01 %v p99 %v", gfs["p01"], gfs["p99"])
 	}
-	// +1 EV doubles mean luminance (no clipping in the kernel)
-	m0 := evalData(t, e, call(t, e, "field", s.ID, "meanL"), 1).(float64)
-	m1 := evalData(t, e, call(t, e, "field", call(t, e, "stats", call(t, e, "exposure", img.ID, 1).ID).ID, "meanL"), 1).(float64)
-	if math.Abs(m1-2*m0) > 1e-6 {
-		t.Fatalf("meanL %g -> %g", m0, m1)
+	// +1 EV doubles mean luminance in linear light (no clipping in the kernel)
+	lin := call(t, e, graph.AsOp, img.ID, "linear")
+	l0 := statOf(t, e, call(t, e, "stats", lin.ID), "meanL")
+	l1 := statOf(t, e, call(t, e, "stats", call(t, e, "exposure", lin.ID, 1).ID), "meanL")
+	if math.Abs(l1-2*l0) > 1e-6 {
+		t.Fatalf("linear meanL %g -> %g", l0, l1)
 	}
-	q := call(t, e, "percentile", call(t, e, "stats", img.ID, map[string]any{"percentiles": []any{0.25}}).ID, 0.25)
-	if v := evalData(t, e, q, 1).(float64); v <= 0 || v >= m0*2 {
+	m0 := statOf(t, e, s, "meanL")
+	q := evalData(t, e, call(t, e, "stats", img.ID, map[string]any{"percentiles": []any{0.25}}), 1).(map[string]any)["percentiles"]
+	if v := q.(map[string]any)["0.25"].(float64); v <= 0 || v >= m0*2 {
 		t.Fatalf("percentile 0.25 = %v", v)
-	}
-	_, err := e.Evaluate(context.Background(), call(t, e, "percentile", s.ID, 0.3).ID, graph.EvalOptions{Scale: 1})
-	if ce, ok := graph.AsError(err); !ok || ce.Code != graph.ENoField || ce.Fix == "" {
-		t.Fatalf("missing percentile: %v", err)
 	}
 }
 
@@ -97,16 +108,18 @@ func TestPreviewScaleEvaluatesSmallerBuffers(t *testing.T) {
 	if b.W != 32 || b.H != 24 || b.Scale != 0.5 {
 		t.Fatalf("buffer %v", b)
 	}
-	lines := e.Explain(g.ID, 0.5)
+	lines := e.Evaluator().Explain(g.ID, 0.5)
 	if len(lines) != 2 || !strings.HasPrefix(lines[0], "#2 gaussian(sigma: 4 px → 2 at scale 0.5)  Image 32×24  cached") ||
 		!strings.HasPrefix(lines[1], "  #1 source gradient-64x48-16bit.tif") {
 		t.Fatalf("explain %q", lines)
 	}
 }
 
-// walkNodes are the receivers and node inputs the registry walk uses.
+// walkNodes are the node inputs the registry walk passes: img and edited
+// are the image arguments (colour or grey, per pass), mask and mask2
+// masks, regions regions of mask.
 type walkNodes struct {
-	img, stats, num, mask, mask2, regions, edited *graph.Node
+	img, stats, mask, mask2, regions, edited *graph.Node
 }
 
 func nodeArg(n *graph.Node) graph.NodeArg { return graph.NodeArg{ID: n.ID} }
@@ -114,22 +127,23 @@ func nodeArg(n *graph.Node) graph.NodeArg { return graph.NodeArg{ID: n.ID} }
 // walkSamples gives sample arguments for ops that need some; ops not listed
 // are called without arguments.
 var walkSamples = map[string]func(w walkNodes) []any{
-	"channel": func(walkNodes) []any { return []any{"g"} }, "encode": func(walkNodes) []any { return []any{"srgb"} },
+	"channel": func(walkNodes) []any { return []any{"r"} }, "encode": func(walkNodes) []any { return []any{"srgb"} },
 	"exposure": func(walkNodes) []any { return []any{0.5} }, "contrast": func(walkNodes) []any { return []any{0.2} },
-	"gaussian": func(walkNodes) []any { return []any{1.5} }, "field": func(walkNodes) []any { return []any{"meanL"} },
-	"pick": func(walkNodes) []any { return []any{"meanL", "p99"} }, "percentile": func(walkNodes) []any { return []any{0.5} },
-	"add": func(walkNodes) []any { return []any{1} }, "sub": func(walkNodes) []any { return []any{1} },
-	"mul": func(walkNodes) []any { return []any{2} }, "div": func(walkNodes) []any { return []any{2} },
-	"min": func(walkNodes) []any { return []any{0} }, "max": func(walkNodes) []any { return []any{0} },
+	"gaussian": func(walkNodes) []any { return []any{1.5} }, "as": func(walkNodes) []any { return []any{"linear"} },
+	"add": func(w walkNodes) []any { return []any{nodeArg(w.edited)} }, "sub": func(w walkNodes) []any { return []any{nodeArg(w.edited)} },
+	"mul": func(w walkNodes) []any { return []any{nodeArg(w.edited)} }, "div": func(walkNodes) []any { return []any{2} },
+	"min": func(w walkNodes) []any { return []any{nodeArg(w.edited)} }, "max": func(w walkNodes) []any { return []any{nodeArg(w.edited)} },
 	"distance": func(walkNodes) []any { return []any{0.18} },
 	"sample": func(walkNodes) []any {
 		return []any{[]any{[]any{10.5, 10.5}, []any{30.0, 20.0}}, map[string]any{"radius": 2}}
 	},
-	"measure": func(walkNodes) []any { return []any{[]any{[]any{20.5, 20.5}}} },
-	"profile": func(walkNodes) []any { return []any{[]any{2.0, 24.0}, []any{60.0, 24.0}} },
-	"Regions:measure": func(w walkNodes) []any {
-		return []any{nodeArg(w.img), map[string]any{"stats": []any{"mean", "max"}, "ring": true}}
+	"measure": func(w walkNodes) []any {
+		return []any{nodeArg(w.regions), map[string]any{"stats": []any{"mean", "max"}, "ring": true}}
 	},
+	"mask.regions": func(w walkNodes) []any {
+		return []any{[]any{[]any{4.0, 4.0, 10.0, 6.0}, map[string]any{"cx": 30.0, "cy": 20.0, "r": 5.0}}}
+	},
+	"profile":        func(walkNodes) []any { return []any{[]any{2.0, 24.0}, []any{60.0, 24.0}} },
 	"mask.luminance": func(walkNodes) []any { return []any{map[string]any{"above": 0.4}} },
 	"mask.color":     func(walkNodes) []any { return []any{map[string]any{"hue": 30}} },
 	"mask.box":       func(walkNodes) []any { return []any{[]any{4, 4, 20, 10}} },
@@ -143,17 +157,10 @@ var walkSamples = map[string]func(w walkNodes) []any{
 	"grow":           func(walkNodes) []any { return []any{2} },
 	"shrink":         func(walkNodes) []any { return []any{2} },
 	"refine":         func(w walkNodes) []any { return []any{nodeArg(w.img), map[string]any{"radius": 4}} },
-	"overlay":        func(w walkNodes) []any { return []any{nodeArg(w.img)} },
-	"Image:overlay": func(w walkNodes) []any {
+	"overlay": func(w walkNodes) []any {
 		return []any{nodeArg(w.regions), map[string]any{"labels": "id", "color": []any{0.2, 0.9, 0.3}}}
 	},
 	"compare":       func(w walkNodes) []any { return []any{[]any{nodeArg(w.edited)}} },
-	"where":         func(walkNodes) []any { return []any{map[string]any{"area": map[string]any{"gte": 2}}} },
-	"without":       func(walkNodes) []any { return []any{[]any{1}} },
-	"only":          func(walkNodes) []any { return []any{1} },
-	"sortBy":        func(walkNodes) []any { return []any{"area"} },
-	"top":           func(walkNodes) []any { return []any{3} },
-	"toMask":        func(walkNodes) []any { return []any{map[string]any{"grow": 1}} },
 	"within":        func(w walkNodes) []any { return []any{nodeArg(w.mask), nodeArg(w.edited)} },
 	"heal":          func(w walkNodes) []any { return []any{nodeArg(w.regions), map[string]any{"radius": 1}} },
 	"crop":          func(walkNodes) []any { return []any{[]any{5.0, 7.0, 21.0, 13.0}} },
@@ -170,61 +177,87 @@ var walkSamples = map[string]func(w walkNodes) []any{
 	},
 }
 
-// walkSkip are ops the Go-only walk cannot evaluate (data lambdas need a
-// JavaScript runtime; they are covered by the runtime tests).
-var walkSkip = map[string]bool{"filter": true, "split": true, "colormap": true} // split builds 3 nodes, colormap needs one channel: channel_test.go
+// walkSkip are ops the walk does not evaluate.
+var walkSkip = map[string]bool{"split": true} // split builds 3 nodes: channel_test.go
 
-// TestRegistryWalk builds every op with sample arguments on the test image,
-// evaluates it at preview scale and at 1.0, checks the result kind and that
-// help renders (Part 3 §18 "The registry").
+// TestRegistryWalk is the registry and channel property test (GCV-004
+// §7.5, §14.1): every op is built with sample arguments on colour, grey and
+// mask receivers (as its channel requirement allows) and, in two passes,
+// with colour and grey image arguments (every grey/colour combination of a
+// two-image op: m.mul(img) is colour), evaluated at preview scale and at
+// 1.0; the result has the declared kind, Buf.C == Node.Channels, and a
+// mask's values lie in [0, 1]. Help renders for every op.
 func TestRegistryWalk(t *testing.T) {
-	e, img := newEngine(t)
-	stats := call(t, e, "stats", img.ID)
-	w := walkNodes{img: img, stats: stats, num: call(t, e, "field", stats.ID, "meanL"),
-		mask:  call(t, e, "mask.luminance", img.ID, map[string]any{"above": 0.3}),
-		mask2: call(t, e, "mask.box", img.ID, []any{8, 8, 30, 20})}
-	w.regions = call(t, e, "components", w.mask.ID)
-	w.edited = call(t, e, "exposure", img.ID, -0.5)
-	recv := map[graph.Kind]graph.NodeID{graph.KindImage: img.ID, graph.KindValue: stats.ID, graph.KindMask: w.mask.ID, graph.KindRegions: w.regions.ID}
+	e, colour := newEngine(t)
+	grey := call(t, e, "toGray", colour.ID)
+	mask := call(t, e, "mask.luminance", colour.ID, map[string]any{"above": 0.3})
+	stats := call(t, e, "stats", colour.ID)
+	regs := call(t, e, "components", mask.ID)
 	for _, op := range e.Registry().Ops() {
 		if _, err := e.Registry().Help(op.Name); err != nil {
 			t.Fatalf("help(%s): %v", op.Name, err)
 		}
-		r, ok := recv[op.On]
-		if !ok || walkSkip[op.Name] {
-			continue // sources are covered by Open/DeclareParam; Param has no receiver here
+	}
+	for _, arg := range []*graph.Node{colour, grey} {
+		w := walkNodes{img: arg, stats: stats, mask: mask, regions: regs,
+			mask2:  call(t, e, "mask.box", colour.ID, []any{8, 8, 30, 20}),
+			edited: call(t, e, "exposure", arg.ID, -0.5)}
+		for _, op := range e.Registry().Ops() {
+			if walkSkip[op.Name] {
+				continue
+			}
+			var recvs []*graph.Node
+			switch {
+			case op.On == graph.KindValue:
+				recvs = []*graph.Node{stats}
+			case op.On != graph.KindImage: // sources are covered by Open
+			case op.OneChannel:
+				recvs = []*graph.Node{grey, mask}
+			case op.ThreeChannel:
+				recvs = []*graph.Node{colour}
+			default:
+				recvs = []*graph.Node{colour, grey, mask}
+			}
+			var raw []any
+			if f, ok := walkSamples[string(op.On)+":"+op.Name]; ok {
+				raw = f(w)
+			} else if f, ok := walkSamples[op.Name]; ok {
+				raw = f(w)
+			}
+			for _, r := range recvs {
+				walkOne(t, e, op, r, raw)
+			}
 		}
-		if op.On == graph.KindValue && op.Name != "field" && op.Name != "pick" && op.Name != "percentile" && op.Name != "explain" {
-			r = w.num.ID
-		}
-		var raw []any
-		if f, ok := walkSamples[string(op.On)+":"+op.Name]; ok {
-			raw = f(w)
-		} else if f, ok := walkSamples[op.Name]; ok {
-			raw = f(w)
-		}
-		cr, err := e.Call(op.Name, r, raw)
-		n := cr.Node()
+	}
+}
+
+func walkOne(t *testing.T, e *graph.Engine, op *graph.OpDef, r *graph.Node, raw []any) {
+	t.Helper()
+	what := fmt.Sprintf("%s:%s on %d-channel #%d", op.On, op.Name, r.Channels, r.ID)
+	cr, err := e.Call(op.Name, r.ID, raw)
+	if err != nil {
+		t.Fatalf("%s: %v", what, err)
+	}
+	n := cr.Node()
+	for _, scale := range []float64{0.25, 1, 0.5} {
+		v, err := e.Evaluate(context.Background(), n.ID, graph.EvalOptions{Scale: scale})
 		if err != nil {
-			t.Fatalf("%s:%s: %v", op.On, op.Name, err)
+			t.Fatalf("%s at %g: %v", what, scale, err)
 		}
-		for _, scale := range []float64{e.PreviewScale(n.ID), 1, 0.5} {
-			v, err := e.Evaluate(context.Background(), n.ID, graph.EvalOptions{Scale: scale})
-			if err != nil {
-				t.Fatalf("%s:%s at %g: %v", op.On, op.Name, scale, err)
-			}
-			want := op.Returns
-			if want == graph.KindParam {
-				want = graph.KindValue
-			}
-			if v.Kind() != want {
-				t.Fatalf("%s returned %s, declared %s", op.Name, v.Kind(), op.Returns)
-			}
-			if iv, ok := v.(*graph.ImageValue); ok && iv.IsMask() {
-				for _, p := range iv.Buf.Pix {
-					if p < 0 || p > 1 || p != p {
-						t.Fatalf("%s: mask value %v outside [0, 1]", op.Name, p)
-					}
+		if want := op.Returns; v.Kind() != want {
+			t.Fatalf("%s returned %s, declared %s", what, v.Kind(), op.Returns)
+		}
+		iv, ok := v.(*graph.ImageValue)
+		if !ok {
+			continue
+		}
+		if iv.Buf.C != n.Channels {
+			t.Fatalf("%s: %d channels, Node.Channels %d", what, iv.Buf.C, n.Channels)
+		}
+		if strings.HasPrefix(op.Name, "mask.") || (op.OneChannel && n.Channels == 1) {
+			for _, p := range iv.Buf.Pix {
+				if p < 0 || p > 1 || p != p {
+					t.Fatalf("%s: mask value %v outside [0, 1]", what, p)
 				}
 			}
 		}
@@ -239,14 +272,21 @@ func TestStatsInsideBoxAndMask(t *testing.T) {
 		t.Fatal(err)
 	}
 	full := v.(*graph.ImageValue).Buf
+	// the one luminance: toGray() of the receiver
+	lum := evalValue(t, e, call(t, e, "toGray", img.ID), 1).(*graph.ImageValue).Buf.Plane(0)
 	// reference: the left half [0, 0, 32, 48] cropped by hand
 	crop := buffer.New(32, 48, 3, 1)
-	for c := 0; c < 3; c++ {
-		for y := 0; y < 48; y++ {
+	lumCrop := make([]float32, 0, 32*48)
+	for y := 0; y < 48; y++ {
+		for c := 0; c < 3; c++ {
 			copy(crop.Plane(c)[y*32:(y+1)*32], full.Plane(c)[y*64:y*64+32])
 		}
+		lumCrop = append(lumCrop, lum[y*64:y*64+32]...)
 	}
-	ref, _ := kernels.Stats(ctx, crop, nil)
+	ref, err := kernels.Stats(ctx, crop, lumCrop, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	box := call(t, e, "stats", img.ID, map[string]any{"box": []any{0.0, 0.0, 32.0, 48.0}})
 	got := evalData(t, e, box, 1).(map[string]any)
@@ -278,63 +318,62 @@ func TestStatsInsideBoxAndMask(t *testing.T) {
 	}
 }
 
-// TestOptionSynonyms: pi runs 3 and 4 both wrote mask.luminance({ min: 0.99 }).
-func TestOptionSynonyms(t *testing.T) {
+// TestTypedNames (GCV-004 §7.13): every wrong name agents demonstrably
+// typed gives its literal fix; any other wrong name gets edit distance over
+// the valid names or nothing, never a table entry.
+func TestTypedNames(t *testing.T) {
 	e, img := newEngine(t)
 	m := call(t, e, "mask.box", img.ID, []any{0.0, 0.0, 10.0, 10.0})
+	// options and enum values
 	for _, tc := range []struct {
 		op   string
 		recv graph.NodeID
 		raw  []any
-		sug  string
 		fix  string
 	}{
-		{"mask.luminance", img.ID, []any{map[string]any{"min": 0.99}}, "above", "mask.luminance({ above: 0.99 })"},
-		{"mask.luminance", img.ID, []any{map[string]any{"max": 0.1}}, "below", "mask.luminance({ below: 0.1 })"},
-		{"mask.luminance", img.ID, []any{map[string]any{"threshold": 0.8}}, "above", ""},
-		{"gaussian", img.ID, []any{map[string]any{"radius": 2.0}}, "sigma", "gaussian({ sigma: 2 })"},
-		{"gaussian", img.ID, []any{map[string]any{"r": 2.0}}, "sigma", ""},
-		{"feather", m.ID, []any{map[string]any{"r": 2.0}}, "radius", "feather({ radius: 2 })"},
-		{"grow", m.ID, []any{map[string]any{"sigma": 2.0}}, "radius", ""},
-		{"detect.specks", img.ID, []any{map[string]any{"threshold": 0.05}}, "minContrast", ""},
-		{"detect.specks", img.ID, []any{map[string]any{"maxSize": 50.0}}, "maxArea", ""},
-		{"overlay", img.ID, []any{graph.NodeArg{ID: m.ID}, map[string]any{"opacity": 0.3}}, "alpha", ""},
-		{"overlay", img.ID, []any{graph.NodeArg{ID: m.ID}, map[string]any{"colour": "red"}}, "color", ""},
-		{"levels", img.ID, []any{map[string]any{"low": 0.01}}, "black", ""},
-		{"mask.flood", img.ID, []any{[]any{1.0, 1.0}, map[string]any{"tolerance": 0.1}}, "tol", ""},
-		{"stats", img.ID, []any{map[string]any{"region": graph.NodeArg{ID: m.ID}}}, "mask", ""},
+		{"mask.luminance", img.ID, []any{map[string]any{"min": 0.99}}, "img.mask.luminance({ above: 0.99 })"},
+		{"components", m.ID, []any{map[string]any{"maxArea": 200.0}}, "(await m.components()).filter(r => r.area <= 200)"},
 	} {
 		_, err := e.Call(tc.op, tc.recv, tc.raw)
-		ce, ok := graph.AsError(err)
-		if !ok || ce.Code != graph.EUnknownOption || !strings.Contains(ce.Hint, `Did you mean "`+tc.sug+`"?`) {
-			t.Fatalf("%s %v: %+v, want did-you-mean %q", tc.op, tc.raw, err, tc.sug)
-		}
-		if tc.fix != "" && ce.Fix != tc.fix {
-			t.Fatalf("%s %v: fix %q, want %q", tc.op, tc.raw, ce.Fix, tc.fix)
+		if ce, ok := graph.AsError(err); !ok || ce.Code != graph.EUnknownOption || ce.Fix != tc.fix {
+			t.Fatalf("%s %v: %+v, want fix %q", tc.op, tc.raw, err, tc.fix)
 		}
 	}
-}
-
-// TestOpSynonymsDoNotShadowOps: a synonym must name an existing op, and
-// must not itself be an op on a kind where its target lives (it would
-// never be consulted, or worse, mean two things); method redirects must not
-// be methods.
-func TestOpSynonymsDoNotShadowOps(t *testing.T) {
-	reg := NewRegistry()
-	for s, target := range graph.Synonyms {
-		targets := reg.Find(target)
-		if len(targets) == 0 {
-			t.Errorf("synonym %q → %q: no such op", s, target)
-		}
-		for _, op := range targets {
-			if _, ok := reg.Lookup(op.On, s); ok {
-				t.Errorf("synonym %q is also an op on %s", s, op.On)
-			}
+	// method names
+	for name, fix := range map[string]string{
+		"export": `await cv.save("x.tif", node)`, "store": `await cv.save("x.tif", node)`, "write": `await cv.save("x.tif", node)`,
+		"save": `await cv.save("x.tif", node)`, "persist": `await cv.save("x.tif", node)`, "download": `await cv.save("x.tif", node)`,
+		"toFile": `await cv.save("x.tif", node)`, "writeTiff": `await cv.save("x.tif", node)`,
+		"zoom":     "node.crop([x, y, w, h]).look({ zoom: 8 })",
+		"resample": `node.crop([x, y, w, h]).look({ zoom: 4, interp: "linear" })`,
+		"meta":     "await img",
+	} {
+		if ce := e.Registry().UnknownMethod(graph.KindImage, name, nil); ce.Code != graph.EUnknownMethod || ce.Fix != fix {
+			t.Fatalf("img.%s: %+v, want fix %q", name, ce, fix)
 		}
 	}
+	// removed synonyms: edit distance or nothing
+	for name, want := range map[string]string{"brightness": "", "blur": "", "gausian": "gaussian", "exposre": "exposure"} {
+		ce := e.Registry().UnknownMethod(graph.KindImage, name, nil)
+		got := ""
+		if strings.HasPrefix(ce.Hint, "Did you mean ") {
+			got = strings.Trim(strings.TrimPrefix(ce.Hint, "Did you mean "), `"?`)
+		}
+		if got != want {
+			t.Fatalf("img.%s: suggestion %q (%+v), want %q", name, got, ce, want)
+		}
+	}
+	for opt, want := range map[string]string{"radius": "", "sigm": "sigma"} {
+		_, err := e.Call("gaussian", img.ID, []any{map[string]any{opt: 2.0}})
+		ce, _ := graph.AsError(err)
+		if ce == nil || ce.Code != graph.EUnknownOption || (want == "") != (ce.Fix == "") || (want != "" && !strings.Contains(ce.Hint, want)) {
+			t.Fatalf("gaussian({ %s }): %+v, want %q", opt, ce, want)
+		}
+	}
+	// a typed name is never also an op
 	for name := range graph.MethodRedirects {
-		for _, k := range graph.Kinds {
-			if _, ok := reg.Lookup(k, name); ok {
+		for _, k := range e.Registry().Receivers() {
+			if _, ok := e.Registry().Lookup(k, name); ok {
 				t.Errorf("method redirect %q is an op on %s", name, k)
 			}
 		}

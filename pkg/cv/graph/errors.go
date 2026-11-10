@@ -2,13 +2,15 @@ package graph
 
 import (
 	"fmt"
+	"runtime/debug"
 	"strings"
 
+	"github.com/go-go-golems/goja-cv/pkg/cv/parallel"
 	"github.com/pkg/errors"
 )
 
 // Error and warning codes (guide Part 4, Appendix B, plus the M1 additions
-// E_NO_FIELD, E_IMMUTABLE, E_EVAL and E_INTERNAL and the M3 addition
+// E_IMMUTABLE, E_EVAL and E_INTERNAL and the M3 addition
 // E_PLACEHOLDER).
 const (
 	EUnknownMethod    = "E_UNKNOWN_METHOD"
@@ -17,11 +19,9 @@ const (
 	EArgType          = "E_ARG_TYPE"
 	EArgRange         = "E_ARG_RANGE"
 	EUnknownOption    = "E_UNKNOWN_OPTION"
-	ELazyCompare      = "E_LAZY_COMPARE"
-	EParamRedeclare   = "E_PARAM_REDECLARE"
+	ENotAwaited       = "E_NOT_AWAITED" // a property of, or a primitive from, a lazy node
 	ETimeout          = "E_TIMEOUT"
 	ECancelled        = "E_CANCELLED"
-	ENoField          = "E_NO_FIELD"    // a derived field does not exist in the evaluated value
 	EImmutable        = "E_IMMUTABLE"   // assignment to a node property
 	EEval             = "E_EVAL"        // a kernel or IO failure during evaluation
 	EInternal         = "E_INTERNAL"    // a bug: an op panicked
@@ -35,7 +35,6 @@ const (
 	WDecorationFirst  = "DECORATION_FIRST" // a pixel op after a decoration sees the drawn marks
 	WCut              = "CUT"
 	WLooks            = "LOOKS" // looks beyond the session's per-eval budget were not delivered
-	WData             = "DATA"  // data items beyond the session's per-eval budget were not delivered
 	pathFailureMarker = "✗ "
 )
 
@@ -50,7 +49,6 @@ type Error struct {
 	Valid   []string `json:"valid,omitempty"` // valid alternatives (option keys, methods, enum values)
 	Line    int      `json:"line,omitempty"`  // filled by the eval tool from the JS stack
 	cause   error
-	field   string // the unknown field of an UnknownFieldError (for the producer hint)
 }
 
 var _ error = &Error{}
@@ -115,3 +113,23 @@ type Warning struct {
 }
 
 func (w Warning) String() string { return w.Code + ": " + w.Message }
+
+// Recover converts a panic into E_INTERNAL in *err, with the stack in the
+// hint. Use it in a deferred call at the top of every goroutine goja-cv
+// starts and of every Go function reachable from JavaScript that returns an
+// error: defer graph.Recover(&err, "await").
+func Recover(err *error, where string) {
+	if p := recover(); p != nil {
+		*err = Errorf(EInternal, "%s panicked: %v", where, p).WithHint(string(debug.Stack()))
+	}
+}
+
+// internalError reports a panic that a goroutine recovered as an error
+// (parallel.PanicError) as E_INTERNAL; other errors are returned as they are.
+func internalError(err error, where string) error {
+	var pe *parallel.PanicError
+	if errors.As(err, &pe) {
+		return Errorf(EInternal, "%s panicked: %v", where, pe.Value).WithHint(pe.Stack)
+	}
+	return err
+}

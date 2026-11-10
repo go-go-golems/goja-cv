@@ -39,21 +39,24 @@ type SiteWarning struct {
 	Site Site
 }
 
+// QueuedLook is a look created by node.look(), with the call site.
+type QueuedLook struct {
+	Look *look.Look
+	Site Site
+}
+
 // EvalTrace is what one eval did with nodes: the nodes its calls returned (in
-// call order, first call per node), the nodes it evaluated or looked at, and
-// the warnings its calls raised.
+// call order, first call per node), the nodes it evaluated or looked at, the
+// warnings its calls raised, and the looks it created (in creation order;
+// every look created in an eval is delivered, up to the session's budget).
+// Late are looks created between evals (in a .then that ran after the
+// previous eval settled): they were not delivered.
 type EvalTrace struct {
 	Created  []NodeUse
 	Used     []graph.NodeID
 	Warnings []SiteWarning
-	// Collisions are data fields of awaited values that shadow a method of
-	// their node (awaited Regions have count, Regions nodes have count()).
-	Collisions []Collision
-}
-
-// Collision is one data field that shadows a node method after await.
-type Collision struct {
-	Name, Kind, Value string
+	Looks    []QueuedLook
+	Late     []QueuedLook
 }
 
 type tracker struct {
@@ -64,7 +67,9 @@ type tracker struct {
 	used     map[graph.NodeID]bool
 	usedList []graph.NodeID
 	warnings []SiteWarning
-	collide  []Collision
+	looks    []QueuedLook
+	saved    map[string]int // workspace-relative path → line of its save (E_DUPLICATE)
+	saves    []*pendingSave
 }
 
 func lookupBinding(vm *goja.Runtime) (*binding, bool) {
@@ -85,7 +90,8 @@ func BeginEval(vm *goja.Runtime, ctx context.Context) bool {
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.track = tracker{active: true, ctx: ctx, seen: map[graph.NodeID]bool{}, used: map[graph.NodeID]bool{}}
+	b.track = tracker{active: true, ctx: ctx, seen: map[graph.NodeID]bool{}, used: map[graph.NodeID]bool{}, saved: map[string]int{}}
+	b.unhandled = nil
 	return true
 }
 
@@ -99,7 +105,9 @@ func EndEval(vm *goja.Runtime) EvalTrace {
 	defer b.mu.Unlock()
 	t := b.track
 	b.track = tracker{}
-	return EvalTrace{Created: t.created, Used: t.usedList, Warnings: t.warnings, Collisions: t.collide}
+	late := b.late
+	b.late = nil
+	return EvalTrace{Created: t.created, Used: t.usedList, Warnings: t.warnings, Looks: t.looks, Late: late}
 }
 
 // MarkUsed records ids as used by the current evaluation.
@@ -180,7 +188,7 @@ func (b *binding) noteCall(id graph.NodeID, ws []graph.Warning) {
 }
 
 // noteEvalWarning records an evaluation-time warning (EvalCtx.Warn) with the
-// site of the await or cv.evaluate that started the evaluation. It is called
+// site of the await that started the evaluation. It is called
 // from evaluation goroutines.
 func (b *binding) noteEvalWarning(w graph.Warning, s Site) {
 	b.mu.Lock()
@@ -233,8 +241,9 @@ func (b *binding) evalContext() context.Context {
 	return runtimebridge.CurrentOwnerContext(b.vm)
 }
 
-// __look(id, opts) → a Go-backed *look.Look. opts is a label string or an
-// options object, bound against the look function's ArgSpecs.
+// __look(id, opts) → a Go-backed *look.Look, queued for delivery after the
+// eval. opts is a label string or an options object, bound against the look
+// function's ArgSpecs.
 func (b *binding) look(c goja.FunctionCall) goja.Value {
 	n := b.nodeArg(c.Argument(0))
 	f, ok := b.eng.Registry().Func("look")
@@ -261,7 +270,22 @@ func (b *binding) look(c goja.FunctionCall) goja.Value {
 		b.throw(err)
 	}
 	b.noteUsed(n.ID)
+	b.noteLook(l)
 	return b.vm.ToValue(l)
+}
+
+// noteLook queues a look for delivery: in the current eval's trace, or, when
+// no eval is running (a .then after the eval settled), as a late look the
+// next eval's warnings name.
+func (b *binding) noteLook(l *look.Look) {
+	q := QueuedLook{Look: l, Site: b.site()}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.track.active {
+		b.track.looks = append(b.track.looks, q)
+		return
+	}
+	b.late = append(b.late, q)
 }
 
 func exportArg(v goja.Value) any {
@@ -288,44 +312,5 @@ func DescribeNode(eng *graph.Engine, id graph.NodeID) string {
 	if !ok {
 		return fmt.Sprintf("[node #%d]", id)
 	}
-	scale := eng.PreviewScale(id)
-	return fmt.Sprintf("[%s #%d %s]", n.Kind, n.ID, graph.Describe(eng.Builder(), n, scale, eng.Params().Snapshot()))
-}
-
-// ENotArray is the error code of array methods called on awaited Regions.
-const ENotArray = "E_NOT_ARRAY"
-
-// __collision(name, kind, value) records a data field that shadows a node
-// method of the same name (for the TypeError translation of the session).
-func (b *binding) collision(c goja.FunctionCall) goja.Value {
-	col := Collision{Name: c.Argument(0).String(), Kind: c.Argument(1).String(), Value: c.Argument(2).String()}
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if !b.track.active {
-		return goja.Undefined()
-	}
-	for _, x := range b.track.collide {
-		if x.Name == col.Name {
-			return goja.Undefined()
-		}
-	}
-	b.track.collide = append(b.track.collide, col)
-	return goja.Undefined()
-}
-
-// __notArray(member) throws E_NOT_ARRAY: awaited Regions are an object with
-// items, not an array. RECV in the fix is replaced by the session with the
-// receiver expression from the failing line.
-func (b *binding) notArray(c goja.FunctionCall) goja.Value {
-	member := c.Argument(0).String()
-	e := graph.Errorf(ENotArray, "Awaited Regions are { count, items: [...] }, not an array.").
-		WithHint("The list of regions is .items; count is .count.")
-	if member == "iterator" {
-		e.Fix = "for (const r of regions.items) { … }"
-	} else {
-		e.Fix = "RECV.items." + member + "(…)"
-	}
-	obj := errorObject(b.vm, e)
-	_ = obj.Set("member", member)
-	panic(obj)
+	return fmt.Sprintf("[%s #%d %s]", n.Kind, n.ID, graph.Describe(eng.Builder(), graph.Shown(n), 1))
 }

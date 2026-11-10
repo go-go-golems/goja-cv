@@ -55,7 +55,10 @@ func DefaultRegistry() *graph.Registry {
 }
 
 // DefaultEngine builds a new engine over DefaultRegistry.
-func DefaultEngine() *graph.Engine { return graph.NewEngine(DefaultRegistry(), graph.EngineOptions{}) }
+func DefaultEngine() *graph.Engine {
+	ws, _ := graph.OpenWorkspace(".", nil) // the working directory, as the CLI's default --root
+	return graph.NewEngine(DefaultRegistry(), graph.EngineOptions{Workspace: ws})
+}
 
 // Module is the "cv" native module. Each runtime that loads it gets its own
 // engine from the module's engine factory.

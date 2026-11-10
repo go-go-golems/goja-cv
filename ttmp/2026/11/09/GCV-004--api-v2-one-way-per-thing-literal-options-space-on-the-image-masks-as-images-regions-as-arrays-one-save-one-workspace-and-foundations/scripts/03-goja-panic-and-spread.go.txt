@@ -1,0 +1,29 @@
+// 03-goja-panic-and-spread.go.txt — evidence for GCV-004 guide §5.12 and decision D6 (stored as .txt so that the
+// goja-cv module's build, vet and lint never see it).
+//
+// Run: copy to an empty directory as main.go with a go.mod requiring github.com/dop251/goja at the version in
+// goja-cv's go.mod (and its indirect deps at goja-cv's versions), then `go run .`. Output on 2026-11-09:
+//   js throw: <nil>              a native panic with a goja value is a catchable JavaScript exception
+//   spread: 7:1:{"a":1} <nil>    object spread copies a symbol-keyed property; Object.keys and JSON do not see it
+//   recovered at top: true       a Go runtime panic in a native function escapes RunString (JS try does not catch it)
+package main
+
+import (
+	"fmt"
+
+	"github.com/dop251/goja"
+)
+
+func main() {
+	vm := goja.New()
+	_ = vm.Set("boom", func(goja.FunctionCall) goja.Value { var s []int; return vm.ToValue(s[3]) })
+	_ = vm.Set("throwjs", func(goja.FunctionCall) goja.Value { panic(vm.NewTypeError("js error")) })
+	_, err := vm.RunString(`try { throwjs() } catch (e) { "caught " + e }`)
+	fmt.Println("js throw:", err)
+	_, err = vm.RunString(`const o = {a: 1}; const s = Symbol("k"); o[s] = 7; const c = {...o}; c[s] + ":" + Object.keys(c).length + ":" + JSON.stringify(c)`)
+	v, _ := vm.RunString(`(() => { const o = {a: 1}; const s = Symbol("k"); o[s] = 7; const c = {...o}; return c[s] + ":" + Object.keys(c).length + ":" + JSON.stringify(c) })()`)
+	fmt.Println("spread:", v, err)
+	defer func() { fmt.Println("recovered at top:", recover() != nil) }()
+	_, err = vm.RunString(`try { boom() } catch (e) { "caught " + e }`)
+	fmt.Println("go panic result:", err)
+}

@@ -1,7 +1,11 @@
 // Package ops registers the cv ops (one file per group) into a graph.Registry.
 package ops
 
-import "github.com/go-go-golems/goja-cv/pkg/cv/graph"
+import (
+	"sort"
+
+	"github.com/go-go-golems/goja-cv/pkg/cv/graph"
+)
 
 // Register adds every op to r.
 func Register(r *graph.Registry) {
@@ -11,23 +15,21 @@ func Register(r *graph.Registry) {
 	r.MustRegister(geometryOps()...)
 	r.MustRegister(arithImageOps()...)
 	r.MustRegister(filterViewOps()...)
-	r.MustRegister(viewOp())
+	r.MustRegister(viewOp(), levelsAtOp())
 	r.MustRegister(channelOps()...)
 	r.MustRegister(filterOps()...)
 	r.MustRegister(measureOps()...)
 	r.MustRegister(measurementOps()...)
-	r.MustRegister(valueOps()...)
 	r.MustRegister(maskMakerOps()...)
 	r.MustRegister(maskOps()...)
 	r.MustRegister(regionOps()...)
-	r.MustRegister(regionMeasureOp())
+	r.MustRegister(graph.ItemsOpDef())
 	r.MustRegister(compositeOps()...)
 	r.MustRegister(detectOps()...)
 	r.MustRegister(healOps()...)
 	r.MustRegister(presentOps()...)
 	r.MustRegister(annotateOp())
 	r.MustRegister(sheetOp())
-	r.MustRegister(metaOps()...)
 	r.MustRegisterFunc(funcDefs()...)
 }
 
@@ -42,11 +44,11 @@ func image(v graph.Value) *graph.ImageValue { return v.(*graph.ImageValue) }
 
 func data(v any) *graph.DataValue { return &graph.DataValue{Data: v} }
 
-// frameArg reads a hidden [x, y, w, h] argument as a frame.
-func frameArg(a graph.Args, name string) graph.Frame {
-	l := a.Numbers(name)
-	if len(l) != 4 {
-		return graph.Frame{}
+func keysOf(m map[string]any) []string {
+	ks := make([]string, 0, len(m))
+	for k := range m {
+		ks = append(ks, k)
 	}
-	return graph.Frame{X: int(l[0]), Y: int(l[1]), W: int(l[2]), H: int(l[3])}
+	sort.Strings(ks)
+	return ks
 }

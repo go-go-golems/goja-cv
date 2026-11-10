@@ -12,9 +12,9 @@ import (
 // (pkg/cv/docs). They run on the owner goroutine and touch no engine state.
 
 func (b *binding) addDocs(o *goja.Object) {
-	_ = o.Set("__docsList", b.docsList)
-	_ = o.Set("__docsSearch", b.docsSearch)
-	_ = o.Set("__docsRead", b.docsRead)
+	_ = o.Set("__docsList", b.export("__docsList", b.docsList))
+	_ = o.Set("__docsSearch", b.export("__docsSearch", b.docsSearch))
+	_ = o.Set("__docsRead", b.export("__docsRead", b.docsRead))
 }
 
 // optionsArg exports an options object and rejects keys outside valid.
@@ -92,11 +92,4 @@ func (b *binding) docsRead(c goja.FunctionCall) goja.Value {
 		b.throw(err)
 	}
 	return b.vm.ToValue(md)
-}
-
-func capitalize(s string) string {
-	if s == "" {
-		return s
-	}
-	return strings.ToUpper(s[:1]) + s[1:]
 }

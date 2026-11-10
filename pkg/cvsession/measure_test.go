@@ -13,51 +13,52 @@ import (
 	"github.com/go-go-golems/goja-cv/pkg/cvsession"
 )
 
-// GCV-003 tests of the JavaScript surface: flat region items, removed field
-// names, items passed as boxes, points and ids.
+// Tests of the JavaScript surface of regions (GCV-004 §6.4): awaited
+// regions are arrays of flat items linked to their pixels; items pass as
+// regions, boxes and points.
 
 func TestRegionItemsAreFlat(t *testing.T) {
 	app, sid := acceptanceApp(t)
 	out := mustOK(t, eval(t, app, sid, `
-const specks = img.detect.specks()
-const it = (await specks.sortBy("area").top(1)).items[0]
-return { keys: Object.keys(it).join(","), json: JSON.stringify(it).slice(0, 20), has: "box" in it, own: Object.prototype.hasOwnProperty.call(it, "box") }`))
-	mustContain(t, out, "keys: id,x,y,w,h,cx,cy,area,aspect,contrast,localNoise,sharpness,score,meanL,polarity", `json: '{"id":`, "has: true", "own: false")
-
-	for _, code := range []string{
-		`return (await img.detect.specks()).items[0].box`,
-		`const c = (await img.detect.specks()).items[0].centroid; return c`,
-		`return await img.detect.specks().filter(r => r.box[2] > 3).count()`,
-	} {
-		out := text(eval(t, app, sid, code))
-		mustContain(t, out, "code: E_NO_FIELD", "pass the item itself")
-	}
-	out = text(eval(t, app, sid, `return await img.mask.luminance({ above: 0.75 }).components().where({ score: { gte: 0.5 } })`))
-	mustContain(t, out, "code: E_UNKNOWN_OPTION", "id, x, y, w, h, cx, cy, area, aspect", "score comes from img.detect.specks()")
+const sp = await img.detect.specks()
+const it = sp.slice().sort((a, b) => b.area - a.area)[0]
+return { array: Array.isArray(sp), keys: Object.keys(it).join(","), json: JSON.stringify(it).slice(0, 20), box: it.box === undefined }`))
+	mustContain(t, out, "array: true", "keys: id,x,y,w,h,cx,cy,area,aspect,contrast,localNoise,sharpness,score,meanL,polarity", `json: '{"id":`, "box: true")
+	mustNotContain(t, out, "__cvref", "cv.item")
+	// a map that builds new objects drops the link: ITEMS names them
+	out = mustOK(t, eval(t, app, sid, `
+const sp = await img.detect.specks()
+return img.overlay(sp.slice(0, 3).map(r => ({ id: r.id, area: r.area, x: r.x, y: r.y, w: r.w, h: r.h }))).look("lost")`))
+	mustContain(t, out, "ITEMS line 3: overlay.target: items 0–2 look like region items but lost their link")
+	// regions have no methods
+	out = text(eval(t, app, sid, `return await img.detect.specks().filter(r => r.score > 0.5)`))
+	mustContain(t, out, "code: E_NOT_AWAITED", "fix: (await img.detect.specks()).filter")
+	out = text(eval(t, app, sid, `const sp = await img.detect.specks(); return sp.overlay(img)`))
+	mustContain(t, out, "sp is plain data here", "fix: img.overlay(sp, …)")
 }
 
 func TestRegionItemsAsArguments(t *testing.T) {
 	app, sid := acceptanceApp(t)
 	out := mustOK(t, eval(t, app, sid, `
-const specks = img.detect.specks().sortBy("area")
-const items = (await specks.top(4)).items
+const sp = await img.detect.specks()
+const items = sp.slice().sort((a, b) => b.area - a.area).slice(0, 4)
 const it = items[0]
-const only = await specks.only(it)
-const without = await specks.without(items.slice(0, 2))
-const inside = await img.stats({ box: it }).pick("area")
+const without = sp.filter(r => r.id !== items[0].id && r.id !== items[1].id)
+const inside = { area: (await img.stats({ box: it })).area }
 const crop = await img.crop(it)
 const flood = await img.mask.flood(it).coverage()
 const marks = await img.annotate([{ box: it }, { point: it }, { circle: [it.cx, it.cy, 3] }])
+const masked = await img.stats({ mask: [it] })
 return {
-  only: only.count + " " + (only.items[0].id === it.id),
-  without: without.count - (await specks).count,
+  without: without.length - sp.length,
   inside: Math.round(inside.area) === Math.round(it.w * it.h),
   crop: crop.frame.join(",") === [it.x, it.y, it.w, it.h].join(","),
   flood: flood > 0,
   marks: marks.kind,
+  masked: Math.round(masked.area) === Math.round(it.area),
   sheet: cv.sheet(items, { views: img, size: 32, zoom: 2 }).look("items"),
 }`))
-	mustContain(t, out, "only: 1 true", "without: -2", "inside: true", "crop: true", "flood: true", "marks: Image", "look 1: items")
+	mustContain(t, out, "without: -2", "inside: true", "crop: true", "flood: true", "marks: Image", "masked: true", "look 1: items")
 }
 
 // dotsPNG writes a w×h gray PNG with an isolated bright pixel at every
@@ -84,11 +85,11 @@ func dotsPNG(t *testing.T, w, h int) string {
 
 func TestAwaitedRegionsHaveEveryItem(t *testing.T) {
 	img := dotsPNG(t, 150, 150)
-	app, sid := newApp(t, cvsession.Options{Image: img, BaseDir: filepath.Dir(img)})
+	app, sid := newApp(t, cvsession.Options{Image: img})
 	out := mustOK(t, eval(t, app, sid, `
 const r = await img.mask.luminance({ above: 0.5 }).components()
-return { count: r.count, items: r.items.length, last: r.items[r.items.length - 1].id, all: r.items }`))
-	mustContain(t, out, "count: 5625", "items: 5625", "more (return cv.json(x) for all)")
+return { count: r.length, last: r[r.length - 1].id, all: r }`))
+	mustContain(t, out, "count: 5625", `more (save all: await cv.save("x.json", x))`)
 	mustNotContain(t, out, "truncated")
 }
 
@@ -129,31 +130,31 @@ return { n: pts.length, ok: [dStep, dCh, dChroma, dSpread, dSnr].every(d => d < 
 	mustContain(t, out, "n: 15", "ok: true")
 }
 
-// TestMeasurementOps: sample at radius 0 is the pixel, rows follow the
-// schema order, points outside the frame warn OUTSIDE, Regions are refused
-// with the fix, and the space option is respected.
+// TestMeasurementOps: sample at radius 0 is the pixel, items follow the
+// schema order, points outside the frame warn OUTSIDE, a point needs
+// coreRadius, and the receiver's space is respected.
 func TestMeasurementOps(t *testing.T) {
 	app, sid := acceptanceApp(t)
 	out := mustOK(t, eval(t, app, sid, `
 const [s] = await img.sample([[200.5, 46.5]])
-const [e] = await img.sample([[200.5, 46.5]], { space: "encoded" })
+const [l] = await img.as("linear").sample([[200.5, 46.5]])
 const inside = await img.stats({ box: [200, 46, 1, 1] })
 const rows = await img.measure([[200.5, 46.5], [-20, 4]], { coreRadius: 2.5 })
 const p = await img.profile([190.5, 46.5], [210.5, 46.5], { width: 3 })
 return {
   keys: Object.keys(rows[0]).join(","),
   pixel: Math.abs(s.meanR - inside.perChannel.r.mean) < 1e-9 && s.area === 1,
-  encoded: e.meanB > s.meanB,
+  encoded: s.meanB > l.meanB,
   star: rows[0].step > 0 && rows[0].snr > 1,
-  outside: rows[1].outside + " " + rows[1].step,
-  profile: p.t.length + " " + p.meanL.length + " peak " + (p.meanL.indexOf(Math.max(...p.meanL)) === 10),
+  outside: rows[1].step,
+  profile: p.rows.length + " peak " + (p.rows.map(r => r.meanL).indexOf(Math.max(...p.rows.map(r => r.meanL))) === 10),
 }`))
-	mustContain(t, out, "keys: cx,cy,coreMean,ringMean,step,spread,snr,stepR,stepG,stepB,stepChroma,ringCoverage", "pixel: true", "encoded: true",
-		"star: true", "outside: true null", "profile: 21 21 peak true", "OUTSIDE: measure: 1 of 2 points lie outside")
-	out = text(eval(t, app, sid, `return await img.measure(img.detect.specks())`))
-	mustContain(t, out, "code: E_WRONG_KIND", "regions.measure(img, { ring: true })")
+	mustContain(t, out, "keys: id,x,y,w,h,cx,cy,area,aspect,coreMean,ringMean,step,spread,snr,stepR,stepG,stepB,stepChroma,ringCoverage", "pixel: true", "encoded: true",
+		"star: true", "outside: null", "profile: 21 peak true", "OUTSIDE: measure: 1 of 2 items lie outside")
+	out = text(eval(t, app, sid, `return await img.measure([[10, 10]])`))
+	mustContain(t, out, "code: E_ARG_TYPE", "fix: 'img.measure(points, { coreRadius: 3 })'")
 	out = text(eval(t, app, sid, `return await img.measure([[10, 10]], { coreRadius: 4, ringRadii: [3, 9] })`))
-	mustContain(t, out, "code: E_ARG_RANGE", "ringRadii: [7, 13]")
+	mustContain(t, out, "code: E_ARG_RANGE", "ringRadii: [6, 10]")
 	out = text(eval(t, app, sid, `return await img.profile([0, 0], [255, 190], { step: 0.05 })`))
 	mustContain(t, out, "code: E_ARG_RANGE", "at most 4096")
 }

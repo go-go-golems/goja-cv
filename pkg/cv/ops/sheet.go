@@ -52,26 +52,21 @@ func viewCount(v any) int {
 	return 1
 }
 
-// itemsBound is the static bound on the item count of the sheet's Regions
-// input (top(n)), or -1.
-func itemsBound(a graph.Args, inputs []*graph.Node) int {
-	ref, ok := a.Raw("items").(graph.InputRef)
-	if !ok || ref.Index >= len(inputs) {
+// itemsBound is the item count of the sheet's items when it is known at
+// build time (an array), or -1 (a detector's Regions node).
+func itemsBound(a graph.Args) int {
+	if !a.HasInputs() {
 		return -1
 	}
-	n := inputs[ref.Index]
-	if n.Op.MaxItems == nil {
-		return -1
-	}
-	if m, ok := n.Op.MaxItems(n.Args); ok {
-		return max(m, 1)
+	if n, ok := graph.ItemCount(a.Input("items")); ok {
+		return n
 	}
 	return -1
 }
 
-// layoutSheet lays out a sheet: cells for every item of a literal list, the
-// bound of a top(n) input, or as many as fit; bound is the static bound on
-// a Regions input's count (-1 unknown).
+// layoutSheet lays out a sheet: cells for every item of an array, or as
+// many as fit for a Regions node; bound is the item count when known (-1
+// unknown).
 func layoutSheet(a graph.Args, bound int) (sheetLayout, error) {
 	size, zoom := a.DocLength("size"), a.Number("zoom")
 	l := sheetLayout{cell: int(math.Round(size * zoom)), views: viewCount(a.Raw("views"))}
@@ -83,10 +78,8 @@ func layoutSheet(a graph.Args, bound int) (sheetLayout, error) {
 			WithFix(fmt.Sprintf("cv.sheet(items, { views, size: %g, zoom: %g })", size, math.Max(1, math.Floor(float64(sheetLong)/float64(l.views)/size))))
 	}
 	l.cells = l.fit()
-	if items, ok := a.Raw("items").([]any); ok {
-		l.cells = len(items)
-	} else if bound > 0 {
-		l.cells = min(l.cells, bound)
+	if bound >= 0 {
+		l.cells = bound
 	}
 	if a.Has("max") {
 		m := a.Int("max")
@@ -104,65 +97,6 @@ func layoutSheet(a graph.Args, bound int) (sheetLayout, error) {
 		return l, graph.Errorf(graph.EArgType, "cv.sheet needs at least one item.").WithFix(`cv.sheet([[120, 80], [200, 40]], { views: img })`)
 	}
 	return l, nil
-}
-
-// sheetItem is one item: its centre and box size in doc px and its label.
-type sheetItem struct {
-	cx, cy, w, h float64
-	id           string
-}
-
-func listItems(v []any) ([]sheetItem, error) {
-	out := make([]sheetItem, len(v))
-	for i, e := range v {
-		it := sheetItem{id: strconv.Itoa(i)}
-		if m, ok := e.(map[string]any); ok { // a region item or a row: labelled by its id
-			if id, ok := num(m["id"]); ok {
-				it.id = strconv.FormatFloat(id, 'f', -1, 64)
-			}
-		}
-		p, isPoint := pointOf(e)
-		b, isBox := boxOf(e)
-		switch {
-		case isPoint && isBox: // a region item: centred on its centroid, sized by its box
-			it.cx, it.cy, it.w, it.h = p[0], p[1], b[2], b[3]
-		case isBox:
-			it.cx, it.cy, it.w, it.h = b[0]+b[2]/2, b[1]+b[3]/2, b[2], b[3]
-		case isPoint:
-			it.cx, it.cy = p[0], p[1]
-		default:
-			return nil, graph.Errorf(graph.EArgType, "cv.sheet items[%d] must be a point [x, y] or { cx, cy }, or a box [x, y, w, h] or { x, y, w, h } (doc px).", i).
-				WithFix(`cv.sheet([[120, 80], [200, 40, 16, 16]], { views: img })`)
-		}
-		out[i] = it
-	}
-	return out, nil
-}
-
-// nodeOf is the node a bound argument refers to (an InputRef of node n).
-func nodeOf(ec *graph.EvalCtx, v any) (graph.NodeID, bool) {
-	ref, ok := v.(graph.InputRef)
-	if !ok || ref.Index >= len(ec.Node.Inputs) {
-		return 0, false
-	}
-	return ec.Node.Inputs[ref.Index], true
-}
-
-func viewNodes(ec *graph.EvalCtx, v any) []graph.NodeID {
-	var out []graph.NodeID
-	switch x := v.(type) {
-	case []any:
-		for _, e := range x {
-			if id, ok := nodeOf(ec, e); ok {
-				out = append(out, id)
-			}
-		}
-	default:
-		if id, ok := nodeOf(ec, x); ok {
-			out = append(out, id)
-		}
-	}
-	return out
 }
 
 // cellLabel fits the label into a cell: font size 2, else 1, else the id
@@ -212,41 +146,23 @@ func fill(b *buffer.Buffer, x0, y0, w, h int, v float32) {
 }
 
 func runSheet(ctx context.Context, ec *graph.EvalCtx, _ []graph.Value, a graph.Args) (graph.Value, error) {
-	ins := make([]*graph.Node, len(ec.Node.Inputs))
-	for i := range ins {
-		ins[i] = ec.InputNode(i)
-	}
-	l, err := layoutSheet(a, itemsBound(a, ins))
+	l, err := layoutSheet(a, itemsBound(a))
 	if err != nil {
 		return nil, err
 	}
 	warn := func(w graph.Warning) { ec.Warn(w.Code, w.Message, "") }
-	var items []sheetItem
-	labels := "index"
-	if list, ok := a.Raw("items").([]any); ok {
-		if items, err = listItems(list); err != nil {
-			return nil, err
-		}
-	} else {
-		id, _ := nodeOf(ec, a.Raw("items"))
-		v, err := ec.Eval.Render(ctx, id, graph.RenderOptions{Scale: 1, OnWarn: warn})
-		if err != nil {
-			return nil, err
-		}
-		rv := v.(*graph.RegionsValue)
-		for _, r := range rv.Items {
-			items = append(items, sheetItem{cx: r.Centroid[0], cy: r.Centroid[1], w: r.Box[2], h: r.Box[3], id: strconv.Itoa(r.ID)})
-		}
-		labels = "id"
+	v, err := ec.Eval.Render(ctx, a.Input("items").ID, graph.RenderOptions{Scale: 1, OnWarn: warn})
+	if err != nil {
+		return nil, err
 	}
-	if a.Has("labels") {
-		labels = a.String("labels")
-	}
+	items := v.(*graph.RegionsValue).Items
+	labels := a.String("labels")
 	if len(items) > l.cells {
-		ec.Warn(WSheetTruncated, fmt.Sprintf("%d items, %d shown (in list order).", len(items), l.cells), fmt.Sprintf(`regions.sortBy("contrast").top(%d)`, l.cells))
+		ec.Warn(WSheetTruncated, fmt.Sprintf("%d items, %d shown (in list order).", len(items), l.cells),
+			fmt.Sprintf("cv.sheet((await regions).sort((a, b) => b.contrast - a.contrast).slice(0, %d), { views })", l.cells))
 		items = items[:l.cells]
 	}
-	views := viewNodes(ec, a.Raw("views"))
+	views := a.Inputs("views") // in list order, repetitions kept
 	f := ec.Node.Frame
 	out := buffer.New(f.W, f.H, 3, 1)
 	for i := range out.Pix {
@@ -257,14 +173,14 @@ func runSheet(ctx context.Context, ec *graph.EvalCtx, _ []graph.Value, a graph.A
 	for i, it := range items {
 		gx := (i % l.cols) * (l.group + sheetGap)
 		gy := (i / l.cols) * (l.cell + sheetGap)
-		side := int(math.Ceil(math.Max(size, math.Max(it.w, it.h))))
-		win := graph.Frame{X: int(math.Round(it.cx - float64(side)/2)), Y: int(math.Round(it.cy - float64(side)/2)), W: side, H: side}
+		cx, cy := it.Centroid[0], it.Centroid[1]
+		side := int(math.Ceil(math.Max(size, math.Max(it.Box[2], it.Box[3]))))
+		win := graph.Frame{X: int(math.Round(cx - float64(side)/2)), Y: int(math.Round(cy - float64(side)/2)), W: side, H: side}
 		scale := float64(l.cell) / float64(side)
 		edge := false
-		for k, vid := range views {
+		for k, vn := range views {
 			cx := gx + k*(l.cell+sheetInnerGap)
 			fill(out, cx, gy, l.cell, l.cell, sheetEdgeGrey)
-			vn, _ := ec.Eval.Node(vid)
 			inter := graph.Intersect(win, vn.Frame)
 			if inter != win {
 				edge = true
@@ -272,7 +188,7 @@ func runSheet(ctx context.Context, ec *graph.EvalCtx, _ []graph.Value, a graph.A
 			if inter.Empty() {
 				continue
 			}
-			v, err := ec.Eval.Render(ctx, vid, graph.RenderOptions{Scale: scale, Window: &win, OnWarn: warn})
+			v, err := ec.Eval.Render(ctx, vn.ID, graph.RenderOptions{Scale: scale, Window: &win, OnWarn: warn})
 			if err != nil {
 				return nil, err
 			}
@@ -293,8 +209,11 @@ func runSheet(ctx context.Context, ec *graph.EvalCtx, _ []graph.Value, a graph.A
 		if labels == "none" {
 			continue
 		}
-		id := it.id
-		full := fmt.Sprintf("%s (%d, %d)", id, int(math.Round(it.cx)), int(math.Round(it.cy)))
+		id := it.Text()
+		if labels == "index" {
+			id = strconv.Itoa(i)
+		}
+		full := fmt.Sprintf("%s (%d, %d)", id, int(math.Round(cx)), int(math.Round(cy)))
 		if math.Abs(scale-a.Number("zoom")) > 1e-9 {
 			full += " ×" + strconv.FormatFloat(scale, 'g', 3, 64)
 		}
@@ -315,36 +234,31 @@ const WSheetTruncated = "SHEET_TRUNCATED"
 
 func sheetOp() graph.OpDef {
 	return graph.OpDef{
-		Name: "sheet", On: graph.KindNone, Returns: graph.KindImage, Result: graph.DisplayEnc, Lossless: true,
-		Space: graph.SpaceRule{Default: buffer.SpaceEncoded, Fixed: true}, // cells show what looks show
+		Name: "sheet", On: graph.KindNone, Returns: graph.KindImage, Result: graph.DisplayEnc, Lossless: true, Channels: graph.Three,
+		Space: graph.Display, // cells show what looks show
 		Args: []graph.ArgSpec{
-			{Name: "items", Type: "Regions|any[]", Positional: true,
-				Doc: "Regions (one cell per region, centred on its centroid), or a list of points ([x, y] or { cx, cy }: measurement rows), boxes ([x, y, w, h] or { x, y, w, h }) or region items (centred on cx, cy, labelled with id), doc px"},
+			itemsArg("items", graph.ItemsType+"|point[]",
+				"a Regions node or an array of items: region items (centred on their centre, sized by their box), boxes [x, y, w, h] or { x, y, w, h }, circles { cx, cy, r }, points [x, y] or { cx, cy }; doc px"),
 			{Name: "views", Type: "Image|Image[]", Doc: "what each cell shows: an image node, or a list (one cell per view, side by side, for each item)"},
-			{Name: "size", Type: "number", Unit: graph.DocPx, Default: 64.0, Min: graph.F(4), Max: graph.F(1024), Static: true,
+			{Name: "size", Type: "number", Unit: graph.DocPx, Default: 64.0, Min: graph.F(4), Max: graph.F(1024),
 				Doc: "side of the square window around each item, doc px (a larger box widens its window and lowers its scale)"},
-			{Name: "zoom", Type: "number", Default: 4.0, Min: graph.F(1), Max: graph.F(graph.MaxRenderScale), Static: true,
+			{Name: "zoom", Type: "number", Default: 4.0, Min: graph.F(1), Max: graph.F(graph.MaxRenderScale),
 				Doc: "render scale of each cell: cells are size × zoom px"},
-			{Name: "max", Type: "number", Optional: true, Min: graph.F(1), Static: true,
+			{Name: "max", Type: "number", Optional: true, Min: graph.F(1),
 				Doc: "cells laid out (default: as many as fit 1568 px; a longer region list is cut with SHEET_TRUNCATED)"},
-			{Name: "labels", Type: "enum:id,index,none", Optional: true, Doc: "cell label: the region id (default for Regions), the list index (default for lists) or none; with the centre in doc px"},
+			{Name: "labels", Type: "enum:id,index,none", Default: "id", Doc: "cell label: the item's label, else its id (ids may repeat: they are data); index: its position in the list; none; with the centre in doc px"},
 			{Name: "stretch", Type: "enum:none,cell", Default: "none", Doc: "cell: stretch each cell by its own p01/p99 (levels({ auto: true }) per cell)"},
 		},
-		Validate: func(a graph.Args, _ []*graph.Node) error {
+		Validate: func(a graph.Args) error {
 			if !a.Has("views") {
 				return graph.Errorf(graph.EArgType, "cv.sheet needs views: the image (or images) each cell shows.").
 					WithFix(`cv.sheet(regions, { views: img.view("speck") })`)
 			}
-			if list, ok := a.Raw("items").([]any); ok {
-				if _, err := listItems(list); err != nil {
-					return err
-				}
-			}
-			_, err := layoutSheet(a, -1)
+			_, err := layoutSheet(a, itemsBound(a))
 			return err
 		},
-		DocFrame: func(a graph.Args, inputs []*graph.Node) graph.Frame {
-			l, err := layoutSheet(a, itemsBound(a, inputs))
+		DocFrame: func(a graph.Args) graph.Frame {
+			l, err := layoutSheet(a, itemsBound(a))
 			if err != nil {
 				return graph.Frame{Picture: true}
 			}
@@ -353,7 +267,7 @@ func sheetOp() graph.OpDef {
 		AnalysisScale: func(graph.Args) float64 { return 1 },
 		Lazy:          true, // cells are rendered by Run through Evaluator.Render, window by window
 		Run:           runSheet,
-		Doc:           "A contact sheet: one picture of magnified crops around many items (Regions, points or boxes), labelled with id and centre; cv.sheet(regions, { views: img.view(\"speck\"), size: 64, zoom: 4 }). 36 cells fit at the defaults (18 items with two views). The sheet is a picture: its pixels are not doc px; use the labels' coordinates.",
-		See:           []string{"crop", "view", "compare", "sortBy", "top"},
+		Doc:           "A contact sheet: one picture of magnified crops around many items (a Regions node or an array of region items, boxes, circles or points), labelled with label (else id) and centre; cv.sheet(regions, { views: img.view(\"speck\"), size: 64, zoom: 4 }). 36 cells fit at the defaults (18 items with two views). The sheet is a picture: its pixels are not doc px; use the labels' coordinates.",
+		See:           []string{"crop", "view", "compare", "overlay"},
 	}
 }

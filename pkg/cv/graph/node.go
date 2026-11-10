@@ -3,6 +3,7 @@ package graph
 import (
 	"crypto/sha256"
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"sync"
@@ -15,18 +16,24 @@ type NodeID uint64
 
 // Node is an immutable, hash-consed graph node.
 type Node struct {
-	ID        NodeID
-	Op        *OpDef
-	Inputs    []NodeID // receiver (if any), explicit inputs, then lifted args
-	NExplicit int      // number of leading inputs passed to Run as in[]
-	Args      Args     // canonical, defaults filled, lifted args as InputRef
-	Kind      Kind
-	Hash      [32]byte        // sha256(op key, canonical args, input hashes)
-	Frame     Frame           // the rectangle the result covers in doc px (empty for pure data)
-	Enc       buffer.Encoding // Image: its encoding; Value: the encoding of the image it measured; else EncNone
-	Space     buffer.Space    // Image: the space of its values; Value: of its level-valued numbers; else SpaceNone
-	Fields    []FieldSpec     // Regions: the fields of its items; Value: of its rows or object (schema.go)
+	ID     NodeID
+	Op     *OpDef
+	Inputs []NodeID // the receiver (if any), then one input per node argument (InputRef order)
+	Args   Args     // canonical, defaults filled, node arguments as InputRefs; carries the input nodes
+	Kind   Kind
+	Hash   [32]byte        // sha256(op key, canonical args, metadata, input hashes)
+	Frame  Frame           // the rectangle the result covers in doc px (empty for pure data)
+	Enc    buffer.Encoding // Image: its encoding; Value: the encoding of the image it measured; else EncNone
+	Space  buffer.Space    // Image: the space of its values; Value: of its level-valued numbers; else SpaceNone
+	// Channels is an Image's channel count (1: grey or a mask, 3: colour);
+	// 0 for Regions and Value (§7.5).
+	Channels int
+	Fields   []FieldSpec // Regions: the fields of its items; Value: of its rows or object (schema.go)
 }
+
+// HasReceiver reports whether the node's first input is the receiver its op
+// was called on (source and module ops have none).
+func (n *Node) HasReceiver() bool { return n.Op.On != KindNone && len(n.Inputs) > 0 }
 
 // Builder interns nodes: structurally identical calls return the same node.
 // It looks up the ops it inserts itself (toGray, convert) in reg.
@@ -58,23 +65,26 @@ func (b *Builder) Len() int {
 	return len(b.nodes)
 }
 
-func (b *Builder) kindOf(id NodeID) (Kind, bool) {
-	n, ok := b.Node(id)
-	if !ok {
-		return "", false
-	}
-	return n.Kind, true
+// Intern checks raw call arguments against op (types, units, hard limits,
+// unknown option keys), makes node arguments inputs, inserts the toGray and
+// as nodes its inputs need for the op's work space (and the closing as of a
+// physical op), and returns the existing node with the same structure or a
+// new one. receiver is 0 for source ops. Warnings (RANGE, ENCODING) are
+// returned alongside the node.
+func (b *Builder) Intern(op *OpDef, receiver NodeID, raw []any) (*Node, []Warning, error) {
+	return b.intern(op, receiver, raw, nil)
 }
 
-// Intern checks raw call arguments against op (types, units, hard limits,
-// unknown option keys), lifts node-valued arguments into inputs, resolves
-// the op's working space and inserts the toGray and convert nodes its inputs
-// need, and returns the existing node with the same structure or a new one.
-// receiver is 0 for source ops. trusted holds Go-side values for hidden
-// arguments. Warnings (RANGE, SPACE, ENCODING) are returned alongside the
-// node.
-func (b *Builder) Intern(op *OpDef, receiver NodeID, raw []any, trusted map[string]any) (*Node, []Warning, error) {
-	r, err := b.Call(op, receiver, raw, trusted)
+// InternSource interns a source node (cv.open, a builder lambda's
+// placeholder) whose node also carries typed Go-side metadata the agent did
+// not write (SourceMeta, PlaceholderMeta): op code reads it with Meta, and
+// it is hashed with the canonical arguments.
+func (b *Builder) InternSource(op *OpDef, raw []any, meta any) (*Node, []Warning, error) {
+	return b.intern(op, 0, raw, meta)
+}
+
+func (b *Builder) intern(op *OpDef, receiver NodeID, raw []any, meta any) (*Node, []Warning, error) {
+	r, err := b.call(op, receiver, raw, meta, false)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -92,14 +102,14 @@ type CallResult struct {
 }
 
 // Call is Intern for any op, including macros that return several nodes.
-func (b *Builder) Call(op *OpDef, receiver NodeID, raw []any, trusted map[string]any) (CallResult, error) {
-	return b.call(op, receiver, raw, trusted, false)
+func (b *Builder) Call(op *OpDef, receiver NodeID, raw []any) (CallResult, error) {
+	return b.call(op, receiver, raw, nil, false)
 }
 
 // call interns a call; nested calls (a macro's expansion, inserted
 // conversions) raise no order warnings of their own: the call the agent
 // wrote does.
-func (b *Builder) call(op *OpDef, receiver NodeID, raw []any, trusted map[string]any, nested bool) (CallResult, error) {
+func (b *Builder) call(op *OpDef, receiver NodeID, raw []any, meta any, nested bool) (CallResult, error) {
 	var recv *Node
 	if receiver != 0 {
 		var ok bool
@@ -109,6 +119,9 @@ func (b *Builder) call(op *OpDef, receiver NodeID, raw []any, trusted map[string
 		if !accepts(op.On, recv.Kind) {
 			return CallResult{}, Errorf(EWrongKind, "%s is %s method; the receiver is %s.", op.Name, A(string(op.On)), A(string(recv.Kind)))
 		}
+		if err := checkChannels(op, recv); err != nil {
+			return CallResult{}, err
+		}
 	} else if op.On != KindNone {
 		return CallResult{}, Errorf(EInternal, "%s needs %s receiver", op.Name, A(string(op.On)))
 	}
@@ -116,7 +129,7 @@ func (b *Builder) call(op *OpDef, receiver NodeID, raw []any, trusted map[string
 	if err != nil {
 		return CallResult{}, err
 	}
-	bd, err := bind(op, callName(op), recv != nil, raw, trusted, b.kindOf)
+	bd, err := bind(op, callName(op), recv != nil, raw, b.Node, b.itemsNode)
 	if err != nil {
 		return CallResult{}, err
 	}
@@ -125,8 +138,6 @@ func (b *Builder) call(op *OpDef, receiver NodeID, raw []any, trusted map[string
 		all = append(all, recv.ID)
 	}
 	all = append(all, bd.inputs...)
-	nExplicit := len(all)
-	all = append(all, bd.lifted...)
 
 	inputs := make([]*Node, len(all))
 	for i, id := range all {
@@ -136,10 +147,10 @@ func (b *Builder) call(op *OpDef, receiver NodeID, raw []any, trusted map[string
 		}
 		inputs[i] = in
 	}
-	args := Args{op: op, vals: bd.args}
+	args := Args{op: op, vals: bd.args, meta: meta, ins: inputs}
 	if op.Validate != nil {
-		if err := op.Validate(args, inputs); err != nil {
-			return CallResult{}, b.reg.producerHint(err)
+		if err := op.Validate(args); err != nil {
+			return CallResult{}, err
 		}
 	}
 	if recv != nil {
@@ -155,22 +166,36 @@ func (b *Builder) call(op *OpDef, receiver NodeID, raw []any, trusted map[string
 		warnings = append(warnings, b.orderWarnings(op, args, recv)...)
 	}
 	if op.Expand != nil {
-		return b.expand(op, args, recv, inputs, nExplicit, warnings)
+		return b.expand(op, args, recv, warnings)
 	}
-	inputs, ws, err := b.resolveSpace(op, args, inputs)
+	if op.On == KindImage && op.Name == AsOp { // as() folds: identities, inverse pairs, the opened file's pyramid
+		s, _ := buffer.ParseSpace(args.String("to"))
+		n, err := b.as(recv, s)
+		if err != nil {
+			return CallResult{}, err
+		}
+		return CallResult{Nodes: []*Node{n}, Warnings: warnings}, nil
+	}
+	inputs, ws, err := b.resolveSpace(op, args)
 	if err != nil {
 		return CallResult{}, err
 	}
+	args.ins = inputs
 	ws = append(warnings, ws...)
 	if op.Warn != nil {
-		ws = append(ws, op.Warn(b, args, inputs)...)
+		ws = append(ws, op.Warn(b, args)...)
 	}
-	return CallResult{Nodes: []*Node{b.internNode(op, args, inputs, nExplicit)}, Warnings: ws}, nil
+	n, err := b.closeBracket(op, args, b.internNode(op, args, inputs), recv)
+	if err != nil {
+		return CallResult{}, err
+	}
+	return CallResult{Nodes: []*Node{n}, Warnings: ws}, nil
 }
 
 // internNode returns the node for (op, canonical args, inputs), creating it
-// if it does not exist yet.
-func (b *Builder) internNode(op *OpDef, args Args, inputs []*Node, nExplicit int) *Node {
+// if it does not exist yet. The node's Args carry inputs.
+func (b *Builder) internNode(op *OpDef, args Args, inputs []*Node) *Node {
+	args.ins, args.vs = inputs, nil
 	h := hashNode(op, args, inputs)
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -182,10 +207,11 @@ func (b *Builder) internNode(op *OpDef, args Args, inputs []*Node, nExplicit int
 		ids[i] = in.ID
 	}
 	b.next++
-	n := &Node{ID: b.next, Op: op, Inputs: ids, NExplicit: nExplicit, Args: args, Kind: op.Returns, Hash: h}
-	n.Frame = nodeFrame(op, args, inputs)
-	n.Enc, n.Space = nodeStatics(op, args, inputs)
-	n.Fields = nodeFields(op, args, inputs)
+	n := &Node{ID: b.next, Op: op, Inputs: ids, Args: args, Kind: op.Returns, Hash: h}
+	n.Frame = nodeFrame(op, args)
+	n.Enc, n.Space = nodeStatics(op, args)
+	n.Channels = nodeChannels(op, args)
+	n.Fields = nodeFields(op, args)
 	b.byKey[h], b.nodes[n.ID] = n, n
 	return n
 }
@@ -202,7 +228,7 @@ func checkPicture(op *OpDef, args Args, recv *Node) error {
 	}
 	for i := range op.Args {
 		s := &op.Args[i]
-		if what == "" && !s.Hidden && (s.Unit == DocPx || s.Unit == DocPx2) && args.Has(s.Name) {
+		if what == "" && (s.Unit == DocPx || s.Unit == DocPx2) && args.Has(s.Name) {
 			if s.Default == nil || !reflect.DeepEqual(args.vals[s.Name], normalize(s.Default)) {
 				what = op.Name + "." + s.Name
 			}
@@ -232,11 +258,7 @@ func checkInFrame(op *OpDef, args Args, frame Frame) error {
 		}
 		f := make([]float64, len(l))
 		for j, e := range l {
-			v, ok := e.(float64)
-			if !ok {
-				return nil // a lifted coordinate: checked when evaluated
-			}
-			f[j] = v
+			f[j] = e.(float64) // the binder checked the coordinates: literal numbers
 		}
 		where := op.Name + "." + s.Name
 		switch len(f) {
@@ -262,7 +284,7 @@ func checkInFrame(op *OpDef, args Args, frame Frame) error {
 // argFix renders a call of op with value for argument s, as a literal fix:
 // img.mask.flood([32, 24]) or img.stats({ box: [0, 0, 10, 10] }).
 func argFix(op *OpDef, s *ArgSpec, value string) string {
-	recv := map[Kind]string{KindImage: "img.", KindMask: "mask.", KindRegions: "regions.", KindValue: "value."}[op.On]
+	recv := map[Kind]string{KindImage: "img.", KindRegions: "regions.", KindValue: "value."}[op.On]
 	if s.Positional {
 		return fmt.Sprintf("%s%s(%s)", recv, op.Name, value)
 	}
@@ -272,14 +294,14 @@ func argFix(op *OpDef, s *ArgSpec, value string) string {
 // nodeFrame is the frame of a node: op.DocFrame, or the first input with a
 // non-empty frame. It depends only on the hash inputs, so a hash hit has the
 // frame a new node would get.
-func nodeFrame(op *OpDef, args Args, inputs []*Node) Frame {
-	if op.Expand != nil && len(inputs) > 0 { // a macro node: its expansion's output
-		return inputs[len(inputs)-1].Frame
+func nodeFrame(op *OpDef, args Args) Frame {
+	if out := macroOutput(op, args); out != nil { // a macro node: its expansion's output
+		return out.Frame
 	}
 	if op.DocFrame != nil {
-		return op.DocFrame(args, inputs)
+		return op.DocFrame(args)
 	}
-	for _, in := range inputs {
+	for _, in := range args.ins {
 		if !in.Frame.Empty() {
 			return in.Frame
 		}
@@ -361,8 +383,15 @@ func (b *Builder) Substitute(root, from, to NodeID) (NodeID, error) {
 			changed = changed || r.ID != in
 		}
 		out := n
-		if changed {
-			out = b.internNode(n.Op, n.Args, ins, n.NExplicit)
+		switch {
+		case changed && n.Op.Name == AsOp && n.HasReceiver(): // conversions fold as when built directly
+			to, _ := buffer.ParseSpace(n.Args.String("to"))
+			var err error
+			if out, err = b.as(ins[0], to); err != nil {
+				return nil, err
+			}
+		case changed:
+			out = b.internNode(n.Op, n.Args, ins)
 		}
 		memo[id] = out
 		return out, nil
@@ -382,10 +411,64 @@ func hashNode(op *OpDef, args Args, inputs []*Node) [32]byte {
 	js := args.canonicalJSON()
 	_ = binary.Write(h, binary.LittleEndian, uint32(len(js))) // #nosec G115 -- canonical args JSON is far below 4 GiB
 	h.Write(js)
+	if args.meta != nil {
+		mj, err := json.Marshal(args.meta)
+		if err != nil {
+			panic(fmt.Sprintf("cv: metadata of %s not serializable: %v", op.Name, err))
+		}
+		_ = binary.Write(h, binary.LittleEndian, uint32(len(mj))) // #nosec G115 -- metadata JSON is small
+		h.Write(mj)
+	}
 	for _, in := range inputs {
 		h.Write(in.Hash[:])
 	}
 	var out [32]byte
 	copy(out[:], h.Sum(nil))
 	return out
+}
+
+// macroOutput is a macro node's last input, its expansion's output (nil for
+// other nodes).
+// nodeChannels is the channel count of an Image node (§7.5): a macro's
+// expansion output, op.Channels, else its receiver's (or its image
+// argument's). It depends only on the hash inputs.
+func nodeChannels(op *OpDef, args Args) int {
+	if op.Returns != KindImage {
+		return 0
+	}
+	if out := macroOutput(op, args); out != nil {
+		return out.Channels
+	}
+	if op.Channels != nil {
+		return op.Channels(args)
+	}
+	if in := args.imageSource(); in != nil {
+		return in.Channels
+	}
+	return 0
+}
+
+// MaxChannels is the Channels rule of two-image ops (arithmetic, blend,
+// within): the larger count of the image inputs, as kernels.binary
+// broadcasts a grey image to colour. Masks and the luminance input count
+// as one channel, which never raises the maximum.
+func MaxChannels(a Args) int {
+	c := 0
+	for _, in := range a.ins {
+		if in.Kind == KindImage {
+			c = max(c, in.Channels)
+		}
+	}
+	return c
+}
+
+// One and Three are Channels rules of ops whose result has a fixed count.
+func One(Args) int   { return 1 }
+func Three(Args) int { return 3 }
+
+func macroOutput(op *OpDef, args Args) *Node {
+	if op.Expand == nil || len(args.ins) == 0 {
+		return nil
+	}
+	return args.ins[len(args.ins)-1]
 }

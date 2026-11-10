@@ -1,5 +1,5 @@
-// Package graph holds the cv op registry, the hash-consed node graph, the
-// param store and the caching evaluator.
+// Package graph holds the cv op registry, the hash-consed node graph and the
+// caching evaluator.
 package graph
 
 import (
@@ -17,22 +17,43 @@ type Kind string
 
 const (
 	KindImage   Kind = "Image"
-	KindMask    Kind = "Mask"
 	KindRegions Kind = "Regions"
 	KindValue   Kind = "Value"
-	KindParam   Kind = "Param"
-	// KindNone is the receiver "kind" of source ops (cv.open, P.slider).
+	// KindNone is the receiver "kind" of source and module ops (cv.open,
+	// cv.compare).
 	KindNone Kind = ""
 )
 
-// Kinds lists every kind in display order.
-var Kinds = []Kind{KindImage, KindMask, KindRegions, KindValue, KindParam}
+// MaskType is the type word of an argument that takes a mask: an Image
+// node with one channel (GCV-004 §7.5). It is not a kind.
+const MaskType = "Mask"
 
 // accepts reports whether a node of kind k satisfies a declared input kind
-// such as "Image" or "Regions|Mask". Param satisfies Value.
+// such as "Image" or "Regions|Image" ("Mask" is not a kind: see acceptsNode).
 func accepts(decl Kind, k Kind) bool {
 	for _, d := range strings.Split(string(decl), "|") {
-		if Kind(d) == k || (Kind(d) == KindValue && k == KindParam) {
+		if Kind(d) == k || (d == ItemsType && k == KindRegions) {
+			return true
+		}
+	}
+	return false
+}
+
+// acceptsNode reports whether node n satisfies a declared node type such as
+// "Image", "Mask" (an Image with one channel) or "Regions|Mask".
+func acceptsNode(decl string, n *Node) bool {
+	for _, d := range strings.Split(decl, "|") {
+		if Kind(d) == n.Kind || (d == MaskType && n.Kind == KindImage && n.Channels == 1) || (d == ItemsType && n.Kind == KindRegions) {
+			return true
+		}
+	}
+	return false
+}
+
+// takesMask reports whether a declared node type accepts a mask.
+func takesMask(decl string) bool {
+	for _, d := range strings.Split(decl, "|") {
+		if d == MaskType {
 			return true
 		}
 	}
@@ -47,7 +68,7 @@ const (
 	DocPx         // length or coordinate in original-image pixels; scaled per evaluation
 	Fraction      // 0..1 of width/height
 	DocPx2        // area in original-image pixels²; scaled by scale² per evaluation
-	Level         // a value on the scale of the op's working space (levels.black, mask.luminance.above)
+	Level         // a value on the scale of the receiver's space (levels.black, mask.luminance.above)
 )
 
 func (u Unit) String() string {
@@ -66,63 +87,46 @@ func (u Unit) String() string {
 	return "unknown"
 }
 
-// SpaceRule is an op's working space: the space its kernel's numbers are in.
-type SpaceRule struct {
-	// Default is the working space when the call passes no { space };
-	// SpaceNone means the op does not read levels (geometry, masks, data).
-	Default buffer.Space
-	// Fixed: the op only works in Default (toLab, encode); no space option.
-	Fixed bool
-	// For, when set, is the default of a call that passes no { space }
-	// (a view preset's own space); Default otherwise.
-	For func(args Args) buffer.Space
-}
+// SpaceRule is how an op relates to the space of its receiver (GCV-004
+// §4.3). The zero value is the common case.
+type SpaceRule uint8
 
-// DefaultSpace is the working space of a call of op that passes no
-// { space }.
-func (op *OpDef) DefaultSpace(args Args) buffer.Space {
-	if op.Space.For != nil && op.Space.Default != buffer.SpaceNone {
-		if s := op.Space.For(args); s != buffer.SpaceNone {
-			return s
-		}
-	}
-	return op.Space.Default
-}
+const (
+	// Follows: the op works in its receiver's space; other image inputs are
+	// converted to it (masks are read as stored).
+	Follows SpaceRule = iota
+	// Physical: the op works in linear light; the builder converts its inputs
+	// to linear and its result back to the receiver's space.
+	Physical
+	// Display: the op draws a picture: image inputs are converted to encoded
+	// values.
+	Display
+)
 
 // ResultEnc computes the encoding and space of an Image result. s is the
-// op's resolved working space (SpaceNone for ops without one). The three
-// named rules cover every op but sources, convert and encode.
+// op's work space (SpaceNone for ops without an image). The three named
+// rules cover every op but sources and as.
 type ResultEnc struct {
-	Enc   func(args Args, inputs []*Node) buffer.Encoding
-	Space func(args Args, s buffer.Space, inputs []*Node) buffer.Space
-}
-
-// firstImage is the first Image input (receiver, then Inputs, then
-// kind-typed arguments), or nil.
-func firstImage(inputs []*Node) *Node {
-	for _, in := range inputs {
-		if in.Kind == KindImage {
-			return in
-		}
-	}
-	return nil
+	Enc   func(a Args) buffer.Encoding
+	Space func(a Args, s buffer.Space) buffer.Space
 }
 
 var (
-	// KeepEnc: the encoding of the first Image input; the space is the op's
-	// working space, or the first Image input's for ops without one.
+	// KeepEnc: the encoding of the receiver (or, for an op called on
+	// regions or a mask, of its image argument); the space is the op's
+	// work space, or that image's for ops without one.
 	KeepEnc = &ResultEnc{
-		Enc: func(_ Args, inputs []*Node) buffer.Encoding {
-			if in := firstImage(inputs); in != nil {
+		Enc: func(a Args) buffer.Encoding {
+			if in := a.imageSource(); in != nil {
 				return in.Enc
 			}
 			return buffer.EncNone
 		},
-		Space: func(_ Args, s buffer.Space, inputs []*Node) buffer.Space {
+		Space: func(a Args, s buffer.Space) buffer.Space {
 			if s != buffer.SpaceNone {
 				return s
 			}
-			if in := firstImage(inputs); in != nil {
+			if in := a.imageSource(); in != nil {
 				return in.Space
 			}
 			return buffer.SpaceLinear
@@ -132,32 +136,14 @@ var (
 	// values are reinterpreted as linear-encoded: their stored value is their
 	// value, so what is measured is what is seen.
 	DerivedEnc = &ResultEnc{
-		Enc:   func(Args, []*Node) buffer.Encoding { return buffer.EncLinear },
-		Space: func(Args, buffer.Space, []*Node) buffer.Space { return buffer.SpaceLinear },
+		Enc:   func(Args) buffer.Encoding { return buffer.EncLinear },
+		Space: func(Args, buffer.Space) buffer.Space { return buffer.SpaceLinear },
 	}
 	// DisplayEnc: display colours (colormap), sRGB-encoded values.
 	DisplayEnc = &ResultEnc{
-		Enc:   func(Args, []*Node) buffer.Encoding { return buffer.EncSRGB },
-		Space: func(Args, buffer.Space, []*Node) buffer.Space { return buffer.SpaceEncoded },
+		Enc:   func(Args) buffer.Encoding { return buffer.EncSRGB },
+		Space: func(Args, buffer.Space) buffer.Space { return buffer.SpaceEncoded },
 	}
-)
-
-// SpaceArg is the name of the working-space option Register adds.
-const SpaceArg = "space"
-
-// spaceOption is the option Register appends to every op with a working
-// space that is not fixed.
-var spaceOption = ArgSpec{Name: SpaceArg, Type: "enum:linear,encoded", Optional: true, Static: true,
-	Doc:           "working space: linear (the encoding undone) or encoded (the file's values, what looks show)",
-	ValueSynonyms: SpaceValueSynonyms}
-
-// SpaceValueSynonyms and EncodingValueSynonyms are the value synonyms of the
-// space option and of encoding arguments.
-var (
-	SpaceValueSynonyms = map[string]string{"file": "encoded", "stored": "encoded", "code": "encoded", "display": "encoded",
-		"perceptual": "encoded", "srgb": "encoded", "sRGB": "encoded", "lin": "linear", "light": "linear", "physical": "linear"}
-	EncodingValueSynonyms = map[string]string{"sRGB": "srgb", "SRGB": "srgb", "gamma": "srgb", "perceptual": "srgb",
-		"lin": "linear", "raw": "linear", "identity": "linear", "none": "linear"}
 )
 
 // ArgSpec declares one argument of an op.
@@ -165,11 +151,12 @@ var (
 // Types: "number", "string", "bool", "enum:a,b,c", "number[]", "string[]",
 // "box" ([x, y, w, h] or an object with x, y, w, h), "point" ([x, y] or an
 // object with cx, cy), "data" (a node or plain data, kept as given: the
-// argument of cv.json and cv.csv), unions such as "point|number", "object"
-// (with Options as the allowed keys), "any", and node kinds such as
-// "Mask", "Regions|Mask" or "Image[]": a kind-typed argument holds a node of
-// that kind (lifted into the node's inputs like a Value argument); Run reads
-// its evaluated value with Args.Node / Args.Nodes.
+// x of cv.save), unions such as "point|number", "object"
+// (with Options as the allowed keys), "any", and node types such as
+// "Mask" (an Image with one channel), "Regions|Mask" or "Image[]": a node
+// argument is its own input of
+// the node (one per list element, repetitions kept); build-time code reads
+// it with Args.Input / Args.Inputs, Run with Args.Value / Args.Values.
 type ArgSpec struct {
 	Name       string
 	Type       string
@@ -178,22 +165,18 @@ type ArgSpec struct {
 	Optional   bool       // may be absent without a default
 	Positional bool       // may be passed positionally (in declaration order)
 	Variadic   bool       // a positional "...[]" argument that takes all remaining positional values
-	Hidden     bool       // set by Go only (e.g. a source file stamp); not settable or listed
-	Static     bool       // must be a literal: a node (Value/Param) is rejected
 	Len        int        // for list types: the exact number of elements
 	InFrame    bool       // "box"/"point": a box must overlap, a point lie in, the receiver's frame (E_ARG_RANGE)
 	Min, Max   *float64   // hard limits: violation is E_ARG_RANGE
 	Usual      [2]float64 // soft range (zero value = none): violation is a RANGE warning
+	UsualHint  string     // appended to that RANGE warning: what to do instead
 	Options    []ArgSpec  // for "object": the allowed keys (unknown keys are E_UNKNOWN_OPTION)
-	// ValueSynonyms map words agents use for an enum value to the value they
-	// mean (scoped to this argument), for the did-you-mean hint and fix.
-	ValueSynonyms map[string]string
 	// ValueDocs describe the values of an enum (view presets): help lists
 	// them and an unknown value's error names them.
 	ValueDocs map[string]string
-	// Redirects map an unknown option name (looked up over every spec of the
-	// call) or an unknown enum value of this argument to the call that does
-	// it now: look({ box }) → crop, blend({ mode: "difference" }) → sub.
+	// Redirects map an unknown option name agents demonstrably typed (looked
+	// up over every spec of the call; GCV-004 §7.13) to the call that does it:
+	// look({ box }) → crop, mask.luminance({ min }) → above.
 	Redirects map[string]Redirect
 	Doc       string
 }
@@ -245,55 +228,59 @@ const (
 	ChartLines
 )
 
-// RunFunc computes an op. in holds the evaluated explicit inputs (the
-// receiver first, then OpDef.Inputs); node-valued arguments have already been
-// evaluated and substituted into args.
+// RunFunc computes an op. in holds the evaluated receiver (empty for source
+// and module ops); node arguments are read with Args.Value and Args.Values.
 type RunFunc func(ctx context.Context, ec *EvalCtx, in []Value, args Args) (Value, error)
 
 // OpDef describes one registered op.
 type OpDef struct {
-	Name     string // "exposure", "mask.luminance": a dot puts the op in a namespace
-	On       Kind   // receiver kind; KindNone for source ops
-	Inputs   []Kind // extra node inputs beyond the receiver, passed positionally first
-	Args     []ArgSpec
-	Returns  Kind
-	Class    OpClass               // pixel (default), geometric or decoration (render above scale 1)
-	Space    SpaceRule             // working space (SpaceNone: the op does not read levels)
-	Result   *ResultEnc            // encoding and space of an Image result; nil = KeepEnc
-	Gray     func(args Args) []int // positions of the Image inputs read as luminance (fed toGray rec709 in linear space)
-	Internal bool                  // not callable from JavaScript, not listed in help (convert)
-	Lossless bool                  // looks of its result are PNG by default (format "auto"): contact sheets
-	Chart    ChartKind             // look() of a Value result draws this chart (histogram: bars, profile: lines)
-	// MaxItems is a static upper bound on the item count of a Regions
-	// result (top(n)); ok false when unknown (a lifted n). A sheet sizes
-	// itself by it.
-	MaxItems func(args Args) (n int, ok bool)
-	Bespoke  bool // a module op bound by hand (cv.open, P.slider, the builder placeholder): the prelude does not generate cv.<name>
+	Name    string // "exposure", "mask.luminance": a dot puts the op in a namespace
+	On      Kind   // receiver kind; KindNone for source ops
+	Args    []ArgSpec
+	Returns Kind
+	Class   OpClass                // pixel (default), geometric or decoration (render above scale 1)
+	Space   SpaceRule              // follows its receiver (default), physical or display (§7.4)
+	SpaceOf func(a Args) SpaceRule // overrides Space per call (toGray: rec709 is physical, average follows)
+	Result  *ResultEnc             // encoding and space of an Image result; nil = KeepEnc
+	// Channels is the channel count of an Image result; nil: the receiver's
+	// (§7.5). MaxChannels is the rule of two-image ops.
+	Channels func(a Args) int
+	// OneChannel: the receiver must have one channel (the mask ops,
+	// colormap); ThreeChannel: it must have colour (toLab, split, chroma,
+	// mask.color). Both are E_WRONG_KIND at build time. A OneChannel
+	// receiver is read as stored (never converted between spaces).
+	OneChannel   bool
+	ThreeChannel bool
+	// Luma: the builder adds the luminance of the receiver (or of the argument
+	// LumaOf names) as an extra input, toGray with the op's gray weights in
+	// that image's space; Run reads it with Args.Luma (the one luminance).
+	Luma     bool
+	LumaOf   string
+	LumaWhen func(a Args) bool // nil: always; else only for these args (levels: auto; histogram: channel L)
+	Internal bool              // not callable from JavaScript, not listed in help (convert)
+	Lossless bool              // looks of its result are PNG by default (format "auto"): contact sheets
+	Chart    ChartKind         // look() of a Value result draws this chart (histogram: bars, profile: lines)
+	Bespoke  bool              // a module op bound by hand (cv.open, the builder placeholder): the prelude does not generate cv.<name>
 	// Expand makes the op a macro: a graph of other ops built at intern
 	// time (exactly one of Run and Expand is set). See ExpandFunc.
 	Expand ExpandFunc
 	// Warn adds build-time warnings for a call (toLab on camera RGB).
-	Warn     func(b *Builder, args Args, inputs []*Node) []Warning
-	Identity func(args Args) bool                  // neutral arguments: the receiver is returned unchanged
-	Halo     func(args Args) float64               // doc px of border around each output pixel the op reads
-	Global   bool                                  // needs the whole image (stats, histogram)
-	NoCache  bool                                  // never cached (explain reads cache state)
-	Lazy     bool                                  // inputs are not evaluated before Run (explain)
-	DocFrame func(args Args, inputs []*Node) Frame // the result's frame; nil: the first input with a non-empty frame
+	Warn     func(b *Builder, a Args) []Warning
+	Identity func(a Args) bool    // neutral arguments: the receiver is returned unchanged
+	Halo     func(a Args) float64 // doc px of border around each output pixel the op reads
+	Global   bool                 // needs the whole image (stats, histogram)
+	Lazy     bool                 // inputs are not evaluated before Run (explain)
+	DocFrame func(a Args) Frame   // the result's frame; nil: the first input with a non-empty frame
 	// Fields is the schema of the result: the items of a Regions result, the
 	// rows or the object of a Value result (schema.go). It runs at intern
-	// time with the bound args (lifted values are InputRefs) and the input
-	// nodes, and may be called with nil inputs (help). nil: a Regions op on
-	// Regions keeps its receiver's fields; other results have none.
-	Fields func(args Args, inputs []*Node) []FieldSpec
-	// Produces maps the field names the op can add with some arguments to
-	// the call that adds them, for the hint of a filter on a field the
-	// receiver lacks ("snr comes from regions.measure(img, { ring: true })").
-	Produces map[string]string
-	// Validate checks bound args at build time (after defaults and types)
-	// with the input nodes (receiver first: their statics, such as Fields);
-	// lifted values are still InputRefs. Errors fail the call.
-	Validate func(args Args, inputs []*Node) error
+	// time with the bound args (node arguments are InputRefs; Args carries the
+	// input nodes), and is called with Args without inputs for help. nil: no
+	// fields.
+	Fields func(a Args) []FieldSpec
+	// Validate checks bound args at build time (after defaults and types);
+	// the input nodes (their statics, such as Fields) are read through
+	// Args. Errors fail the call.
+	Validate func(a Args) error
 	// AnalysisScale, when set and > 0, is the scale at which the node's
 	// inputs are evaluated whatever the evaluation scale: the node's value is
 	// then the same at preview and export. Regions ops use it so that region
@@ -367,12 +354,6 @@ func (r *Registry) Register(def OpDef) error {
 		}
 	}
 	d := def
-	if d.Space.Default != buffer.SpaceNone && !d.Space.Fixed {
-		if d.spec(SpaceArg) != nil {
-			return errors.Errorf("op %s declares its own %s argument", def.Name, SpaceArg)
-		}
-		d.Args = append(append([]ArgSpec(nil), d.Args...), spaceOption)
-	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if _, ok := r.ops[d.Key()]; ok {
@@ -401,19 +382,12 @@ func (r *Registry) MustRegister(defs ...OpDef) {
 	}
 }
 
-// Lookup finds the op name on receiver kind on. Param receivers fall back to
-// Value ops, since a param evaluates to a value.
+// Lookup finds the op name on receiver kind on.
 func (r *Registry) Lookup(on Kind, name string) (*OpDef, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	if op, ok := r.ops[string(on)+":"+name]; ok {
-		return op, true
-	}
-	if on == KindParam {
-		op, ok := r.ops[string(KindValue)+":"+name]
-		return op, ok
-	}
-	return nil, false
+	op, ok := r.ops[string(on)+":"+name]
+	return op, ok
 }
 
 // Ops returns all ops callable from JavaScript (not Internal ones), sorted
@@ -436,8 +410,11 @@ func (r *Registry) Ops() []*OpDef {
 	return out
 }
 
+// receiverKinds are the receiver kinds in display order.
+var receiverKinds = []Kind{KindImage, KindRegions, KindValue}
+
 func kindOrder(k Kind) int {
-	for i, kk := range Kinds {
+	for i, kk := range receiverKinds {
 		if kk == k {
 			return i + 1
 		}
@@ -445,11 +422,22 @@ func kindOrder(k Kind) int {
 	return 0
 }
 
-// Methods returns the op names callable on kind (including Value ops for Param).
+// Receivers lists the receiver kinds that have methods, in display order.
+func (r *Registry) Receivers() []Kind {
+	var out []Kind
+	for _, k := range receiverKinds {
+		if len(r.Methods(k)) > 0 {
+			out = append(out, k)
+		}
+	}
+	return out
+}
+
+// Methods returns the op names callable on kind.
 func (r *Registry) Methods(on Kind) []string {
 	set := map[string]bool{}
 	for _, op := range r.Ops() {
-		if op.On == on || (on == KindParam && op.On == KindValue) {
+		if op.On == on {
 			set[op.Name] = true
 		}
 	}

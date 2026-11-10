@@ -2,22 +2,16 @@ package ops
 
 import (
 	"math"
-	"strings"
 	"testing"
 
 	"github.com/go-go-golems/goja-cv/pkg/cv/graph"
 )
 
-// TestWithinPlaceholderAndParams: the builder's graph on the placeholder is
+// TestWithinPlaceholder: the builder's graph on the placeholder is
 // substituted onto the receiver (and is then the very node built directly),
-// params inside it are visible to signatures, and moving one re-runs only
-// the nodes downstream of it.
-func TestWithinPlaceholderAndParams(t *testing.T) {
+// and another edit through the same mask re-runs only the edit and within.
+func TestWithinPlaceholder(t *testing.T) {
 	e, img := newEngine(t)
-	ev, _, err := e.DeclareParam(graph.ParamDef{Name: "skyEv", Type: "slider", Min: -2, Max: 2, Value: -0.4}, false)
-	if err != nil {
-		t.Fatal(err)
-	}
 	sky := call(t, e, "feather", call(t, e, "and",
 		call(t, e, "mask.luminance", img.ID, map[string]any{"above": 0.3}).ID,
 		graph.NodeArg{ID: call(t, e, "mask.gradient", img.ID, map[string]any{"from": "top", "to": 0.6}).ID}).ID, 4)
@@ -26,9 +20,9 @@ func TestWithinPlaceholderAndParams(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	inner := call(t, e, "exposure", hole.ID, graph.NodeArg{ID: ev.ID})
+	inner := call(t, e, "exposure", hole.ID, -0.4)
 	w := call(t, e, "within", img.ID, graph.NodeArg{ID: sky.ID}, graph.BuiltArg{Root: inner.ID, Hole: hole.ID})
-	direct := call(t, e, "exposure", img.ID, graph.NodeArg{ID: ev.ID})
+	direct := call(t, e, "exposure", img.ID, -0.4)
 	if w.Inputs[2] != direct.ID {
 		t.Fatalf("within's inner graph #%d is not the directly built exposure #%d", w.Inputs[2], direct.ID)
 	}
@@ -37,9 +31,8 @@ func TestWithinPlaceholderAndParams(t *testing.T) {
 		t.Fatal("within with a builder and with the equivalent node differ")
 	}
 
-	mean := call(t, e, "field", call(t, e, "stats", w.ID).ID, "meanL")
-	m1 := evalValue(t, e, mean, 1).(*graph.DataValue).Data.(float64)
-	base := evalValue(t, e, call(t, e, "field", call(t, e, "stats", img.ID).ID, "meanL"), 1).(*graph.DataValue).Data.(float64)
+	m1 := statOf(t, e, call(t, e, "stats", w.ID), "meanL")
+	base := statOf(t, e, call(t, e, "stats", img.ID), "meanL")
 	if !(m1 < base) {
 		t.Fatalf("darkening inside the mask did not darken: %g vs %g", m1, base)
 	}
@@ -47,22 +40,18 @@ func TestWithinPlaceholderAndParams(t *testing.T) {
 	for _, id := range []graph.NodeID{img.ID, sky.ID, sky.Inputs[0], direct.ID, w.ID} {
 		runsBefore[id] = e.Evaluator().Runs(id)
 	}
-	if err := e.Params().Set("skyEv", -1.5); err != nil {
-		t.Fatal(err)
+	darker := call(t, e, "exposure", img.ID, -1.5)
+	w2 := call(t, e, "within", img.ID, graph.NodeArg{ID: sky.ID}, graph.NodeArg{ID: darker.ID})
+	if m2 := statOf(t, e, call(t, e, "stats", w2.ID), "meanL"); !(m2 < m1) {
+		t.Fatalf("a darker edit inside within did not darken: %g → %g", m1, m2)
 	}
-	m2 := evalValue(t, e, mean, 1).(*graph.DataValue).Data.(float64)
-	if !(m2 < m1) {
-		t.Fatalf("moving the param inside within did not change the result: %g → %g", m1, m2)
+	if e.Evaluator().Runs(darker.ID) != 1 || e.Evaluator().Runs(w2.ID) != 1 {
+		t.Fatal("the new edit and within did not run once")
 	}
 	for id, before := range runsBefore {
-		after := e.Evaluator().Runs(id)
-		wantDelta := 0
-		if id == direct.ID || id == w.ID {
-			wantDelta = 1
-		}
-		if after-before != wantDelta {
+		if after := e.Evaluator().Runs(id); after != before {
 			n, _ := e.Node(id)
-			t.Fatalf("%s (#%d) ran %d more times, want %d", graph.Label(n), id, after-before, wantDelta)
+			t.Fatalf("%s (#%d) ran %d more times, want 0", graph.Label(n), id, after-before)
 		}
 	}
 	// a leaked placeholder cannot be evaluated
@@ -82,7 +71,8 @@ func TestWithinPlaceholderAndParams(t *testing.T) {
 }
 
 func TestBlendModes(t *testing.T) {
-	e, img := newEngine(t)
+	e, file := newEngine(t)
+	img := call(t, e, graph.AsOp, file.ID, "linear") // exposure(-1) halves linear values
 	dark := call(t, e, "exposure", img.ID, -1)
 	src := evalValue(t, e, img, 1).(*graph.ImageValue).Buf
 	for _, tc := range []struct {
@@ -111,12 +101,9 @@ func TestBlendModes(t *testing.T) {
 	if b := call(t, e, "blend", img.ID, graph.NodeArg{ID: dark.ID}, map[string]any{"opacity": 0}); evalValue(t, e, b, 1).(*graph.ImageValue).Buf != src {
 		t.Fatal("blend at opacity 0 is not the identity")
 	}
-	// the removed modes redirect to arithmetic
-	for mode, fix := range map[string]string{"difference": "a.sub(b).abs()", "add": "a.add(b)", "lighten": "a.max(b)", "darken": "a.min(b)"} {
-		_, err := e.Call("blend", img.ID, []any{graph.NodeArg{ID: dark.ID}, map[string]any{"mode": mode, "opacity": 0.5}})
-		ce, ok := graph.AsError(err)
-		if !ok || ce.Code != graph.EArgType || ce.Fix != fix || !strings.Contains(ce.Hint, "{ opacity, mask }") {
-			t.Fatalf("blend mode %s: %+v", mode, err)
-		}
+	// an unknown mode lists the valid ones (no redirect table: GCV-004 §7.13)
+	_, err := e.Call("blend", img.ID, []any{graph.NodeArg{ID: dark.ID}, map[string]any{"mode": "difference", "opacity": 0.5}})
+	if ce, ok := graph.AsError(err); !ok || ce.Code != graph.EArgType || len(ce.Valid) != 3 {
+		t.Fatalf("blend mode difference: %+v", err)
 	}
 }

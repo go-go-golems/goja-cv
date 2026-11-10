@@ -25,14 +25,14 @@ with measurements instead of guesses.
 ## What it does
 
 - **Measure.** `stats` (mean, percentiles, clipping, per channel; also inside a box or mask), `histogram`,
-  `sample` (values at points), `profile` (values along a line, plotted), `measure` (a spot against a ring around it:
-  step, spread, snr, stepChroma), `regions.measure` (the same for every region, or statistics over its pixels),
+  `sample` (values at points), `profile` (values along a line, plotted), `measure` (each item against a ring around
+  it, sized from the item: step, spread, snr, stepChroma; or statistics over its area),
   `check.dust`, `detect.specks` (regions with flat fields id, x, y, w, h, cx, cy, area, contrast, a dust score).
-- **Data out.** `cv.csv(x)` and `cv.json(x)` hand every row to programs (files from the CLI); `node.save(path)`
-  writes images under `--out-root` with their encoding and frame.
+- **Files.** `cv.save(path, x)` writes images (TIFF and PNG with their encoding and frame), JSON and CSV in the
+  workspace (`--root`); `cv.open` reads the workspace and the `--read` directories.
 - **Select.** Masks from luminance, colour, boxes, ellipses, gradients and flood fill; set algebra and
-  morphology; regions from masks; declarative `where` filters.
-- **Edit.** `exposure` (in linear space), `levels`, `contrast`, `gaussian`, `blend`, `within(mask, …)`, `heal`
+  morphology; regions from masks; awaited regions are arrays that JavaScript filters and sorts.
+- **Edit.** `exposure` (stops of linear light), `levels`, `contrast`, `gaussian`, `blend`, `within(mask, …)`, `heal`
   (patch-based dust removal), `inpaint`.
 - **Look.** `node.look("label")` returns an image the agent sees, with its number burned in and its op chain and
   scale in the caption; `look({ zoom, ruler })` magnifies a crop with absolute coordinates; `img.view("speck")`
@@ -43,10 +43,10 @@ with measurements instead of guesses.
 
 ```js
 const s = await img.stats()
-const dust = img.detect.specks().where({ score: { gte: 0.5 } })
+const dust = (await img.detect.specks()).filter(r => r.score >= 0.5)
 return {
   exposure: { meanL: s.meanL, p01: s.p01, p99: s.p99, clipHigh: s.clipHigh },
-  dust: await dust.count(),
+  dust: dust.length,
   look: img.overlay(dust, { labels: "id" }).look("dust"),
 }
 ```
@@ -69,7 +69,7 @@ mistakes and you do not hand them a shell.
 ## What is implemented (and what is not yet)
 
 Implemented: tone (exposure, levels, contrast, gray), blur, statistics and histograms, masks and regions,
-`within`/`blend`, dust detection and healing, inpainting, overlays and comparisons, params, looks, point and
+`within`/`blend`, dust detection and healing, inpainting, overlays and comparisons, looks, point and
 region measurements, data out (JSON, CSV, saved TIFF/PNG/NPY), the eval session (YAML results, warnings, context
 block, preludes), the `cv.docs` guides, the CLI, the MCP server, an xgoja provider.
 

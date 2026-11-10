@@ -69,7 +69,7 @@ func TestWritersRoundTrip(t *testing.T) {
 				if err := os.WriteFile(p, out.Bytes(), 0o644); err != nil { // #nosec G306 -- test data
 					t.Fatal(err)
 				}
-				got, info, err := buffer.DecodeFile(ctx, p, buffer.DecodeOptions{})
+				got, info, err := decodePath(ctx, p, buffer.DecodeOptions{})
 				if err != nil {
 					t.Fatalf("%s: decode: %v", name, err)
 				}
@@ -129,7 +129,7 @@ func TestWritersClampIntegersKeepFloats(t *testing.T) {
 		if err := os.WriteFile(p, out.Bytes(), 0o644); err != nil { // #nosec G306 -- test data
 			t.Fatal(err)
 		}
-		got, _, err := buffer.DecodeFile(ctx, p, buffer.DecodeOptions{})
+		got, _, err := decodePath(ctx, p, buffer.DecodeOptions{})
 		if err != nil {
 			t.Fatal(err)
 		}

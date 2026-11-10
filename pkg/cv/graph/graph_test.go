@@ -18,13 +18,13 @@ func testRegistry(t *testing.T) (*Registry, *atomic.Int64) {
 	var slow atomic.Int64
 	r := NewRegistry()
 	r.MustRegister(
-		OpDef{Name: "fill", On: KindNone, Returns: KindImage,
+		OpDef{Name: "fill", On: KindNone, Returns: KindImage, Channels: One,
 			Args: []ArgSpec{
 				{Name: "v", Type: "number", Positional: true},
 				{Name: "w", Type: "number", Default: 40.0},
 				{Name: "h", Type: "number", Default: 20.0},
 			},
-			DocFrame: func(a Args, _ []*Node) Frame { return Frame{W: a.Int("w"), H: a.Int("h")} },
+			DocFrame: func(a Args) Frame { return Frame{W: a.Int("w"), H: a.Int("h")} },
 			Run: func(_ context.Context, ec *EvalCtx, _ []Value, a Args) (Value, error) {
 				w, h := buffer.ScaledSize(a.Int("w"), a.Int("h"), ec.Scale)
 				b := buffer.New(w, h, 1, ec.Scale)
@@ -52,7 +52,7 @@ func testRegistry(t *testing.T) (*Registry, *atomic.Int64) {
 				}
 				return &DataValue{Data: a.Length("r", in[0].(*ImageValue).Buf.Scale)}, nil
 			}},
-		OpDef{Name: "sum", On: KindImage, Returns: KindValue, Fields: func(Args, []*Node) []FieldSpec {
+		OpDef{Name: "sum", On: KindImage, Returns: KindValue, Fields: func(Args) []FieldSpec {
 			return []FieldSpec{{Name: "sum", Type: "number"}, {Name: "mean", Type: "number"}}
 		},
 			Args: []ArgSpec{{Name: "delay", Type: "number", Default: 0.0}},
@@ -68,11 +68,11 @@ func testRegistry(t *testing.T) (*Registry, *atomic.Int64) {
 				}
 				return &DataValue{Data: map[string]any{"sum": s, "mean": s / float64(len(b.Pix))}}, nil
 			}},
-		OpDef{Name: "mix", On: KindImage, Inputs: []Kind{KindImage}, Returns: KindImage,
-			Args: []ArgSpec{{Name: "opts", Type: "object", Default: map[string]any{}, Positional: true,
+		OpDef{Name: "mix", On: KindImage, Returns: KindImage,
+			Args: []ArgSpec{{Name: "other", Type: "Image", Positional: true}, {Name: "opts", Type: "object", Default: map[string]any{}, Positional: true,
 				Options: []ArgSpec{{Name: "w", Type: "number", Default: 0.5}}}},
 			Run: func(_ context.Context, _ *EvalCtx, in []Value, a Args) (Value, error) {
-				x, y := in[0].(*ImageValue), in[1].(*ImageValue)
+				x, y := in[0].(*ImageValue), a.Value("other").(*ImageValue)
 				wt := float32(a.Object("opts")["w"].(float64))
 				out := buffer.NewLike(x.Buf)
 				for i := range out.Pix {
@@ -90,14 +90,9 @@ func testRegistry(t *testing.T) (*Registry, *atomic.Int64) {
 				m, _ := in[0].(*DataValue).Data.(map[string]any)
 				v, ok := m[a.String("name")]
 				if !ok {
-					return nil, NoField(a.String("name"), sortedKeys(m))
+					return nil, Errorf(EArgType, "no field %q", a.String("name"))
 				}
 				return &DataValue{Data: v}, nil
-			}},
-		OpDef{Name: "param", On: KindNone, Returns: KindParam,
-			Args: []ArgSpec{{Name: "name", Type: "string", Positional: true}},
-			Run: func(_ context.Context, ec *EvalCtx, _ []Value, a Args) (Value, error) {
-				return &DataValue{Data: ec.Params[a.String("name")]}, nil
 			}},
 		OpDef{Name: "mask.lum", On: KindImage, Returns: KindImage,
 			Run: func(_ context.Context, _ *EvalCtx, in []Value, _ Args) (Value, error) { return in[0], nil }},
@@ -184,7 +179,7 @@ func TestArgumentErrorsAndWarnings(t *testing.T) {
 		t.Fatalf("usual range: %v %v", w, err)
 	}
 	_, err = e.Call("scale", src.ID, []any{NodeArg{src.ID}})
-	if ce = codeOf(t, err); ce.Code != EWrongKind {
+	if ce = codeOf(t, err); ce.Code != EArgType || ce.Fix != "(await img.stats()).p99" && ce.Fix != "{ k: (await img.stats()).p99 }" {
 		t.Fatalf("image as number: %+v", ce)
 	}
 	_, err = e.Call("mix", src.ID, []any{2})
@@ -230,88 +225,29 @@ func evalNum(t *testing.T, e *Engine, id NodeID) float64 {
 	return f
 }
 
-func TestLiftingIncludingOptionObjects(t *testing.T) {
+// TestNodeAsOptionIsArgType (GCV-004 D1): options are literal values; a
+// node passed for one is E_ARG_TYPE with the (await …) fix, also inside an
+// options object; a node argument (mix's other) is an input.
+func TestNodeAsOptionIsArgType(t *testing.T) {
 	e, _ := newTestEngine(t)
 	src := mustCall(t, e, "fill", 0, 0.5)
-	mean := mustCall(t, e, "field", mustCall(t, e, "sum", src.ID).ID, "mean")
-	scaled := mustCall(t, e, "scale", src.ID, NodeArg{mean.ID}) // 0.5 * 0.5
-	if len(scaled.Inputs) != 2 || scaled.Inputs[1] != mean.ID || scaled.NExplicit != 1 {
-		t.Fatalf("lifted inputs: %+v", scaled.Inputs)
-	}
-	got := evalNum(t, e, mustCall(t, e, "field", mustCall(t, e, "sum", scaled.ID).ID, "mean").ID)
-	if got != 0.25 {
-		t.Fatalf("lifted scale: %v", got)
+	sum := mustCall(t, e, "sum", src.ID)
+	_, err := e.Call("scale", src.ID, []any{NodeArg{sum.ID}})
+	ce := codeOf(t, err)
+	if ce.Code != EArgType || !strings.Contains(ce.Message, "literal values") || ce.Fix != "(await img.sum()).sum" {
+		t.Fatalf("node as number: %+v", ce)
 	}
 	other := mustCall(t, e, "fill", 0, 1.0)
-	mixed := mustCall(t, e, "mix", src.ID, NodeArg{other.ID}, map[string]any{"w": NodeArg{mean.ID}}) // 0.5*0.5+0.5*1
-	if len(mixed.Inputs) != 3 || mixed.NExplicit != 2 {
+	_, err = e.Call("mix", src.ID, []any{NodeArg{other.ID}, map[string]any{"w": NodeArg{sum.ID}}})
+	if ce = codeOf(t, err); ce.Code != EArgType || ce.Fix != "{ w: (await img.sum()).sum }" {
+		t.Fatalf("node in an options object: %+v", ce)
+	}
+	mixed := mustCall(t, e, "mix", src.ID, NodeArg{other.ID}, map[string]any{"w": 0.5}) // 0.5*0.5+0.5*1
+	if len(mixed.Inputs) != 2 || mixed.Inputs[1] != other.ID {
 		t.Fatalf("mix inputs %v", mixed.Inputs)
 	}
-	got = evalNum(t, e, mustCall(t, e, "field", mustCall(t, e, "sum", mixed.ID).ID, "mean").ID)
-	if got != 0.75 {
-		t.Fatalf("lifted option: %v", got)
-	}
-	// a lifted value of the wrong type fails at evaluation with a path
-	strParam, _, err := e.DeclareParam(ParamDef{Name: "mode", Type: "choice", Options: []string{"a", "b"}}, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	bad := mustCall(t, e, "scale", src.ID, NodeArg{strParam.ID})
-	_, err = e.Evaluate(context.Background(), bad.ID, EvalOptions{Scale: 1})
-	if ce := codeOf(t, err); ce.Code != EArgType || ce.Path[len(ce.Path)-1] != "✗ scale" {
-		t.Fatalf("lifted type error: %+v", ce)
-	}
-}
-
-func TestParamMovesRecomputeOnlyDownstream(t *testing.T) {
-	e, _ := newTestEngine(t)
-	p, _, err := e.DeclareParam(ParamDef{Name: "k", Type: "slider", Min: 0, Max: 10, Value: 2.0}, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	src := mustCall(t, e, "fill", 0, 1.0)
-	a := mustCall(t, e, "scale", src.ID, 3)
-	viaParam := mustCall(t, e, "field", mustCall(t, e, "sum", mustCall(t, e, "scale", a.ID, NodeArg{p.ID}).ID).ID, "mean")
-	independent := mustCall(t, e, "field", mustCall(t, e, "sum", mustCall(t, e, "scale", a.ID, 4).ID).ID, "mean")
-	if evalNum(t, e, viaParam.ID) != 6 || evalNum(t, e, independent.ID) != 12 {
-		t.Fatal("bad values")
-	}
-	before := map[NodeID]int{src.ID: 1, a.ID: 1}
-	for id, want := range before {
-		if got := e.Evaluator().Runs(id); got != want {
-			t.Fatalf("#%d ran %d times", id, got)
-		}
-	}
-	total := e.Evaluator().TotalRuns()
-	// unchanged params: everything is cached
-	evalNum(t, e, viaParam.ID)
-	evalNum(t, e, independent.ID)
-	if e.Evaluator().TotalRuns() != total {
-		t.Fatal("re-evaluation without changes ran ops")
-	}
-	if err := e.Params().Set("k", 5.0); err != nil {
-		t.Fatal(err)
-	}
-	if got := evalNum(t, e, viaParam.ID); got != 15 {
-		t.Fatalf("after move: %v", got)
-	}
-	evalNum(t, e, independent.ID)
-	// param, scale(k), sum, field = 4 runs; src and a stay cached
-	if d := e.Evaluator().TotalRuns() - total; d != 4 {
-		t.Fatalf("moving the param ran %d ops, want 4", d)
-	}
-	if e.Evaluator().Runs(src.ID) != 1 || e.Evaluator().Runs(a.ID) != 1 {
-		t.Fatal("upstream nodes recomputed")
-	}
-	if err := e.Params().Set("k", 50.0); err == nil {
-		t.Fatal("out-of-range param value accepted")
-	}
-	if _, _, err := e.DeclareParam(ParamDef{Name: "k", Type: "slider", Min: 0, Max: 20, Value: 1.0}, false); codeOf(t, err).Code != EParamRedeclare {
-		t.Fatal("redeclare with a different range accepted")
-	}
-	_, d, err := e.DeclareParam(ParamDef{Name: "k", Type: "slider", Min: 0, Max: 10, Value: 1.0}, false)
-	if err != nil || d.Value != 5.0 || !d.Touched {
-		t.Fatalf("person's value must win on redeclare: %+v %v", d, err)
+	if got := evalNum(t, e, mustCall(t, e, "field", mustCall(t, e, "sum", mixed.ID).ID, "mean").ID); got != 0.75 {
+		t.Fatalf("mix: %v", got)
 	}
 }
 
@@ -402,8 +338,8 @@ func TestDocPxScalingAndScaleQuantization(t *testing.T) {
 	if err != nil || v.(*DataValue).Data != 3.0 {
 		t.Fatalf("radius at 0.25 = %v %v", v, err)
 	}
-	if s := e.PreviewScale(src.ID); s != 0.4 {
-		t.Fatalf("preview scale %v", s)
+	if s := e.ScaleForLong(src.ID, 1600); s != 0.4 {
+		t.Fatalf("scale for a 1600 px long side %v", s)
 	}
 	if e.Evaluator().Signature(src.ID, 0.25) != e.Evaluator().Signature(src.ID, 0.250001) {
 		t.Fatal("scale not quantized")
@@ -421,7 +357,7 @@ func TestExplain(t *testing.T) {
 	if _, err := e.Evaluate(context.Background(), a.ID, EvalOptions{Scale: 0.5}); err != nil {
 		t.Fatal(err)
 	}
-	lines := e.Explain(r.ID, 0.5)
+	lines := e.Evaluator().Explain(r.ID, 0.5)
 	want := []string{"#3 radius(r: 8 px → 4 at scale 0.5)", "  #2 scale(k: 2)", "    #1 fill(v: 1, w: 400, h: 200)"}
 	if len(lines) != 3 {
 		t.Fatalf("lines %q", lines)

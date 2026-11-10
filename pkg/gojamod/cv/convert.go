@@ -9,8 +9,9 @@ import (
 
 // fromJS converts an exported, prelude-marshalled argument into the raw
 // argument space of graph.Engine.Call: node markers {__cvnode: id} become
-// graph.NodeArg, function markers {__cvfunc: id} become graph.FuncArg and
-// builder results {__cvbuilt: [root, placeholder]} become graph.BuiltArg.
+// graph.NodeArg and builder results {__cvbuilt: [root, placeholder]} become
+// graph.BuiltArg. An awaited item keeps its link as the key __cvref: [node,
+// index], which the binder reads for Items arguments and drops elsewhere.
 func fromJS(v any) any {
 	switch x := v.(type) {
 	case map[string]any:
@@ -22,10 +23,6 @@ func fromJS(v any) any {
 			root, _ := graph.Normalize(ids[0]).(float64)
 			hole, _ := graph.Normalize(ids[1]).(float64)
 			return graph.BuiltArg{Root: graph.NodeID(root), Hole: graph.NodeID(hole)}
-		}
-		if id, ok := x["__cvfunc"]; ok && len(x) == 1 {
-			f, _ := graph.Normalize(id).(float64)
-			return graph.FuncArg{ID: graph.FuncID(f)}
 		}
 		out := make(map[string]any, len(x))
 		for k, e := range x {
@@ -86,28 +83,4 @@ func toJS(vm *goja.Runtime, v any) goja.Value {
 		return vm.NewArray(items...)
 	}
 	return vm.ToValue(v)
-}
-
-// jsError turns an exception that carries a cv error object (thrown by the
-// binding, e.g. E_NO_FIELD) back into a *graph.Error; other errors are
-// returned unchanged.
-func jsError(err error) error {
-	ex, ok := err.(*goja.Exception)
-	if !ok {
-		return err
-	}
-	o, ok := ex.Value().(*goja.Object)
-	if !ok || o == nil {
-		return err
-	}
-	get := func(k string) string {
-		if v := o.Get(k); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
-			return v.String()
-		}
-		return ""
-	}
-	if get("cv") != "true" || get("code") == "" {
-		return err
-	}
-	return &graph.Error{Code: get("code"), Message: get("message"), Hint: get("hint"), Fix: get("fix")}
 }

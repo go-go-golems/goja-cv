@@ -124,7 +124,7 @@ func TestGuideCodeBlocksRun(t *testing.T) {
 // looks, "js fragment" is skipped.
 func runCodeBlocks(t *testing.T, img, name, md string) int {
 	t.Helper()
-	app, sid := newApp(t, cvsession.Options{Image: img, BaseDir: filepath.Dir(img), OutRoot: t.TempDir()})
+	app, sid := newApp(t, cvsession.Options{Image: img})
 	n := 0
 	for _, b := range jsBlocks(md) {
 		if strings.Contains(b.info, "fragment") {
@@ -186,5 +186,5 @@ func TestDocsFromEval(t *testing.T) {
 	out = text(eval(t, app, sid, `const h = cv.help(); return { docs: h.docs, topics: h.topics }`))
 	mustContain(t, out, "cv.docs.search(text)", "getting-started")
 	out = text(eval(t, app, sid, `return cv.help("heal").heal.usage`))
-	mustContain(t, out, "heal(regions|mask, { radius, method })")
+	mustContain(t, out, "heal(target, { radius, method })")
 }

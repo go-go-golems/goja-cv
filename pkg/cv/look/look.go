@@ -130,7 +130,13 @@ var (
 	_ resultcontent.Describer = &Look{}
 )
 
-// New creates a look of node id. Image and Mask nodes render as images;
+// Key identifies what the look shows: two looks with equal keys (the same
+// node with equal options) render the same image, and an eval delivers one.
+func (l *Look) Key() string {
+	return fmt.Sprintf("%d|%q|%v|%g|%d|%g|%g|%v|%dx%d|%d", l.node, l.label, l.frame, l.scale, l.interp, l.ruler, l.grid, l.png, l.w, l.h, l.chart)
+}
+
+// New creates a look of node id. Image nodes (masks too) render as images;
 // Value nodes whose op declares a chart (OpDef.Chart: histogram bars, profile
 // lines) render as that chart. Other kinds are E_WRONG_KIND. It does not
 // evaluate anything.
@@ -155,7 +161,7 @@ func New(eng *graph.Engine, id graph.NodeID, opt Options) (*Look, error) {
 			WithHint("Zoom and rule the images it shows: crop them, or raise the sheet's zoom.").WithFix("node.look()")
 	}
 	switch n.Kind {
-	case graph.KindImage, graph.KindMask:
+	case graph.KindImage:
 		root, err := eng.Display(id)
 		if err != nil {
 			return nil, err
@@ -174,7 +180,7 @@ func New(eng *graph.Engine, id graph.NodeID, opt Options) (*Look, error) {
 			l.png = true
 		case "jpeg":
 		default: // auto: lossless where JPEG artefacts are the size of what is judged
-			l.png = n.Kind == graph.KindMask || l.scale > 1 || n.Op.Lossless || (l.w <= smallLook && l.h <= smallLook)
+			l.png = isMaskLike(n) || l.scale > 1 || n.Op.Lossless || (l.w <= smallLook && l.h <= smallLook)
 		}
 	case graph.KindValue:
 		if n.Op.Chart == graph.ChartNone {
@@ -185,7 +191,7 @@ func New(eng *graph.Engine, id graph.NodeID, opt Options) (*Look, error) {
 		}
 		l.chart, l.scale, l.png = n.Op.Chart, 1, true
 		l.w, l.h = chartSize(maxLong)
-	case graph.KindRegions, graph.KindParam, graph.KindNone:
+	case graph.KindRegions, graph.KindNone:
 		return nil, lookKindError(n)
 	default:
 		return nil, lookKindError(n)
@@ -210,8 +216,13 @@ func zoomTooLarge(n *graph.Node, zoom float64, limit int) error {
 		WithHint("Zoom a crop: at zoom z a look shows at most " + strconv.Itoa(limit) + "/z doc px per side.").WithFix(fix)
 }
 
+// isMaskLike reports whether n is a one-channel linear-encoded image (a
+// mask, or a derived grey image): its grey level is its value, so its look
+// is lossless.
+func isMaskLike(n *graph.Node) bool { return n.Channels == 1 && n.Enc == buffer.EncLinear }
+
 func lookKindError(n *graph.Node) error {
-	e := graph.Errorf(graph.EWrongKind, "look() renders Image and Mask nodes (and histograms and profiles as charts); %s is %s node.", graph.Label(n), graph.A(string(n.Kind)))
+	e := graph.Errorf(graph.EWrongKind, "look() renders images (masks are images; histograms and profiles as charts); %s is %s node.", graph.Label(n), graph.A(string(n.Kind)))
 	e.Hint = "Await a Value node to read its data; look at the image it was computed from."
 	switch n.Kind {
 	case graph.KindValue:
@@ -219,7 +230,7 @@ func lookKindError(n *graph.Node) error {
 	case graph.KindRegions:
 		e.Hint = "Regions are areas, not an image: draw them as a mask over the image."
 		e.Fix = "img.overlay(regions).look(\"regions\")"
-	case graph.KindImage, graph.KindMask, graph.KindParam, graph.KindNone:
+	case graph.KindImage, graph.KindNone:
 		// the generic hint applies
 	}
 	return e
@@ -238,6 +249,9 @@ func (l *Look) Label() string {
 	}
 	return ""
 }
+
+// AgentLabel is the label the agent passed ("" when none).
+func (l *Look) AgentLabel() string { return l.label }
 
 // Size is the rendered size in image px.
 func (l *Look) Size() (int, int) { return l.w, l.h }
@@ -306,7 +320,8 @@ func (l *Look) String() string { return "[" + l.Caption() + "]" }
 
 // ResultContent implements resultcontent.Provider: it evaluates the node at
 // look scale and encodes it. It runs off the runtime owner goroutine.
-func (l *Look) ResultContent(ctx context.Context) ([]resultcontent.Content, error) {
+func (l *Look) ResultContent(ctx context.Context) (_ []resultcontent.Content, err error) { //nolint:nonamedreturns // recover needs named results
+	defer graph.Recover(&err, "look")
 	data, mime, err := l.Render(ctx)
 	if err != nil {
 		return nil, err

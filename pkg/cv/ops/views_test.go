@@ -16,24 +16,24 @@ import (
 func TestHighpassAndDoGAreTheHandWrittenChains(t *testing.T) {
 	e, img, _ := plantedEngine(t)
 	hp := call(t, e, "highpass", img.ID, 3.0)
-	chain := call(t, e, "sub", img.ID, graph.NodeArg{ID: call(t, e, "gaussian", img.ID, 3.0, map[string]any{"space": "encoded"}).ID})
+	chain := call(t, e, "sub", img.ID, graph.NodeArg{ID: call(t, e, "gaussian", img.ID, 3.0).ID})
 	if !graph.IsMacro(hp) || hp.Inputs[len(hp.Inputs)-1] != chain.ID || graph.Label(hp) != "highpass" {
 		t.Fatalf("highpass(3) is %s with last input #%d, want the macro over #%d", graph.Label(hp), hp.Inputs[len(hp.Inputs)-1], chain.ID)
 	}
-	// without { space } both steps run in encoded space
+	// the steps follow the receiver: file units here...
 	g, _ := e.Node(chain.Inputs[1])
-	if g.Op.Name != "gaussian" || g.Args.String("space") != "encoded" || chain.Args.String("space") != "encoded" {
-		t.Fatalf("highpass steps: %s in %s, sub in %s", g.Op.Name, g.Args.String("space"), chain.Args.String("space"))
+	if g.Op.Name != "gaussian" || g.Space != buffer.SpaceEncoded {
+		t.Fatalf("highpass steps: %s in %s", g.Op.Name, g.Space)
 	}
-	// { space: "linear" } changes both
-	hl := call(t, e, "highpass", img.ID, 3.0, map[string]any{"space": "linear"})
+	// ...and linear light on img.as("linear")
+	hl := call(t, e, "highpass", call(t, e, graph.AsOp, img.ID, "linear").ID, 3.0)
 	sl, _ := e.Node(hl.Inputs[len(hl.Inputs)-1])
-	if sl.Args.String("space") != "linear" {
-		t.Fatal("highpass({ space: linear }) did not pass the space on")
+	if gl, _ := e.Node(sl.Inputs[1]); gl.Op.Name != "gaussian" || gl.Space != buffer.SpaceLinear {
+		t.Fatalf("highpass of a linear receiver: %s in %s", gl.Op.Name, gl.Space)
 	}
 	d := call(t, e, "dog", img.ID, 1.0, 4.0, map[string]any{"polarity": "bright"})
-	want := call(t, e, "max", call(t, e, "sub", call(t, e, "gaussian", img.ID, 1.0, map[string]any{"space": "encoded"}).ID,
-		graph.NodeArg{ID: call(t, e, "gaussian", img.ID, 4.0, map[string]any{"space": "encoded"}).ID}).ID, 0.0)
+	want := call(t, e, "max", call(t, e, "sub", call(t, e, "gaussian", img.ID, 1.0).ID,
+		graph.NodeArg{ID: call(t, e, "gaussian", img.ID, 4.0).ID}).ID, 0.0)
 	if d.Inputs[len(d.Inputs)-1] != want.ID {
 		t.Fatal("dog(1, 4, bright) is not max(G1 − G4, 0)")
 	}
@@ -52,7 +52,7 @@ func TestHighpassAndDoGAreTheHandWrittenChains(t *testing.T) {
 
 func TestDoGPolaritiesOnPlantedSpecks(t *testing.T) {
 	e, img, p := plantedEngine(t)
-	gray := call(t, e, "toGray", img.ID, "average", map[string]any{"space": "encoded"})
+	gray := call(t, e, "toGray", img.ID, "average")
 	at := func(n *graph.Node, x, y float64) float32 {
 		b := imgBuf(t, e, n)
 		return b.Plane(0)[int(y)*b.W+int(x)]
@@ -87,7 +87,7 @@ func TestLocalContrast(t *testing.T) {
 	ctx := context.Background()
 	reg := NewRegistry()
 	graphtest.RegisterSource(reg)
-	e := graph.NewEngine(reg, graph.EngineOptions{})
+	e := graph.NewEngine(reg, graphtest.Options(t))
 	flat, err := graphtest.Source(e, "linear", graph.Frame{W: 64, H: 48}, 0.4)
 	if err != nil {
 		t.Fatal(err)
@@ -136,7 +136,9 @@ func TestLevelsAuto(t *testing.T) {
 		}
 	}
 	as := evalData(t, e, call(t, e, "stats", auto.ID), 1).(map[string]any)
-	if as["p01"].(float64) > 0.03 || math.Abs(as["p99"].(float64)-1) > 1e-3 { // channels clip separately, so the luminance p01 stays a little above 0
+	// channels map separately and the luminance is encode(Y) of linear light,
+	// so its p01 and p99 land a little off 0 and 1
+	if as["p01"].(float64) > 0.03 || math.Abs(as["p99"].(float64)-1) > 5e-3 {
 		t.Fatalf("after auto: p01 %v p99 %v", as["p01"], as["p99"])
 	}
 	// not short-circuited as "black 0, white 1, gamma 1"
@@ -152,7 +154,7 @@ func TestLevelsAuto(t *testing.T) {
 		t.Fatalf("auto with white: %+v", err)
 	}
 	_, err = e.Call("levels", img.ID, []any{map[string]any{"box": []any{0.0, 0.0, 8.0, 8.0}}})
-	if ce, ok := graph.AsError(err); !ok || ce.Code != graph.EUnknownOption || ce.Fix != "img.crop([x, y, w, h]).levels({ auto: true })" {
+	if ce, ok := graph.AsError(err); !ok || ce.Code != graph.EUnknownOption || ce.Fix != "" {
 		t.Fatalf("levels box: %+v", err)
 	}
 	if _, err := e.Call("levels", img.ID, []any{map[string]any{"auto": []any{0.9, 0.1}}}); err == nil {
@@ -191,7 +193,7 @@ func TestEveryViewPresetBuildsAndRenders(t *testing.T) {
 			t.Fatalf("view(%s) has no description", p.Name)
 		}
 	}
-	_, err := e.Call("view", img.ID, []any{"dust"})
+	_, err := e.Call("view", img.ID, []any{"specks"})
 	if ce, ok := graph.AsError(err); !ok || !strings.HasPrefix(ce.Hint, `Did you mean "speck"? scene: `) || ce.Fix != `view("speck")` {
 		t.Fatalf("unknown preset: %+v / hint %q fix %q", err, ce.Hint, ce.Fix)
 	}

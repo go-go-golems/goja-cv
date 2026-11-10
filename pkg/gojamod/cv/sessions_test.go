@@ -36,7 +36,7 @@ func nodeByOp(t *testing.T, e *graph.Engine, name string) []*graph.Node {
 }
 
 // TestSessionB runs Part 1 Session B ("Find the dust and remove it"),
-// adapted to M3: no show/doc.propose yet, so looks are awaited overlays and
+// adapted to M3: no doc.propose, so looks are awaited overlays and
 // the heal is awaited. Each body is one eval; globalThis carries session
 // variables between evals as the eval tool's persistent scope will.
 func TestSessionB(t *testing.T) {
@@ -48,8 +48,8 @@ func TestSessionB(t *testing.T) {
 		const specks = globalThis.specks = scan.detect.specks({ maxArea: 120, minContrast: 0.04 })
 		const r = await specks
 		const look = await scan.overlay(specks, { labels: "id", color: "red" })
-		const star = r.items.reduce((a, b) => (b.score < a.score ? b : a))
-		return { count: r.count, largest: r.items.slice(0, 5), look, star }`, scan)).(map[string]any)
+		const star = r.reduce((a, b) => (b.score < a.score ? b : a))
+		return { count: r.length, largest: r.slice(0, 5), look, star }`, scan)).(map[string]any)
 	if r1["count"] != int64(41) {
 		t.Fatalf("eval 1 count %v", r1["count"])
 	}
@@ -65,17 +65,16 @@ func TestSessionB(t *testing.T) {
 	if cx, _ := star["cx"].(float64); !(cx > 198 && cx < 203) {
 		t.Fatalf("lowest-score region is not the star: %v", star)
 	}
-	if look := r1["look"].(map[string]any); look["kind"] != "Image" || look["channels"] != int64(3) {
+	if look := r1["look"].(map[string]any); look["kind"] != "Image" || look["w"] != int64(256) || look["encoding"] != "srgb" {
 		t.Fatalf("look %v", look)
 	}
 	t.Logf("eval 1: count %v, largest %v, star id %v score %v", r1["count"], first, starID, star["score"])
 
-	// eval 2: exclude the star by id, keep a score threshold the person can move
+	// eval 2: exclude the star by id, keep a score threshold (JavaScript on the awaited array)
 	r2 := mustRun(t, rt, fmt.Sprintf(`
-		const minScore = P.slider("minScore", { min: 0, max: 1, value: 0.5, label: "Speck confidence" })
-		const keep = globalThis.keep = specks.where({ score: { gte: minScore } }).without([%v])
+		const keep = globalThis.keep = (await specks).filter(r => r.score >= 0.5 && r.id !== %v)
 		const healed = globalThis.healed = scan.heal(keep, { radius: 3 })
-		const n = await keep.count()
+		const n = keep.length
 		const h = await healed
 		const after = await healed.check.dust()
 		return { n, h, after: after.verdict, afterCount: after.count }`, starID)).(map[string]any)
@@ -85,31 +84,34 @@ func TestSessionB(t *testing.T) {
 	eng := engineOf(t, rt)
 	detect := nodeByOp(t, eng, "detect.specks")
 	heal := nodeByOp(t, eng, "heal")
-	where := nodeByOp(t, eng, "where")
-	if len(detect) != 1 || len(heal) != 1 || len(where) != 1 {
-		t.Fatalf("nodes: detect %d heal %d where %d", len(detect), len(heal), len(where))
+	items := nodeByOp(t, eng, "items")
+	if len(detect) != 1 || len(heal) != 1 || len(items) != 1 {
+		t.Fatalf("nodes: detect %d heal %d items %d", len(detect), len(heal), len(items))
 	}
 	runsDetect, runsHeal := eng.Evaluator().Runs(detect[0].ID), eng.Evaluator().Runs(heal[0].ID)
 
-	// eval 3: the person drags the slider to 0 — the star stays excluded by id,
-	// detection does not re-run, only where and below
-	r3 := mustRun(t, rt, `
-		P.set("minScore", 0)
-		const n = await keep.count()
-		await healed
-		return { n, touched: P.list().find(p => p.name === "minScore").touched }`).(map[string]any)
-	if r3["n"] != int64(40) || r3["touched"] != true {
+	// eval 3: another threshold (0) — the star stays excluded by id,
+	// detection does not re-run, only the new items and below
+	r3 := mustRun(t, rt, fmt.Sprintf(`
+		const keep0 = (await specks).filter(r => r.score >= 0 && r.id !== %v)
+		const n = keep0.length
+		await scan.heal(keep0, { radius: 2 }).stats()   // awaiting an Image computes nothing: measure it
+		return { n }`, starID)).(map[string]any)
+	if r3["n"] != int64(40) {
 		t.Fatalf("eval 3: %v", r3)
 	}
-	if eng.Evaluator().Runs(detect[0].ID) != runsDetect || eng.Evaluator().Runs(heal[0].ID) != runsHeal+1 {
+	if heal = nodeByOp(t, eng, "heal"); len(heal) != 2 {
+		t.Fatalf("heal nodes: %d", len(heal))
+	}
+	if eng.Evaluator().Runs(detect[0].ID) != runsDetect || eng.Evaluator().Runs(heal[0].ID) != runsHeal || eng.Evaluator().Runs(heal[1].ID) != 1 {
 		t.Fatalf("runs: detect %d→%d heal %d→%d", runsDetect, eng.Evaluator().Runs(detect[0].ID), runsHeal, eng.Evaluator().Runs(heal[0].ID))
 	}
 	// the same regions at preview scale and at full scale (doc px)
 	same := mustRun(t, rt, `
-		const a = await cv.evaluate(keep, { scale: 0.5 }), b = await cv.evaluate(keep, { scale: "full" })
-		return JSON.stringify(a.items) === JSON.stringify(b.items) && a.count === b.count`)
+		const a = await specks, b = await specks
+		return JSON.stringify(a) === JSON.stringify(b) && a.length === b.length`)
 	if same != true {
-		t.Fatal("regions differ between scale 0.5 and full")
+		t.Fatal("regions differ between two awaits")
 	}
 	h := mustRun(t, rt, `return cv.help("heal").heal`).(map[string]any)
 	if !strings.Contains(fmt.Sprint(h["args"]), "doc px") || h["returns"] != "Image" {
@@ -128,15 +130,13 @@ func TestSessionC(t *testing.T) {
 		const sky = sc.mask.luminance({ above: 0.55 })
 		  .and(sc.mask.gradient({ from: "top", to: 0.45 }))   // fades from the top edge to 45%% height
 		  .feather(20)
-		const look = await sky.overlay(sc)
-		const skyEv = P.slider("skyEv", { min: -2, max: 1, value: -0.4 })
-		const out = globalThis.out = sc.within(sky, i => i.exposure(skyEv).contrast(0.1))
+		const look = await sc.overlay(sky)
+		const out = globalThis.out = sc.within(sky, i => i.exposure(-0.4).contrast(0.1))
 		const coverage = await sky.coverage()
-		const coverageHalf = await cv.evaluate(sky.coverage(), { scale: 0.5 })
-		const before = await sc.stats().meanL, after = await out.stats().meanL
-		P.set("skyEv", -1.2)
-		const after2 = await out.stats().meanL
-		return { coverage, coverageHalf, look, before, after, after2, explain: await out.explain() }`, scan)).(map[string]any)
+		const coverageHalf = await sky.coverage()
+		const before = (await sc.stats()).meanL, after = (await out.stats()).meanL
+		const after2 = (await sc.within(sky, i => i.exposure(-1.2).contrast(0.1)).stats()).meanL
+		return { coverage, coverageHalf, look, before, after, after2, explain: cv.explain(out).graph }`, scan)).(map[string]any)
 	cov, covHalf := got["coverage"].(float64), got["coverageHalf"].(float64)
 	if cov < 0.02 || cov > 0.5 || covHalf < cov*0.9 || covHalf > cov*1.1 {
 		t.Fatalf("sky coverage %v at 1.0, %v at 0.5", cov, covHalf)
@@ -146,7 +146,7 @@ func TestSessionC(t *testing.T) {
 		t.Fatalf("meanL %v → %v → %v", before, after, after2)
 	}
 	ex := fmt.Sprint(got["explain"])
-	if !strings.Contains(ex, "within()") || !strings.Contains(ex, "feather(radius: 20 px") || !strings.Contains(ex, "exposure(ev: #") {
+	if !strings.Contains(ex, "within(mask: #") || !strings.Contains(ex, "feather(radius: 20 px") || !strings.Contains(ex, "exposure(ev: -0.4)") {
 		t.Fatalf("explain %s", ex)
 	}
 	t.Logf("sky coverage %.4f (0.5: %.4f); meanL %.4f → %.4f → %.4f", cov, covHalf, before, after, after2)

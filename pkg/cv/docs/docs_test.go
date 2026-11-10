@@ -8,7 +8,7 @@ import (
 )
 
 func TestListHasEveryTopicWithTitleAndSummary(t *testing.T) {
-	want := []string{"getting-started", "units-and-scales", "nodes-and-evaluation", "lambdas", "masks-and-regions", "looks", "params", "errors", "recipes", "encodings-and-spaces", "views", "measuring", "data-out"}
+	want := []string{"getting-started", "units-and-scales", "nodes-and-evaluation", "lambdas", "masks-and-regions", "looks", "errors", "recipes", "encodings-and-spaces", "views", "measuring", "data-out"}
 	list := List()
 	if len(list) != len(want) {
 		t.Fatalf("topics %v", IDs())
@@ -45,7 +45,7 @@ func TestReadTopicAndSection(t *testing.T) {
 func TestReadUnknownTopicAndSection(t *testing.T) {
 	_, err := Read("recipe", "")
 	e, ok := graph.AsError(err)
-	if !ok || e.Code != EUnknownTopic || e.Hint != `Did you mean "recipes"?` || e.Fix != `cv.docs.read("recipes")` || len(e.Valid) != 13 {
+	if !ok || e.Code != EUnknownTopic || e.Hint != `Did you mean "recipes"?` || e.Fix != `cv.docs.read("recipes")` || len(e.Valid) != 12 {
 		t.Fatalf("unknown topic: %+v", err)
 	}
 	_, err = Read("dust", "")
@@ -62,10 +62,10 @@ func TestSearchRanksTheRightSection(t *testing.T) {
 	for q, want := range map[string]string{
 		"heal dust specks":      "recipes/Remove dust",
 		"feather mask":          "masks-and-regions/Combining and refining",
-		"E_LAZY_COMPARE":        "nodes-and-evaluation/E_LAZY_COMPARE",
+		"E_NOT_AWAITED":         "nodes-and-evaluation/E_NOT_AWAITED",
 		"analysisScale":         "units-and-scales/analysisScale",
-		"where predicate param": "params/Params inside graphs",
-		"show before throw":     "looks/show()",
+		"literal options await": "nodes-and-evaluation/Options are literal values",
+		"looks delivered order": "looks/Delivery",
 	} {
 		hits := Search(q, 3)
 		found := false

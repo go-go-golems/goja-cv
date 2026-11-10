@@ -168,7 +168,7 @@ func DetectSpecks(ctx context.Context, b *buffer.Buffer, o SpeckOptions) (*Speck
 		o.NoiseK = 4
 	}
 	w, h := b.W, b.H
-	L := b.Luminance() // one channel: the graph feeds luminance in the working space
+	L := b.Luminance() // one channel: the graph feeds luminance in the receiver's space
 	diam := 2 * math.Sqrt(math.Max(o.MaxArea, 1)/math.Pi)
 	r := max(2, int(math.Ceil(diam/2))+2)
 	bg, err := SpeckBackground(ctx, L, w, h, r)

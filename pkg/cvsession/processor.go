@@ -22,7 +22,7 @@ import (
 // ResultProcessor is the cv result processor: YAML text (capped), warnings,
 // a context block, and the looks of the eval as content providers. It also
 // resets per-eval state before each eval and renders failures (with the
-// looks shown before the error).
+// looks created before the error).
 type ResultProcessor struct {
 	opts Options
 }
@@ -43,7 +43,7 @@ func NewResultProcessor(opts Options) (*ResultProcessor, error) {
 }
 
 // BeforeEval implements replsession.BeforeEvalHook: it resets the lint state
-// and queued shows and makes ctx (the eval's deadline) the context of the
+// and makes ctx (the eval's deadline) the context of the
 // evaluations the code starts.
 func (p *ResultProcessor) BeforeEval(ctx context.Context, vm *goja.Runtime) error {
 	st, ok := stateOf(vm)
@@ -72,7 +72,7 @@ func (p *ResultProcessor) Process(_ context.Context, vm *goja.Runtime, value goj
 	if err != nil {
 		return replsession.ProcessedResult{}, err
 	}
-	providers, dropped, budget := st.collect(extraction.Providers)
+	providers, dropped, lookWarnings := st.collect(extraction.Providers, trace)
 
 	r := newRenderer(vm, st.eng)
 	r.providers = providerNumbers(providers)
@@ -83,16 +83,13 @@ func (p *ResultProcessor) Process(_ context.Context, vm *goja.Runtime, value goj
 	} else {
 		sb.WriteString(encodeYAML(r.render(value, 0)))
 	}
-	if len(st.shows) > 0 {
-		sb.WriteString("\n\n")
-		sb.WriteString(encodeYAML(mapping(str("shown"), lookList(st.shows, dropped))))
-	}
-	warnings := append(st.warnings(vm, trace, r.nodes, true), budget...)
+	warnings := append(st.warnings(vm, trace, r.nodes, true), lookWarnings...)
 	return replsession.ProcessedResult{Text: st.finish(vm, sb.String(), warnings), Providers: providers}, nil
 }
 
 // ProcessFailure implements replsession.FailureProcessor: the structured
-// error in YAML, the looks shown before the error, warnings and context.
+// error in YAML, warnings and context; the looks created before the error
+// are delivered.
 func (p *ResultProcessor) ProcessFailure(_ context.Context, vm *goja.Runtime, evalErr error) (replsession.ProcessedResult, error) {
 	st, ok := stateOf(vm)
 	if !ok {
@@ -100,85 +97,84 @@ func (p *ResultProcessor) ProcessFailure(_ context.Context, vm *goja.Runtime, ev
 	}
 	st.watchdog.disarm(vm)
 	trace := cvmod.EndEval(vm)
-	providers, dropped, budget := st.collect(nil)
+	providers, _, lookWarnings := st.collect(nil, trace)
 	var sb strings.Builder
 	sb.WriteString(encodeYAML(mapping(str("error"), st.errorNode(vm, evalErr, trace))))
-	if len(st.shows) > 0 {
-		sb.WriteString("\n\n")
-		sb.WriteString(encodeYAML(mapping(str("shown"), lookList(st.shows, dropped))))
-	}
-	warnings := append(st.warnings(vm, trace, nil, false), budget...)
+	warnings := append(st.warnings(vm, trace, nil, false), lookWarnings...)
 	return replsession.ProcessedResult{Text: st.finish(vm, sb.String(), warnings), Providers: providers}, nil
 }
 
-// numbered is a Data handle: the session gives it its content number and
-// the byte limit for content.
-type numbered interface {
-	SetNumber(n, maxBytes int)
-}
-
-// collect appends the queued shows to the value's providers (once each),
-// keeps at most MaxLooks looks and MaxData data items (later ones are left
-// out, their placeholders say why and the LOOKS and DATA warnings name
-// them), numbers every look and gives every data item its content number
-// and byte limit (owner).
-func (s *state) collect(fromValue []resultcontent.Provider) ([]resultcontent.Provider, map[resultcontent.Provider]string, []string) {
-	all := make([]resultcontent.Provider, 0, len(fromValue)+len(s.shows))
-	seen := map[*look.Look]bool{}
-	for _, p := range fromValue {
-		if l, ok := p.(*look.Look); ok {
-			if seen[l] {
-				continue
-			}
-			seen[l] = true
-		}
-		all = append(all, p)
+// collect decides what an eval delivers (owner). Every look the eval
+// created is delivered, whether or not it was returned: the looks found in
+// the returned value first, then the others in creation order; equal looks
+// (the same node with equal options) once. At most MaxLooks are delivered;
+// the others are not rendered, one LOOKS warning names each by line, and a
+// returned one keeps a note in its placeholder. Looks created by a prelude
+// are discarded (preludes have no output). It numbers the delivered looks
+// and returns the LOOKS warnings (the v1 texts, GCV-004 Phase 0a).
+func (s *state) collect(fromValue []resultcontent.Provider, trace cvmod.EvalTrace) ([]resultcontent.Provider, map[resultcontent.Provider]string, []string) {
+	if s.prelude.Load() {
+		return nil, nil, nil
 	}
-	for _, l := range s.shows {
-		if !seen[l] {
-			seen[l] = true
-			all = append(all, l)
-		}
+	sites := map[*look.Look]cvmod.Site{}
+	cands := append([]resultcontent.Provider(nil), fromValue...)
+	for _, q := range trace.Looks {
+		sites[q.Look] = q.Site
+		cands = append(cands, q.Look)
 	}
-	out := make([]resultcontent.Provider, 0, len(all))
+	out := make([]resultcontent.Provider, 0, len(cands))
 	dropped := map[resultcontent.Provider]string{}
-	looks, data := 0, 0
-	var lostLooks, lostData []string
-	for _, p := range all {
+	seen := map[resultcontent.Provider]bool{}
+	byKey := map[string]*look.Look{}
+	alias := map[*look.Look]*look.Look{}
+	var undelivered []*look.Look
+	looks := 0
+	for _, p := range cands {
 		switch x := p.(type) {
 		case *look.Look:
-			if looks++; looks > s.opts.MaxLooks {
-				dropped[p] = fmt.Sprintf("more than %d looks in one eval; return fewer, or one cv.sheet of many crops", s.opts.MaxLooks)
-				lostLooks = append(lostLooks, strconv.Quote(x.Label()))
+			if seen[x] {
 				continue
 			}
-		case numbered:
-			if data++; data > s.opts.MaxData {
-				dropped[p] = fmt.Sprintf("more than %d data items in one eval; return one table with every row", s.opts.MaxData)
-				lostData = append(lostData, strconv.Quote(strings.TrimPrefix(resultcontent.Describe(p), "data ")))
+			seen[x] = true
+			if first, ok := byKey[x.Key()]; ok {
+				alias[x] = first
+				continue
+			}
+			byKey[x.Key()] = x
+			if looks++; looks > s.opts.MaxLooks {
+				dropped[x] = fmt.Sprintf("more than %d looks in one eval; return fewer, or one cv.sheet of many crops", s.opts.MaxLooks)
+				undelivered = append(undelivered, x)
 				continue
 			}
 		}
 		out = append(out, p)
 	}
-	var budget []string
-	if len(lostLooks) > 0 {
-		budget = append(budget, fmt.Sprintf("%s: %d %s not delivered (at most %d per eval): %s. Split the work over several calls, or return fewer looks (one cv.sheet of many crops).",
-			graph.WLooks, len(lostLooks), plural(len(lostLooks), "look was", "looks were"), s.opts.MaxLooks, strings.Join(lostLooks, ", ")))
-	}
-	if len(lostData) > 0 {
-		budget = append(budget, fmt.Sprintf("%s: %d %s not delivered (at most %d per eval): %s. Split the work over several calls, or return fewer data items (one table with every row).",
-			graph.WData, len(lostData), plural(len(lostData), "data item was", "data items were"), s.opts.MaxData, strings.Join(lostData, ", ")))
-	}
-	for i, p := range out {
-		switch x := p.(type) {
-		case *look.Look:
+	for _, p := range out {
+		if x, ok := p.(*look.Look); ok {
 			s.number(x)
-		case numbered:
-			x.SetNumber(i+1, s.opts.MaxDataBytes)
 		}
 	}
-	return out, dropped, budget
+	for l, first := range alias {
+		if why, ok := dropped[first]; ok {
+			dropped[l] = why
+		} else {
+			l.AssignNumber(first.Number())
+		}
+	}
+	var warnings []string
+	if len(undelivered) > 0 {
+		names := make([]string, len(undelivered))
+		for i, l := range undelivered {
+			names[i] = s.lookName(l, sites[l])
+		}
+		warnings = append(warnings, s.lineTag(graph.WLooks, sites[undelivered[0]])+fmt.Sprintf("%d %s not delivered (at most %d per eval): %s. Split the work over several calls, or return fewer looks (one cv.sheet of many crops).",
+			len(undelivered), plural(len(undelivered), "look was", "looks were"), s.opts.MaxLooks, strings.Join(names, ", ")))
+	}
+	for _, q := range trace.Late {
+		warnings = append(warnings, fmt.Sprintf("%s: %s was created after the previous eval had returned (in a callback that ran later) and was not delivered. Await what it needs inside the eval.",
+			graph.WLooks, lookCall(q.Look)))
+	}
+	return out, dropped, warnings
 }
 
 func plural(n int, one, many string) string {
@@ -186,6 +182,28 @@ func plural(n int, one, many string) string {
 		return one
 	}
 	return many
+}
+
+// notDelivered is the placeholder of a look left out by the budget.
+func notDelivered(l *look.Look, why string) string {
+	return "[not delivered: " + strings.TrimSuffix(strings.TrimPrefix(l.String(), "["), "]") + " — " + why + "]"
+}
+
+// lookName names a look in a warning: "line 7 look("b")".
+func (s *state) lookName(l *look.Look, site cvmod.Site) string {
+	if site.Source == "" {
+		if line := s.agentLine(site.Line); line > 0 {
+			return fmt.Sprintf("line %d %s", line, lookCall(l))
+		}
+	}
+	return lookCall(l)
+}
+
+func lookCall(l *look.Look) string {
+	if label := l.AgentLabel(); label != "" {
+		return fmt.Sprintf("look(%q)", label)
+	}
+	return "look()"
 }
 
 func providerNumbers(providers []resultcontent.Provider) map[resultcontent.Provider]int {
@@ -198,25 +216,6 @@ func providerNumbers(providers []resultcontent.Provider) map[resultcontent.Provi
 		}
 	}
 	return out
-}
-
-// lookList lists the shown looks; a look left out by the budget says so,
-// as it does in the returned value.
-func lookList(ls []*look.Look, dropped map[resultcontent.Provider]string) *yaml.Node {
-	n := &yaml.Node{Kind: yaml.SequenceNode}
-	for _, l := range ls {
-		if why, ok := dropped[l]; ok {
-			n.Content = append(n.Content, str(notDelivered(l, why)))
-			continue
-		}
-		n.Content = append(n.Content, str(l.String()))
-	}
-	return n
-}
-
-// notDelivered is the placeholder of a look left out by the budget.
-func notDelivered(l *look.Look, why string) string {
-	return "[not delivered: " + strings.TrimSuffix(strings.TrimPrefix(l.String(), "["), "]") + " — " + why + "]"
 }
 
 // finish appends warnings and the context block and applies the cap (owner).
@@ -341,7 +340,7 @@ func (s *state) unusedNodes(vm *goja.Runtime, trace cvmod.EvalTrace, returned []
 			what = what[:77] + "…"
 		}
 		out = append(out, s.lineTag(graph.WUnusedNode, c.Site)+what+
-			" builds a node and discards it. Nodes are lazy: nothing ran. Return it, await it, show() it, or keep it in mem.")
+			" builds a node and discards it. Nodes are lazy: nothing ran. Return it, await it, look at it, or keep it in mem.")
 	}
 	return out
 }
@@ -401,7 +400,7 @@ func (s *state) errorNode(vm *goja.Runtime, evalErr error, trace cvmod.EvalTrace
 		case strings.Contains(msg, "deadline exceeded") || strings.Contains(msg, "timed out") || strings.Contains(msg, "evaluation exceeded"):
 			f.Code = graph.ETimeout
 			f.Message = fmt.Sprintf("The eval ran longer than %s and was stopped.", s.opts.EvalTimeout)
-			f.Hint = "Evaluate at preview scale, return less, or split the work over several evals."
+			f.Hint = "Crop before measuring, return less, or split the work over several evals."
 		case strings.Contains(msg, "context canceled"):
 			f.Code = graph.ECancelled
 			f.Message = "The eval was cancelled."
@@ -420,7 +419,7 @@ func (s *state) errorNode(vm *goja.Runtime, evalErr error, trace cvmod.EvalTrace
 		s.broken = true
 		f.Hint = brokenMessage
 	}
-	s.explainDataMisuse(f, trace)
+	s.explainDataMisuse(f)
 	code := f.Code
 	if code == "" {
 		code = f.Name
@@ -473,48 +472,40 @@ func receiverOf(src, member string) string {
 	return ""
 }
 
-// explainDataMisuse turns errors caused by treating awaited cv data like its
-// node into a hint and a literal fix: E_NOT_ARRAY gets the real receiver in
-// its fix, and a raw TypeError from calling a data field that shadows a node
-// method (await specks; specks.count()) is explained.
-func (s *state) explainDataMisuse(f *failure, trace cvmod.EvalTrace) {
+// explainDataMisuse explains a raw TypeError from calling an op on plain
+// data (an awaited array or object): the op belongs to a node, and an op
+// that takes regions takes the array as its argument.
+func (s *state) explainDataMisuse(f *failure) {
 	src := s.sourceLine(s.agentLine(f.Line))
-	if f.Member != "" && strings.Contains(f.Fix, "RECV") {
-		recv := receiverOf(src, f.Member)
-		if recv == "" {
-			recv = "regions"
-		}
-		f.Fix = strings.ReplaceAll(f.Fix, "RECV", recv)
-		return
-	}
 	if f.CV || f.Name != "TypeError" || src == "" {
 		return
 	}
-	if m := noMember.FindStringSubmatch(f.Message); m != nil {
-		if recv := receiverOf(src, m[1]); recv != "" {
-			for _, op := range s.eng.Registry().Find(m[1]) {
-				if op.On == graph.KindNone {
-					continue
-				}
-				on := map[graph.Kind]string{graph.KindImage: "img", graph.KindMask: "mask", graph.KindRegions: "regions", graph.KindValue: "value"}[op.On]
-				f.Hint = fmt.Sprintf("%s is plain data here, not a node, so it has no %s(). %q is %s method: call it on the node.", recv, m[1], m[1], graph.A(string(op.On)))
-				f.Fix = fmt.Sprintf("%s.%s(…)", on, m[1])
-				return
-			}
-		}
+	m := noMember.FindStringSubmatch(f.Message)
+	if m == nil {
+		return
 	}
-	for _, c := range trace.Collisions {
-		recv := receiverOf(src, c.Name)
-		if recv == "" {
+	recv := receiverOf(src, m[1])
+	if recv == "" {
+		return
+	}
+	if m[1] == "count" {
+		f.Hint = fmt.Sprintf("%s is plain data here (awaited regions are an array), so it has no count(); its length is the count.", recv)
+		f.Fix = recv + ".length"
+		return
+	}
+	for _, op := range s.eng.Registry().Find(m[1]) {
+		if op.On != graph.KindImage {
 			continue
 		}
-		what := "a value"
-		if _, err := strconv.ParseFloat(c.Value, 64); err == nil {
-			what = "a number"
+		f.Hint = fmt.Sprintf("%s is plain data here, not a node, so it has no %s(). %q is an Image method.", recv, m[1], m[1])
+		f.Fix = fmt.Sprintf("img.%s(…)", m[1])
+		for _, a := range op.Args {
+			if a.Positional && strings.Contains(a.Type, graph.ItemsType) {
+				f.Hint += " Regions are its argument: pass the array."
+				f.Fix = fmt.Sprintf("img.%s(%s, …)", m[1], recv)
+				break
+			}
 		}
-		f.Hint = fmt.Sprintf("After await, %s is data: %s.%s is %s (%s), not a method. Read it, or call %s() on the %s node before awaiting it.",
-			recv, recv, c.Name, what, c.Value, c.Name, c.Kind)
-		f.Fix = recv + "." + c.Name
 		return
 	}
 }
@@ -529,8 +520,8 @@ func jsHint(f *failure) string {
 	return ""
 }
 
-// contextBlock is rebuilt for every eval: named and unnamed images, params,
-// mem (owner).
+// contextBlock is rebuilt for every eval: named and unnamed images and the
+// keys of mem (owner).
 func (s *state) contextBlock(vm *goja.Runtime) *yaml.Node {
 	n := &yaml.Node{Kind: yaml.MappingNode}
 	add := func(k, v string) {
@@ -539,26 +530,6 @@ func (s *state) contextBlock(vm *goja.Runtime) *yaml.Node {
 		}
 	}
 	add("images", s.imagesLine(vm))
-
-	params := s.eng.Params().List()
-	var ps, moved []string
-	now := map[string]any{}
-	for _, d := range params {
-		now[d.Name] = d.Value
-		item := fmt.Sprintf("%s = %s", d.Name, formatAny(d.Value))
-		if d.Touched {
-			item += " (moved by the person)"
-		}
-		ps = append(ps, item)
-		if prev, ok := s.lastParams[d.Name]; ok && !reflect.DeepEqual(prev, d.Value) {
-			moved = append(moved, fmt.Sprintf("moved %s %s → %s", d.Name, formatAny(prev), formatAny(d.Value)))
-		}
-	}
-	s.lastParams = now
-	add("params", strings.Join(ps, ", "))
-	if len(moved) > 0 {
-		add("person", "since your last eval: "+strings.Join(moved, "; "))
-	}
 
 	if mem, ok := vm.GlobalObject().Get("mem").(*goja.Object); ok {
 		keys := mem.Keys()
@@ -614,16 +585,4 @@ func nodeKind(obj *goja.Object, _ graph.NodeID) string {
 		}
 	}
 	return "node"
-}
-
-func formatAny(v any) string {
-	switch x := graph.Normalize(v).(type) {
-	case float64:
-		return FormatNumber(x)
-	case string:
-		return strconv.Quote(x)
-	case nil:
-		return "null"
-	}
-	return fmt.Sprint(v)
 }

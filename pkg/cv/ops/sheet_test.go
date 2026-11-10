@@ -33,6 +33,11 @@ func TestSheetLayout(t *testing.T) {
 	if f := two.Frame; f.W != 3*514+2*6 || f.H != 6*256+5*6 {
 		t.Fatalf("two-view sheet frame %s", f)
 	}
+	// a repeated view is two views (node arguments are not deduplicated)
+	same := sheetCall(t, e, graph.NodeArg{ID: specks.ID}, map[string]any{"views": []any{graph.NodeArg{ID: img.ID}, graph.NodeArg{ID: img.ID}}})
+	if f := same.Frame; f.W != 3*514+2*6 || len(same.Args.Inputs("views")) != 2 {
+		t.Fatalf("[img, img] sheet frame %s", f)
+	}
 	_, err := e.Call("sheet", 0, []any{graph.NodeArg{ID: specks.ID}, map[string]any{"views": graph.NodeArg{ID: img.ID}, "max": 40.0}})
 	if ce, ok := graph.AsError(err); !ok || ce.Code != graph.EArgRange || ce.Fix != "cv.sheet(items, { views, max: 36 })" {
 		t.Fatalf("max 40: %+v", err)
@@ -106,7 +111,7 @@ func TestSheetCellsLabelsEdgesAndTruncation(t *testing.T) {
 			t.Fatal(err)
 		}
 		if len(ws) != 1 || ws[0].Code != WSheetTruncated || !strings.HasPrefix(ws[0].Message, "41 items, 4 shown") ||
-			!strings.HasSuffix(ws[0].Message, `fix: regions.sortBy("contrast").top(4)`) {
+			!strings.HasSuffix(ws[0].Message, `fix: cv.sheet((await regions).sort((a, b) => b.contrast - a.contrast).slice(0, 4), { views })`) {
 			t.Fatalf("evaluation %d: %+v", i, ws)
 		}
 	}
@@ -162,9 +167,9 @@ func TestOverlayAndAnnotateAtZoom(t *testing.T) {
 			t.Fatalf("annotate %v: %+v", bad, err)
 		}
 	}
-	_, err := e.Call("annotate", img.ID, []any{[]any{map[string]any{"line": []any{}}}})
+	_, err := e.Call("annotate", img.ID, []any{[]any{map[string]any{"polylin": []any{}}}})
 	if ce, _ := graph.AsError(err); ce == nil || ce.Hint != `Did you mean "polyline"?` {
-		t.Fatalf("line: %+v", err)
+		t.Fatalf("polylin: %+v", err)
 	}
 }
 
@@ -191,12 +196,18 @@ func strokeWidth(b *buffer.Buffer) int {
 	return best
 }
 
-func TestSheetSizesItselfByTop(t *testing.T) {
+// TestSheetSizesItselfByTheArray: a sheet over an array knows its length
+// when it is built; over a Regions node it lays out what fits.
+func TestSheetSizesItselfByTheArray(t *testing.T) {
 	e, img, _ := plantedEngine(t)
-	top := call(t, e, "top", call(t, e, "sortBy", call(t, e, "detect.specks", img.ID).ID, "area").ID, 8.0)
-	s := sheetCall(t, e, graph.NodeArg{ID: top.ID}, map[string]any{"views": graph.NodeArg{ID: img.ID}})
+	specks := call(t, e, "detect.specks", img.ID)
+	s := sheetCall(t, e, linked(t, e, specks, 0, 1, 2, 3, 4, 5, 6, 7), map[string]any{"views": graph.NodeArg{ID: img.ID}})
 	if f := s.Frame; f.W != 6*256+5*6 || f.H != 2*256+6 {
-		t.Fatalf("sheet of top(8): %s, want two rows", f)
+		t.Fatalf("sheet of 8 items: %s, want two rows", f)
+	}
+	two := append(linked(t, e, specks, 0), linked(t, e, call(t, e, "components", call(t, e, "mask.box", img.ID, []any{4, 4, 8, 8}).ID), 0)...)
+	if _, err := e.Call("sheet", 0, []any{two, map[string]any{"views": graph.NodeArg{ID: img.ID}}}); err == nil || !strings.Contains(err.Error(), "two region sets") {
+		t.Fatalf("two sets: %v", err)
 	}
 }
 

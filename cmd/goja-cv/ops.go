@@ -44,7 +44,7 @@ func newOpsCommand(opts *rootOptions) *cobra.Command {
 		RunE: func(_ *cobra.Command, _ []string) error {
 			reg := cvmod.DefaultRegistry()
 			valid := []string{"cv"}
-			for _, k := range graph.Kinds {
+			for _, k := range reg.Receivers() {
 				valid = append(valid, string(k))
 			}
 			if kind != "" && !contains(valid, kind) {
@@ -57,9 +57,7 @@ func newOpsCommand(opts *rootOptions) *cobra.Command {
 				}
 				info := opInfo{Name: op.Name, On: kindName(op.On), Returns: string(op.Returns), Doc: op.Doc, Args: map[string]string{}}
 				for i := range op.Args {
-					if s := &op.Args[i]; !s.Hidden {
-						info.Args[s.Name] = graph.DescribeArgSpec(s)
-					}
+					info.Args[op.Args[i].Name] = graph.DescribeArgSpec(&op.Args[i])
 				}
 				list = append(list, info)
 			}
@@ -75,9 +73,7 @@ func newOpsCommand(opts *rootOptions) *cobra.Command {
 			for _, op := range list {
 				names := make([]string, 0, len(op.Args))
 				for n := range op.Args {
-					if n != graph.SpaceArg { // the working-space option is on every pixel op
-						names = append(names, n)
-					}
+					names = append(names, n)
 				}
 				sort.Strings(names)
 				doc := op.Doc
@@ -89,13 +85,13 @@ func newOpsCommand(opts *rootOptions) *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&kind, "kind", "", "Receiver kind: cv (sources), Image, Mask, Regions, Value, Param")
+	cmd.Flags().StringVar(&kind, "kind", "", "Receiver kind: cv (sources), Image, Value")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "Print JSON")
 	return cmd
 }
 
 func kindOrder(k string) int {
-	order := []string{"cv", "Image", "Mask", "Regions", "Value", "Param"}
+	order := []string{"cv", "Image", "Value"}
 	for i, x := range order {
 		if x == k {
 			return i

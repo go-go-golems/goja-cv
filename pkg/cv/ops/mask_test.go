@@ -73,13 +73,13 @@ func TestMaskArgumentErrors(t *testing.T) {
 		}
 	}
 	m := call(t, e, "mask.box", img.ID, []any{0, 0, 10, 10})
-	_, err := e.Call("overlay", m.ID, []any{graph.NodeArg{ID: img.ID}, map[string]any{"color": "purpleish"}})
+	_, err := e.Call("overlay", img.ID, []any{graph.NodeArg{ID: m.ID}, map[string]any{"color": "purpleish"}})
 	if ce, ok := graph.AsError(err); !ok || ce.Code != graph.EArgType || len(ce.Valid) == 0 {
 		t.Fatalf("bad colour: %v", err)
 	}
 	_, err = e.Call("and", m.ID, []any{graph.NodeArg{ID: img.ID}})
-	if ce, ok := graph.AsError(err); !ok || ce.Code != graph.EWrongKind {
-		t.Fatalf("image as mask input: %v", err)
+	if ce, ok := graph.AsError(err); !ok || ce.Code != graph.EWrongKind || ce.Fix != "img.toGray()" {
+		t.Fatalf("colour image as mask input: %v", err)
 	}
 }
 
@@ -118,5 +118,42 @@ func TestParseColorAcceptsCSSNamesAndHex(t *testing.T) {
 	_, err = parseColor("limey", "color")
 	if ce, _ := graph.AsError(err); !strings.Contains(ce.Hint, `"lime"`) {
 		t.Fatalf("limey hint: %+v", ce)
+	}
+}
+
+// TestMasksAreOneChannelImages (GCV-004 §6.3, §7.5, D16): mask ops work on
+// any one-channel image, a mask is measured like an image, a colour image
+// is not a mask (E_WRONG_KIND with the toGray fix, at build time), masks
+// are never converted between spaces, and a grey input is its own
+// luminance (no toGray node).
+func TestMasksAreOneChannelImages(t *testing.T) {
+	e, img := newEngine(t)
+	grey := call(t, e, "toGray", img.ID)
+	grown := call(t, e, "grow", grey.ID, 2.0)
+	if v := evalValue(t, e, grown, 1).(*graph.ImageValue); v.Buf.C != 1 || grown.Channels != 1 {
+		t.Fatalf("img.toGray().grow(2): %d channels", v.Buf.C)
+	}
+	half := call(t, e, "mask.box", img.ID, []any{0.0, 0.0, 32.0, 48.0})
+	if s := evalData(t, e, call(t, e, "stats", half.ID), 1).(map[string]any); math.Abs(s["meanL"].(float64)-0.5) > 1e-6 {
+		t.Fatalf("m.stats().meanL = %v, want 0.5", s["meanL"])
+	}
+	edit := call(t, e, "exposure", img.ID, -0.4)
+	for what, m := range map[string]*graph.Node{"img": img, "m.mul(img)": call(t, e, "mul", half.ID, graph.NodeArg{ID: img.ID})} {
+		_, err := e.Call("within", img.ID, []any{graph.NodeArg{ID: m.ID}, graph.NodeArg{ID: edit.ID}})
+		if ce, ok := graph.AsError(err); !ok || ce.Code != graph.EWrongKind || ce.Fix != "img.toGray()" || !strings.Contains(ce.Message, "this image has 3 channels") {
+			t.Fatalf("img.within(%s, …): %v", what, err)
+		}
+	}
+	// the same weights in either space: the mask is the receiver's argument as built
+	lin := call(t, e, graph.AsOp, img.ID, "linear")
+	w1 := call(t, e, "within", img.ID, graph.NodeArg{ID: grey.ID}, graph.NodeArg{ID: edit.ID})
+	w2 := call(t, e, "within", lin.ID, graph.NodeArg{ID: grey.ID}, graph.NodeArg{ID: call(t, e, "exposure", lin.ID, -0.4).ID})
+	if w1.Args.Input("mask") != grey || w2.Args.Input("mask") != grey {
+		t.Fatalf("mask converted: %s, %s", graph.Label(w1.Args.Input("mask")), graph.Label(w2.Args.Input("mask")))
+	}
+	// a grey input is its own luminance
+	lum := call(t, e, "mask.luminance", grey.ID, map[string]any{"above": 0.5})
+	if lines := e.Explain(lum.ID); strings.Count(strings.Join(lines, "\n"), "toGray") != 1 {
+		t.Fatalf("a toGray inserted for a grey input: %q", lines)
 	}
 }

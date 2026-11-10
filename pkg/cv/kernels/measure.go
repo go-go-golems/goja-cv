@@ -21,8 +21,8 @@ type ChannelStats struct {
 	Percentiles                               []float64 // values for the requested percentiles
 }
 
-// StatsResult summarizes a buffer. L is linear luminance (rec709 weights; the
-// only plane for gray images). ClipLow/ClipHigh are fractions of pixels with
+// StatsResult summarizes a buffer. L is the luminance plane the caller
+// passes (the graph's one luminance; the only plane for gray images). ClipLow/ClipHigh are fractions of pixels with
 // any channel clipped.
 type StatsResult struct {
 	W, H               int
@@ -34,8 +34,9 @@ type StatsResult struct {
 
 // Stats measures b. percentiles are fractions in [0, 1] computed exactly
 // (linear interpolation between order statistics) for luminance and every
-// channel.
-func Stats(ctx context.Context, b *buffer.Buffer, percentiles []float64) (*StatsResult, error) {
+// channel. lum is the luminance plane (len b.N()); nil for a one-channel b,
+// whose plane is its luminance. Kernels never weight channels themselves.
+func Stats(ctx context.Context, b *buffer.Buffer, lum []float32, percentiles []float64) (*StatsResult, error) {
 	n := b.N()
 	if n == 0 {
 		return nil, errors.New("empty image")
@@ -46,10 +47,11 @@ func Stats(ctx context.Context, b *buffer.Buffer, percentiles []float64) (*Stats
 		}
 	}
 	res := &StatsResult{W: b.W, H: b.H, RequestedQuantiles: percentiles}
-	lum := make([]float32, n)
-	copy(lum, b.Luminance())
+	lum, err := luminance(b, lum)
+	if err != nil {
+		return nil, err
+	}
 	scratch := make([]float32, n)
-	var err error
 	if res.L, err = channelStats(ctx, lum, scratch, percentiles); err != nil {
 		return nil, err
 	}
@@ -200,7 +202,10 @@ func Histogram(ctx context.Context, b *buffer.Buffer, bins int, channel string) 
 	var plane []float32
 	switch channel {
 	case "L":
-		plane = b.Luminance()
+		if b.C != 1 {
+			return nil, errors.New("channel L reads the luminance plane: pass a one-channel buffer")
+		}
+		plane = b.Plane(0)
 	case "r", "g", "b":
 		c := map[string]int{"r": 0, "g": 1, "b": 2}[channel]
 		if c >= b.C {
@@ -230,4 +235,18 @@ func Histogram(ctx context.Context, b *buffer.Buffer, bins int, channel string) 
 		}
 	}
 	return res, nil
+}
+
+// luminance is the luminance plane of b: lum (checked), or b's plane when b
+// has one channel and lum is nil.
+func luminance(b *buffer.Buffer, lum []float32) ([]float32, error) {
+	switch {
+	case lum != nil && len(lum) != b.N():
+		return nil, errors.Errorf("luminance plane has %d values for %d pixels", len(lum), b.N())
+	case lum != nil:
+		return lum, nil
+	case b.C == 1:
+		return b.Plane(0), nil
+	}
+	return nil, errors.Errorf("a %d-channel buffer needs its luminance plane", b.C)
 }

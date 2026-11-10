@@ -5,26 +5,50 @@ import (
 	"image"
 	"math"
 	"sort"
+	"strconv"
 
 	"github.com/go-go-golems/goja-cv/pkg/cv/buffer"
+	"github.com/go-go-golems/goja-cv/pkg/cv/kernels"
 )
 
-// Region is one connected area of a Regions value. Its geometry is in doc
-// px; its pixels are kept in the raster it was found in (RegionsValue W×H at
-// RegionsValue.Scale), so it can be rasterized back at any evaluation scale.
+// Shape says how a region's area is described (GCV-004 §7.6).
+type Shape int
+
+const (
+	Pixels Shape = iota // found by a detector: its pixels (Pix) in the value's raster
+	Box                 // a literal box: exact area coverage, as mask.box
+	Disk                // a literal circle (centre, R): 4 × 4 supersampled coverage, as mask.ellipse
+	Point               // a centre without a radius: no area (only ops that take points accept it)
+)
+
+// Region is one item of a Regions value. Its geometry is in doc px. A
+// Pixels region keeps its pixels in the raster it was found in
+// (RegionsValue W×H at RegionsValue.Scale), so it can be rasterized back at
+// any evaluation scale; Box, Disk and Point regions are their geometry.
 type Region struct {
-	ID       int
+	ID       int // data: ids may repeat; identity is the item's position (the [node, index] link)
+	Shape    Shape
 	Box      [4]float64         // x, y, w, h in doc px
 	Area     float64            // doc px²
 	Centroid [2]float64         // x, y in doc px
+	R        float64            // a Disk's radius (doc px)
+	Label    string             // printed instead of the id by overlay and sheet labels ("" none)
 	Measures map[string]float64 // aspect, meanL, contrast, localNoise, score, …
 	Tags     map[string]string  // polarity, …
-	Pix      []int32            // pixel indices into the source raster, row-major
+	Pix      []int32            // Pixels: pixel indices into the source raster, row-major
+}
+
+// Text is what a label prints for the region: its label, else its id.
+func (r *Region) Text() string {
+	if r.Label != "" {
+		return r.Label
+	}
+	return strconv.Itoa(r.ID)
 }
 
 // RegionsValue is an evaluated Regions node: an ordered list of regions over
-// one source raster. The list order is meaningful (sortBy changes it); items
-// are shared between values and must not be modified.
+// at most one source raster (literal boxes, circles and points need none).
+// Items are shared between values and must not be modified.
 type RegionsValue struct {
 	Items []*Region
 	W, H  int     // source raster size in buffer px
@@ -125,6 +149,16 @@ func (r *Region) Field(name string) (any, bool) {
 		return r.Centroid[0], true
 	case "cy":
 		return r.Centroid[1], true
+	case "r":
+		if r.Shape == Disk {
+			return r.R, true
+		}
+		return nil, false
+	case "label":
+		if r.Label != "" {
+			return r.Label, true
+		}
+		return nil, false
 	}
 	if m, ok := r.Measures[name]; ok {
 		if math.IsNaN(m) {
@@ -178,7 +212,7 @@ func (v *RegionsValue) Schema() []FieldSpec {
 // Data is the plain-data form JavaScript and data out see: the fields of
 // the schema, flat and in schema order ({ id, x, y, w, h, cx, cy, area,
 // aspect, …measures, …tags }). Geometry is rounded to 0.01 doc px, measures
-// to 4 decimals. A field the region lacks is omitted; a null measure is nil.
+// exact (a step of 0.002 in linear light keeps its digits). A field the region lacks is omitted; a null measure is nil.
 func (r *Region) Data(fields []FieldSpec) Record {
 	rec := Record{Keys: make([]string, 0, len(fields)), Vals: make(map[string]any, len(fields))}
 	for _, f := range fields {
@@ -186,14 +220,10 @@ func (r *Region) Data(fields []FieldSpec) Record {
 		if !ok {
 			continue
 		}
-		switch x := v.(type) {
-		case float64:
+		if x, ok := v.(float64); ok {
 			switch f.Name {
-			case "id":
-			case "x", "y", "w", "h", "cx", "cy", "area":
+			case "x", "y", "w", "h", "cx", "cy", "area", "r":
 				v = round(x, 2)
-			default:
-				v = round(x, 4)
 			}
 		}
 		rec.Keys = append(rec.Keys, f.Name)
@@ -207,24 +237,21 @@ func (r *Region) Data(fields []FieldSpec) Record {
 // multi-gigabyte JavaScript array.
 const MaxRegionItems = 100000
 
-// Summary is what JavaScript receives for an awaited Regions node: the count
-// and every item in list order. More than MaxRegionItems items is
+// Records is what JavaScript receives for an awaited Regions node: one flat
+// record per item, in list order. More than MaxRegionItems items is
 // E_TOO_MANY.
-func (v *RegionsValue) Summary() (map[string]any, error) {
+func (v *RegionsValue) Records() ([]any, error) {
 	if len(v.Items) > MaxRegionItems {
 		return nil, Errorf(ETooMany, "%d regions; await at most %d.", len(v.Items), MaxRegionItems).
-			WithHint("Keep the regions you need before awaiting: rank and cut, or count them without awaiting the items.").
-			WithFix(`regions.sortBy("area").top(1000)   // or await regions.count()`)
+			WithHint("Find fewer regions before awaiting: a larger minArea, a higher threshold or minContrast, or a crop.").
+			WithFix(`m.components({ minArea: 20 })   // or img.crop([x, y, w, h]).detect.specks()`)
 	}
 	fields := v.Schema()
 	items := make([]any, len(v.Items))
 	for i, r := range v.Items {
 		items[i] = r.Data(fields)
 	}
-	return map[string]any{
-		"kind": string(KindRegions), "count": float64(len(v.Items)), "items": items,
-		"scale": v.Scale, "frame": v.Frame.Data(),
-	}, nil
+	return items, nil
 }
 
 // Raster is where a buffer lies in doc px: the doc position of its
@@ -283,7 +310,7 @@ func (v *RegionsValue) Rasterize(ctx context.Context, t Raster) (*buffer.Buffer,
 // Coverage is one region's weights on target: the bounding window of its
 // pixels in target px (clipped to the target) and, row-major over it, the
 // area overlap of each target pixel with the region (clamped to 1), the rule
-// of Rasterize for one region. regions.measure weighs pixels with it when
+// of Rasterize for one region. measure weighs pixels with it when
 // the regions were found on a different raster than the image measured.
 func (v *RegionsValue) Coverage(r *Region, t Raster) (image.Rectangle, []float32) {
 	full := image.Rect(0, 0, t.W, t.H)
@@ -321,6 +348,17 @@ func (v *RegionsValue) Coverage(r *Region, t Raster) (image.Rectangle, []float32
 // r overlaps, with the overlap area; set is true when the target is the
 // source raster itself (the pixel is the region's, weight 1).
 func (v *RegionsValue) overlap(r *Region, t Raster, emit func(i int, a float32, set bool)) {
+	switch r.Shape {
+	case Box:
+		boxOverlap(r.Box, t, emit)
+		return
+	case Disk:
+		diskOverlap(r.Centroid, r.R, t, emit)
+		return
+	case Point:
+		return
+	case Pixels:
+	}
 	w, h := t.W, t.H
 	sx, sy := v.axisScales()
 	same := w == v.W && h == v.H && t.OX == float64(v.Frame.X) && t.OY == float64(v.Frame.Y) && t.SX == sx && t.SY == sy
@@ -349,6 +387,38 @@ func (v *RegionsValue) overlap(r *Region, t Raster, emit func(i int, a float32, 
 					continue
 				}
 				emit(ty*w+tx, float32(ox*oy), false)
+			}
+		}
+	}
+}
+
+// boxOverlap emits the exact area overlap of each target pixel with box b
+// (doc px), the rule of mask.box.
+func boxOverlap(b [4]float64, t Raster, emit func(i int, a float32, set bool)) {
+	x0, x1 := (b[0]-t.OX)*t.SX, (b[0]+b[2]-t.OX)*t.SX
+	y0, y1 := (b[1]-t.OY)*t.SY, (b[1]+b[3]-t.OY)*t.SY
+	for ty := max(0, int(math.Floor(y0))); ty < int(math.Ceil(y1)) && ty < t.H; ty++ {
+		oy := math.Min(y1, float64(ty+1)) - math.Max(y0, float64(ty))
+		if oy <= 0 {
+			continue
+		}
+		for tx := max(0, int(math.Floor(x0))); tx < int(math.Ceil(x1)) && tx < t.W; tx++ {
+			ox := math.Min(x1, float64(tx+1)) - math.Max(x0, float64(tx))
+			if ox > 0 {
+				emit(ty*t.W+tx, float32(ox*oy), false)
+			}
+		}
+	}
+}
+
+// diskOverlap emits the 4 × 4 supersampled coverage of each target pixel by
+// the disk of radius r (doc px) at c, the rule of mask.ellipse.
+func diskOverlap(c [2]float64, r float64, t Raster, emit func(i int, a float32, set bool)) {
+	cx, cy, rx, ry := (c[0]-t.OX)*t.SX, (c[1]-t.OY)*t.SY, r*t.SX, r*t.SY
+	for ty := max(0, int(math.Floor(cy-ry))); ty < int(math.Ceil(cy+ry)) && ty < t.H; ty++ {
+		for tx := max(0, int(math.Floor(cx-rx))); tx < int(math.Ceil(cx+rx)) && tx < t.W; tx++ {
+			if a := kernels.EllipseCoverage(tx, ty, cx, cy, rx, ry); a > 0 {
+				emit(ty*t.W+tx, a, false)
 			}
 		}
 	}

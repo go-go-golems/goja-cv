@@ -21,8 +21,9 @@ processor (YAML, warnings, context block, looks as image content).
 
 ```go
 app, err := cvsession.New(ctx, cvsession.Options{
-	Image:       "scan.tif",              // bound to img in every new session
-	Roots:       []string{"/data/scans"}, // cv.open may only read here
+	Image:       "/data/scans/scan.tif",  // bound to img in every new session
+	Root:        "/data/work",            // the workspace: cv.save writes here
+	Read:        []string{"/data/scans"}, // cv.open may also read here
 	EvalTimeout: 60 * time.Second,
 })
 if err != nil { return err }
@@ -43,8 +44,8 @@ The cv module itself is `pkg/gojamod/cv` (`cvmod.Registrar`, `cvmod.New()`); the
 
 ## xgoja: the cv module in generated binaries
 
-`pkg/xgoja/providers/cv` registers provider package **`goja-cv`** with module `cv` (module config: `baseDir`,
-`cacheBytes`, `previewLong`, `lookLong`). Combined with go-go-goja's `mcp` command set:
+`pkg/xgoja/providers/cv` registers provider package **`goja-cv`** with module `cv` (module config: `root`, the
+workspace, default the working directory; `read`, a list of read-only directories; `cacheBytes`, `lookLong`). Combined with go-go-goja's `mcp` command set:
 
 ```yaml
 schema: xgoja/v2

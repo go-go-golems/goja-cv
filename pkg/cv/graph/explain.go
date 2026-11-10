@@ -15,50 +15,53 @@ import (
 // other nodes): file (basename), format, bitDepth, sample, channels in the
 // file, encoding, frame and notes.
 func SourceInfo(n *Node) (map[string]any, bool) {
-	if n.Op.On != KindNone || n.Op.Name != "open" {
+	if n.Op.On != KindNone || (n.Op.Name != "open" && n.Op.Name != OpenLinearOp) {
 		return nil, false
 	}
-	info := map[string]any{"file": filepath.Base(n.Args.String("path")), "encoding": n.Enc.String(), "frame": n.Frame.Data()}
-	if n.Args.Has("sample") {
-		info["sample"] = n.Args.String("sample")
+	m := Meta[SourceMeta](n.Args)
+	info := map[string]any{"file": filepath.Base(m.Name), "encoding": n.Enc.String(), "frame": n.Frame.Data(),
+		"format": m.Info.Format, "bitDepth": float64(m.Info.Bits), "fileChannels": float64(m.Info.Channels)}
+	if m.Info.Sample != "" {
+		info["sample"] = m.Info.Sample
 	}
-	if n.Args.Has("notes") {
-		info["notes"] = n.Args.Raw("notes")
-	}
-	if n.Args.Has("format") {
-		info["format"] = n.Args.String("format")
-	}
-	if n.Args.Has("bits") {
-		info["bitDepth"] = n.Args.Raw("bits")
-	}
-	if n.Args.Has("channels") {
-		info["fileChannels"] = n.Args.Raw("channels")
+	if len(m.Info.Notes) > 0 {
+		notes := make([]any, len(m.Info.Notes))
+		for i, s := range m.Info.Notes {
+			notes[i] = s
+		}
+		info["notes"] = notes
 	}
 	return info, true
 }
 
-// Label is the short name of a node used in paths: "open(scan.tif)",
-// "P.slider(ev)", or the op name.
+// Shown is the node an agent's call stands for: the physical op of a
+// bracket's closing as() (img.exposure(1) is as(exposure(…), encoded)),
+// else n itself.
+func Shown(n *Node) *Node {
+	if n.Op.Name == AsOp && len(n.Args.ins) > 0 && n.Args.ins[0].Op.rule(n.Args.ins[0].Args) == Physical {
+		return n.Args.ins[0]
+	}
+	return n
+}
+
+// Label is the short name of a node used in paths: "open(scan.tif)" or
+// the op name.
 func Label(n *Node) string {
+	n = Shown(n)
 	if n.Op.On == KindNone {
 		switch n.Op.Name {
-		case "open":
+		case "open", OpenLinearOp:
 			return "open(" + filepath.Base(n.Args.String("path")) + ")"
-		case "param":
-			return "param(" + n.Args.String("name") + ")"
 		case PlaceholderOp:
 			return "placeholder"
 		}
-	}
-	if n.Op.On == KindValue && n.Op.Name == "field" {
-		return "." + n.Args.String("name")
 	}
 	return n.Op.Name
 }
 
 // ShortCall is the compact form of a call for captions and fixes: the op
 // name with its non-default positional arguments ("gaussian(2)",
-// "view(speck)", "crop[300,100,64,64]"); lifted arguments show as "…".
+// "view(speck)", "crop[300,100,64,64]").
 func ShortCall(op *OpDef, args Args) string {
 	if op.Name == "crop" && op.Class == GeometricOp {
 		if b, ok := literalList(args.vals["box"]); ok {
@@ -68,7 +71,7 @@ func ShortCall(op *OpDef, args Args) string {
 	var parts []string
 	for i := range op.Args {
 		s := &op.Args[i]
-		if !s.Positional || s.Hidden || !args.Has(s.Name) {
+		if !s.Positional || !args.Has(s.Name) {
 			continue
 		}
 		v := args.vals[s.Name]
@@ -134,14 +137,12 @@ func literalList(v any) ([]string, bool) {
 // "param(ev)", ".p99", "crop[300,100,64,64]" (its frame), "view(speck)".
 func Short(n *Node) string {
 	switch {
-	case n.Op.On == KindNone && n.Op.Name == "open":
+	case n.Op.On == KindNone && (n.Op.Name == "open" || n.Op.Name == OpenLinearOp):
 		return "open(" + shortFile(filepath.Base(n.Args.String("path"))) + ")"
 	case n.Op.On == KindNone && n.Op.Bespoke:
 		return Label(n)
 	case n.Op.Name == "crop" && n.Op.Class == GeometricOp:
 		return fmt.Sprintf("crop[%d,%d,%d,%d]", n.Frame.X, n.Frame.Y, n.Frame.W, n.Frame.H)
-	case n.Op.On == KindValue && n.Op.Name == "field":
-		return "." + n.Args.String("name")
 	}
 	return ShortCall(n.Op, n.Args)
 }
@@ -165,16 +166,12 @@ const maxChain = 120
 // steps.
 func (e *Evaluator) Chain(id NodeID) string {
 	var rev []string
-	var next *Node // the consumer of n on the chain
 	for n := e.node(id); n != nil; {
-		if !n.Op.Internal && !insertedGray(n, next) {
+		if (!n.Op.Internal || n.Op.Name == OpenLinearOp) && n.Op.Name != AsOp {
 			rev = append(rev, Short(n))
 		}
-		if n.NExplicit == 0 || len(n.Inputs) == 0 {
+		if !n.HasReceiver() {
 			break
-		}
-		if !n.Op.Internal {
-			next = n
 		}
 		n = e.node(n.Inputs[0])
 	}
@@ -189,54 +186,29 @@ func (e *Evaluator) Chain(id NodeID) string {
 	return out
 }
 
-// insertedGray reports whether n is the toGray(rec709) the builder feeds a
-// luminance input of next (the grey-input rule): the chain does not show it.
-func insertedGray(n, next *Node) bool {
-	if next == nil || next.Op.Gray == nil || n.Op.Name != ToGrayOp || n.Args.String("weights") != "rec709" {
-		return false
-	}
-	for _, i := range next.Op.Gray(next.Args) {
-		if i == 0 {
-			return true
-		}
-	}
-	return false
-}
-
 // Describe renders a node as a call, e.g. "gaussian(sigma: 2 px → 0.5 at scale
 // 0.25)". Arguments equal to their default are omitted; lifted arguments
 // show the input node id.
-func Describe(b *Builder, n *Node, scale float64, params map[string]any) string {
+func Describe(b *Builder, n *Node, scale float64) string {
 	if n.Op.On == KindNone {
 		switch n.Op.Name {
 		case "open":
 			return "source " + filepath.Base(n.Args.String("path"))
-		case "param":
-			name := n.Args.String("name")
-			v, _ := json.Marshal(params[name])
-			return fmt.Sprintf("param %s = %s", name, v)
+		case OpenLinearOp:
+			return "source " + filepath.Base(n.Args.String("path")) + " (linear)"
 		case PlaceholderOp:
 			return "placeholder (within builder)"
 		}
 	}
-	if n.Op.On == KindValue && n.Op.Name == "field" {
-		return "." + n.Args.String("name")
-	}
-	if n.Op.Name == ConvertOp && n.Op.Internal {
-		return "convert(→ " + n.Args.String("to") + ")"
-	}
 	var parts []string
 	for i := range n.Op.Args {
 		s := &n.Op.Args[i]
-		if s.Hidden || !n.Args.Has(s.Name) {
+		if !n.Args.Has(s.Name) {
 			continue
 		}
 		v := n.Args.Raw(s.Name)
 		if s.Default != nil && reflect.DeepEqual(v, normalize(s.Default)) {
 			continue
-		}
-		if s.Name == SpaceArg && v == n.Op.DefaultSpace(n.Args).String() {
-			continue // the op's default space
 		}
 		parts = append(parts, s.Name+": "+describeArg(b, n, s, v, scale))
 	}
@@ -302,17 +274,17 @@ func (e *Evaluator) Explain(id NodeID, scale float64) []string {
 		parentScale := run.scale
 		run = run.at(run.scaleFor(n))
 		right := string(n.Kind)
-		if n.Kind == KindImage || n.Kind == KindMask {
+		if n.Kind == KindImage {
 			w, h := buffer.ScaledSize(n.Frame.W, n.Frame.H, run.scale)
 			right += fmt.Sprintf(" %d×%d", w, h)
 		}
-		if !n.Op.NoCache && e.cache.Contains(run.sig(id)) {
+		if e.cache.Contains(run.sig(id)) {
 			right += "  cached"
 		}
 		if run.scale != parentScale {
 			right += fmt.Sprintf("  (analysed at scale %s)", fmtNum(run.scale))
 		}
-		rows = append(rows, row{fmt.Sprintf("%s#%d %s", indent, id, Describe(e.b, n, run.scale, run.params)), right, Statics(n)})
+		rows = append(rows, row{fmt.Sprintf("%s#%d %s", indent, id, Describe(e.b, n, run.scale)), right, Statics(n)})
 		if n.Op.Expand != nil { // a macro: its expansion below it
 			walk(run, n.Inputs[len(n.Inputs)-1], depth+1)
 			return

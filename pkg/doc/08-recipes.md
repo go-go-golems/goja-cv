@@ -31,35 +31,36 @@ return {
 }
 ```
 
-`meanL` is linear luminance (mid-grey is about 0.18); `clipLow`/`clipHigh` are the fractions of clipped pixels.
+`meanL` is luminance in file units, the scale a look shows (mid-grey is about 0.46; `img.as("linear").stats()` for linear light, where it is 0.18); `clipLow`/`clipHigh` are the fractions of clipped pixels.
 
 ## Fix exposure and compare
 
 ```js
-const s = img.stats()
+const s = await img.stats()     // options are numbers: await the measurement first
 const fixed = img.levels({ black: s.p01, white: s.p99 }).exposure(0.25)
-show(cv.compare([img, fixed], { mode: "side" }), { label: "before / after" })
-return await fixed.stats().pick("meanL", "clipLow", "clipHigh")
+cv.compare([img, fixed], { mode: "side" }).look("before / after")
+const { meanL, clipLow, clipHigh } = await fixed.stats()
+return { meanL, clipLow, clipHigh }
 ```
 
 ## Find dust, look at it, heal it
 
 ```js
-const specks = img.detect.specks()
-const dust = specks.where({ score: { gte: 0.5 } })
+const specks = await img.detect.specks()
+const dust = specks.filter(r => r.score >= 0.5)
 const healed = img.heal(dust, { radius: 3 })
 mem.healed = healed
 return {
   verdict: (await img.check.dust()).verdict,
-  found: await dust.count(),
-  notDust: (await specks.where({ score: { lt: 0.5 } })).items.map(r => ({ id: r.id, cx: r.cx, cy: r.cy, sharpness: r.sharpness })),
+  found: dust.length,
+  notDust: specks.filter(r => r.score < 0.5).map(r => ({ id: r.id, cx: r.cx, cy: r.cy, sharpness: r.sharpness })),
   after: (await healed.check.dust()).verdict,
   look: cv.compare([img.overlay(dust, { labels: "id", color: "lime" }), healed], { mode: "side" }).look("dust | healed"),
 }
 ```
 
 Specks scoring below 0.5 are soft, round features (stars, highlights) and are left alone. To keep one real
-detail, drop it by id: `img.heal(dust.without([31]))`.
+detail, drop it: `img.heal(dust.filter(r => r.id !== 31))`.
 
 ## Inspect small defects up close
 
@@ -68,7 +69,7 @@ with coordinate rulers (labels are absolute doc px):
 
 ```js
 const speck = img.view("speck")
-const spots = speck.mask.luminance({ above: 0.5 }).components({ minArea: 4 }).sortBy("area").top(12)
+const spots = (await speck.mask.luminance({ above: 0.5 }).components({ minArea: 4 })).sort((a, b) => b.area - a.area).slice(0, 12)
 return {
   sheet: cv.sheet(spots, { views: [img, speck], size: 32, zoom: 4 }).look("candidates"),
   zoom: img.crop([176, 22, 48, 48]).levels({ auto: true }).look({ zoom: 8, ruler: 8, label: "star 8×" }),
@@ -79,16 +80,17 @@ return {
 
 ## Measure spots, boxes and regions
 
-`img.measure(points)` compares a disk around each point with a ring around it (step, spread, snr, stepChroma: null when |snr| < 1); region items are points, so the specks' own rows come back with their coordinates. `regions.measure(img, { ring: true })` adds the same fields to every region and keeps the ids, ready for `sortBy("snr")`.
+`img.measure(items)` compares a disk at each item's centre with a ring around it, both sized from the item (step, spread, snr, stepChroma: null when |snr| < 1), and returns the items with these fields and their ids; points need `{ coreRadius }`. Sort the awaited array with JavaScript.
 
 ```js
-const specks = img.detect.specks().sortBy("area").top(3)
-const rows = await img.measure((await specks).items)
-const ranked = await specks.measure(img, { ring: true, prefix: "lin" }).sortBy("linSnr")
+const specks = (await img.detect.specks()).sort((a, b) => b.area - a.area).slice(0, 3)
+const lin = img.as("linear")
+const ranked = (await lin.measure(specks)).sort((a, b) => b.snr - a.snr)
+const [star] = await lin.measure([[200.5, 46.5]], { coreRadius: 3 })
 return {
-  rows: rows.map(r => [r.cx, r.cy, r.step.toFixed(3), r.snr.toFixed(2)].join(" ")),
-  ranked: ranked.items.map(r => r.id),
-  table: cv.csv(ranked, { name: "ranked" }),
+  rows: ranked.map(r => [r.id, r.cx, r.cy, r.step.toFixed(3), r.snr.toFixed(2)].join(" ")),
+  star: star.snr.toFixed(2),
+  table: (await cv.save("ranked.csv", lin.measure(specks))).rows,
 }
 ```
 
@@ -97,16 +99,15 @@ return {
 ```js
 const top = img.mask.gradient({ from: "top", to: 0.5 }).feather(10)
 const darker = img.within(top, i => i.exposure(-0.6))
-return { mask: top.look("mask"), result: darker.look("darker top"), meanTop: await darker.stats({ mask: top }).meanL }
+return { mask: top.look("mask"), result: darker.look("darker top"), meanTop: (await darker.stats({ mask: top })).meanL }
 ```
 
-## Hand a person a slider
+## Explore a value
+
+Options are literal values: to try another exposure, run the eval again with another number, or compare
+several in one look.
 
 ```js
-const ev = P.slider("ev", { min: -2, max: 2, value: 0.3, label: "Exposure", unit: "EV" })
-const out = img.exposure(ev)
-return { meanL: await out.stats().meanL, look: out.look("ev") }
+const evs = [-0.5, 0, 0.5]
+return cv.compare(evs.map(ev => img.exposure(ev)), { mode: "side" }).look("ev -0.5 / 0 / +0.5")
 ```
-
-Moving the param (a host UI, or `P.set("ev", 0.8)` in a later eval) recomputes only what depends on it; the
-context block reports the move.

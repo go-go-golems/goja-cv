@@ -20,13 +20,6 @@ var markShapes = []string{"circle", "point", "box", "polyline", "text"}
 
 var markKeys = []string{"circle", "point", "box", "polyline", "text", "at", "color", "label"}
 
-// markKeySynonyms are words agents use for the mark keys.
-var markKeySynonyms = map[string]string{
-	"circ": "circle", "ring": "circle", "line": "polyline", "lines": "polyline", "path": "polyline", "poly": "polyline",
-	"rect": "box", "rectangle": "box", "bbox": "box", "dot": "point", "marker": "point", "cross": "point", "pt": "point",
-	"pos": "at", "position": "at", "xy": "at", "colour": "color", "caption": "label", "name": "label", "string": "text",
-}
-
 const annotateFix = `img.annotate([{ circle: [x, y, r], color: "lime", label: "7" }, { point: [x, y] }, { box: [x, y, w, h] }, { polyline: [[x1, y1], [x2, y2]] }, { text: "hair?", at: [x, y] }])`
 
 // mark is one parsed mark in doc px.
@@ -107,9 +100,7 @@ func parseMarks(v any) ([]mark, error) {
 			}
 			e := markErr(i, "unknown key %q. Marks have one shape (%s) and optionally color, label (and at for text).", k, strings.Join(markShapes, ", ")).
 				WithValid(markKeys).WithFix(annotateFix)
-			if sug, ok := markKeySynonyms[k]; ok {
-				e.Hint = fmt.Sprintf("Did you mean %q?", sug)
-			} else if sug := graph.Closest(k, markKeys); sug != "" {
+			if sug := graph.Closest(k, markKeys); sug != "" {
 				e.Hint = fmt.Sprintf("Did you mean %q?", sug)
 			}
 			return nil, e
@@ -288,14 +279,14 @@ func drawMarks(ctx context.Context, img *graph.ImageValue, marks []mark, width i
 
 func annotateOp() graph.OpDef {
 	return graph.OpDef{
-		Name: "annotate", On: graph.KindImage, Returns: graph.KindImage, Class: graph.Decoration,
-		Space: graph.SpaceRule{Default: buffer.SpaceEncoded},
+		Name: "annotate", On: graph.KindImage, Returns: graph.KindImage, Class: graph.Decoration, Channels: graph.Three,
+		Space: graph.Display,
 		Args: []graph.ArgSpec{
-			{Name: "marks", Type: "any", Positional: true, Static: true,
+			{Name: "marks", Type: "any", Positional: true,
 				Doc: "list of marks in absolute doc px: { circle: [x, y, r] }, { point: [x, y] }, { box: [x, y, w, h] }, { polyline: [[x, y], …] }, { text, at: [x, y] }; each may have color (display colour) and label"},
 			{Name: "width", Type: "number", Default: 1.0, Min: graph.F(1), Max: graph.F(8), Doc: "line width in image px (stays thin at any zoom)"},
 		},
-		Validate: func(a graph.Args, _ []*graph.Node) error {
+		Validate: func(a graph.Args) error {
 			_, err := parseMarks(a.Raw("marks"))
 			return err
 		},

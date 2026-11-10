@@ -3,7 +3,7 @@ package ops
 import "github.com/go-go-golems/goja-cv/pkg/cv/graph"
 
 // Field schemas of the ops' results (graph.FieldSpec, GCV-003 §7.5). One
-// list per result: the items JavaScript receives, where/sortBy, help and CSV
+// list per result: the items JavaScript receives, help and CSV
 // columns all read it.
 
 func numField(name string, unit graph.Unit, doc string) graph.FieldSpec {
@@ -15,8 +15,8 @@ func strField(name, doc string) graph.FieldSpec {
 }
 
 // fixedFields is an OpDef.Fields that does not depend on the call.
-func fixedFields(fs []graph.FieldSpec) func(graph.Args, []*graph.Node) []graph.FieldSpec {
-	return func(graph.Args, []*graph.Node) []graph.FieldSpec { return fs }
+func fixedFields(fs []graph.FieldSpec) func(graph.Args) []graph.FieldSpec {
+	return func(graph.Args) []graph.FieldSpec { return fs }
 }
 
 // geometryFields is the schema of components: geometry only.
@@ -24,19 +24,13 @@ var geometryFields = fixedFields(graph.GeometryFields)
 
 // speckFields is the schema of detect.specks.
 var speckFields = graph.WithFields(graph.GeometryFields,
-	numField("contrast", graph.Level, "peak contrast against the local background, levels of the working space"),
+	numField("contrast", graph.Level, "peak contrast against the local background, in levels of the image's space"),
 	numField("localNoise", graph.Level, "noise (σ) of the background around the speck"),
 	numField("sharpness", graph.Unitless, "how compact the peak is (soft round blobs such as stars are low)"),
 	numField("score", graph.Unitless, "dust likelihood in [0, 1]; ≥ 0.5 counts as dust"),
 	numField("meanL", graph.Level, "mean luminance inside the speck"),
 	strField("polarity", `"dark" or "bright"`),
 )
-
-// speckProduces are the fields detect.specks adds to geometry.
-var speckProduces = map[string]string{
-	"contrast": "img.detect.specks()", "localNoise": "img.detect.specks()", "sharpness": "img.detect.specks()",
-	"score": "img.detect.specks()", "polarity": "img.detect.specks()",
-}
 
 var statsBaseFields = []graph.FieldSpec{
 	numField("meanL", graph.Level, "mean luminance (Rec. 709 weights)"),
@@ -58,7 +52,7 @@ var statsSelectionFields = []graph.FieldSpec{
 }
 
 // statsFields: area and coverage only with a mask or a box.
-func statsFields(a graph.Args, _ []*graph.Node) []graph.FieldSpec {
+func statsFields(a graph.Args) []graph.FieldSpec {
 	if a.Has("mask") || a.Has("box") {
 		return graph.WithFields(statsBaseFields, statsSelectionFields...)
 	}
@@ -68,11 +62,12 @@ func statsFields(a graph.Args, _ []*graph.Node) []graph.FieldSpec {
 var histogramFields = []graph.FieldSpec{
 	numField("bins", graph.Unitless, "number of bins"),
 	strField("channel", "L, r, g or b"),
-	strField("space", "working space of the levels"),
-	{Name: "counts", Type: "number[]", Doc: "pixels per bin over [0, 1]"},
+	strField("space", "the space of the levels (encoded or linear)"),
 	numField("under", graph.Unitless, "pixels below 0"),
 	numField("over", graph.Unitless, "pixels above 1"),
 	numField("total", graph.Unitless, "pixels counted"),
+	{Name: "rows", Type: "rows", Doc: "one row per bin over [0, 1]", Rows: []graph.FieldSpec{
+		numField("lo", graph.Level, "lower edge of the bin"), numField("hi", graph.Level, "upper edge"), numField("count", graph.Unitless, "pixels in the bin")}},
 }
 
 var dustFields = []graph.FieldSpec{

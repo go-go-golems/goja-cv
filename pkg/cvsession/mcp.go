@@ -47,7 +47,7 @@ type EvalInput struct {
 type OpenInput struct {
 	Path      string `json:"path" jsonschema:"Image file to open (PNG, JPEG, TIFF, LinearRaw DNG, .npy)."`
 	Encoding  string `json:"encoding,omitempty" jsonschema:"Optional; omit it to use what the file says (photographs: srgb; float TIFF, DNG, .npy: linear). Pass linear only for data stored linearly in an integer file (scientific data, density maps, raw scans), srgb to treat linear-looking data as a photograph."`
-	As        string `json:"as,omitempty" jsonschema:"Optional; omit it to bind the image to img (replacing the current one). Pass a name (an identifier such as ref or scan) to keep img and open this image as a second global."`
+	Name      string `json:"name,omitempty" jsonschema:"Optional; omit it to bind the image to img (replacing the current one). Pass a name (an identifier such as ref or scan) to keep img and open this image as a second global."`
 	SessionID string `json:"sessionId,omitempty" jsonschema:"Optional; omit it to use the default session; only pass ids returned by create_session or list_sessions."`
 }
 
@@ -61,7 +61,7 @@ func NewMCPServer(ctx context.Context, app *App) (*MCPServer, error) {
 	s := &MCPServer{
 		App:            app,
 		DefaultSession: summary.ID,
-		limits:         replmcp.Limits{MaxResultChars: 20000, MaxImages: app.opts.MaxLooks + app.opts.MaxData, MaxImageBytes: app.opts.MaxLookBytes},
+		limits:         replmcp.Limits{MaxResultChars: 20000, MaxImages: app.opts.MaxLooks, MaxImageBytes: app.opts.MaxLookBytes},
 	}
 	server, err := replmcp.NewServer(app,
 		replmcp.WithName("goja-cv"),
@@ -164,11 +164,11 @@ func (s *MCPServer) open(ctx context.Context, _ *mcp.CallToolRequest, in OpenInp
 		return nil, nil, errors.New("path is empty")
 	}
 	path, _ := json.Marshal(in.Path)
-	name := strings.TrimSpace(in.As)
+	name := strings.TrimSpace(in.Name)
 	if name == "" {
 		name = "img"
 	}
-	opts := map[string]any{"as": name}
+	opts := map[string]any{"name": name}
 	if e := strings.TrimSpace(in.Encoding); e != "" {
 		opts["encoding"] = e
 	}

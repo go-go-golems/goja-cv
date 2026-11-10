@@ -10,6 +10,7 @@ import (
 	"github.com/go-go-golems/goja-cv/internal/testimage"
 	"github.com/go-go-golems/goja-cv/pkg/cv/buffer"
 	"github.com/go-go-golems/goja-cv/pkg/cv/graph"
+	"github.com/go-go-golems/goja-cv/pkg/cv/graph/graphtest"
 	"github.com/go-go-golems/goja-cv/pkg/cv/ops"
 )
 
@@ -53,12 +54,12 @@ func renderEngine(t *testing.T, s *seen) (*graph.Engine, *graph.Node) {
 			},
 		},
 		graph.OpDef{
-			Name: "testlevel", On: graph.KindImage, Inputs: []graph.Kind{graph.KindRegions}, Returns: graph.KindImage, Class: graph.Decoration,
-			Args: []graph.ArgSpec{{Name: "level", Type: "number", Positional: true}},
+			Name: "testlevel", On: graph.KindImage, Returns: graph.KindImage, Class: graph.Decoration,
+			Args: []graph.ArgSpec{{Name: "regions", Type: "Regions", Positional: true}, {Name: "level", Type: "number", Positional: true}},
 			Run: func(_ context.Context, _ *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
 				s.mu.Lock()
 				s.level = a.Number("level")
-				s.regions = in[1].(*graph.RegionsValue).Scale
+				s.regions = a.Value("regions").(*graph.RegionsValue).Scale
 				s.mu.Unlock()
 				return in[0], nil
 			},
@@ -71,7 +72,7 @@ func renderEngine(t *testing.T, s *seen) (*graph.Engine, *graph.Node) {
 			},
 		},
 	)
-	e := graph.NewEngine(reg, graph.EngineOptions{})
+	e := graph.NewEngine(reg, graphtest.Options(t))
 	p := filepath.Join(t.TempDir(), testimage.PlantedTIFF)
 	if _, err := testimage.WritePlanted(context.Background(), p); err != nil {
 		t.Fatal(err)
@@ -173,23 +174,19 @@ func TestRenderDataIsNotUpsampled(t *testing.T) {
 	s := &seen{}
 	e, img := renderEngine(t, s)
 	st, _ := mustCall(t, e, "stats", img)
-	mean, _ := mustCall(t, e, "field", st, "meanL")
 	sp, _ := mustCall(t, e, "detect.specks", img)
-	lv, _ := mustCall(t, e, "testlevel", img, graph.NodeArg{ID: sp.ID}, graph.NodeArg{ID: mean.ID})
+	lv, _ := mustCall(t, e, "testlevel", img, graph.NodeArg{ID: sp.ID}, 0.25)
 	render(t, e, lv, graph.RenderOptions{Scale: 8, Window: &graph.Frame{X: 0, Y: 0, W: 32, H: 32}})
-	want, err := e.Evaluate(ctx, mean.ID, graph.EvalOptions{Scale: 1})
+	if s.level != 0.25 || s.regions != 1 {
+		t.Fatalf("level %g, regions at scale %g, want 0.25 and 1", s.level, s.regions)
+	}
+	// rendering a Value node returns its data
+	want, err := e.Evaluate(ctx, st.ID, graph.EvalOptions{Scale: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if w, _ := want.(*graph.DataValue).Number(); s.level != w {
-		t.Fatalf("lifted value %g, want the scale-1 number %g", s.level, w)
-	}
-	if s.regions != 1 {
-		t.Fatalf("regions at scale %g, want 1", s.regions)
-	}
-	// rendering a Value node returns its data
-	v, err := e.Render(ctx, mean.ID, graph.RenderOptions{Scale: 8})
-	if err != nil || v.(*graph.DataValue).Data != want.(*graph.DataValue).Data {
+	v, err := e.Render(ctx, st.ID, graph.RenderOptions{Scale: 8})
+	if err != nil || v.(*graph.DataValue).Data.(map[string]any)["meanL"] != want.(*graph.DataValue).Data.(map[string]any)["meanL"] {
 		t.Fatalf("render of a Value: %v %v", v, err)
 	}
 }
@@ -211,10 +208,12 @@ func TestRenderScalesAndMacros(t *testing.T) {
 	if v.Buf.W != 512 || v.Buf.H != 384 || v.Frame != img.Frame {
 		t.Fatalf("render at 2: %d×%d frame %s", v.Buf.W, v.Buf.H, v.Frame)
 	}
-	// below 1 a render is an evaluation cut to the window, aligned to buffer px
+	// below 1 a render is an evaluation cut to the window: exactly
+	// ScaledSize(window, scale) buffer px, starting at the buffer pixel under
+	// the window's corner (doc x 10 for x 11 at scale 0.5)
 	half := render(t, e, img, graph.RenderOptions{Scale: 0.5, Window: &graph.Frame{X: 11, Y: 10, W: 20, H: 10}})
-	if half.Buf.W != 11 || half.Buf.H != 5 {
-		t.Fatalf("render at 0.5 of a 20×10 window: %d×%d", half.Buf.W, half.Buf.H)
+	if ox, oy := half.BufferOrigin(); half.Buf.W != 10 || half.Buf.H != 5 || ox != 10 || oy != 10 {
+		t.Fatalf("render at 0.5 of a 20×10 window: %d×%d from (%g, %g)", half.Buf.W, half.Buf.H, ox, oy)
 	}
 	// a macro node renders its expansion
 	parts, err := e.Call("split", img.ID, nil)

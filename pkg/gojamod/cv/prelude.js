@@ -4,10 +4,13 @@
 // registry (native.__registry()), so there is one source of truth. Rules:
 //   - `then` makes nodes awaitable (Value → data, Image → summary); helpers in
 //     this file never touch `then` on a node: they check isNode() and read __id.
-//   - Symbol.toPrimitive / valueOf throw E_LAZY_COMPARE (string hint: a label).
+//   - Symbol.toPrimitive / valueOf throw E_NOT_AWAITED (string hint: a label).
 //   - Assigning, defining or deleting properties throws E_IMMUTABLE.
-//   - Unknown properties on Value nodes are derived fields (stats().meanL);
-//     on other kinds they throw E_UNKNOWN_METHOD with suggestions from Go.
+//   - On a Value or Regions node, a property that is not a method throws
+//     E_NOT_AWAITED (stats().p99: await it first); Regions nodes have no
+//     methods (regions are arguments of image methods); on an Image node an
+//     unknown property throws E_UNKNOWN_METHOD with suggestions from Go.
+//   - Options are literal values: a node passed as an option is E_ARG_TYPE.
 // Evaluates to function (native) returning the module exports.
 (function (native) {
   "use strict";
@@ -31,101 +34,42 @@
     tables[kind] = t;
   }
 
-  const FIELDS = new Set(native.__fieldNames());
-  const OTHER_METHODS = new Set();
-  for (const kind of Object.keys(METHODS)) {
-    if (kind === "Value") continue;
-    for (const name of METHODS[kind]) OTHER_METHODS.add(name.split(".")[0]);
-  }
-
-  // properties that generic JS machinery probes; they must not derive fields
-  // or throw (console formatting, JSON, frameworks).
+  // properties that generic JS machinery probes; they must not throw
+  // (console formatting, JSON, frameworks).
   const PROBES = new Set(["constructor", "__proto__", "prototype", "inspect", "nodeType", "$$typeof", "asymmetricMatch"]);
 
   const nodeSet = new WeakSet();
   const proxies = new Map(); // id → proxy: hash-consed nodes are === in JS too
 
-  // Awaited data keeps a link to its node: a hidden symbol, plus the node's
-  // methods as non-enumerable properties for names the data (or its
-  // prototype) does not have. Data wins for reads (r.count stays the
-  // number), and Object.keys, JSON and the YAML result are unchanged. Ops
-  // given such data lift it back to the node (marshal).
-  const NODE = Symbol("cv.node");
+  // Awaited regions are a plain array of flat items ({ id, x, y, w, h, cx,
+  // cy, area, … }). Each item carries its link [node, index] (the node it
+  // came from and its position there) under an enumerable symbol key: object
+  // spread copies it, JSON, Object.keys and the YAML result ignore it, and
+  // filter/sort/slice keep the same objects. Passed back to an op, marshal
+  // sends it as __cvref, so the item stands for its region's exact pixels.
+  const ITEM = Symbol("cv.item");
 
-  // Region items are flat ({ id, x, y, w, h, cx, cy, area, aspect, … }).
-  // Names agents remember from older docs (box, centroid, meanMask) are
-  // non-enumerable accessors on one shared prototype that throw E_NO_FIELD
-  // with the literal fix: a diagnostic, not an alias (no data comes back).
-  const ITEM_PROTO = Object.create(Object.prototype);
-  for (const name of Object.keys(native.__removedFields())) {
-    Object.defineProperty(ITEM_PROTO, name, {
-      get() {
-        return native.__noField(name);
-      },
-      enumerable: false,
-      configurable: false,
-    });
-  }
-  native.__itemProto(ITEM_PROTO);
-  const ARRAY_METHODS = ["slice", "map", "forEach", "reduce", "find", "findIndex", "some", "every", "sort", "indexOf", "includes", "flatMap", "at", "concat", "join", "push"];
-
-  function link(v, node) {
-    if (v === null || typeof v !== "object" || !node || !Object.isExtensible(v)) return v;
-    Object.defineProperty(v, NODE, { value: node });
-    const tab = tables[node.__kind];
-    const names = tab ? Object.keys(tab) : [];
-    names.push("look", "save");
-    for (const name of names) {
-      if (name === "then") continue;
-      if (name in v) {
-        // a data field shadows the method (awaited Regions: count); noted so
-        // the session can explain a later "is not a function"
-        if (Object.prototype.hasOwnProperty.call(v, name) && typeof v[name] !== "function") native.__collision(name, node.__kind, String(v[name]));
-        continue;
-      }
-      Object.defineProperty(v, name, { value: node[name], writable: true, configurable: true, enumerable: false });
-    }
-    if (node.__kind === "Regions" && Array.isArray(v.items)) {
-      for (const it of v.items) {
-        if (it !== null && typeof it === "object" && Object.getPrototypeOf(it) === Object.prototype) Object.setPrototypeOf(it, ITEM_PROTO);
-      }
-      // awaited Regions are { count, items }: array methods say so
-      for (const name of ARRAY_METHODS) {
-        if (name in v) continue;
-        Object.defineProperty(v, name, { value: () => native.__notArray(name), writable: true, configurable: true, enumerable: false });
-      }
-      if (!(Symbol.iterator in v)) Object.defineProperty(v, Symbol.iterator, { value: () => native.__notArray("iterator"), configurable: true });
-    }
-    return v;
+  function linkItems(arr, id) {
+    if (Array.isArray(arr)) arr.forEach((it, i) => { if (it !== null && typeof it === "object") it[ITEM] = [id, i]; });
+    return arr;
   }
 
   function isNode(x) {
     return typeof x === "object" && x !== null && nodeSet.has(x);
   }
 
-  // data lambdas: one native id per function object, so the same function
-  // passed twice gives the same (hash-consed) node.
-  const funcIds = new WeakMap();
-  function funcId(fn) {
-    let id = funcIds.get(fn);
-    if (id === undefined) {
-      id = native.__func(fn);
-      funcIds.set(fn, id);
-    }
-    return id;
-  }
-
   // marshal converts call arguments for the native side: nodes become
-  // { __cvnode: id }, functions { __cvfunc: id }; arrays and plain objects
-  // are walked (nodes inside options objects are lifted by Go).
+  // { __cvnode: id }, linked items { __cvref: [node, index], …fields };
+  // arrays and plain objects are walked (a node is accepted only where an op
+  // takes an image, a mask or regions; elsewhere Go refuses it: options are
+  // literal values).
   function marshal(x) {
     if (x === null || x === undefined) return x;
     if (isNode(x)) return { __cvnode: x.__id };
-    if (typeof x === "object" && x[NODE]) return { __cvnode: x[NODE].__id }; // awaited data → its node
-    if (typeof x === "function") return { __cvfunc: funcId(x) };
     if (Array.isArray(x)) return x.map(marshal);
     if (typeof x === "object") {
       const o = {};
+      if (x[ITEM] !== undefined) o.__cvref = x[ITEM];
       for (const k of Object.keys(x)) o[k] = marshal(x[k]);
       return o;
     }
@@ -133,7 +77,7 @@
   }
 
   function label(t) {
-    const d = native.__describe(t.__id);
+    const d = native.__explain(t.__id);
     return "[" + d.kind + " #" + d.id + " " + d.call + "]";
   }
 
@@ -193,25 +137,11 @@
     });
   }
 
-  function paramProp(t, prop) {
-    switch (prop) {
-      case "value":
-        return native.__paramInfo(t.__id).value;
-      case "touched":
-        return native.__paramInfo(t.__id).touched;
-      case "name":
-        return native.__paramInfo(t.__id).name;
-      case "def":
-        return native.__paramInfo(t.__id);
-    }
-    return undefined;
-  }
-
   function lookup(t, prop) {
     if (typeof prop === "symbol") {
       if (prop === Symbol.toPrimitive) {
         return function (hint) {
-          return hint === "string" ? label(t) : native.__lazy(t.__id, hint === "default" ? "primitive" : hint);
+          return hint === "string" ? label(t) : native.__notAwaited(t.__id, null, hint === "default" ? "primitive" : hint);
         };
       }
       if (prop === Symbol.toStringTag) return "cv." + t.__kind;
@@ -219,11 +149,12 @@
     }
     switch (prop) {
       case "then":
+        // await: a Value or Regions node evaluates at scale 1 (Regions: an
+        // array of linked items); an Image resolves to its static summary
+        // (nothing is computed)
         return function (onFulfilled, onRejected) {
-          const node = proxies.get(t.__id);
-          return native.__evaluate(t.__id, null)
-            .then((v) => link(v, node))
-            .then(onFulfilled, onRejected);
+          const p = native.__evaluate(t.__id);
+          return (t.__kind === "Regions" ? p.then((v) => linkItems(v, t.__id)) : p).then(onFulfilled, onRejected);
         };
       case "__id":
         return t.__id;
@@ -235,34 +166,25 @@
         };
       case "valueOf":
         return function () {
-          return native.__lazy(t.__id, "number");
+          return native.__notAwaited(t.__id, null, "number");
         };
       case "toJSON":
         return function () {
           return { node: label(t) };
         };
       case "look":
-        // look({ label, maxSide }) → a Go-backed look (an image the eval returns)
+        // look(label | { label, zoom, … }) → a Go-backed look, queued: every
+        // look created in an eval is delivered (up to four)
         return function (opts) {
-          return native.__look(t.__id, opts === undefined ? null : opts);
+          return native.__look(t.__id, opts === undefined ? null : marshal(opts));
         };
-      case "save":
-        // save(path, { depth }) → a promise of the saved file (under --out-root)
-        return function (path, opts) {
-          return native.__save(t.__id, path === undefined ? null : path, opts === undefined ? null : opts);
-        };
-    }
-    if (PROBES.has(prop)) return undefined;
-    if (t.__kind === "Param") {
-      const v = paramProp(t, prop);
-      if (v !== undefined) return v;
     }
     const tab = tables[t.__kind];
     const entry = tab && tab[prop];
     if (entry) return entry.ns ? namespaceFor(t, prop, entry.ns) : method(t, entry.op);
-    // a method of another kind on a Value (stats().exposure) is an error with
-    // a cross-kind hint, unless it is also a documented field (dust().count)
-    if (t.__kind === "Value" && (!OTHER_METHODS.has(prop) || FIELDS.has(prop))) return callOp(t, "field", [prop]);
+    if (PROBES.has(prop)) return undefined;
+    // lazy data: reading .p99 of stats() means "after awaiting it"
+    if (t.__kind === "Value" || t.__kind === "Regions") return native.__notAwaited(t.__id, prop);
     return native.__unknown(t.__kind, prop, t.__id);
   }
 
@@ -282,7 +204,7 @@
     has(t, prop) {
       if (typeof prop !== "string") return false;
       const tab = tables[t.__kind];
-      return prop === "then" || prop === "__id" || prop === "__kind" || prop === "look" || prop === "save" || !!(tab && tab[prop]);
+      return prop === "then" || prop === "__id" || prop === "__kind" || prop === "look" || !!(tab && tab[prop]);
     },
     ownKeys() {
       return [];
@@ -305,34 +227,15 @@
     if (!isNode(x)) {
       const e = new Error(where + " needs a cv node.");
       e.name = e.code = "E_ARG_TYPE";
+      e.cv = true;
+      e.fix = where + "(img.gaussian(2))";
       throw e;
     }
     return x;
   }
 
-  const P = {
-    slider(name, opts) {
-      return nodeFor(native.__param("slider", name, marshal(opts || {})));
-    },
-    toggle(name, opts) {
-      return nodeFor(native.__param("toggle", name, marshal(opts || {})));
-    },
-    choice(name, opts) {
-      return nodeFor(native.__param("choice", name, marshal(opts || {})));
-    },
-    // set moves a param as the person would (tests, hosts).
-    set(name, value) {
-      native.__paramSet(isNode(name) ? name.name : name, value);
-    },
-    list() {
-      return native.__params();
-    },
-  };
-
   const cv = {
     version: native.__version,
-    kinds: native.__kinds(), // graph.Kinds
-    P: P,
     // open(path, { encoding, box, origin }) → Image
     open(path, opts) {
       return nodeFor(native.__open(path, opts === undefined ? null : marshal(opts)));
@@ -352,29 +255,16 @@
         return native.__docsRead(id, opts === undefined ? null : opts);
       },
     }),
-    // evaluate(node, { scale }) evaluates at an explicit scale: a number in
-    // (0, 1], "preview" (default for await), "look" or "full" (1.0).
-    evaluate(node, opts) {
-      requireNode(node, "cv.evaluate");
-      const scale = opts && opts.scale !== undefined ? opts.scale : null;
-      return native.__evaluate(node.__id, scale).then((v) => link(v, node));
+    // explain(node) → { id, kind, op, call, frame, encoding, space, path,
+    // graph }: synchronous, evaluates nothing
+    explain(node) {
+      return native.__explain(requireNode(node, "cv.explain").__id);
     },
-    describe(node) {
-      return native.__describe(requireNode(node, "cv.describe").__id);
-    },
-    isNode: isNode,
-    // json(x, { name }) / csv(x, { name, columns }) → a Data handle: content
-    // for programs (CLI: a file), or .save(path) under --out-root. Plain
-    // data is passed as it is (not lifted back to its node).
-    json(x, opts) {
-      return native.__data("json", x, opts === undefined ? null : opts);
-    },
-    csv(x, opts) {
-      return native.__data("csv", x, opts === undefined ? null : opts);
-    },
-    // warnings({ clear }) lists RANGE warnings collected while building nodes.
-    warnings(opts) {
-      return native.__warnings(!!(opts && opts.clear));
+    // save(path, x, { depth }) → a promise of the saved file, in the
+    // workspace; the extension picks the format. x is passed as it is: a node,
+    // or plain data (item links stay out of files).
+    save(path, x, opts) {
+      return native.__save(path, x, opts === undefined ? null : opts);
     },
   };
   for (const name of MODULE_OPS) {

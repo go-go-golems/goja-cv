@@ -3,12 +3,14 @@ package graph_test
 import (
 	"context"
 	"math"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/go-go-golems/goja-cv/pkg/cv/buffer"
 	"github.com/go-go-golems/goja-cv/pkg/cv/graph"
 	"github.com/go-go-golems/goja-cv/pkg/cv/graph/graphtest"
+	"github.com/go-go-golems/goja-cv/pkg/cv/kernels"
 	"github.com/go-go-golems/goja-cv/pkg/cv/ops"
 )
 
@@ -21,7 +23,6 @@ func spaceEngine(t *testing.T) *graph.Engine {
 	// a derived op with an identity, to test reinterpretation and stamping
 	reg.MustRegister(graph.OpDef{
 		Name: "testderived", On: graph.KindImage, Returns: graph.KindImage,
-		Space:  graph.SpaceRule{Default: buffer.SpaceEncoded},
 		Result: graph.DerivedEnc,
 		Args:   []graph.ArgSpec{{Name: "k", Type: "number", Positional: true, Default: 1.0}},
 		Identity: func(a graph.Args) bool {
@@ -36,7 +37,7 @@ func spaceEngine(t *testing.T) *graph.Engine {
 			return graph.NewImage(out), nil
 		},
 	})
-	return graph.NewEngine(reg, graph.EngineOptions{})
+	return graph.NewEngine(reg, graphtest.Options(t))
 }
 
 func src(t *testing.T, e *graph.Engine, enc string, fill ...float64) *graph.Node {
@@ -85,177 +86,238 @@ func hasWarning(ws []graph.Warning, code string) bool {
 	return false
 }
 
-func TestSpaceDefaults(t *testing.T) {
-	reg := ops.NewRegistry()
-	for name, want := range map[string]buffer.Space{
-		"exposure": buffer.SpaceLinear, "gaussian": buffer.SpaceLinear, "blend": buffer.SpaceLinear,
-		"within": buffer.SpaceLinear, "heal": buffer.SpaceLinear, "inpaint": buffer.SpaceLinear,
-		"toGray": buffer.SpaceLinear, "stats": buffer.SpaceLinear, "levels": buffer.SpaceLinear,
-		"contrast": buffer.SpaceEncoded, "histogram": buffer.SpaceEncoded, "mask.luminance": buffer.SpaceEncoded,
-		"mask.color": buffer.SpaceEncoded, "mask.flood": buffer.SpaceEncoded, "detect.specks": buffer.SpaceEncoded,
-		"check.dust": buffer.SpaceEncoded, "overlay": buffer.SpaceEncoded, "add": buffer.SpaceEncoded, "sub": buffer.SpaceEncoded,
-		"mask.box": buffer.SpaceNone, "mask.gradient": buffer.SpaceNone,
-	} {
-		op, ok := reg.Lookup(graph.KindImage, name)
-		if !ok {
-			t.Fatalf("no op %s", name)
-		}
-		if op.Space.Default != want {
-			t.Errorf("%s defaults to %q, want %q", name, op.Space.Default, want)
-		}
-		hasOption := false
-		for _, a := range op.Args {
-			hasOption = hasOption || a.Name == graph.SpaceArg
-		}
-		if hasOption != (want != buffer.SpaceNone) {
-			t.Errorf("%s: space option %v", name, hasOption)
-		}
-	}
-	if op, ok := reg.Lookup(graph.KindNone, "compare"); !ok || op.Space.Default != buffer.SpaceEncoded {
-		t.Errorf("cv.compare: %v", op)
-	}
-	if op, ok := reg.Lookup(graph.KindMask, "refine"); !ok || op.Space.Default != buffer.SpaceEncoded {
-		t.Error("refine defaults to encoded")
-	}
-	if len(reg.Find(graph.ConvertOp)) != 0 {
-		t.Error("convert is internal: not listed")
-	}
-	e := spaceEngine(t)
-	img := src(t, e, "srgb", 0.2, 0.3, 0.4)
-	if _, err := e.Call(graph.ConvertOp, img.ID, []any{"encoded"}); err == nil {
-		t.Error("convert must not be callable")
-	}
-}
+// gradientTIFF is an sRGB-encoded 16-bit test file (cv.open).
+var gradientTIFF, _ = filepath.Abs("../../../testdata/gradient-64x48-16bit.tif")
 
-func TestSpaceOptionAndStatics(t *testing.T) {
-	e := spaceEngine(t)
-	img := src(t, e, "srgb", 0.2, 0.3, 0.4)
-	if img.Enc != buffer.EncSRGB || img.Space != buffer.SpaceLinear {
-		t.Fatalf("source statics %s", graph.Statics(img))
-	}
-	a, _ := mustCall(t, e, "exposure", img, 0.3)
-	b, _ := mustCall(t, e, "exposure", img, 0.3, map[string]any{"space": "linear"})
-	c, _ := mustCall(t, e, "exposure", img, 0.3, map[string]any{"space": "encoded"})
-	if a.ID != b.ID || a.ID == c.ID || a.Hash == c.Hash {
-		t.Fatal("the resolved space must be part of the hash, and the default must equal the omitted option")
-	}
-	if a.Space != buffer.SpaceLinear || c.Space != buffer.SpaceEncoded || c.Enc != buffer.EncSRGB {
-		t.Fatalf("statics %s / %s", graph.Statics(a), graph.Statics(c))
-	}
-	if got := graph.Describe(e.Builder(), a, 1, nil); got != "exposure(ev: 0.3)" {
-		t.Errorf("default space shown: %q", got)
-	}
-	if got := graph.Describe(e.Builder(), c, 1, nil); got != `exposure(ev: 0.3, space: "encoded")` {
-		t.Errorf("explicit space hidden: %q", got)
-	}
-	// a param cannot move the space: it changes the graph's shape
-	p, _, err := e.DeclareParam(graph.ParamDef{Name: "sp", Type: "choice", Options: []string{"linear", "encoded"}, Value: "linear"}, false)
+func openGradient(t *testing.T, e *graph.Engine) *graph.Node {
+	t.Helper()
+	img, err := e.Open(gradientTIFF, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.Call("exposure", img.ID, []any{0.3, map[string]any{"space": graph.NodeArg{ID: p.ID}}}); err == nil {
-		t.Fatal("a node for space was accepted")
+	return img
+}
+
+// TestOpenIsEncodedAndAsConverts (GCV-004 §4.2): cv.open returns file units;
+// as() converts; as is the identity on linear-encoded and derived images; a
+// conversion and its inverse cancel; the linear view of a file is its
+// pyramid level (openLinear, no copy).
+func TestOpenIsEncodedAndAsConverts(t *testing.T) {
+	e := graph.NewEngine(ops.NewRegistry(), graphtest.Options(t))
+	img := openGradient(t, e)
+	if img.Enc != buffer.EncSRGB || img.Space != buffer.SpaceEncoded {
+		t.Fatalf("open statics %s", graph.Statics(img))
 	}
-	// Value statics: stats measured img (srgb) in linear space; fields inherit
+	lin, _ := mustCall(t, e, "as", img, "linear")
+	if lin.Op.Name != graph.OpenLinearOp || lin.Space != buffer.SpaceLinear || lin.Frame != img.Frame || len(lin.Inputs) != 0 {
+		t.Fatalf("as(open, linear) is %s %s", graph.Label(lin), graph.Statics(lin))
+	}
+	if back, _ := mustCall(t, e, "as", lin, "encoded"); back.ID != img.ID {
+		t.Fatalf("as(openLinear, encoded) is %s, want the opened file", graph.Label(back))
+	}
+	g, _ := mustCall(t, e, "gaussian", lin, 2.0)
+	ge, _ := mustCall(t, e, "as", g, "encoded")
+	if gl, _ := mustCall(t, e, "as", ge, "linear"); gl.ID != g.ID {
+		t.Fatalf("as(as(x, encoded), linear) is %s, want x", graph.Label(gl))
+	}
+	if same, _ := mustCall(t, e, "as", img, "encoded"); same.ID != img.ID {
+		t.Fatal("as to the image's own space is the identity")
+	}
+	// linear-encoded and derived images: both spaces coincide
+	te := spaceEngine(t)
+	ld := src(t, te, "linear", 0.3)
+	if n, _ := mustCall(t, te, "as", ld, "linear"); n.ID != ld.ID {
+		t.Fatal("as on linear-encoded data is the identity")
+	}
+	d, _ := mustCall(t, te, "testderived", src(t, te, "srgb", 0.2), 2.0)
+	if n, _ := mustCall(t, te, "as", d, "encoded"); n.ID != d.ID {
+		t.Fatal("as on a derived image is the identity")
+	}
+	// values: encoded file units, linear light through as
+	ev, lv := image(t, e, img), image(t, e, lin)
+	for i := 0; i < ev.Buf.N(); i += 97 {
+		if math.Abs(buffer.SRGBToLinear(float64(ev.Buf.Pix[i]))-float64(lv.Buf.Pix[i])) > 1e-5 {
+			t.Fatalf("pixel %d: encoded %g, linear %g", i, ev.Buf.Pix[i], lv.Buf.Pix[i])
+		}
+	}
+	if _, err := e.Call("gaussian", img.ID, []any{2.0, map[string]any{"space": "linear"}}); err == nil {
+		t.Fatal("the space option is gone")
+	} else if ce, _ := graph.AsError(err); ce.Code != graph.EUnknownOption {
+		t.Fatalf("{ space }: %+v", ce)
+	}
+}
+
+// TestPhysicalBracket (GCV-004 §7.4, D3): exposure works in linear light and
+// returns file units: as(exposure(openLinear), encoded), the same values as
+// linear exposure followed by encoding, with no extra conversion node.
+func TestPhysicalBracket(t *testing.T) {
+	e := graph.NewEngine(ops.NewRegistry(), graphtest.Options(t))
+	img := openGradient(t, e)
+	ex, _ := mustCall(t, e, "exposure", img, 1.0)
+	if ex.Op.Name != graph.AsOp || ex.Space != buffer.SpaceEncoded || ex.Enc != buffer.EncSRGB {
+		t.Fatalf("exposure on file units is %s %s", graph.Label(ex), graph.Statics(ex))
+	}
+	inner := node(t, e, ex.Inputs[0])
+	src := node(t, e, inner.Inputs[0])
+	if inner.Op.Name != "exposure" || inner.Space != buffer.SpaceLinear || src.Op.Name != graph.OpenLinearOp {
+		t.Fatalf("bracket: %s ← %s", graph.Label(inner), graph.Label(src))
+	}
+	v := image(t, e, ex)
+	lin := image(t, e, src)
+	for i := 0; i < v.Buf.N(); i += 31 {
+		want := buffer.LinearToSRGB(2 * float64(lin.Buf.Pix[i]))
+		if math.Abs(float64(v.Buf.Pix[i])-want) > 1e-6 {
+			t.Fatalf("pixel %d: %g, want %g", i, v.Buf.Pix[i], want)
+		}
+	}
+	// two buffers beyond the pyramid: the exposure and the encoded result
+	if runs := e.Evaluator().TotalRuns(); runs != 3 { // openLinear, exposure, as
+		t.Fatalf("%d op runs, want 3 (openLinear, exposure, as)", runs)
+	}
+	if n := e.Evaluator().Runs(img.ID); n != 0 {
+		t.Fatal("the encoded source was computed for a physical op")
+	}
+	// the cache holds the pyramid level (openLinear's value), the exposure
+	// and the result: no conversion copy of the source
+	if cs, one := e.Cache().Stats(), int64(4*len(v.Buf.Pix)); cs.Entries != 3 || cs.Bytes < 3*one || cs.Bytes >= 4*one {
+		t.Fatalf("cache %d entries, %d bytes; want 3 buffers of %d", cs.Entries, cs.Bytes, one)
+	}
+}
+
+// TestReceiverDecides (GCV-004 §4.3, D16): other image inputs are converted
+// to the receiver's space, not the receiver.
+func TestReceiverDecides(t *testing.T) {
+	e := graph.NewEngine(ops.NewRegistry(), graphtest.Options(t))
+	img := openGradient(t, e)
+	lin, _ := mustCall(t, e, "as", img, "linear")
+	d, _ := mustCall(t, e, "sub", lin, graph.NodeArg{ID: img.ID})
+	if d.Inputs[0] != lin.ID || d.Inputs[1] != lin.ID {
+		t.Fatalf("sub's inputs: %s, %s", graph.Label(node(t, e, d.Inputs[0])), graph.Label(node(t, e, d.Inputs[1])))
+	}
+	d2, _ := mustCall(t, e, "sub", img, graph.NodeArg{ID: lin.ID})
+	if d2.Inputs[0] != img.ID || d2.Inputs[1] != img.ID { // as(openLinear, encoded) folds back to open
+		t.Fatalf("img.sub(lin)'s inputs: %s, %s", graph.Label(node(t, e, d2.Inputs[0])), graph.Label(node(t, e, d2.Inputs[1])))
+	}
+}
+
+// TestOutputSpaceFollowsTheReceiver is the output-space property (§7.4): on
+// an srgb image in each space, every following op's Image result is in the
+// receiver's space; physical ops return to it; display and derived results
+// are in their own.
+func TestOutputSpaceFollowsTheReceiver(t *testing.T) {
+	e := graph.NewEngine(ops.NewRegistry(), graphtest.Options(t))
+	img := openGradient(t, e)
+	lin, _ := mustCall(t, e, "as", img, "linear")
+	calls := map[string][]any{
+		"exposure": {0.5}, "levels": {map[string]any{"black": 0.1, "white": 0.9}}, "contrast": {0.2}, "gaussian": {1.5},
+		"toGray": {}, "add": {0.1}, "mul": {2.0}, "max": {0.2}, "min": {0.8}, "abs": {}, "crop": {[]any{4.0, 4.0, 20.0, 10.0}},
+		"heal": {graph.NodeArg{}}, "blend": {graph.NodeArg{}},
+	}
+	for _, recv := range []*graph.Node{img, lin} {
+		m, _ := mustCall(t, e, "mask.box", recv, []any{4.0, 4.0, 8.0, 8.0})
+		for name, raw := range calls {
+			args := append([]any(nil), raw...)
+			switch name {
+			case "heal":
+				args = []any{graph.NodeArg{ID: m.ID}}
+			case "blend":
+				args = []any{graph.NodeArg{ID: img.ID}}
+			}
+			n, _ := mustCall(t, e, name, recv, args...)
+			if n.Space != recv.Space {
+				t.Errorf("%s on %s: result in %s", name, recv.Space, n.Space)
+			}
+			image(t, e, n)
+		}
+		for _, name := range []string{"stats", "histogram"} {
+			n, _ := mustCall(t, e, name, recv)
+			if n.Space != recv.Space {
+				t.Errorf("%s on %s: numbers in %s", name, recv.Space, n.Space)
+			}
+		}
+		sub, _ := mustCall(t, e, "sub", recv, 0.1)
+		if sub.Enc != buffer.EncLinear {
+			t.Errorf("sub is derived: %s", graph.Statics(sub))
+		}
+		cm, _ := mustCall(t, e, "colormap", node(t, e, mustToGray(t, e, recv).ID), "viridis")
+		if cm.Enc != buffer.EncSRGB || cm.Space != buffer.SpaceEncoded {
+			t.Errorf("colormap is a picture: %s", graph.Statics(cm))
+		}
+	}
+}
+
+func mustToGray(t *testing.T, e *graph.Engine, n *graph.Node) *graph.Node {
+	t.Helper()
+	g, _ := mustCall(t, e, "toGray", n, "average")
+	return g
+}
+
+// TestOneLuminance (GCV-004 D20): stats' L fields, mask.luminance and
+// histogram read toGray() of the receiver: stats().p99 is the 99th
+// percentile of toGray(), and mask.luminance({ above: p99 }) selects about
+// 1 % of the pixels.
+func TestOneLuminance(t *testing.T) {
+	e := graph.NewEngine(ops.NewRegistry(), graphtest.Options(t))
+	img := openGradient(t, e)
 	s, _ := mustCall(t, e, "stats", img)
-	p99, _ := mustCall(t, e, "field", s, "p99")
-	if s.Enc != buffer.EncSRGB || s.Space != buffer.SpaceLinear || p99.Enc != buffer.EncSRGB || p99.Space != buffer.SpaceLinear {
-		t.Fatalf("value statics: stats %v/%v, p99 %v/%v", s.Enc, s.Space, p99.Enc, p99.Space)
+	st := evalMap(t, e, s)
+	g := image(t, e, func() *graph.Node { n, _ := mustCall(t, e, "toGray", img); return n }())
+	lum := append([]float32(nil), g.Buf.Plane(0)...)
+	if p99 := kernels.Percentile(lum, 0.99); math.Abs(p99-st["p99"].(float64)) > 1e-9 {
+		t.Fatalf("stats p99 %g, toGray p99 %g", st["p99"], p99)
 	}
-	// masks have no encoding and no space
-	m, _ := mustCall(t, e, "mask.luminance", img, map[string]any{"above": 0.5})
-	if m.Enc != buffer.EncNone || m.Space != buffer.SpaceNone {
-		t.Fatalf("mask statics %v/%v", m.Enc, m.Space)
+	m, _ := mustCall(t, e, "mask.luminance", img, map[string]any{"above": st["p99"], "softness": 0.0})
+	cov := evalNum(t, e, func() *graph.Node { n, _ := mustCall(t, e, "coverage", m); return n }())
+	if cov < 0.005 || cov > 0.02 {
+		t.Fatalf("mask.luminance({ above: p99 }) covers %g", cov)
 	}
-}
-
-func TestConvertInsertedOnceAndShared(t *testing.T) {
-	e := spaceEngine(t)
-	img := src(t, e, "srgb", 0.2, 0.3, 0.4)
-	c1, _ := mustCall(t, e, "contrast", img, 0.2)
-	c2, _ := mustCall(t, e, "mask.color", img, map[string]any{"hue": 30.0})
-	conv := node(t, e, c1.Inputs[0])
-	if conv.Op.Name != graph.ConvertOp || conv.Args.String("to") != "encoded" || conv.Inputs[0] != img.ID {
-		t.Fatalf("contrast input is %s", graph.Label(conv))
-	}
-	if c2.Inputs[0] != conv.ID {
-		t.Fatal("the two consumers do not share the conversion")
-	}
-	if conv.Enc != buffer.EncSRGB || conv.Space != buffer.SpaceEncoded {
-		t.Fatalf("convert statics %s", graph.Statics(conv))
-	}
-	v := image(t, e, c1)
-	image(t, e, c2)
-	if n := e.Evaluator().Runs(conv.ID); n != 1 {
-		t.Fatalf("convert ran %d times", n)
-	}
-	// contrast 0.2 around encoded mid-grey of sRGB_encode(0.2)
-	want := 0.5 + (buffer.LinearToSRGB(0.2)-0.5)*1.2
-	if got := float64(v.Buf.Plane(0)[0]); math.Abs(got-want) > 1e-6 || v.Enc != buffer.EncSRGB {
-		t.Fatalf("contrast value %g, want %g", got, want)
-	}
-	// the look of a linear-space node converts; the look of an encoded node does not
-	if id, _ := e.Display(img.ID); id != conv.ID {
-		t.Fatal("a look of img must render convert(img → encoded)")
-	}
-	if id, _ := e.Display(c1.ID); id != c1.ID {
-		t.Fatal("a look of an encoded-space node needs no conversion")
-	}
-	if id, _ := e.Display(c2.ID); id != c2.ID {
-		t.Fatal("masks are shown as they are")
-	}
-}
-
-func TestNoConversionForLinearData(t *testing.T) {
-	e := spaceEngine(t)
-	img := src(t, e, "linear", 0.3)
-	c, _ := mustCall(t, e, "contrast", img, 0.2)
-	if c.Inputs[0] != img.ID || c.Enc != buffer.EncLinear {
-		t.Fatalf("contrast on linear data reads %s", graph.Label(node(t, e, c.Inputs[0])))
-	}
-	if id, _ := e.Display(img.ID); id != img.ID {
-		t.Fatal("linear data is shown as stored")
-	}
-	if got := image(t, e, c).Buf.Pix[0]; math.Abs(float64(got)-(0.5+(0.3-0.5)*1.2)) > 1e-6 {
-		t.Fatalf("contrast on linear data: %g", got)
-	}
-}
-
-func TestGreyInputIsLuminanceOfLight(t *testing.T) {
-	e := spaceEngine(t)
-	red := src(t, e, "srgb", 1, 0, 0) // pure red: linear (1, 0, 0)
-	m, _ := mustCall(t, e, "mask.luminance", red, map[string]any{"above": 0.5})
-	conv := node(t, e, m.Inputs[0])
-	gray := node(t, e, conv.Inputs[0])
-	if conv.Op.Name != graph.ConvertOp || gray.Op.Name != "toGray" || gray.Args.String("weights") != "rec709" || gray.Space != buffer.SpaceLinear {
-		t.Fatalf("mask.luminance reads %s ← %s", graph.Label(conv), graph.Label(gray))
-	}
-	// sRGB_encode(0.2126) = 0.498 (today's number), not the luma 0.213
-	if got := float64(image(t, e, conv).Buf.Pix[0]); math.Abs(got-buffer.LinearToSRGB(0.2126)) > 1e-6 || math.Abs(got-0.498) > 1e-3 {
-		t.Fatalf("encoded luminance of red %g", got)
-	}
+	// the luminance of pure red in file units: sRGB_encode(0.2126) = 0.498
+	te := spaceEngine(t)
+	red := src(t, te, "srgb", 1, 0, 0)
 	for above, want := range map[float64]float32{0.49: 1, 0.51: 0} {
-		mm, _ := mustCall(t, e, "mask.luminance", red, map[string]any{"above": above, "softness": 0.0})
-		if got := image(t, e, mm).Buf.Pix[0]; got != want {
+		mm, _ := mustCall(t, te, "mask.luminance", red, map[string]any{"above": above, "softness": 0.0})
+		if got := image(t, te, mm).Buf.Pix[0]; got != want {
 			t.Errorf("mask.luminance({ above: %g }) on red = %g", above, got)
 		}
 	}
-	// refine's guide image (an Inputs entry) gets the same rule
-	box, _ := mustCall(t, e, "mask.box", red, []any{4.0, 4.0, 10.0, 10.0})
-	r, _ := mustCall(t, e, "refine", box, graph.NodeArg{ID: red.ID})
-	if r.Inputs[1] != conv.ID {
-		t.Fatalf("refine's guide is %s", graph.Label(node(t, e, r.Inputs[1])))
+}
+
+func evalMap(t *testing.T, e *graph.Engine, n *graph.Node) map[string]any {
+	t.Helper()
+	v, err := e.Evaluate(context.Background(), n.ID, graph.EvalOptions{Scale: 1})
+	if err != nil {
+		t.Fatal(err)
 	}
-	// histogram: the rule applies to channel "L" only
-	hl, _ := mustCall(t, e, "histogram", red)
-	hr, _ := mustCall(t, e, "histogram", red, map[string]any{"channel": "r"})
-	if hl.Inputs[0] != conv.ID || node(t, e, hr.Inputs[0]).Inputs[0] != red.ID {
-		t.Fatal("histogram grey input")
+	return v.(*graph.DataValue).Data.(map[string]any)
+}
+
+func evalNum(t *testing.T, e *graph.Engine, n *graph.Node) float64 {
+	t.Helper()
+	v, err := e.Evaluate(context.Background(), n.ID, graph.EvalOptions{Scale: 1})
+	if err != nil {
+		t.Fatal(err)
 	}
-	// detect.specks reports meanL in its (encoded) space
-	sp, _ := mustCall(t, e, "detect.specks", red)
-	if sp.Inputs[0] != conv.ID {
-		t.Fatal("detect.specks grey input")
+	f, _ := v.(*graph.DataValue).Number()
+	return f
+}
+
+// TestColormapRangeOnItsReceiver: colormap follows its receiver, so a range
+// measured on it maps p01 and p99 to the ends.
+func TestColormapRangeOnItsReceiver(t *testing.T) {
+	e := graph.NewEngine(ops.NewRegistry(), graphtest.Options(t))
+	g, _ := mustCall(t, e, "toGray", openGradient(t, e))
+	st := evalMap(t, e, func() *graph.Node { n, _ := mustCall(t, e, "stats", g); return n }())
+	cm, _ := mustCall(t, e, "colormap", g, "gray", map[string]any{"range": []any{st["p01"], st["p99"]}})
+	if cm.Inputs[0] != g.ID {
+		t.Fatalf("colormap converted its receiver: %s", graph.Label(node(t, e, cm.Inputs[0])))
+	}
+	v := image(t, e, cm)
+	var lo, hi float32 = 1, 0
+	for _, p := range v.Buf.Plane(0) {
+		lo, hi = min(lo, p), max(hi, p)
+	}
+	if lo > 0.01 || hi < 0.99 {
+		t.Fatalf("gray colormap over [p01, p99] spans [%g, %g]", lo, hi)
 	}
 }
 
@@ -280,13 +342,12 @@ func TestDerivedReinterpretsAndIdentityStampsCopies(t *testing.T) {
 	}
 	// the identity short-circuit returns the input's value stamped on a copy
 	id, _ := mustCall(t, e, "testderived", img) // k = 1
-	conv := node(t, e, id.Inputs[0])
-	cv := image(t, e, conv)
 	iv := image(t, e, id)
-	if iv == cv || iv.Buf != cv.Buf || iv.Enc != buffer.EncLinear || cv.Enc != buffer.EncSRGB {
-		t.Fatalf("identity: copy %v, shared buffer %v, encodings %v / %v", iv != cv, iv.Buf == cv.Buf, iv.Enc, cv.Enc)
+	sv := image(t, e, img)
+	if iv == sv || iv.Buf != sv.Buf || iv.Enc != buffer.EncLinear || sv.Enc != buffer.EncSRGB {
+		t.Fatalf("identity: copy %v, shared buffer %v, encodings %v / %v", iv != sv, iv.Buf == sv.Buf, iv.Enc, sv.Enc)
 	}
-	if again := image(t, e, conv); again.Enc != buffer.EncSRGB {
+	if again := image(t, e, img); again.Enc != buffer.EncSRGB {
 		t.Fatal("the input's cached value was rewritten")
 	}
 }
@@ -303,75 +364,41 @@ func TestLambdasResolveLikeDirectCalls(t *testing.T) {
 		if hole.Enc != img.Enc || hole.Space != img.Space || hole.Frame != img.Frame {
 			t.Fatalf("%s: placeholder statics %s", enc, graph.Statics(hole))
 		}
-		inner, _ := mustCall(t, e, "contrast", hole, 0.2)
+		inner, _ := mustCall(t, e, "exposure", hole, -0.2)
 		w, _ := mustCall(t, e, "within", img, graph.NodeArg{ID: m.ID}, graph.BuiltArg{Root: inner.ID, Hole: hole.ID})
-		direct, _ := mustCall(t, e, "contrast", img, 0.2)
-		edited := node(t, e, w.Inputs[2])
-		switch enc {
-		case "srgb": // within (linear) converts the encoded contrast result back
-			if edited.Op.Name != graph.ConvertOp || edited.Inputs[0] != direct.ID {
-				t.Fatalf("srgb: within's edit is %s", graph.Label(edited))
-			}
-		case "linear":
-			if edited.ID != direct.ID {
-				t.Fatalf("linear: within's edit is %s, want the direct contrast", graph.Label(edited))
-			}
+		direct, _ := mustCall(t, e, "exposure", img, -0.2)
+		if w.Inputs[2] != direct.ID {
+			t.Fatalf("%s: within's edit is %s, want the direct exposure", enc, graph.Label(node(t, e, w.Inputs[2])))
 		}
 	}
 }
 
 func TestCompareConvertsEachInput(t *testing.T) {
-	e := spaceEngine(t)
-	img := src(t, e, "srgb", 0.2, 0.3, 0.4)
-	c, _ := mustCall(t, e, "contrast", img, 0.2) // encoded
-	images := []any{graph.NodeArg{ID: img.ID}, graph.NodeArg{ID: c.ID}}
+	e := graph.NewEngine(ops.NewRegistry(), graphtest.Options(t))
+	img := openGradient(t, e)
+	lin, _ := mustCall(t, e, "as", img, "linear")
+	images := []any{graph.NodeArg{ID: img.ID}, graph.NodeArg{ID: lin.ID}}
 	cr, err := e.Call("compare", 0, []any{images})
 	if err != nil {
 		t.Fatal(err)
 	}
 	cmp := cr.Node()
-	if a := node(t, e, cmp.Inputs[0]); a.Op.Name != graph.ConvertOp || a.Inputs[0] != img.ID {
-		t.Fatalf("compare images[0] %s", graph.Label(a))
-	}
-	if cmp.Inputs[1] != c.ID {
-		t.Fatalf("compare images[1] %s", graph.Label(node(t, e, cmp.Inputs[1])))
-	}
-	if _, err := e.Call("compare", 0, []any{images, map[string]any{"space": "linear"}}); err == nil {
-		t.Fatal("compare took a space: it lays out what looks show")
+	if cmp.Inputs[0] != img.ID || cmp.Inputs[1] != img.ID { // display: both in file units
+		t.Fatalf("compare inputs %s, %s", graph.Label(node(t, e, cmp.Inputs[0])), graph.Label(node(t, e, cmp.Inputs[1])))
 	}
 }
 
-func TestSpaceAndEncodingWarnings(t *testing.T) {
-	for _, tc := range []struct {
-		enc  string
-		warn bool
-	}{{"srgb", true}, {"linear", false}} {
-		e := spaceEngine(t)
-		img := src(t, e, tc.enc, 0.2, 0.3, 0.4)
-		s, _ := mustCall(t, e, "stats", img) // linear
-		p99, _ := mustCall(t, e, "field", s, "p99")
-		_, ws := mustCall(t, e, "mask.luminance", img, map[string]any{"above": graph.NodeArg{ID: p99.ID}}) // encoded
-		if hasWarning(ws, graph.WSpace) != tc.warn {
-			t.Fatalf("%s: SPACE warning %v, want %v: %v", tc.enc, hasWarning(ws, graph.WSpace), tc.warn, ws)
-		}
-		if tc.warn && !strings.Contains(ws[len(ws)-1].Message, `mask.luminance.above comes from stats() in linear space, but mask.luminance runs in encoded space here. fix: img.stats({ space: "encoded" })`) {
-			t.Fatalf("SPACE message: %v", ws)
-		}
-		// the idiom levels({ black: s.p01, white: s.p99 }) stays quiet: both linear
-		p01, _ := mustCall(t, e, "field", s, "p01")
-		if _, ws := mustCall(t, e, "levels", img, map[string]any{"black": graph.NodeArg{ID: p01.ID}, "white": graph.NodeArg{ID: p99.ID}}); len(ws) != 0 {
-			t.Fatalf("%s: levels idiom warns: %v", tc.enc, ws)
-		}
-	}
+func TestEncodingWarnings(t *testing.T) {
 	e := spaceEngine(t)
 	a := src(t, e, "srgb", 0.2, 0.3, 0.4)
 	b := src(t, e, "linear", 0.2, 0.3, 0.4)
-	if _, ws := mustCall(t, e, "blend", a, graph.NodeArg{ID: b.ID}); hasWarning(ws, graph.WEncoding) {
+	al, _ := mustCall(t, e, "as", a, "linear")
+	if _, ws := mustCall(t, e, "blend", al, graph.NodeArg{ID: b.ID}); hasWarning(ws, graph.WEncoding) {
 		t.Fatal("ENCODING in linear space")
 	}
-	_, ws := mustCall(t, e, "blend", a, graph.NodeArg{ID: b.ID}, map[string]any{"space": "encoded"})
-	if !hasWarning(ws, graph.WEncoding) {
-		t.Fatalf("no ENCODING warning: %v", ws)
+	_, ws := mustCall(t, e, "blend", a, graph.NodeArg{ID: b.ID})
+	if !hasWarning(ws, graph.WEncoding) || !strings.Contains(ws[len(ws)-1].Message, `fix: img.as("linear").blend(…)`) {
+		t.Fatalf("no ENCODING warning with the as fix: %v", ws)
 	}
 }
 
@@ -379,9 +406,9 @@ func TestExplainShowsStatics(t *testing.T) {
 	e := spaceEngine(t)
 	img := src(t, e, "srgb", 0.2, 0.3, 0.4)
 	m, _ := mustCall(t, e, "mask.luminance", img, map[string]any{"above": 0.9})
-	lines := e.Explain(m.ID, 1)
-	want := []string{"mask.luminance(above: 0.9)", "convert(→ encoded)", "toGray(", "testsource"}
-	if len(lines) != 4 {
+	lines := e.Explain(m.ID)
+	want := []string{"mask.luminance(above: 0.9)", "testsource", "as(to: \"encoded\")", "toGray(", "as(to: \"linear\")", "(see above)"}
+	if len(lines) != len(want) {
 		t.Fatalf("explain: %q", lines)
 	}
 	for i, w := range want {
@@ -389,7 +416,8 @@ func TestExplainShowsStatics(t *testing.T) {
 			t.Fatalf("explain line %d %q lacks %q", i, lines[i], w)
 		}
 	}
-	if !strings.HasSuffix(lines[1], "enc srgb · space encoded") || !strings.HasSuffix(lines[2], "enc srgb · space linear") || strings.Contains(lines[0], "enc ") {
+	// a mask is a derived (linear-encoded) one-channel image
+	if !strings.HasSuffix(lines[2], "enc srgb · space encoded") || !strings.HasSuffix(lines[3], "enc srgb · space linear") || !strings.HasSuffix(lines[0], "enc linear · space linear") {
 		t.Fatalf("statics column: %q", lines)
 	}
 }

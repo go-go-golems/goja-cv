@@ -2,10 +2,7 @@ package graph
 
 import (
 	"fmt"
-	"sort"
 	"strings"
-
-	"github.com/go-go-golems/goja-cv/pkg/cv/buffer"
 )
 
 // Help renders the registry as plain data. With an empty name it returns an
@@ -16,7 +13,7 @@ func (r *Registry) Help(name string) (map[string]any, error) {
 	if name == "" {
 		perKind := map[string]any{}
 		var kinds []any
-		for _, k := range Kinds {
+		for _, k := range r.Receivers() {
 			kinds = append(kinds, string(k))
 			ms := r.Methods(k)
 			if len(ms) == 0 {
@@ -38,7 +35,7 @@ func (r *Registry) Help(name string) (map[string]any, error) {
 			"kinds":   kinds,
 			"ops":     perKind,
 			"sources": sources,
-			"usage":   "Calls build lazy nodes; await a node (or cv.evaluate(node, { scale })) to compute it. cv.help(\"name\") describes one op.",
+			"usage":   "Calls build lazy nodes; await a node to compute it (data at full resolution), node.look() to see it. cv.help(\"name\") describes one op.",
 		}, nil
 	}
 	ops := r.Find(name)
@@ -52,9 +49,7 @@ func (r *Registry) Help(name string) (map[string]any, error) {
 			}
 		}
 		e := Errorf(EUnknownMethod, "There is no op named %q.", name)
-		if t, ok := Synonyms[name]; ok && seen[t] {
-			e.Hint, e.Fix = fmt.Sprintf("Did you mean %q?", t), fmt.Sprintf("cv.help(%q)", t)
-		} else if sug := closest(name, all); sug != "" {
+		if sug := closest(name, all); sug != "" {
 			e.Hint, e.Fix = fmt.Sprintf("Did you mean %q?", sug), fmt.Sprintf("cv.help(%q)", sug)
 		}
 		return nil, e
@@ -77,28 +72,21 @@ func (r *Registry) Help(name string) (map[string]any, error) {
 		"usage":   strings.TrimPrefix(signatureHint(op, op.Name), "Usage: "),
 		"doc":     op.Doc,
 	}
-	if d := op.Space.Default; d != buffer.SpaceNone {
-		if op.Space.Fixed {
-			entry["space"] = d.String() + " (fixed)"
-		} else {
-			entry["space"] = d.String() + " (default; { space: \"linear\" | \"encoded\" } changes it)"
+	switch op.Space {
+	case Physical:
+		entry["space"] = "physical: computed in linear light, returned in the image's space"
+	case Display:
+		entry["space"] = "display: a picture of encoded values"
+	case Follows:
+		if op.On == KindImage && op.SpaceOf == nil {
+			entry["space"] = "the image's: numbers and results are in the space of the image it is called on (img.as(\"linear\") for linear light)"
 		}
 	}
 	if args := describeArgs(op.Args); len(args) > 0 {
 		entry["args"] = args
 	}
-	if len(op.Inputs) > 0 {
-		var ins []any
-		for _, k := range op.Inputs {
-			ins = append(ins, string(k))
-		}
-		entry["inputs"] = ins
-	}
 	if fs := op.DocFields(); len(fs) > 0 {
 		entry["fields"] = toAnyList(FieldNames(fs))
-	}
-	if len(op.Produces) > 0 {
-		entry["produces"] = toAnyList(sortedNames(op.Produces))
 	}
 	if len(op.See) > 0 {
 		entry["see"] = toAnyList(op.See)
@@ -114,11 +102,8 @@ func (r *Registry) FuncHelp(name string) (map[string]any, bool) {
 		return nil, false
 	}
 	on := "cv"
-	switch {
-	case len(f.On) > 0:
+	if len(f.On) > 0 {
 		on = strings.Join(f.On, ", ")
-	case f.Global:
-		on = "global"
 	}
 	entry := map[string]any{"on": on, "usage": f.UsageLine(), "doc": f.Doc}
 	if args := describeArgs(f.Args); len(args) > 0 {
@@ -142,9 +127,6 @@ func describeArgs(specs []ArgSpec) map[string]any {
 	out := map[string]any{}
 	for i := range specs {
 		s := &specs[i]
-		if s.Hidden {
-			continue
-		}
 		out[s.Name] = DescribeArgSpec(s)
 	}
 	return out
@@ -243,13 +225,4 @@ func fmtDefault(v any) string {
 		}
 	}
 	return fmt.Sprintf("%v", v)
-}
-
-func sortedNames(m map[string]string) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	sort.Strings(out)
-	return out
 }

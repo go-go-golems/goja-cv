@@ -3,6 +3,7 @@ package cvsession_test
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -18,10 +19,23 @@ var (
 	pngPath, _  = filepath.Abs(filepath.Join("..", "..", "testdata", "gradient-64x48-8bit.png"))
 )
 
+// testWorkspace gives a test session a temporary workspace and, when it
+// opens an image, the image's directory as a read directory.
+func testWorkspace(t *testing.T, opts cvsession.Options) cvsession.Options {
+	t.Helper()
+	if opts.Root == "" {
+		opts.Root = t.TempDir()
+	}
+	if opts.Image != "" && opts.Read == nil {
+		opts.Read = []string{filepath.Dir(opts.Image)}
+	}
+	return opts
+}
+
 func newApp(t *testing.T, opts cvsession.Options) (*cvsession.App, string) {
 	t.Helper()
 	ctx := context.Background()
-	app, err := cvsession.New(ctx, opts)
+	app, err := cvsession.New(ctx, testWorkspace(t, opts))
 	if err != nil {
 		t.Fatalf("new app: %v", err)
 	}
@@ -70,7 +84,7 @@ func TestStatsAndLookReturnYAMLAndOneImage(t *testing.T) {
 	if resp.Cell.Execution.Status != "ok" {
 		t.Fatalf("status %s: %s", resp.Cell.Execution.Status, resp.Cell.Execution.Error)
 	}
-	mustContain(t, out, "stats:", "meanL: 0.29507", "after: '[look 1: after — open(gradient-64x48-16bit.tif) → exposure(0.5) (64×48, 1 image px = 1.0 doc px)]'",
+	mustContain(t, out, "stats:", "meanL: 0.52726", "after: '[look 1: after — open(gradient-64x48-16bit.tif) → exposure(0.5) (64×48, 1 image px = 1.0 doc px)]'",
 		"context:", "images: img = gradient-64x48-16bit.tif (64×48, 16-bit TIFF, srgb)")
 	mustNotContain(t, out, "UNUSED_NODE")
 	if len(resp.Content) != 1 || resp.Content[0].MIMEType != "image/png" || len(resp.Content[0].Data) == 0 {
@@ -90,22 +104,21 @@ func TestStatsAndLookReturnYAMLAndOneImage(t *testing.T) {
 	mustContain(t, text(resp), "mem: b (look)")
 }
 
-func TestShowBeforeThrowStillDeliversTheImage(t *testing.T) {
+func TestLookBeforeThrowStillDeliversTheImage(t *testing.T) {
 	app, sid := newApp(t, cvsession.Options{Image: tiffPath})
-	resp := eval(t, app, sid, "show(img.exposure(-1), \"darker\")\nthrow new Error(\"boom\")")
+	resp := eval(t, app, sid, "img.exposure(-1).look(\"darker\")\nthrow new Error(\"boom\")")
 	out := text(resp)
 	t.Logf("result:\n%s", out)
 	if resp.Cell.Execution.Status == "ok" {
 		t.Fatalf("status ok, want an error")
 	}
-	mustContain(t, out, "error:", "code: Error", "message: boom", "where: 'line 2: throw new Error(\"boom\")'",
-		"shown:", "[look 1: darker — open(gradient-64x48-16bit.tif) → exposure(-1) (64×48, 1 image px = 1.0 doc px)]")
-	if len(resp.Content) != 1 || resp.Content[0].MIMEType != "image/png" {
+	mustContain(t, out, "error:", "code: Error", "message: boom", "where: 'line 2: throw new Error(\"boom\")'")
+	if len(resp.Content) != 1 || resp.Content[0].MIMEType != "image/png" || !strings.Contains(resp.Content[0].Caption, "look 1: darker") {
 		t.Fatalf("content %+v", resp.Content)
 	}
-	// show returns its look and also queues it once
-	resp = eval(t, app, sid, `const l = show(img, "x"); return { l, same: l === show(l) }`)
-	mustContain(t, text(resp), "l: '[look 2: x", "same: true")
+	// a returned look is also queued: delivered once; an equal look is the same look
+	resp = eval(t, app, sid, `const l = img.look("x"); img.look("x"); return { l }`)
+	mustContain(t, text(resp), "l: '[look 2: x")
 	if len(resp.Content) != 1 {
 		t.Fatalf("content %d items, want 1", len(resp.Content))
 	}
@@ -122,10 +135,10 @@ func TestUnusedNodeWarning(t *testing.T) {
 	}
 	for _, code := range []string{
 		`const a = img.exposure(0.3); return a.look()`,
-		`const a = img.exposure(0.3); return { m: await a.stats().meanL }`,
+		`const a = img.exposure(0.3); return { m: (await a.stats()).meanL }`,
 		`mem.a = img.exposure(0.3); return 1`,
-		`const a = img.exposure(0.3); show(a); return 1`,
-		`const s = img.stats(); const f = img.levels({ black: s.p01, white: s.p99 }); return f.look()`,
+		`const a = img.exposure(0.3); a.look(); return 1`,
+		`const s = await img.stats(); const f = img.levels({ black: s.p01, white: s.p99 }); return f.look()`,
 		`return img.exposure(0.4)`,
 	} {
 		mustNotContain(t, text(eval(t, app, sid, code)), "UNUSED_NODE")
@@ -140,18 +153,22 @@ func TestRangeWarningHasLine(t *testing.T) {
 
 func TestErrorYAMLHasCodeFixAndLine(t *testing.T) {
 	app, sid := newApp(t, cvsession.Options{Image: tiffPath})
-	resp := eval(t, app, sid, "const x = 1\nreturn img.brightness(0.3)")
+	resp := eval(t, app, sid, "const x = 1\nreturn img.exposre(0.3)")
 	out := text(resp)
 	t.Logf("result:\n%s", out)
-	mustContain(t, out, "error:\n  code: E_UNKNOWN_METHOD", "message: Image has no method \"brightness\".",
-		"where: 'line 2: return img.brightness(0.3)'", "path: open(gradient-64x48-16bit.tif) → ✗ brightness",
+	mustContain(t, out, "error:\n  code: E_UNKNOWN_METHOD", "message: Image has no method \"exposre\".",
+		"where: 'line 2: return img.exposre(0.3)'", "path: open(gradient-64x48-16bit.tif) → ✗ exposre",
 		"hint: Did you mean \"exposure\"?", "fix: img.exposure(…)")
 
 	out = text(eval(t, app, sid, "const a = 1\nreturn img.levels({ blak: 0.02 })"))
-	mustContain(t, out, "code: E_UNKNOWN_OPTION", "where: 'line 2: ", "fix: 'levels({ black: 0.02 })'", "valid: [black, white, gamma, auto, space]")
+	mustContain(t, out, "code: E_UNKNOWN_OPTION", "where: 'line 2: ", "fix: 'levels({ black: 0.02 })'", "valid: [black, white, gamma, auto]")
 
 	out = text(eval(t, app, sid, "if (img.stats().meanL > 0.5) return 1"))
-	mustContain(t, out, "code: E_LAZY_COMPARE", "where: 'line 1: ")
+	mustContain(t, out, "code: E_NOT_AWAITED", "where: 'line 1: ", "fix: (await img.stats()).meanL")
+	out = text(eval(t, app, sid, "if (img.stats() > 0.5) return 1"))
+	mustContain(t, out, "code: E_NOT_AWAITED", "fix: (await img.stats()).p99")
+	out = text(eval(t, app, sid, "const d = img.dog(1, 4)\nreturn d.levels({ black: 0, white: d.stats() })"))
+	mustContain(t, out, "code: E_ARG_TYPE", "where: 'line 2: ", "fix: '{ white: (await node.stats()).p99 }'")
 
 	out = text(eval(t, app, sid, "const a = 1\nreturn a +* 2"))
 	mustContain(t, out, "code: SyntaxError", "where: 'line 2: return a +* 2'")
@@ -159,12 +176,10 @@ func TestErrorYAMLHasCodeFixAndLine(t *testing.T) {
 	out = text(eval(t, app, sid, "return mem.nothing.x"))
 	mustContain(t, out, "code: TypeError", "where: 'line 1: return mem.nothing.x'", "keep it in mem")
 
-	out = text(eval(t, app, sid, "return doc.apply(img)"))
-	mustContain(t, out, "code: E_NO_DOCUMENT")
 }
 
 func TestNoImageThenOpenPersists(t *testing.T) {
-	app, sid := newApp(t, cvsession.Options{})
+	app, sid := newApp(t, cvsession.Options{Read: []string{filepath.Dir(pngPath)}})
 	out := text(eval(t, app, sid, "return await img.stats()"))
 	mustContain(t, out, "code: E_NO_IMAGE", "fix: img = cv.open(\"scan.tif\")")
 	out = text(eval(t, app, sid, "img = cv.open("+quote(pngPath)+")\nreturn await img"))
@@ -173,21 +188,15 @@ func TestNoImageThenOpenPersists(t *testing.T) {
 	mustContain(t, out, "64", "mem: n (number)")
 }
 
+// TestRootsRestrictOpen: cv.open reads only the workspace and the read
+// directories.
 func TestRootsRestrictOpen(t *testing.T) {
-	app, sid := newApp(t, cvsession.Options{Roots: []string{t.TempDir()}})
+	app, sid := newApp(t, cvsession.Options{Read: []string{t.TempDir()}})
 	out := text(eval(t, app, sid, "img = cv.open("+quote(tiffPath)+")"))
 	mustContain(t, out, "code: E_ACCESS")
-	app2, sid2 := newApp(t, cvsession.Options{Roots: []string{filepath.Dir(tiffPath)}})
+	app2, sid2 := newApp(t, cvsession.Options{Read: []string{filepath.Dir(tiffPath)}})
 	out = text(eval(t, app2, sid2, "img = cv.open("+quote(tiffPath)+"); return await img"))
 	mustContain(t, out, "kind: Image")
-}
-
-func TestParamsInContextAndPerson(t *testing.T) {
-	app, sid := newApp(t, cvsession.Options{Image: tiffPath})
-	out := text(eval(t, app, sid, `const ev = P.slider("ev", { min: -2, max: 2, value: 0.3 }); return (await img.exposure(ev).stats()).meanL`))
-	mustContain(t, out, "params: ev = 0.3")
-	out = text(eval(t, app, sid, `P.set("ev", 1); return 1`))
-	mustContain(t, out, "params: ev = 1 (moved by the person)", "person: 'since your last eval: moved ev 0.3 → 1'")
 }
 
 func TestLongResultsAreCut(t *testing.T) {
@@ -215,10 +224,10 @@ func quote(s string) string { return "\"" + strings.ReplaceAll(s, "\"", "\\\"") 
 
 func TestTimeoutIsAStructuredError(t *testing.T) {
 	app, sid := newApp(t, cvsession.Options{Image: tiffPath, EvalTimeout: 300 * time.Millisecond})
-	resp := eval(t, app, sid, "show(img)\nwhile (true) {}")
+	resp := eval(t, app, sid, "img.look()\nwhile (true) {}")
 	out := text(resp)
 	t.Logf("result:\n%s\nerror: %s", out, resp.Cell.Execution.Error)
-	mustContain(t, out, "code: E_TIMEOUT", "300ms", "shown:")
+	mustContain(t, out, "code: E_TIMEOUT", "300ms")
 	if len(resp.Content) != 1 {
 		t.Fatalf("content %d, want the look shown before the timeout", len(resp.Content))
 	}
@@ -227,6 +236,18 @@ func TestTimeoutIsAStructuredError(t *testing.T) {
 	if resp.Cell.Execution.Status != "ok" {
 		t.Fatalf("after timeout: %s %s\n%s", resp.Cell.Execution.Status, resp.Cell.Execution.Error, text(resp))
 	}
+}
+
+// TestTimeoutInsideANativeFunction: a native function that runs agent
+// JavaScript (cv.save reads a getter) is interrupted by the watchdog; the
+// panic boundary lets goja's interrupt through, so the result is E_TIMEOUT,
+// not E_INTERNAL (GCV-004 §7.11).
+func TestTimeoutInsideANativeFunction(t *testing.T) {
+	app, sid := newApp(t, cvsession.Options{Image: tiffPath, EvalTimeout: 300 * time.Millisecond})
+	resp := eval(t, app, sid, `return await cv.save("loop.json", { get x() { while (true) {} } })`)
+	out := text(resp)
+	mustContain(t, out, "code: E_TIMEOUT")
+	mustNotContain(t, out, "E_INTERNAL")
 }
 
 func TestInterruptInAsyncContinuationIsReported(t *testing.T) {
@@ -254,8 +275,8 @@ return { cov: await sky.coverage(), sky: sky.look("sky"), darker: darker.look("d
 		t.Fatalf("content %+v", resp.Content)
 	}
 	resp = eval(t, app, sid, `const m = img.mask.luminance({ above: 0.5 })
-const big = m.components().filter(x => x.area > 10)
-return { n: await big.count(), sel: m.overlay(img).look("sel") }`)
+const big = (await m.components()).filter(x => x.area > 10)
+return { n: big.length, sel: img.overlay(m).look("sel") }`)
 	mustContain(t, text(resp), "n: ", "look 3: sel")
 	mustNotContain(t, text(resp), "UNUSED_NODE", "error")
 	out = text(eval(t, app, sid, `return img.mask.luminance({ above: 0.5 }).components().look()`))
@@ -275,12 +296,12 @@ return img.overlay(r, { labels: "id" }).look("regions")`)
 func TestCrossKindErrorsHaveALiteralFixAndGrammar(t *testing.T) {
 	app, sid := newApp(t, cvsession.Options{Image: tiffPath})
 	for code, want := range map[string][]string{
-		"const specks = img.detect.specks()\nreturn specks.heal()": {"code: E_UNKNOWN_METHOD", `hint: '"heal" is an Image method that takes Regions`, "fix: img.heal(regions, …)"},
-		`return img.mask.box([0, 0, 10, 10]).exposure(1)`:          {"fix: img.within(mask, i => i.exposure(…))", "an Image method"},
-		`return img.detect.specks().feather(2)`:                    {`"feather" is a Mask method`, "fix: regions.toMask().feather(…)"},
-		`return img.pick("meanL")`:                                 {`"pick" is a Value method`, "fix: img.stats().pick(…)"},
+		"const specks = img.detect.specks()\nreturn specks.heal()": {"code: E_NOT_AWAITED", "regions are arguments of image methods", "fix: img.heal(regions, …)"},
+		`return img.within(img, i => i.exposure(-0.4))`:            {"code: E_WRONG_KIND", "needs a one-channel image (a mask); this image has 3 channels", "where: 'line 1: return img.within(img, i => i.exposure(-0.4))'", "fix: img.toGray()"},
+		`return img.coverage()`:                                    {"code: E_WRONG_KIND", "coverage needs a one-channel image (a mask or a grey image); this image has 3 channels", "fix: img.toGray().coverage(…)"},
+		`return img.detect.specks().feather(2)`:                    {`"feather" is a method of a one-channel image (a mask)`, "fix: img.mask.regions(regions).feather(…)"},
 		`return img.stats().exposure(1)`:                           {"Value has no method \"exposure\"", "fix: img.exposure(…)"},
-		`if (img > 1) return 1`:                                    {"An Image node was used as a number"},
+		`if (img > 1) return 1`:                                    {"code: E_NOT_AWAITED", "fix: (await img).w"},
 		`img.foo = 1`:                                              {`cannot set "foo" on an Image node`},
 		`return img.stats().look()`:                                {"stats is a Value node"},
 	} {
@@ -288,8 +309,9 @@ func TestCrossKindErrorsHaveALiteralFixAndGrammar(t *testing.T) {
 		mustContain(t, out, want...)
 		mustNotContain(t, out, " a Image", " an Mask", " an Value", " an Regions", "TypeError")
 	}
-	// derived fields that share a name with a method of another kind still work
-	mustContain(t, text(eval(t, app, sid, `return await img.check.dust().count`)), "0")
+	// a field that shares its name with a method of another kind is read after await
+	mustContain(t, text(eval(t, app, sid, `return await img.check.dust().count`)), "code: E_NOT_AWAITED", "fix: (await img.check.dust()).count")
+	mustContain(t, text(eval(t, app, sid, `return (await img.check.dust()).count`)), "0")
 }
 
 // TestConcurrentEvalsKeepTheirOwnSource: agents (pi) issue parallel tool
@@ -325,56 +347,48 @@ func TestConcurrentEvalsKeepTheirOwnSource(t *testing.T) {
 // kill the whole eval.
 func TestBatchedHelpNeverThrows(t *testing.T) {
 	app, sid := newApp(t, cvsession.Options{Image: tiffPath})
-	resp := eval(t, app, sid, `return [await cv.help("overlay"), await cv.help("mask.luminance"), await cv.help("Mask.coverage"), await cv.help("Regions.explain"), cv.help("evaluate"), cv.help("nope")]`)
+	resp := eval(t, app, sid, `return [await cv.help("overlay"), await cv.help("mask.luminance"), await cv.help("Image.coverage"), cv.help("explain"), cv.help("nope")]`)
 	out := text(resp)
 	if resp.Cell.Execution.Status != "ok" {
 		t.Fatalf("status %s:\n%s", resp.Cell.Execution.Status, out)
 	}
-	mustContain(t, out, "overlay:", "mask.luminance:", "coverage:", "explain:", "evaluate:", "found: false", "name: nope")
+	mustContain(t, out, "overlay:", "mask.luminance:", "coverage:", "explain:", "found: false", "name: nope")
 }
 
-// TestAwaitedDataKeepsItsNode is pi run 1 calls 10, 15, 23 and 24: agents
-// await a node and keep using the result as the node.
-func TestAwaitedDataKeepsItsNode(t *testing.T) {
+// TestAwaitedRegionsAreArrays is pi run 1 calls 10, 15, 23 and 24 in v2:
+// agents await regions and keep using the result where regions go.
+func TestAwaitedRegionsAreArrays(t *testing.T) {
 	app, sid := newApp(t, cvsession.Options{Image: planted(t)})
 	resp := eval(t, app, sid, `const r = await img.detect.specks({ polarity: 'both' })
-const dust = r.where({ score: { gte: 0.5 } })
-const viaFilter = r.filter(x => x.score >= 0.5)
-const healed = img.heal(r.where({ score: { gte: 0.5 } }), { radius: 3 })
+const dust = r.filter(x => x.score >= 0.5)
+const healed = img.heal(dust, { radius: 3 })
 return {
-  n: r.count, keys: Object.keys(r), json: Object.keys(JSON.parse(JSON.stringify(r))),
-  dust: await dust.count(), filtered: (await viaFilter).count,
-  explain: (await r.explain()).length > 0,
+  n: r.length, keys: Object.keys(r[0]).length, json: Object.keys(JSON.parse(JSON.stringify(r[0]))).length,
+  dust: dust.length,
+  explain: cv.explain(img.detect.specks({ polarity: 'both' })).graph.length > 0,
   after: (await healed.check.dust()).count,
-  healedDirect: (await img.heal(await dust).check.dust()).count,
   overlay: img.overlay(r, { labels: "id" }).look("all"),
-  isNode: cv.isNode(r),
   summary: Object.keys(await img),
-  brighter: (await (await img).exposure(1).stats()).meanL > (await img.stats()).meanL,
 }`)
 	out := text(resp)
-	t.Logf("%s", out)
 	if resp.Cell.Execution.Status != "ok" {
 		t.Fatalf("status %s:\n%s", resp.Cell.Execution.Status, out)
 	}
-	mustContain(t, out, "n: 41", "keys: [count, frame, items, kind, scale]", "json: [count, frame, items, kind, scale]",
-		"dust: 40", "filtered: 40", "explain: true", "after: 0", "healedDirect: 0", "look 1: all", "isNode: false", "brighter: true")
-	mustNotContain(t, out, "where:", "UNUSED_NODE")
-	// returning awaited data renders exactly the data
-	out = text(eval(t, app, sid, `const r = await img.detect.specks(); return { count: r.count, items: r.items.length, w: r.frame[2] }`))
-	mustContain(t, out, "{count: 41, items: 41, w: 256}")
-	out = text(eval(t, app, sid, `const s = await img.stats(); return s`))
-	mustNotContain(t, out, "levels", "exposure", "pick:")
+	mustContain(t, out, "n: 41", "keys: 15", "json: 15", "dust: 40", "explain: true", "after: 0", "look 1: all")
+	mustNotContain(t, out, "UNUSED_NODE", "ITEMS")
+	// returning awaited items renders exactly the data
+	out = text(eval(t, app, sid, `const r = await img.detect.specks(); return { count: r.length, first: r[0].id }`))
+	mustContain(t, out, "{count: 41, first: 9}")
 	// plain objects that never came from a node still get a structured error with a fix
 	out = text(eval(t, app, sid, `return img.overlay({ items: [] }).look()`))
-	mustContain(t, out, "code: E_WRONG_KIND", "fix:")
+	mustContain(t, out, "code: E_ARG_TYPE", "takes regions")
 }
 
 // TestImageMetadata: both pi runs inferred bit depth from histogram
 // quantization; awaiting a source image now says it.
 func TestImageMetadata(t *testing.T) {
 	app, sid := newApp(t, cvsession.Options{Image: tiffPath})
-	out := text(eval(t, app, sid, `return { img: await img, d: cv.describe(img), derived: await img.exposure(1) }`))
+	out := text(eval(t, app, sid, `return { img: await img, d: cv.explain(img), derived: await img.exposure(1) }`))
 	mustContain(t, out, "bitDepth: 16", "format: tiff", "file: gradient-64x48-16bit.tif", "encoding: srgb", "sample: uint", "frame: [0, 0, 64, 48]",
 		"images: img = gradient-64x48-16bit.tif (64×48, 16-bit TIFF, srgb)")
 	out = text(eval(t, app, sid, `img = cv.open(`+quote(pngPath)+`); return await img`))
@@ -398,57 +412,43 @@ func TestArgumentErrorsHaveFixesAndWarningsFold(t *testing.T) {
 	}
 }
 
-// TestUnknownNamesOnCvAndP: pi run 3 call 1 was `await cv.info()`.
-func TestUnknownNamesOnCvAndP(t *testing.T) {
+// TestUnknownNamesOnCv: pi run 3 call 1 was `await cv.info()`.
+func TestUnknownNamesOnCv(t *testing.T) {
 	app, sid := newApp(t, cvsession.Options{Image: tiffPath})
 	for code, want := range map[string][]string{
-		`return await cv.info()`:                              {"code: E_UNKNOWN_METHOD", `cv has no "info"`, "fix: await img   // or cv.describe(img)"},
-		`return await cv.stats(img)`:                          {`cv has no "stats"`, `"stats" is an Image method`, "fix: img.stats(…)"},
-		`return cv.comapre([img, img])`:                       {`Did you mean "compare"?`, "fix: cv.compare(…)"},
-		`return P.slidr("a", { min: 0, max: 1, value: 0.5 })`: {`P has no "slidr"`, `Did you mean "slider"?`, "fix: P.slider(…)"},
-		`return cv.P.range("x")`:                              {`P has no "range"`, "valid: ["},
+		`return await cv.info()`:        {"code: E_UNKNOWN_METHOD", `cv has no "info"`, "fix: await img   // or cv.explain(img)"},
+		`return await cv.stats(img)`:    {`cv has no "stats"`, `"stats" is an Image method`, "fix: img.stats(…)"},
+		`return cv.comapre([img, img])`: {`Did you mean "compare"?`, "fix: cv.compare(…)"},
+		`return cv.evaluate(img)`:       {"code: E_UNKNOWN_METHOD", `cv has no "evaluate"`},
 	} {
 		mustContain(t, text(eval(t, app, sid, code)), want...)
 	}
 	// existing members, probes and feature checks still work
-	out := text(eval(t, app, sid, `return { v: typeof cv.version, open: typeof cv.open, then: cv.then === undefined, json: JSON.stringify(cv).length > 2, keys: Object.keys(cv).includes("docs"), has: "info" in cv, p: typeof P.slider, pp: cv.P === P }`))
-	mustContain(t, out, "v: string", "open: function", "then: true", "json: true", "keys: true", "has: false", "p: function", "pp: true")
+	out := text(eval(t, app, sid, `return { v: typeof cv.version, open: typeof cv.open, then: cv.then === undefined, json: JSON.stringify(cv).length > 2, keys: Object.keys(cv).includes("docs"), has: "info" in cv }`))
+	mustContain(t, out, "v: string", "open: function", "then: true", "json: true", "keys: true", "has: false")
 }
 
 // TestAwaitedRegionsMisuseGetsStructuredErrors: pi run 3 calls 7 and 8, run 4
-// call 5, verbatim.
+// call 5, verbatim: the array calls now work; count() names length.
 func TestAwaitedRegionsMisuseGetsStructuredErrors(t *testing.T) {
 	app, sid := newApp(t, cvsession.Options{Image: planted(t)})
-	for code, want := range map[string][]string{
-		// run 3 call 7: count is data after await
-		`const dust = await img.check.dust({});
+	out := text(eval(t, app, sid, `const dust = await img.check.dust({});
 const specks = await img.detect.specks({});
 const cnt = await specks.count();
-return { cnt }`: {"code: TypeError", "where: 'line 3: const cnt = await specks.count();'",
-			"After await, specks is data: specks.count is a number (41), not a method.", "fix: specks.count"},
-		// run 4 call 5
-		`const specks = img.detect.specks();
+return { cnt }`))
+	mustContain(t, out, "code: TypeError", "where: 'line 3: const cnt = await specks.count();'", "awaited regions are an array", "fix: specks.length")
+	out = text(eval(t, app, sid, `const specks = img.detect.specks();
 const all = await specks.sortBy("area");
-return { total: all.count ? await all.count() : null }`: {"After await, all is data: all.count is a number (41)", "fix: all.count"},
-		// run 3 call 8: awaited top(n) used as an array
-		`const specks = await img.detect.specks({});
-const rows = await specks.top(1000);
-return { first: rows.slice(0, 3) }`: {"code: E_NOT_ARRAY", "where: 'line 3: return { first: rows.slice(0, 3) }'",
-			"Awaited Regions are { count, items: [...] }", "fix: rows.items.slice(…)"},
-		`const rows = await img.detect.specks()
-const ids = rows.map(r => r.id)
-return ids`: {"code: E_NOT_ARRAY", "fix: rows.items.map(…)"},
-		`const rows = await img.detect.specks()
+return { total: all.length }`))
+	mustContain(t, out, "code: E_NOT_AWAITED", "fix: (await img.detect.specks()).sortBy")
+	for _, code := range []string{`const specks = await img.detect.specks({});
+return { first: specks.slice(0, 3).length }`, `const rows = await img.detect.specks()
+return rows.map(r => r.id).length`, `const rows = await img.detect.specks()
 let n = 0
 for (const r of rows) n++
-return n`: {"code: E_NOT_ARRAY", "for (const r of regions.items)"},
-	} {
-		out := text(eval(t, app, sid, code))
-		mustContain(t, out, want...)
+return n`} {
+		mustOK(t, eval(t, app, sid, code))
 	}
-	// the data itself is unchanged
-	out := text(eval(t, app, sid, `const r = await img.detect.specks(); return { n: r.count, items: r.items.length, keys: Object.keys(r).join(",") }`))
-	mustContain(t, out, "n: 41", "items: 41", "keys: 'count,frame,items,kind,scale'")
 }
 
 func TestRawTypeErrorsOnDataNameTheOp(t *testing.T) {
@@ -457,4 +457,50 @@ func TestRawTypeErrorsOnDataNameTheOp(t *testing.T) {
 	mustContain(t, out, "code: TypeError", "s is plain data here, not a node", `"exposure" is an Image method`, "fix: img.exposure(…)")
 	out = text(eval(t, app, sid, "const o = { a: 1 }\nreturn o.detect.specks()"))
 	mustContain(t, out, "code: TypeError") // not a cv name: left alone
+}
+
+// TestLookQueue (GCV-004 §7.7, D9): every look created in an eval is
+// delivered whether or not it is returned; returned looks first, then the
+// others in creation order; equal looks once; at most MaxLooks, the others
+// are not rendered and one LOOKS warning names each by line; looks of a
+// prelude are discarded; a look created after the eval settled is named by
+// the next eval's warnings.
+func TestLookQueue(t *testing.T) {
+	prelude := filepath.Join(t.TempDir(), "prelude.js")
+	if err := os.WriteFile(prelude, []byte("img.look(\"from the prelude\")\nmem.p = 1\nreturn 1"), 0o644); err != nil { // #nosec G306 -- test data
+		t.Fatal(err)
+	}
+	app, sid := newApp(t, cvsession.Options{Image: tiffPath, Preludes: []string{prelude}})
+	captions := func(resp *replsession.EvaluateResponse) []string {
+		var out []string
+		for _, c := range resp.Content {
+			out = append(out, c.Caption)
+		}
+		return out
+	}
+	// not returned: still delivered (the prelude's look was discarded: this is look 1)
+	resp := eval(t, app, sid, "img.look(\"a\")\nreturn 1")
+	if c := captions(resp); len(c) != 1 || !strings.HasPrefix(c[0], "look 1: a") {
+		t.Fatalf("unreturned look: %q\n%s", c, text(resp))
+	}
+	// returned looks first, then the others in creation order; equal looks once
+	resp = eval(t, app, sid, "const a = img.exposure(1).look(\"a\")\nimg.look(\"b\")\nimg.look(\"b\")\nreturn { c: img.exposure(-1).look(\"c\") }")
+	if c := captions(resp); len(c) != 3 || !strings.HasPrefix(c[0], "look 2: c") || !strings.HasPrefix(c[1], "look 3: a") || !strings.HasPrefix(c[2], "look 4: b") {
+		t.Fatalf("order: %q", c)
+	}
+	// six looks: four delivered, a LOOKS warning names the other two by line
+	resp = eval(t, app, sid, "img.look(\"1\")\nimg.look(\"2\")\nimg.look(\"3\")\nimg.look(\"4\")\nimg.look(\"5\")\nreturn { six: img.look(\"6\") }")
+	out := text(resp)
+	if c := captions(resp); len(c) != 4 || !strings.HasPrefix(c[0], "look 5: 6") {
+		t.Fatalf("budget: %q\n%s", c, out)
+	}
+	mustContain(t, out, `LOOKS line 4: 2 looks were not delivered (at most 4 per eval): line 4 look("4"), line 5 look("5"). Split the work over several calls, or return fewer looks (one cv.sheet of many crops).`)
+	// a look created after the eval returned is not delivered; the next eval names it
+	resp = eval(t, app, sid, "const f = () => img.look(\"late\")\nimg.gaussian(20).stats().then(f, f)   // runs after the eval returned\nreturn 1")
+	if len(resp.Content) != 0 {
+		t.Fatalf("late look delivered: %q", captions(resp))
+	}
+	time.Sleep(300 * time.Millisecond)
+	out = text(eval(t, app, sid, "return 2"))
+	mustContain(t, out, `LOOKS: look("late") was created after the previous eval had returned`)
 }

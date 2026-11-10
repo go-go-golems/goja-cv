@@ -14,7 +14,7 @@ func testEngine(t *testing.T) *graph.Engine {
 	t.Helper()
 	reg := NewRegistry()
 	graphtest.RegisterSource(reg)
-	return graph.NewEngine(reg, graph.EngineOptions{})
+	return graph.NewEngine(reg, graphtest.Options(t))
 }
 
 func testSource(t *testing.T, e *graph.Engine, enc string, f graph.Frame, fill ...float64) *graph.Node {
@@ -55,7 +55,7 @@ func TestFramesPropagate(t *testing.T) {
 	if v.Frame != window || v.Buf.W != 64 {
 		t.Fatalf("evaluated frame %s, buffer %v", v.Frame, v.Buf)
 	}
-	if got := v.Summary()["frame"]; len(got.([]any)) != 4 || got.([]any)[0] != 100.0 {
+	if got := graph.ImageSummary(call(t, e, "exposure", src.ID, 0.5))["frame"]; len(got.([]any)) != 4 || got.([]any)[0] != 100.0 {
 		t.Fatalf("summary frame %v", got)
 	}
 }
@@ -157,7 +157,8 @@ func TestTwoFramesAreRefused(t *testing.T) {
 
 func TestReturnedInputsAreStampedCopies(t *testing.T) {
 	e := testEngine(t)
-	src := testSource(t, e, "srgb", window, 0.5) // one channel: toGray returns its input
+	// one channel, linear-encoded (no conversions around the physical ops): toGray returns its input
+	src := testSource(t, e, "linear", window, 0.5)
 	sv := evalValue(t, e, src, 1).(*graph.ImageValue)
 	for _, n := range []*graph.Node{call(t, e, "toGray", src.ID), call(t, e, "exposure", src.ID, 0.0)} {
 		v := evalValue(t, e, n, 1).(*graph.ImageValue)

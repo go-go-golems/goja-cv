@@ -41,7 +41,7 @@ func smoothstep(e0, e1, x float64) float64 {
 // LuminanceMask selects pixels by luminance: above and/or below a threshold,
 // with a smoothstep ramp of total width softness centred on it. A nil bound
 // is not applied. b is normally one channel (the graph feeds luminance in
-// the op's working space); for three channels the Rec. 709 weighted sum of
+// the receiver's space); for three channels the Rec. 709 weighted sum of
 // the given values is used.
 func LuminanceMask(ctx context.Context, b *buffer.Buffer, above, below *float64, softness float64) (*buffer.Buffer, error) {
 	L := b.Luminance()
@@ -179,7 +179,7 @@ func EllipseMask(ctx context.Context, w, h int, scale, x, y, bw, bh float64) (*b
 // [i, i+1) × [j, j+1)) inside the ellipse centred at (cx, cy) with radii rx,
 // ry (buffer px), by 4×4 supersampling: a multiple of 1/16. It is the one
 // coverage rule of mask.ellipse and of every measurement (sample, measure,
-// profile, regions.measure), so their numbers agree.
+// profile, measure), so their numbers agree.
 func EllipseCoverage(i, j int, cx, cy, rx, ry float64) float32 {
 	if rx <= 0 || ry <= 0 {
 		return 0

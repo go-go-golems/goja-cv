@@ -10,30 +10,51 @@ import (
 )
 
 // sourceEnc: an opened file has the encoding the call gives, else the one
-// its decoder reports; the node holds linear values (the encoding undone).
+// its decoder reports; the node holds the file's values (encoded space).
 var sourceEnc = &graph.ResultEnc{
-	Enc: func(a graph.Args, _ []*graph.Node) buffer.Encoding {
-		name := a.String("fileEncoding")
+	Enc: func(a graph.Args) buffer.Encoding {
 		if a.Has("encoding") {
-			name = a.String("encoding")
+			e, _ := buffer.ParseEncoding(a.String("encoding"))
+			return e
 		}
-		e, ok := buffer.ParseEncoding(name)
-		if !ok {
-			return buffer.EncSRGB
+		if e := graph.Meta[graph.SourceMeta](a).FileEncoding; e != buffer.EncNone {
+			return e
 		}
-		return e
+		return buffer.EncSRGB
 	},
-	Space: func(graph.Args, buffer.Space, []*graph.Node) buffer.Space { return buffer.SpaceLinear },
+	Space: func(graph.Args, buffer.Space) buffer.Space { return buffer.SpaceEncoded },
+}
+
+// openLinearEnc: the linear view of an opened file (its pyramid level).
+var openLinearEnc = &graph.ResultEnc{
+	Enc:   sourceEnc.Enc,
+	Space: func(graph.Args, buffer.Space) buffer.Space { return buffer.SpaceLinear },
+}
+
+// pyramidLevel is the opened file's pyramid at the evaluation scale: linear
+// values (downsampling averages light). It must not be modified.
+func pyramidLevel(ctx context.Context, ec *graph.EvalCtx, a graph.Args) (*buffer.Buffer, error) {
+	m := graph.Meta[graph.SourceMeta](a)
+	k := graph.SourceKey{Loc: m.Loc, Name: m.Name, Stamp: m.Stamp, Enc: ec.Node.Enc}
+	if a.Has("box") {
+		b := a.Numbers("box")
+		k.Box = &[4]int{int(b[0]), int(b[1]), int(b[2]), int(b[3])}
+	}
+	src, err := ec.Eval.Sources().Load(ctx, k)
+	if err != nil {
+		return nil, err
+	}
+	return src.Pyr.AtScale(ctx, ec.Scale)
 }
 
 // openFrame is the frame of an opened file: a window keeps its file
 // coordinates (box), a file that is itself a window has its declared
 // (origin) or recorded origin.
-func openFrame(a graph.Args, _ []*graph.Node) graph.Frame {
-	f := graph.Frame{W: a.Int("w"), H: a.Int("h")}
-	if a.Has("recordedOrigin") {
-		o := a.Numbers("recordedOrigin")
-		f.X, f.Y = int(o[0]), int(o[1])
+func openFrame(a graph.Args) graph.Frame {
+	info := graph.Meta[graph.SourceMeta](a).Info
+	f := graph.Frame{W: info.W, H: info.H}
+	if info.Origin != nil {
+		f.X, f.Y = info.Origin[0], info.Origin[1]
 	}
 	switch {
 	case a.Has("box"):
@@ -46,7 +67,7 @@ func openFrame(a graph.Args, _ []*graph.Node) graph.Frame {
 	return f
 }
 
-func validateOpen(a graph.Args, _ []*graph.Node) error {
+func validateOpen(a graph.Args) error {
 	if a.Has("box") && a.Has("origin") {
 		return graph.Errorf(graph.EArgType, "cv.open: box already sets the origin; pass box or origin, not both.").
 			WithHint("box reads a window in file px and the frame starts at its corner; origin declares where a file that is itself a window starts.").
@@ -65,7 +86,8 @@ func validateOpen(a graph.Args, _ []*graph.Node) error {
 	}
 	if a.Has("box") {
 		b := a.Numbers("box")
-		w, h := a.Int("w"), a.Int("h")
+		info := graph.Meta[graph.SourceMeta](a).Info
+		w, h := info.W, info.H
 		if !isInt(b) {
 			return graph.Errorf(graph.EArgType, "cv.open.box must be whole file pixels, got %v.", b).
 				WithFix(fmt.Sprintf("cv.open(path, { box: [%d, %d, %d, %d] })", int(b[0]), int(b[1]), int(math.Ceil(b[2])), int(math.Ceil(b[3]))))
@@ -83,81 +105,69 @@ func validateOpen(a graph.Args, _ []*graph.Node) error {
 // placeholderEnc gives a builder lambda's placeholder the statics of the
 // receiver it stands for, so the lambda's graph resolves as on the receiver.
 var placeholderEnc = &graph.ResultEnc{
-	Enc: func(a graph.Args, _ []*graph.Node) buffer.Encoding {
-		e, _ := buffer.ParseEncoding(a.String("enc"))
-		return e
+	Enc: func(a graph.Args) buffer.Encoding { return graph.Meta[graph.PlaceholderMeta](a).Enc },
+	Space: func(a graph.Args, _ buffer.Space) buffer.Space {
+		return graph.Meta[graph.PlaceholderMeta](a).Space
 	},
-	Space: func(a graph.Args, _ buffer.Space, _ []*graph.Node) buffer.Space {
-		s, _ := buffer.ParseSpace(a.String("space"))
-		return s
-	},
+}
+
+// fileChannels is the channel count of an opened file: 1 or 3 after
+// decoding (an alpha or extra sample dropped).
+func fileChannels(a graph.Args) int { return graph.Meta[graph.SourceMeta](a).Info.Channels }
+
+// openArgs are the arguments of cv.open (and of its linear view).
+var openArgs = []graph.ArgSpec{
+	{Name: "path", Type: "string", Positional: true, Doc: "image file: " + buffer.SupportedFormats},
+	{Name: "encoding", Type: "enum:srgb,linear", Optional: true,
+		Doc: "how to read the file's values: srgb (photographs) or linear (scientific data, raw scans, density maps); omit it to use what the file says"},
+	{Name: "box", Type: "box", Optional: true,
+		Doc: "read only this window [x, y, w, h] of the file (file px); the image keeps the file's coordinates"},
+	{Name: "origin", Type: "point", Optional: true,
+		Doc: "declare where a file that is itself a window starts [x, y] (doc px); omit it for whole files"},
 }
 
 func sourceOps() []graph.OpDef {
 	return []graph.OpDef{
 		{
-			Name: "open", On: graph.KindNone, Returns: graph.KindImage, Result: sourceEnc, Bespoke: true,
-			Args: []graph.ArgSpec{
-				{Name: "path", Type: "string", Positional: true, Doc: "image file: " + buffer.SupportedFormats},
-				{Name: "encoding", Type: "enum:srgb,linear", Static: true, Optional: true, ValueSynonyms: graph.EncodingValueSynonyms,
-					Doc: "how to read the file's values: srgb (photographs) or linear (scientific data, raw scans, density maps); omit it to use what the file says"},
-				{Name: "box", Type: "box", Static: true, Optional: true,
-					Doc: "read only this window [x, y, w, h] of the file (file px); the image keeps the file's coordinates"},
-				{Name: "origin", Type: "point", Static: true, Optional: true,
-					Doc: "declare where a file that is itself a window starts [x, y] (doc px); omit it for whole files"},
-				{Name: "stamp", Type: "string", Hidden: true},
-				{Name: "w", Type: "number", Hidden: true},
-				{Name: "h", Type: "number", Hidden: true},
-				{Name: "format", Type: "string", Hidden: true, Optional: true},
-				{Name: "bits", Type: "number", Hidden: true, Optional: true},
-				{Name: "channels", Type: "number", Hidden: true, Optional: true},
-				{Name: "sample", Type: "string", Hidden: true, Optional: true},
-				{Name: "fileEncoding", Type: "string", Hidden: true, Optional: true},
-				{Name: "recordedOrigin", Type: "number[]", Hidden: true, Optional: true},
-				{Name: "notes", Type: "string[]", Hidden: true, Optional: true},
-			},
+			// as(open(…), "linear") is interned as this op: the linear view of
+			// a file is its pyramid level (no copy, no conversion).
+			Name: graph.OpenLinearOp, On: graph.KindNone, Returns: graph.KindImage, Result: openLinearEnc, Bespoke: true, Internal: true,
+			Channels: fileChannels,
+			Args:     openArgs,
 			DocFrame: openFrame,
-			Validate: validateOpen,
 			Run: func(ctx context.Context, ec *graph.EvalCtx, _ []graph.Value, a graph.Args) (graph.Value, error) {
-				k := graph.SourceKey{Path: a.String("path"), Stamp: a.String("stamp"), Enc: ec.Node.Enc}
-				if a.Has("box") {
-					b := a.Numbers("box")
-					k.Box = &[4]int{int(b[0]), int(b[1]), int(b[2]), int(b[3])}
-				}
-				src, err := ec.Eval.Sources().Load(ctx, k)
+				lin, err := pyramidLevel(ctx, ec, a)
 				if err != nil {
 					return nil, err
 				}
-				buf, err := src.Pyr.AtScale(ctx, ec.Scale)
+				return graph.NewImage(lin), nil
+			},
+			Doc: "The linear view of an opened file: its pyramid level (inserted by as(\"linear\") on cv.open; not callable).",
+		},
+		{
+			Name: "open", On: graph.KindNone, Returns: graph.KindImage, Result: sourceEnc, Bespoke: true,
+			Channels: fileChannels,
+			Args:     openArgs,
+			DocFrame: openFrame,
+			Validate: validateOpen,
+			Run: func(ctx context.Context, ec *graph.EvalCtx, _ []graph.Value, a graph.Args) (graph.Value, error) {
+				lin, err := pyramidLevel(ctx, ec, a)
+				if err != nil {
+					return nil, err
+				}
+				buf, err := buffer.Convert(ctx, lin, ec.Node.Enc, buffer.SpaceLinear, buffer.SpaceEncoded) // the level itself for a linear file
 				if err != nil {
 					return nil, err
 				}
 				return graph.NewImage(buf), nil
 			},
-			Doc: "Open an image file as a source node: cv.open(path, { encoding, box, origin }). Decoded on first evaluation; the node holds linear values (the file's encoding undone) in the file's coordinates.",
+			Doc: "Open an image file as a source node: cv.open(path, { encoding, box, origin }). Decoded on first evaluation; the image is in file units (encoded space: the file's values divided by the code maximum) in the file's coordinates; img.as(\"linear\") undoes the encoding.",
 			See: []string{"stats", "explain"},
 		},
 		{
-			Name: "param", On: graph.KindNone, Returns: graph.KindParam, Bespoke: true,
-			Args: []graph.ArgSpec{{Name: "name", Type: "string", Positional: true}},
-			Run: func(_ context.Context, ec *graph.EvalCtx, _ []graph.Value, a graph.Args) (graph.Value, error) {
-				v, ok := ec.Params[a.String("name")]
-				if !ok {
-					return nil, graph.Errorf(graph.EArgType, "param %q is not declared.", a.String("name"))
-				}
-				return data(v), nil
-			},
-			Doc: "A named value a person can move (declare with P.slider / P.toggle / P.choice).",
-		},
-		{
 			Name: graph.PlaceholderOp, On: graph.KindNone, Returns: graph.KindImage, Result: placeholderEnc, Bespoke: true,
-			Args: []graph.ArgSpec{
-				{Name: "for", Type: "number", Hidden: true},
-				{Name: "frame", Type: "number[]", Hidden: true, Doc: "the receiver's frame [x, y, w, h]"},
-				{Name: "enc", Type: "string", Hidden: true, Optional: true, Doc: "the receiver's encoding"},
-				{Name: "space", Type: "string", Hidden: true, Optional: true, Doc: "the receiver's space"},
-			},
-			DocFrame: func(a graph.Args, _ []*graph.Node) graph.Frame { return frameArg(a, "frame") },
+			Channels: func(a graph.Args) int { return graph.Meta[graph.PlaceholderMeta](a).Channels },
+			DocFrame: func(a graph.Args) graph.Frame { return graph.Meta[graph.PlaceholderMeta](a).Frame },
 			Run: func(context.Context, *graph.EvalCtx, []graph.Value, graph.Args) (graph.Value, error) {
 				return nil, graph.Errorf(graph.EPlaceholder, "This is the placeholder image a within() function receives; it only stands for the masked image while the function builds its edit.").
 					WithHint("Use the function's return value. Do not keep the placeholder in a variable outside the function.").
