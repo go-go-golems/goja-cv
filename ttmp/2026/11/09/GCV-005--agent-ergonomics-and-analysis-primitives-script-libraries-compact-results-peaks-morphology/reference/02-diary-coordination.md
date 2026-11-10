@@ -154,3 +154,50 @@ I sent one decision list for revision 2 and a deletion-shaped revision 3; upload
 
 ### Code review instructions
 - Guide revision 3, Appendix B (dispositions), §8 decision records, §9 deletion checklist.
+
+## Step 4: Implementation (B1, A1–A4, B2, B3, V), PR #7, require hole closed
+
+Three implementers built GCV-005 in its own worktree: B1 (morphology) while GCV-004 batch 2 ran, batch A (merge of
+final GCV-004, A1–A4) and batch B (B2 peaks, B3, validation, PR #7). Validation found a sandbox hole that predates
+GCV-005; I fixed it on GCV-004 (PR #6) and it was merged up.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 2: "… Then implement. Make sure to follow simplificity in API design and composability and consistence. Cut complexity …")
+
+**Assistant interpretation:** Implement phase by phase, verify each batch, keep the stack mergeable.
+
+**Inferred user intent:** The agent-facing improvements, measured.
+
+### What I did
+- B1 (`bcefb0a`, `5c26122`, `17dbcb1`): `erode`/`dilate` (disk ≤ 64, line any length), grow/shrink/Halo/CROP_FIRST deleted; 1024² r = 64 disk 25 ms. Verified gate.
+- Batch A (`259df82` merge of GCV-004 a42c9d1, 10 conflicts resolved toward GCV-004 + B1 deletions; A1 `c0ad935` cv.load/cv.scripts/prelude-as-load; A2 `b10ff2d` tables + function docs; A3 `c9987c0` sheet captions; A4 `eaafc1d`/`7cec0bf` UNUSED_NODE deleted, docs). Verified gate and smoke-tested `cv.load` + docs + table on a real tile.
+- Batch B (B2 `0e04924` peaks, B3 `965358c`, merge of GCV-004 review fixes `32610c2`, V `7c6b858`, CI fix `0e96cce`, PR #7). Gold (15 tiles, 190 points): peaks snr 1 cover 90.5 % vs hot list 86.3 %, position error median 0.36 vs 0.99 px; snr default 1 kept (1.4 → 70.5 %); top-hat 60/63 saturated; line opening r 12 cuts elongated components 40 → 8 for 1/164 dust. Pi: after-runs locate 14/13 of 53 gold points vs 4/5 before, errors 11/2 vs 18/8.
+- Validation found `require("/abs/path.js")` loading any file (the before-agents used it to load their library). Fixed on GCV-004: cv sessions install a require loader that refuses files (`8ab11af`, test fails without fix); merged into GCV-005 (`c70557f`), PR #7 green on `06ec6a6`.
+- Archived pi runs 31–36 in CVJS-001 (dust-scanning `054ef2c`).
+
+### Why
+- Verify every batch myself; fix sandbox holes at the layer that owns them (GCV-004's workspace).
+
+### What worked
+- Running B1 in parallel with GCV-004 batch 2: the later merge had only mechanical conflicts because both sides kept to the guide.
+- Peaks are both more complete and more precise than the helper hot list, and the API stayed at three options.
+
+### What didn't work
+- My message to batch B named the require commit `f5fd593`; the real hash is `8ab11af` (the agent found it by message).
+
+### What I learned
+- Agents probe the sandbox: an escape that nobody designed for got used within two runs.
+
+### What was tricky to build
+- Stacked PRs (#6 → #7) with review fixes landing on the lower branch and merged upward.
+
+### What warrants a second pair of eyes
+- The xgoja provider keeps the host's require policy (by design); document it if an xgoja host is exposed to agents.
+- The annotator comparison is one session per build with a different model than the study: indicative only.
+
+### What should be done in the future
+- User merges #6, then #7. Then: reinstall the binary, update the colleague's note for v2 (MCP flags `--root`/`--read`, `--prelude` for helpers, `peaks`), port `84-cv-helpers.js` to v2 (the v2 ports in `gcv005-scripts/lib-after` are a start).
+
+### Code review instructions
+- PR #7; guide deviations 1–45; implementation diary steps 1–12.
