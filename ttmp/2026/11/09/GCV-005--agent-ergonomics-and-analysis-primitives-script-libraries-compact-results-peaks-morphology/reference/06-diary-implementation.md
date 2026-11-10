@@ -1156,3 +1156,59 @@ the study's agents (Claude Sonnet, helpers pasted) from script 91's extracts and
 
 The study's agents ran a different model with the full playbook; the sessions here are one each, so read the
 before/after rows against each other, and the study's rows for the evals and pastes only.
+
+## Step 11: The PR (#7) and its first CI run
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 7) "Then the PR — `gh pr create --base task/gcv-004-api-v2`. [...] Watch CI with `gh pr checks`. Fix real failures. Do not merge."
+
+**Assistant interpretation:** open the stacked PR with the summary, watch CI, fix what fails.
+
+**Inferred user intent:** a reviewable PR, green.
+
+**Commit (code):** 0e96cce — "GCV-005: representative result without localNoise (differs in the 5th digit on amd64)"
+
+### What I did
+
+- Opened https://github.com/go-go-golems/goja-cv/pull/7 against `task/gcv-004-api-v2`.
+- The first CI run failed `TestResultFormat`: on linux/amd64 the speck detector's `localNoise` prints `0.005166`,
+  `0.0034634`, `0.00326` where arm64 prints `0.0051662`, `0.0034632`, `0.0032599` (A2's fixture had never run in CI).
+  The peaks block matched exactly. The fixture drops `localNoise` from the detector rows (`({ localNoise, ...r }) => r`).
+- Second run: lint, test, smoke pass.
+
+### Why
+
+- The fixture pins the result's format; the detector's last digits differ by architecture (fused multiply-add).
+
+### What worked
+
+- Peaks' numbers are identical on amd64 and arm64 in the fixture.
+
+### What didn't work
+
+- See What I did.
+
+### What I learned
+
+- Fixtures with float columns from long sums should stay off the 5th significant digit or leave such columns out.
+
+### What was tricky to build
+
+- Nothing.
+
+### What warrants a second pair of eyes
+
+- Nothing new.
+
+### What should be done in the future
+
+- Nothing.
+
+### Code review instructions
+
+- `gh pr checks 7`.
+
+### Technical details
+
+CI run 42734384908 (test 4m38s, smoke 1m9s) and 42734384924 (lint 2m9s): pass.
