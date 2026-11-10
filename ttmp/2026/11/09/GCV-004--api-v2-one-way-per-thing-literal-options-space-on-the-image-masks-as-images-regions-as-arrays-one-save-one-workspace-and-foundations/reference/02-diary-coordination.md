@@ -335,3 +335,48 @@ archived the pi runs, and corrected the colleague's measuring guidance with batc
 
 ### Code review instructions
 - PR #6; deviations 29–50 in the guide; `reference/06-diary-implementation.md` steps 8–12.
+
+## Step 8: PR #6 review fixes; gold-radius decision; colleague's evidence corrected
+
+The user answered: keep `measure`'s rule and convert gold `r` on the dataset side ("2. yes"); correct the
+colleague's evidence counts ("3. yes"); and address the code review on PR #6.
+
+### Prompt Context
+
+**User prompt (verbatim):** "2. 3. yes. 1. address code review issues: https://github.com/go-go-golems/goja-cv/pull/6"
+
+**Assistant interpretation:** Fix the Codex findings on PR #6; record the r/2 decision; fix DUST-002's counts at their source (script 91) and everywhere they were copied.
+
+**Inferred user intent:** Mergeable PR #6; trustworthy evidence for the next round.
+
+### What I did
+- Codex on PR #6 (2 findings):
+  - `Workspace.Write` wrote its temporary file with `WriteFile` at a predictable name (`<rel>.tmp-<pid>-<n>`): a planted in-workspace symlink at that name was followed into a protected input; names also collided across sessions. Now `writeTemp`: `O_CREATE|O_EXCL`, random hex name, retried on collision; the counter is gone. Test `TestWorkspaceTempFiles` plants links at the old names.
+  - `__cv_run` snapshotted the saves once; a save started in a save's `.then` could finish after the eval. Now `drain` repeats until the count of registered saves stops changing. Test: a c1.tif → c2.tif → c3.json chain.
+  - Both tests fail without the fix (checked with `git stash`); the chained-save test needed slow image saves to show the race (JSON saves finished before the snapshot). Gate `gate=0`; commit `e0823da`. Told GCV-005 batch B to merge it (GCV-005 already generalised the drain to loads and saves).
+- Gold radius: decision recorded — `measure` uses the item's `r` as the core; dustview gold `r` is a fit radius (≈ 2× speck), so callers pass `r/2` (DUST-002 `reference/08`, GCV-004 measuring topic).
+- Evidence: script 91 recognised a helper paste only by its final marker `helpers ready (v1)`, which 10 agents trimmed away; now it also recognises ≥ 8 definitions of the library's own `mem.*` helpers. Regenerated `various/agent-evals/` (39 pastes, 335 other evals); recounted: UNUSED_NODE 19 (7 in a first eval), RANGE 11; ops typed by agents themselves are fewer than reported (`view` 82 not 162; `max`, `measure`, `components` only inside the paste). Corrected DUST-002 `reference/11` (dust-scanning `1a872ed`) and the vault article (go-go-parc `87f3219`).
+
+### Why
+- Counting errors in a hand-off propagate into designs (GCV-005 revision 1 inherited them).
+
+### What worked
+- Fixing the counts at the extraction script, then regenerating, instead of editing numbers by hand.
+
+### What didn't work
+- My first chained-save test passed without the fix: tiny JSON saves resolve before the runner's snapshot.
+
+### What I learned
+- `os.Root` stops escapes, but any write by name inside the root still needs `O_EXCL` for temp files: a predictable name is an in-root aliasing hole.
+
+### What was tricky to build
+- Making a race test that fails reliably without the fix (slow saves first in the chain).
+
+### What warrants a second pair of eyes
+- RANGE 11 is the reviewer's count from full results; `result_head` (truncated to ~4,000 chars) shows 10.
+
+### What should be done in the future
+- User merges #6 once CI is green on `e0823da`; GCV-005 PR follows (stacked).
+
+### Code review instructions
+- `e0823da`; `TestWorkspaceTempFiles`, `TestUnawaitedSaves`.
