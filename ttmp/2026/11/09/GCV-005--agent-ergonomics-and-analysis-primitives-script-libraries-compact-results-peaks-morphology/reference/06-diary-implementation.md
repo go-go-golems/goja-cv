@@ -1212,3 +1212,64 @@ before/after rows against each other, and the study's rows for the evals and pas
 ### Technical details
 
 CI run 42734384908 (test 4m38s, smoke 1m9s) and 42734384924 (lint 2m9s): pass.
+
+## Step 12: Merge GCV-004's require fix (8ab11af) into the GCV-005 branch
+
+The require finding of step 10 was fixed on GCV-004: cv sessions install a require loader that refuses every file,
+with a fix pointing to `cv.load`; the built-in `cv` and `timer` modules stay. This step merges it and confirms that
+GCV-005's file loading does not depend on `require`. The coordinator also accepted the line-opening radius 12
+(deviation 39) with the targets unchanged.
+
+### Prompt Context
+
+**User prompt (verbatim):** "1. **`require` is now fixed on GCV-004.** It is commit `f5fd593` or later on `origin/task/gcv-004-api-v2`; check `git log` for "require loads no files". [...] merge it into the GCV-005 branch (`git fetch origin && git merge origin/task/gcv-004-api-v2`, a merge commit), resolve conflicts if any, and run the full gate. Make sure GCV-005's `cv.load` and `--prelude` still work. `TestRequireLoadsNoFiles` must pass on the branch. The task-library docs (topic 14, the recipes, `help setup-*`) must not suggest `require` for scripts anywhere. Push, check that PR #7 CI is green, and record the merge in your diary. 2. **Line-opening radius (deviation 39).** Radius 12 for the test and the docs example is fine. Keep the targets as they are."
+
+**Assistant interpretation:** merge (the commit on the branch is `8ab11af`, "GCV-004: require loads no files in cv
+sessions"), gate, check `cv.load`/`--prelude` end to end and the docs, push, watch CI.
+
+**Inferred user intent:** the sandbox hole closes on GCV-005 too, with task libraries unaffected.
+
+**Commit (merge):** see `git log --merges -1` after this step ("Merge GCV-004 require fix …").
+
+### What I did
+
+- `git merge origin/task/gcv-004-api-v2`: no conflicts (`session.go` auto-merged: `engine.WithRequireOptions(require.WithLoader(noFileModules))`; `save_test.go` gains `TestRequireLoadsNoFiles`).
+- `TestRequireLoadsNoFiles` passes; the load, prelude, docs and guide tests pass; gate `gate=0`.
+- End to end with the built binary on a gold tile: `--prelude dust/helpers.js` defines `mem.spots`; `await cv.load("dust/helpers.js")` returns "dust helpers ready"; `require("<abs>/dust/helpers.js")` is refused; `require("cv")` is an object.
+- Docs: `grep require` over the topics, `pkg/doc` (recipes, setup pages), README, the instructions and help finds only `require("cv")`, the built-in module, in the README, `01-what-is-goja-cv` and `09-embedding`; nothing suggests `require` for scripts.
+
+### Why
+
+- `cv.load` compiles files through the workspace (`__compile`), not through `require`, so the loader change cannot affect it.
+
+### What worked
+
+- Everything on the first run.
+
+### What didn't work
+
+- Nothing.
+
+### What I learned
+
+- The commit the brief named (`f5fd593`) is `8ab11af` on the remote; the log message matched.
+
+### What was tricky to build
+
+- Nothing.
+
+### What warrants a second pair of eyes
+
+- xgoja keeps its own require policy (by design of `8ab11af`).
+
+### What should be done in the future
+
+- Nothing.
+
+### Code review instructions
+
+- `go test ./pkg/cvsession -run 'TestRequireLoadsNoFiles|TestLoad|TestPrelude' -v`.
+
+### Technical details
+
+Deviation 39 (radius 12) is accepted by the coordinator; targets unchanged.
