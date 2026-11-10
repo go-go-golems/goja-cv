@@ -2514,3 +2514,19 @@ details and numbers.
     B3's peaks recipes.
 32. **Doc examples return rows**: the blocks of `05`, `09`, `12` and the guidebook recipes that returned
     `rows.map(r => [...].join(" "))` return the rows or picked fields, which render as tables.
+
+### Phase B2 (commit `0e04924`)
+
+33. **The pre-filter drops a candidate below 0.5 × `snr`, not 0.8.** At 0.8 the filtered run lost 6–9 of ~235 peaks
+    at snr 0.5 on synthetic fields; the digital/exact snr ratio at NMS candidates went down to 0.63 (r = 1.5).
+34. **Bands are parallel tasks, each computed serially** (a new `parallel.Each`; NMS by `chordDisk`, DiskMinMax's chord
+    path, with a serial row runner). Parallelism inside sequential bands spent most of its time synchronizing.
+35. **`snr`'s usual range is [0, 5]** (§7.8: [0.5, 5]), so `peaks({ snr: 0 })`, §16's replacement of `mem.best`, raises
+    no `RANGE` warning.
+36. **The peaks, top-hat and line-removal docs are a new topic `spots`** (`15-spots.md`, 4.3 KB): `09`, `11` and `12` are
+    at the 6,000-character cap. `09`'s "Inspect candidates" uses peaks, `11` has the speck-scale note of §6.10, `12`
+    points to `spots` (its old `mem.probe` line went).
+37. **The golden cases `dilate-mask` and `tophat-gray` are restored**: the GCV-004 merge (step 2) had dropped them from
+    `golden_test.go` while their PNGs stayed; both matched exactly.
+38. **Peaks on a crop equal the whole image's to rounding** (~1e-5 in snr far from the crop's border): the row prefix
+    sums and the coverage weights start at the crop's corner.

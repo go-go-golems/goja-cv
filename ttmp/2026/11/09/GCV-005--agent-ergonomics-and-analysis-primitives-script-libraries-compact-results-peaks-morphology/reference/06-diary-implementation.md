@@ -740,3 +740,138 @@ instructions, recipes (task library, thread width with `profile`, the playbook p
 
 `git diff --stat e5ec24d eaafc1d`: 14 files, +50 / −242. `git diff --stat eaafc1d 7cec0bf`: 13 files, +186 / −40.
 Batch A without the ticket (`git diff --stat 259df82 7cec0bf -- . ':!ttmp'`): 62 files, +2,218 / −517.
+
+## Step 7: Phase B2 — peaks
+
+B2 adds `x.peaks({ radius, snr, polarity })`: the local maxima of `measure`'s core/ring step, as a Regions node of
+disks with sub-pixel centres and `measure`'s fields, sorted by |snr|. It is the "coordinates as data" half of the design:
+an agent asks for the spots instead of reading them off a ruler. A peak's numbers are exactly what `measure` reports at
+the same centre and radius (tested to 1e-9).
+
+### Prompt Context
+
+**User prompt (verbatim):** "You are the GCV-005 implementer, batch B: implement phases B2 (peaks) and B3 (recipes and gold-based real-data tests) of the GCV-005 guide, run the validation (phase V), then open the PR. [...] B2: peaks — Follow the guide: `x.peaks({ radius = 3 | [radii], snr = 1, polarity })` on any image, through the luminance, at analysis scale 1. Step map: core minus ring over [1.5r, 2.5r], using disk chord sums over row prefix sums, processed in row bands. Non-maximum suppression with `kernels.DiskMinMax`. Parabolic sub-pixel fit. An exact `measure`-equivalent at each candidate, then a |snr| filter. Across radii, of overlapping cores the higher |snr| wins. Returns a Regions node of disks with the geometry, `r`, and the core/ring fields. The snr of a peak must equal what `measure` reports at that point and radius. Test that directly. Benchmarks: a 1024² tile, a 4096² image, and an extrapolation to 53 MP. [...]"
+
+**Assistant interpretation:** implement §13 B2 (§6.8, §7.8, §10.7–10.8, D12–D16) with its tests, the golden, the result
+fixture, crop's doc sentence, and benchmarks; honour batch A's notes (no Halo, result fixtures, topic caps).
+
+**Inferred user intent:** spots as data, numerically identical to `measure`, fast enough for a tile in a fraction of a
+second.
+
+**Commit (code):** 0e04924 — "GCV-005 B2: peaks — sub-pixel maxima of the core/ring step as disks with measure's fields"
+
+### What I did
+
+- `pkg/cv/kernels/peaks.go`: `Peaks(ctx, L, PeakOptions{Radii, MinSNR, Polarity})`.
+  - `newPeakRadius(r)`: chord half-widths of the digital disks r, 1.5 r, 2.5 r (`diskChords`, B1's exact rule) and the
+    digital ring's offsets for the pre-filter.
+  - `stepRows`: row prefix sums (float64) of the rows a band reads, then per pixel the disk sum and count from two
+    lookups per chord, clipped at the image; step = core mean − ring mean over in-image pixels.
+  - `bandPeaks`: NMS with `chordDisk` (DiskMinMax's chord path) on the band's step map plus ⌈r⌉ + 1 margin rows;
+    candidates `T > 0 && T == D`; the digital-ring snr pre-filter (drop below 0.5 × MinSNR); `parabola` on both axes
+    (δ = 0 on the image border, clamped to ±0.5); `ProbePoint` at the refined centre decides (`s·step > 0`,
+    `s·snr ≥ MinSNR`) and gives the numbers.
+  - `mergePeaks`: sort by |snr|, |step|, cy, cx, r; keep a peak unless a kept one lies closer than the sum of radii
+    (grid buckets of side 2·max r).
+  - Every (radius, band) is one task of the new `parallel.Each`; inside a task everything is serial (`serialRows`).
+- `pkg/cv/kernels/morph.go`: `chordDisk` takes a row runner (`parallel.Rows` for `DiskMinMax`, `serialRows` inside a
+  peaks band).
+- `pkg/cv/parallel/parallel.go`: `Each(ctx, n, fn(i) error)`, a bounded task group without `Rows`' 16-row minimum.
+- `pkg/cv/ops/peaks.go`: the op (`Luma`, `AnalysisScale` 1, `radius` `number|number[]` doc px [1, 64], `snr` ≥ 0,
+  `polarity` enum), `peakFields` = geometry + `r` + `coreRingFields("off")`; Disk regions with `ID` = rank.
+- `crop`'s Doc: "peaks report cut rings (ringCoverage)".
+- Tests: `pkg/cv/kernels/peaks_test.go` (step map = brute force for r 1–8 and partial row ranges; Gaussian blobs σ 1–3,
+  amplitude 0.05–0.5 on noise: every blob found, centre error at snr ≥ 5 median 0.045–0.053 px, max 0.12–0.17 px;
+  the pre-filter changes nothing at snr 0.5/1/1.4/2 on three noise levels; polarity; flat disk r = 10: one peak at
+  r = 8, a rim ring of 8 peaks at radius 2 with snr ≤ 0.42; local noise: snr 4.64 quiet/dark vs 0.99 noisy/bright;
+  bands of 64, 7 and all rows give identical peaks); `pkg/cv/ops/peaks_test.go` (planted scan: 34 of 34 compact specks
+  found within 1.5 px with their polarity; equality with `measure` to 1e-9; toGray and scale 0.25 identical; crop;
+  argument errors; `E_FIELD_EXISTS` without a prefix; consumers `measure` with prefix, `mask.regions` (area = Σπr²
+  within 5 %), `overlay`, `heal`, `sheet` ("cells in region order")); registry walk and schema property cover peaks.
+- Goldens: `overlay-peaks.png` added. The B1 cases `dilate-mask` and `tophat-gray` had been dropped from
+  `golden_test.go` by the GCV-004 merge (step 2) while their PNGs stayed; restored, and both matched exactly before the
+  full `-update`, which changed only the new file (`counts.json` unchanged).
+- `pkg/cvsession/testdata/representative.result` gains `peaks` (measured on the speck view with prefix `sp`);
+  `TestPeaksRenderAsAPagedTable`: 596 bare peaks at snr 0 render as a table with "… rows 1–50 of 596 shown. Next:
+  this array.slice(50, 100); all: await cv.save("rows.csv", this array)".
+- Docs: a new topic `15-spots` (peaks, the speck step of peaks, a sheet, top-hats, line removal); `09` ("Inspect
+  candidates" uses peaks; "Rank candidates" points to spots), `11` (the speck scale note of §6.10), `12` (the old
+  `mem.probe` line replaced by the peaks pointer).
+
+### Why
+
+- Bands as parallel tasks: the first version ran bands one after another with `parallel.Rows` inside each phase; the
+  profile was 60 % `pthread_cond_wait`/`usleep`/`madvise` (about 200 sync points per tile). Whole bands per goroutine
+  halved the time (1024², [2, 4, 8]: 187 → 101 ms; 4096²: 2.03 → 1.39 s).
+- Pre-filter at 0.5 × MinSNR: at 0.8 (the guide's 20 %) the filtered run lost 6–9 of ~235 peaks at snr 0.5. The ratio
+  digital/exact snr at NMS candidates had a minimum of 0.63 (r = 1.5: digital disks of small radii are coarse), 0.90 at
+  r = 2, ≈ 1 from r = 4.
+
+### What worked
+
+- The brute-force step map matched on the first run; the measure equality held exactly (same `ProbePoint`, same
+  plane: the luminance input is what `measure` uses as its gray plane).
+
+### What didn't work
+
+- `TestPeaksPrefilterKeepsEveryPeak` failed at 0.8 (see Why).
+- The first benchmark hung: the synthetic field generator looped over every blob for every pixel (16 k blobs × 16 M
+  pixels at 4096²); rewritten to touch only each blob's window.
+- `TestSchemaProperty`: "Image:peaks returns Regions and is in neither schemaCalls nor schemaScalar" → added.
+- Crop equality: peaks of a crop far from its border equal the whole image's only to ~1e-5 in snr (the row prefix sums
+  and the coverage weights start at the crop's corner); the test compares to 1e-4.
+- Docs: the recipe's zoom box reached outside the frame (first peak at y 182: `RANGE`); it takes the strongest peak
+  away from the bottom edge.
+
+### What I learned
+
+- On the flat disk, rim peaks at radius 2 have snr ≤ 0.42 (blob and background in the ring), the blob's own peak at
+  r = 8 snr 70: D15's rule works by a wide margin.
+- The planted scan's dark specks measured on the bright-only speck view have negative `spStep` and huge `spSnr`
+  (806.98 in the fixture): the clipped-view warning in the docs is real.
+
+### What was tricky to build
+
+- Band margins: step rows [y0 − ⌈r⌉ − 1, y1 + ⌈r⌉ + 1) give exact NMS and the parabola's ±1 rows; prefix rows extend
+  ⌊2.5 r⌋ further. Band invariance is exact because each row's prefix sums do not depend on the band.
+- NMS on float32 step values compares exactly with the chord maximum of the same values (plateaus give several
+  candidates; the merge keeps one).
+
+### What warrants a second pair of eyes
+
+- `peakPrefilter = 0.5` is an empirical bound on synthetic fields; on real grain the ratio could be lower at r = 1–1.5.
+  Setting `noPrefilter` makes the kernel exact at a cost (real tile [2, 4, 8] at snr 1: see Technical details).
+- Peaks on a plateau (a flat saturated top) are placed anywhere on it (the flat disk's peak is 1 px off centre); the
+  test allows 1.5 px.
+
+### What should be done in the future
+
+- B3: gold tests and the snr sweep decide the default.
+
+### Code review instructions
+
+- `pkg/cv/kernels/peaks.go` top to bottom, then `pkg/cv/ops/peaks.go`; tests in `pkg/cv/kernels/peaks_test.go`,
+  `pkg/cv/ops/peaks_test.go`, `pkg/cvsession/tables_test.go` (`TestResultFormat`, `TestPeaksRenderAsAPagedTable`).
+- `go test ./pkg/cv/kernels -run 'Step|Peaks' -v`; `go test ./pkg/cv/kernels -run XXX -bench Peaks -benchtime 3x`;
+  gated `go test ./pkg/cv/ops -run XXX -bench RealPeaks -benchtime 5x`.
+- Gate: `gate=0`.
+
+### Technical details
+
+Benchmarks (Apple M1 Max, 10 cores; the machine had a load average of 60–70 from other agents, so expect noise: the
+first real-tile run read 4× slower than the repeat):
+
+| image | radius | snr | peaks | time |
+|---|---|---|---|---|
+| synthetic 1024² (noise σ 0.02, 1,024 blobs) | 3 | 1 | — | 25 ms |
+| synthetic 1024² | [2, 4, 8] | 1 | — | 101 ms |
+| synthetic 4096² | 3 | 1 | — | 315 ms |
+| synthetic 4096² | [2, 4, 8] | 1 | — | 1.39 s |
+| real tile `1d955ef4…` 1024² (density, linear) | 3 | 0.5 / 1 | 2,475 / 106 | 61 / 36 ms |
+| real tile `1d955ef4…` 1024² | [2, 4, 8] | 0.5 / 1 | 6,027 / 414 | 166 / 95 ms |
+
+Budget (§7.8): 0.5 s per 1024² tile with [2, 4, 8] — met (95 ms at snr 1, 166 ms at 0.5). Extrapolated linearly to a
+53 MP scan: 4.4 s from the synthetic 4096² figure, about 5 s at snr 1 and 9 s at snr 0.5 from the real tile — well inside
+the 60 s eval timeout; the op's doc says "about 0.1–0.2 s per megapixel with three radii".
+
+`git diff --stat 6a2e4af 0e04924`: 22 files, +1,219 / −19.
