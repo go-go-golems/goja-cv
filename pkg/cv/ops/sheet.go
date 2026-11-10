@@ -6,6 +6,8 @@ import (
 	goimage "image"
 	"math"
 	"strconv"
+	"strings"
+	"unicode"
 
 	"github.com/go-go-golems/goja-cv/pkg/cv/buffer"
 	"github.com/go-go-golems/goja-cv/pkg/cv/graph"
@@ -210,9 +212,6 @@ func runSheet(ctx context.Context, ec *graph.EvalCtx, _ []graph.Value, a graph.A
 			continue
 		}
 		id := it.Text()
-		if labels == "index" {
-			id = strconv.Itoa(i)
-		}
 		full := fmt.Sprintf("%s (%d, %d)", id, int(math.Round(cx)), int(math.Round(cy)))
 		if math.Abs(scale-a.Number("zoom")) > 1e-9 {
 			full += " ×" + strconv.FormatFloat(scale, 'g', 3, 64)
@@ -227,6 +226,40 @@ func runSheet(ctx context.Context, ec *graph.EvalCtx, _ []graph.Value, a graph.A
 		kernels.DrawText(out, lx+sheetLabelPad, ly+sheetLabelPad, s, px, [3]float32{0.95, 0.95, 0.95})
 	}
 	return graph.NewImage(out), nil
+}
+
+// sheetCaptionCells is the number of cells a sheet's caption lists.
+const sheetCaptionCells = 40
+
+// sheetCaption names the sheet's cells in its caption, so a model maps cells
+// to items from text (GCV-005 §6.7, D11): for an array the label (else id) of
+// each cell in cell order, "sheet(15 items; cells: 14 13 26 …)"; for a
+// Regions node, whose ids are known only when it is evaluated, "sheet(cells
+// in region order)". A label with whitespace is quoted.
+func sheetCaption(a graph.Args) string {
+	if !a.HasInputs() {
+		return "sheet"
+	}
+	texts, ok := graph.ItemTexts(a.Input("items"))
+	if !ok {
+		return "sheet(cells in region order)"
+	}
+	cells := len(texts)
+	if a.Has("max") {
+		cells = min(cells, a.Int("max"))
+	}
+	list := make([]string, 0, min(cells, sheetCaptionCells))
+	for _, t := range texts[:min(cells, sheetCaptionCells)] {
+		if t == "" || strings.ContainsFunc(t, unicode.IsSpace) {
+			t = strconv.Quote(t)
+		}
+		list = append(list, t)
+	}
+	s := fmt.Sprintf("sheet(%d items; cells: %s", len(texts), strings.Join(list, " "))
+	if cells > sheetCaptionCells {
+		s += fmt.Sprintf(" … (%d more)", cells-sheetCaptionCells)
+	}
+	return s + ")"
 }
 
 // WSheetTruncated: a sheet got more items than it has cells.
@@ -246,7 +279,7 @@ func sheetOp() graph.OpDef {
 				Doc: "render scale of each cell: cells are size × zoom px"},
 			{Name: "max", Type: "number", Optional: true, Min: graph.F(1),
 				Doc: "cells laid out (default: as many as fit 1568 px; a longer region list is cut with SHEET_TRUNCATED)"},
-			{Name: "labels", Type: "enum:id,index,none", Default: "id", Doc: "cell label: the item's label, else its id (ids may repeat: they are data); index: its position in the list; none; with the centre in doc px"},
+			{Name: "labels", Type: "enum:id,none", Default: "id", Doc: "cell label: the item's label, else its id (ids may repeat: they are data), with the centre in doc px; none draws no labels (the caption still lists the cells)"},
 			{Name: "stretch", Type: "enum:none,cell", Default: "none", Doc: "cell: stretch each cell by its own p01/p99 (levels({ auto: true }) per cell)"},
 		},
 		Validate: func(a graph.Args) error {
@@ -265,9 +298,10 @@ func sheetOp() graph.OpDef {
 			return l.frame()
 		},
 		AnalysisScale: func(graph.Args) float64 { return 1 },
+		Short:         sheetCaption,
 		Lazy:          true, // cells are rendered by Run through Evaluator.Render, window by window
 		Run:           runSheet,
-		Doc:           "A contact sheet: one picture of magnified crops around many items (a Regions node or an array of region items, boxes, circles or points), labelled with label (else id) and centre; cv.sheet(regions, { views: img.view(\"speck\"), size: 64, zoom: 4 }). 36 cells fit at the defaults (18 items with two views). The sheet is a picture: its pixels are not doc px; use the labels' coordinates.",
+		Doc:           "A contact sheet: one picture of magnified crops around many items (a Regions node or an array of region items, boxes, circles or points), labelled with label (else id) and centre; cv.sheet(regions, { views: img.view(\"speck\"), size: 64, zoom: 4 }). 36 cells fit at the defaults (18 items with two views). The sheet is a picture: its pixels are not doc px. Its caption lists the cells' labels (else ids) in cell order for an array (sheet(15 items; cells: 14 13 26 …)), \"cells in region order\" for a Regions node: map cells to items from that text.",
 		See:           []string{"crop", "view", "compare", "overlay"},
 	}
 }

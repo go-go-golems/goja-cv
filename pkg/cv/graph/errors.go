@@ -29,9 +29,7 @@ const (
 	EFrame            = "E_FRAME"       // images combined by one op cover different frames
 	EFormat           = "E_FORMAT"      // a file feature goja-cv does not read
 	ETooMany          = "E_TOO_MANY"    // an awaited result would be too large for JavaScript
-	WUnusedNode       = "UNUSED_NODE"
 	WRange            = "RANGE"
-	WCropFirst        = "CROP_FIRST"       // a filter with a halo after a crop sees only the window
 	WDecorationFirst  = "DECORATION_FIRST" // a pixel op after a decoration sees the drawn marks
 	WCut              = "CUT"
 	WLooks            = "LOOKS" // looks beyond the session's per-eval budget were not delivered

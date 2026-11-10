@@ -50,7 +50,7 @@ cv.open reads relative paths; each --read DIR is a directory cv.open may also re
 			if f.root == "" {
 				return usageErr("mcp needs --root DIR, the directory the agent may write; add --read DIR for data it may only read")
 			}
-			if err := checkRoots(f.root, f.read, f.image); err != nil {
+			if err := checkRoots(f.root, f.read, f.image, f.prelude); err != nil {
 				return err
 			}
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
@@ -74,7 +74,7 @@ cv.open reads relative paths; each --read DIR is a directory cv.open may also re
 	cmd.Flags().StringVar(&f.image, "image", "", "Image file to open in the default session and bind to img (in --root or a --read directory)")
 	cmd.Flags().StringVar(&f.root, "root", "", "The workspace (required): cv.save writes in it, cv.open reads relative paths in it")
 	cmd.Flags().StringArrayVar(&f.read, "read", nil, "A directory cv.open may also read, never write (repeatable; relative paths are looked up after the workspace, in order)")
-	cmd.Flags().StringArrayVar(&f.prelude, "prelude", nil, "Script run in every new session before agent code (repeatable)")
+	cmd.Flags().StringArrayVar(&f.prelude, "prelude", nil, "Script file loaded (await cv.load) in every new session before agent code, e.g. a task library (repeatable; in --root or a --read directory)")
 	cmd.Flags().IntVar(&f.timeout, "timeout-ms", 0, "Eval timeout in milliseconds (default 60000)")
 	return cmd
 }

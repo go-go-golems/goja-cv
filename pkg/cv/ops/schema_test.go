@@ -29,6 +29,9 @@ var schemaCalls = map[string]func(s schemaNodes) (graph.NodeID, []any){
 	"Image:measure": func(s schemaNodes) (graph.NodeID, []any) {
 		return s.img.ID, []any{graph.NodeArg{ID: s.specks.ID}, map[string]any{"stats": []any{"max", "p90"}, "channels": true, "ring": true, "prefix": "img"}}
 	},
+	"Image:peaks": func(s schemaNodes) (graph.NodeID, []any) {
+		return s.img.ID, []any{map[string]any{"radius": []any{2.0, 4.0}, "snr": 0.5, "polarity": "both"}}
+	},
 	"Image:profile": func(s schemaNodes) (graph.NodeID, []any) {
 		return s.img.ID, []any{[]any{190.0, 46.5}, []any{212.0, 46.5}, map[string]any{"width": 3}}
 	},

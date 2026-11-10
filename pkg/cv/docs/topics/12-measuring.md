@@ -8,7 +8,7 @@ Coordinates are doc px and continuous: pixel (i, j) covers [i, i + 1), so its ce
 
 ```js
 const rows = await img.sample([[200.5, 46.5], [40.5, 150.5]], { radius: 2 })
-return rows.map(r => [r.cx, r.cy, r.meanL.toFixed(3)].join(" "))
+return rows   // a table: one line per point
 ```
 
 A point outside the frame gives a row with `outside: true` and null values, and an `OUTSIDE` warning.
@@ -48,7 +48,7 @@ return [r.step, r.spread, r.snr, r.stepChroma, c.snr].map(x => x.toFixed(3))
 
 Gold points labelled with dustview carry the fit radius, about twice the speck's half-level radius: measure them as circles of half that radius, `gold.map(p => ({ cx: p.x - ox, cy: p.y - oy, r: p.r / 2 }))`.
 
-The old helper `mem.probe(x, y, r)` is `img.measure([[x + 0.5, y + 0.5]], { coreRadius: r + 0.5, ringRadii: [r + 3.5, r + 9.5], gray: "average" })`.
+Where to measure: `img.as("linear").peaks({ radius })` returns the local maxima of this step as circles with these fields, and a peak's snr is what `measure` reports there (`cv.docs.read("spots")`). Do not read points off a look.
 
 ## Measuring regions
 
@@ -60,8 +60,7 @@ const white = 2 * (await dog.stats()).p99     // a measurement used as an option
 const hot = dog.levels({ black: 0, white }).mask.luminance({ above: 0.99 }).components({ minArea: 4 })
 const m = await img.measure(dog.measure(hot, { stats: ["max"], prefix: "dog" }))
 const ranked = m.sort((a, b) => b.snr - a.snr).slice(0, 5)
-const chroma = x => x === null ? "null" : x.toFixed(2)   // null when |snr| < 1
-return ranked.map(r => [r.id, r.cx, r.cy, r.dogMaxL.toFixed(4), r.snr.toFixed(2), chroma(r.stepChroma)].join(" "))
+return ranked.map(({ id, cx, cy, dogMaxL, snr, stepChroma }) => ({ id, cx, cy, dogMaxL, snr, stepChroma }))   // stepChroma: null when |snr| < 1
 ```
 
 The unstretched DoG is measured (not `view("speck")`, which stretches per tile), so `dogMaxL` compares across tiles. On density tiles (opened with `encoding: "linear"`, or the `as("linear")` of an sRGB-encoded export) build the hot list on the density, as the speck view does: on 197 labelled points of 15 tiles the hot list has about 37 spots per tile, ranking by snr puts 60 % of the points within 4 px of one of the first 30 spots (43 % by area), and labelled dust has a median snr of 2.2 (other spots 0.8).

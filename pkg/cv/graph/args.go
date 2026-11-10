@@ -1050,7 +1050,11 @@ func checkKeys(specs []ArgSpec, m map[string]any, what string, fix func(sug stri
 	}
 	for _, k := range sortedKeys(m) {
 		if !known[k] {
-			e := Errorf(EUnknownOption, "%s has no option %q. Valid options: %s.", what, k, strings.Join(valid, ", ")).WithValid(valid)
+			list := ": it takes none"
+			if len(valid) > 0 {
+				list = ". Valid options: " + strings.Join(valid, ", ")
+			}
+			e := Errorf(EUnknownOption, "%s has no option %q%s.", what, k, list).WithValid(valid)
 			if r, ok := optionRedirect(specs, k); ok {
 				e.Hint, e.Fix = r.Hint, r.Fix
 				return e

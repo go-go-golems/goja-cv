@@ -101,8 +101,8 @@ func regionOps() []graph.OpDef {
 				}
 				return graph.NewImage(m), nil
 			},
-			Doc: "The items as a mask (a one-channel image in the image's frame): exact area coverage of each region's pixels, box or circle. Grow it with .grow(r).",
-			See: []string{"components", "grow", "heal"},
+			Doc: "The items as a mask (a one-channel image in the image's frame): exact area coverage of each region's pixels, box or circle. Grow it with .dilate(r).",
+			See: []string{"components", "dilate", "heal"},
 		},
 	}
 }

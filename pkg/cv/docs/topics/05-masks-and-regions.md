@@ -14,7 +14,7 @@ return { bright: await bright.coverage(), centre: await centre.coverage() }
 
 ## Combining and refining
 
-Set algebra: `a.and(b)`, `a.or(b)`, `a.minus(b)`, `a.not()`. Morphology in doc px: `grow(radius)`, `shrink(radius)`, `feather(radius)`; `refine(img)` snaps soft edges to image edges. `coverage()` is the selected fraction (the mask's mean); `img.stats({ mask })` measures the image inside the mask. These ops need a one-channel receiver, and an argument that takes a mask (`within`, `blend`, `stats`, `heal`, `inpaint`, `overlay`) takes any one-channel image: a colour image there is `E_WRONG_KIND` with the fix `img.toGray()`. A mask is a weight, never converted between spaces: `img.as("linear").within(m, …)` uses the same weights as `img.within(m, …)`.
+Set algebra: `a.and(b)`, `a.or(b)`, `a.minus(b)`, `a.not()`. Morphology in doc px: `m.dilate(r)` grows the selection by r, `m.erode(r)` shrinks it (a disk: pixels within r; see `cv.help("tophat")`), `feather(radius)` softens the edge; `refine(img)` snaps soft edges to image edges. `coverage()` is the selected fraction (the mask's mean); `img.stats({ mask })` measures the image inside the mask. These ops need a one-channel receiver, and an argument that takes a mask (`within`, `blend`, `stats`, `heal`, `inpaint`, `overlay`) takes any one-channel image: a colour image there is `E_WRONG_KIND` with the fix `img.toGray()`. A mask is a weight, never converted between spaces: `img.as("linear").within(m, …)` uses the same weights as `img.within(m, …)`.
 
 ```js
 const sel = img.mask.luminance({ above: 0.45 })
@@ -33,7 +33,7 @@ const sp = await img.detect.specks()
 const keep = sp.filter(r => r.score >= 0.5).sort((a, b) => b.area - a.area).slice(0, 3)
 const first = keep[0]
 const { meanL, area } = await img.stats({ box: first })
-return { n: sp.length, rows: keep.map(x => [x.id, x.cx, x.cy, x.area, x.score].join(" ")), around: { meanL, area } }
+return { n: sp.length, rows: keep, around: { meanL, area } }   // rows: a table
 ```
 
 Pass the array (or the node) back wherever regions go. Each item stays linked to its region's exact pixels through `filter`, `sort`, `slice` and spread (`{ ...r, note: "x" }`); a `map` that builds new objects field by field drops the link (they become plain boxes; `ITEMS` warns). Editing `x, y, w, h` of a linked item is refused ("item 3 was moved": pass a plain box). Ids are data: edit or repeat them freely. A `label` string is printed instead of the id; a text `id` is `E_ARG_TYPE`.
@@ -52,14 +52,14 @@ An array may also hold boxes `{ x, y, w, h }` or `[x, y, w, h]` and circles `{ c
 const sp = (await img.detect.specks()).filter(r => r.score >= 0.5).slice(0, 4)
 const gold = [{ cx: 200.5, cy: 46.5, r: 4, label: "star" }]
 const m = await img.as("linear").measure([...sp, ...gold])
-return m.map(x => [x.label ?? x.id, x.snr.toFixed(2)].join(" "))
+return m.map(({ id, label, snr }) => ({ id, label, snr }))
 ```
 
 ## Converting
 
 ```js
 const dust = (await img.detect.specks()).filter(r => r.score >= 0.5)
-const m = img.mask.regions(dust).grow(2)                                       // regions → mask
+const m = img.mask.regions(dust).dilate(2)                                     // regions → mask
 const blobs = await img.mask.luminance({ above: 0.7 }).components({ minArea: 4 })   // mask → regions
 return { masked: await m.coverage(), blobs: blobs.length }
 ```

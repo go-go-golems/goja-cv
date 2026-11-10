@@ -124,24 +124,18 @@ func TestLookBeforeThrowStillDeliversTheImage(t *testing.T) {
 	}
 }
 
-func TestUnusedNodeWarning(t *testing.T) {
+// TestNoUnusedNodeWarning: a node nobody awaits, looks at or saves does
+// nothing, and nothing warns about it (GCV-005 D10).
+func TestNoUnusedNodeWarning(t *testing.T) {
 	app, sid := newApp(t, cvsession.Options{Image: tiffPath})
-	resp := eval(t, app, sid, "const s = await img.stats()\nimg.exposure(0.3).gaussian(2)\nreturn s.meanL")
-	out := text(resp)
-	t.Logf("result:\n%s", out)
-	mustContain(t, out, "warnings:", "UNUSED_NODE line 2: img.exposure(0.3).gaussian(2) builds a node and discards it. Nodes are lazy: nothing ran.")
-	if strings.Count(out, "UNUSED_NODE") != 1 {
-		t.Fatalf("want one UNUSED_NODE for the discarded chain:\n%s", out)
-	}
 	for _, code := range []string{
-		`const a = img.exposure(0.3); return a.look()`,
-		`const a = img.exposure(0.3); return { m: (await a.stats()).meanL }`,
-		`mem.a = img.exposure(0.3); return 1`,
-		`const a = img.exposure(0.3); a.look(); return 1`,
-		`const s = await img.stats(); const f = img.levels({ black: s.p01, white: s.p99 }); return f.look()`,
-		`return img.exposure(0.4)`,
+		"const s = await img.stats()\nimg.exposure(0.3).gaussian(2)\nreturn s.meanL",
+		"img.gaussian(2)\nreturn 1",
+		"mem.views = () => ({ scene: img.view(\"scene\"), speck: img.view(\"speck\"), speckColor: img.view(\"speckColor\") })\nconst v = mem.views()\nreturn { scene: v.scene.look(\"scene\"), speck: v.speck.look(\"speck\") }",
+		"img.within(img.mask.box([0, 0, 10, 10]), i => i.exposure(1))\nreturn 1",
 	} {
-		mustNotContain(t, text(eval(t, app, sid, code)), "UNUSED_NODE")
+		out := mustOK(t, eval(t, app, sid, code))
+		mustNotContain(t, out, "UNUSED_NODE", "warnings:")
 	}
 }
 
@@ -201,13 +195,13 @@ func TestRootsRestrictOpen(t *testing.T) {
 
 func TestLongResultsAreCut(t *testing.T) {
 	app, sid := newApp(t, cvsession.Options{Image: tiffPath})
-	out := text(eval(t, app, sid, `return { xs: Array.from({ length: 200 }, (_, i) => i), rows: Array.from({ length: 40 }, (_, i) => ({ i, s: "x".repeat(400) })) }`))
+	out := text(eval(t, app, sid, `return { xs: Array.from({ length: 200 }, (_, i) => i), rows: Array.from({ length: 40 }, (_, i) => [i, "x".repeat(400)]) }`))
 	if len(out) > 9000 {
 		t.Fatalf("len %d > 9000", len(out))
 	}
 	mustContain(t, out, "# … 152 more", "# CUT: the result is")
 	out = text(eval(t, app, sid, `return [img.stats(), Promise.resolve(1), () => 1]`))
-	mustContain(t, out, "[Value #", "stats()] (lazy", "[Promise] (not awaited", "[Function]")
+	mustContain(t, out, "[Value #", "stats()] (lazy", "[Promise] (not awaited", ", function()]")
 	out = text(eval(t, app, sid, `const x = 1`))
 	mustContain(t, out, "# nothing returned")
 }
@@ -286,11 +280,7 @@ return img.overlay(r, { labels: "id" }).look("regions")`)
 	if len(resp.Content) != 1 || strings.Contains(text(resp), "UNUSED_NODE") {
 		t.Fatalf("regions overlay look:\n%s", text(resp))
 	}
-	out = text(eval(t, app, sid, "img.within(img.mask.box({ box: [0, 0, 10, 10] }), i => i.exposure(1))\nreturn 1"))
-	mustContain(t, out, "UNUSED_NODE line 1: img.within(")
-	if strings.Count(out, "UNUSED_NODE") != 1 {
-		t.Fatalf("want one UNUSED_NODE:\n%s", out)
-	}
+
 }
 
 func TestCrossKindErrorsHaveALiteralFixAndGrammar(t *testing.T) {
@@ -466,11 +456,12 @@ func TestRawTypeErrorsOnDataNameTheOp(t *testing.T) {
 // prelude are discarded; a look created after the eval settled is named by
 // the next eval's warnings.
 func TestLookQueue(t *testing.T) {
-	prelude := filepath.Join(t.TempDir(), "prelude.js")
+	root := t.TempDir()
+	prelude := filepath.Join(root, "prelude.js")
 	if err := os.WriteFile(prelude, []byte("img.look(\"from the prelude\")\nmem.p = 1\nreturn 1"), 0o644); err != nil { // #nosec G306 -- test data
 		t.Fatal(err)
 	}
-	app, sid := newApp(t, cvsession.Options{Image: tiffPath, Preludes: []string{prelude}})
+	app, sid := newApp(t, cvsession.Options{Image: tiffPath, Root: root, Preludes: []string{prelude}})
 	captions := func(resp *replsession.EvaluateResponse) []string {
 		var out []string
 		for _, c := range resp.Content {

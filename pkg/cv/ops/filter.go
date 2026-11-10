@@ -14,7 +14,6 @@ func filterOps() []graph.OpDef {
 			Args: []graph.ArgSpec{{Name: "sigma", Type: "number", Unit: graph.DocPx, Positional: true, Min: graph.F(0), Max: graph.F(2000),
 				Usual: [2]float64{0, 200}, Doc: "standard deviation σ of the Gaussian in doc px; the blur reaches about 3σ"}},
 			Identity: func(a graph.Args) bool { return a.DocLength("sigma") == 0 },
-			Halo:     func(a graph.Args) float64 { return 3 * a.DocLength("sigma") },
 			Run: func(ctx context.Context, _ *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
 				src := image(in[0])
 				out, err := kernels.Gaussian(ctx, src.Buf, a.Length("sigma", src.Buf.Scale))

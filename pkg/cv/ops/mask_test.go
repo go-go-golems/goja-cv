@@ -129,9 +129,9 @@ func TestParseColorAcceptsCSSNamesAndHex(t *testing.T) {
 func TestMasksAreOneChannelImages(t *testing.T) {
 	e, img := newEngine(t)
 	grey := call(t, e, "toGray", img.ID)
-	grown := call(t, e, "grow", grey.ID, 2.0)
+	grown := call(t, e, "dilate", grey.ID, 2.0)
 	if v := evalValue(t, e, grown, 1).(*graph.ImageValue); v.Buf.C != 1 || grown.Channels != 1 {
-		t.Fatalf("img.toGray().grow(2): %d channels", v.Buf.C)
+		t.Fatalf("img.toGray().dilate(2): %d channels", v.Buf.C)
 	}
 	half := call(t, e, "mask.box", img.ID, []any{0.0, 0.0, 32.0, 48.0})
 	if s := evalData(t, e, call(t, e, "stats", half.ID), 1).(map[string]any); math.Abs(s["meanL"].(float64)-0.5) > 1e-6 {

@@ -112,7 +112,6 @@ func healOps() []graph.OpDef {
 				{Name: "method", Type: "enum:patch,diffuse", Default: "patch",
 					Doc: "patch: copy the best-matching nearby patch and correct the seam (keeps grain); diffuse: smooth harmonic fill"},
 			},
-			Halo: func(a graph.Args) float64 { return 4*a.DocLength("radius") + 64 },
 			Run: func(ctx context.Context, _ *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
 				base := image(in[0])
 				t, err := targetMask(ctx, "heal", a.Value("target"), base)
@@ -134,7 +133,6 @@ func healOps() []graph.OpDef {
 				{Name: "mask", Type: "Mask", Positional: true, Doc: "what to replace: mask values ≥ 0.5"},
 				{Name: "method", Type: "enum:diffuse,patch", Default: "diffuse"},
 			},
-			Halo: func(graph.Args) float64 { return 64 },
 			Run: func(ctx context.Context, _ *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
 				base := image(in[0])
 				t, err := targetMask(ctx, "inpaint", a.Value("mask"), base)

@@ -55,6 +55,35 @@ func Rows(ctx context.Context, n int, fn func(y0, y1 int)) error {
 	return ctx.Err()
 }
 
+// Each calls fn(i) for every i in [0, n), each a task on a bounded number
+// of goroutines (GOMAXPROCS), however small n is: for work items that are
+// each large (a band of a kernel with its own margins). The context is
+// checked before each task starts; the first error stops scheduling and is
+// returned.
+func Each(ctx context.Context, n int, fn func(i int) error) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	g, gctx := errgroup.WithContext(ctx)
+	g.SetLimit(runtime.GOMAXPROCS(0))
+	for i := 0; i < n; i++ {
+		if gctx.Err() != nil {
+			break
+		}
+		g.Go(func() (err error) { //nolint:nonamedreturns // recover needs named results
+			defer Recover(&err)
+			if err := gctx.Err(); err != nil {
+				return err
+			}
+			return fn(i)
+		})
+	}
+	if err := g.Wait(); err != nil {
+		return err
+	}
+	return ctx.Err()
+}
+
 // PanicError is a panic recovered on a goroutine goja-cv started (a kernel
 // band, a decoder strip): the goroutine cannot re-panic on its caller's
 // stack, so the panic travels back as this error, which the graph reports as

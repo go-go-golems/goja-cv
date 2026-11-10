@@ -76,9 +76,11 @@ goja-cv eval --json --root /tmp/specks --read ~/tiles --image ~/tiles/TILE.tif \
   -e 'return await cv.save("specks.csv", img.detect.specks({ polarity: "bright", maxArea: 2000 }))'
 ```
 
-`--prelude FILE` (repeatable) runs a script in the session before the code:
-helpers it puts on `mem` are there for the eval (`--prelude 84-cv-helpers.js -e 'return await mem.hot(2)'`); a
-failing prelude exits 1 with `prelude FILE:LINE: …`. `--timeout-ms` raises the 60 s eval limit.
+`--prelude FILE` (repeatable) loads a script file in the session before the code, as `await cv.load(FILE)` would:
+the task library's functions on `mem` are there for the eval (`--read ~/lib --prelude ~/lib/dust/helpers.js -e
+'return (await mem.spots({ snr: 1.4 })).slice(0, 20)'`). The file must lie in `--root` or a `--read` directory (a usage error otherwise); a
+failing prelude exits 1 with `prelude dust/helpers.js:LINE: …`. Inside the code, `await cv.load("dust/helpers.js",
+args)` loads a file the same way (see `cv.docs.read("task-libraries")`). `--timeout-ms` raises the 60 s eval limit.
 
 ## Exit codes
 
@@ -135,7 +137,8 @@ goja-cv mcp --http 127.0.0.1:3092 --root ./work --image ./work/scan.tif
   does not default to it.
 - `--read DIR` (repeatable) is a directory `cv.open` may also read, never write.
 - `--image FILE` opens the image in the default session and binds it to `img`; it must lie in a root.
-- `--prelude FILE` (repeatable) runs in every new session, the default one and those made with `create_session`.
+- `--prelude FILE` (repeatable) loads a script file (a task library) in every new session, the default one and
+  those made with `create_session`; it must lie in a root, like `--image`.
 - `--http ADDR` serves streamable HTTP instead of stdio; non-loopback addresses need `--allow-remote` (there is
   no authentication).
 - `--log-level debug` logs to stderr (stdout carries the protocol).

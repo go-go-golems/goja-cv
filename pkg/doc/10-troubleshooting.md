@@ -46,6 +46,16 @@ marks the failing call), `hint` and usually `fix` (literal code). Apply the fix 
 - Clients often start servers from another working directory: use absolute paths.
 - `--log-level debug` prints logs to stderr; stdout must stay clean for the protocol.
 
+## Task libraries and preludes
+
+- `--prelude … is outside --root … and the --read directories; add --read DIR`: a prelude is a `cv.load` at
+  session start and must lie in the workspace or a read directory.
+- `prelude dust/helpers.js:57: …`: the prelude failed at that line; the session is not created. Run the file with
+  `goja-cv eval --read DIR -e 'return await cv.load("dust/helpers.js")'` to see the full error.
+- `E_TOO_MANY` from `cv.load` ("nested 32 deep"): a file loads itself, directly or through another file.
+- `UNHANDLED line N: a promise was rejected and never handled`: an unawaited `cv.load` or async helper failed;
+  await it. The eval itself waits for every load and save it started.
+
 ## Sessions
 
 - One server process has one default session; `mem`, `img` and look numbers live there. Restarting the

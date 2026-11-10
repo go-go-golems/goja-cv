@@ -98,6 +98,8 @@ smoke: build-bin
 		> $(SMOKE_DIR)/eval.json
 	jq -e '.status == "ok" and (.files | length) == 1' $(SMOKE_DIR)/eval.json >/dev/null
 	test -s "$$(jq -r '.files[0].path' $(SMOKE_DIR)/eval.json)"
+	printf '// a two-line task library\nmem.f = x => x + 1\n' > $(SMOKE_DIR)/lib.js
+	test "$$(./dist/$(BINARY) eval --root $(SMOKE_DIR) --prelude $(SMOKE_DIR)/lib.js -e 'return mem.f(41)' | head -1)" = "42"
 	@status=0; ./dist/$(BINARY) eval -e 'return cv.nope()' >/dev/null || status=$$?; \
 		if [ "$$status" -ne 1 ]; then echo "expected exit 1 for a cv error, got $$status"; exit 1; fi
 	@status=0; ./dist/$(BINARY) mcp </dev/null >/dev/null 2>$(SMOKE_DIR)/mcp.err || status=$$?; \

@@ -23,10 +23,12 @@ type binding struct {
 	mu       sync.Mutex
 	warnings []graph.Warning
 
-	track     tracker        // per-eval state (evaltrack.go)
-	late      []QueuedLook   // looks created while no eval was running (evaltrack.go)
-	opened    []graph.NodeID // sources opened with cv.open
-	unhandled map[*goja.Promise]bool
+	track          tracker        // per-eval state (evaltrack.go)
+	late           []QueuedLook   // looks created while no eval was running (evaltrack.go)
+	opened         []graph.NodeID // sources opened with cv.open
+	unhandled      map[*goja.Promise]bool
+	unhandledOrder []*goja.Promise     // rejection order of unhandled
+	files          map[string][]string // script name → lines of the text last loaded under it (load.go)
 }
 
 func newBinding(vm *goja.Runtime, eng *graph.Engine) *binding {
@@ -52,6 +54,10 @@ func (b *binding) object() *goja.Object {
 	set("__placeholder", b.placeholder)
 	set("__look", b.look)
 	set("__save", b.save)
+	set("__compile", b.compile)
+	set("__pending", b.pending)
+	set("__tooDeep", b.tooDeep)
+	set("__scripts", b.scripts)
 	b.addDocs(o)
 	return o
 }
@@ -194,17 +200,12 @@ func (b *binding) call(c goja.FunctionCall) goja.Value {
 		b.throw(err)
 	}
 	b.addWarnings(r.Warnings)
+	b.noteCall(r.Warnings)
 	if len(r.Nodes) == 1 {
-		b.noteCall(r.Nodes[0].ID, r.Warnings)
 		return handle(b.vm, r.Nodes[0])
 	}
 	hs := make([]any, len(r.Nodes))
 	for i, n := range r.Nodes {
-		ws := r.Warnings
-		if i > 0 {
-			ws = nil
-		}
-		b.noteCall(n.ID, ws)
 		hs[i] = handle(b.vm, n)
 	}
 	return b.vm.NewArray(hs...)
@@ -246,7 +247,6 @@ func (b *binding) open(c goja.FunctionCall) goja.Value {
 func (b *binding) evaluate(c goja.FunctionCall) goja.Value {
 	vm := b.vm
 	n := b.nodeArg(c.Argument(0))
-	b.noteUsed(n.ID)
 	promise, resolve, reject := vm.NewPromise()
 	if n.Kind == graph.KindImage {
 		_ = resolve(toJS(vm, graph.ImageSummary(n)))
@@ -306,7 +306,6 @@ func resultToJS(vm *goja.Runtime, v graph.Value, n *graph.Node) (goja.Value, err
 // node's call, kind, size at scale 1 and whether its value is cached).
 func (b *binding) explain(c goja.FunctionCall) goja.Value {
 	n := b.nodeArg(c.Argument(0))
-	b.noteUsed(n.ID)
 	d := map[string]any{
 		"id": float64(n.ID), "kind": string(n.Kind), "op": graph.Shown(n).Op.Name, "label": graph.Label(n),
 		"call":  graph.Describe(b.eng.Builder(), graph.Shown(n), 1),

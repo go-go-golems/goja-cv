@@ -41,7 +41,11 @@ func planted(t *testing.T) string {
 		if plantedErr = testimage.WriteFile(filepath.Join(dir, "planted-linear.tif"), lin, 16, buffer.Meta{}); plantedErr != nil {
 			return
 		}
-		plantedErr = testimage.WriteFile(filepath.Join(dir, "planted.npy"), lin, 32, buffer.Meta{})
+		if plantedErr = testimage.WriteFile(filepath.Join(dir, "planted.npy"), lin, 32, buffer.Meta{}); plantedErr != nil {
+			return
+		}
+		// the script files the task-libraries topic loads (dust/helpers.js, …)
+		plantedErr = os.CopyFS(dir, os.DirFS(filepath.Join("testdata", "scripts")))
 	})
 	if plantedErr != nil {
 		t.Fatal(plantedErr)
@@ -173,7 +177,7 @@ func TestDocsFromEval(t *testing.T) {
 	out := text(eval(t, app, sid, `return cv.docs.list().map(t => t.id)`))
 	mustContain(t, out, "getting-started", "recipes")
 	out = text(eval(t, app, sid, `return cv.docs.search("heal dust", { limit: 2 })`))
-	mustContain(t, out, "id: recipes", "section: Remove dust", "snippet:", "score:")
+	mustContain(t, out, "id  ", "score", "snippet", "\n  recipes ", `"Remove dust"`)
 	out = text(eval(t, app, sid, `return cv.docs.read("recipes", { section: "Remove dust" })`))
 	mustContain(t, out, "## Remove dust", "img.detect.specks()")
 	mustNotContain(t, out, "## Edit inside a mask")

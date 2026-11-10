@@ -32,7 +32,7 @@ A look shows at most 1568 px on its long side. To judge a speck, crop a window a
 return img.crop([150, 20, 64, 64]).look({ zoom: 8, ruler: 8, label: "star 8×" })
 ```
 
-Filters are computed at full resolution, then magnified. A look over 1568 px is an error whose fix gives a smaller crop or a lower zoom. Crop **last**: a blur after a crop sees only the window (`CROP_FIRST`). Stretch a crop by its own pixels: `img.crop(box).levels({ auto: true })`.
+Filters are computed at full resolution, then magnified. A look over 1568 px is an error whose fix gives a smaller crop or a lower zoom. Ops after a crop see only the crop (`cv.help("crop")`). Stretch a crop by its own pixels: `img.crop(box).levels({ auto: true })`.
 
 ## Rulers and grid
 
@@ -63,11 +63,11 @@ return "four delivered; LOOKS names two"
 
 ## Formats
 
-`format: "auto"` sends PNG for gray images, masks, zoomed looks, sheets and looks up to 512 × 512 px, JPEG (q85) for larger colour looks. JPEG ringing is the size of small specks: use `format: "png"` for fine detail.
+`format: "auto"` sends PNG for gray images, masks, zoomed looks, sheets and looks up to 512 × 512 px, JPEG (q85) for larger colour looks. JPEG ringing is speck-sized: use `format: "png"` for fine detail.
 
 ## Contact sheets
 
-`cv.sheet(items, { views, size, zoom })` is one image of many magnified crops: a cell per item (regions, boxes, circles, points), labelled with its label (else id) and centre in doc px; several views show each item side by side. At the defaults (64 px windows at zoom 4) 36 cells fit one look (18 items with two views). A sheet is a picture: use the labels' coordinates, not its pixels.
+`cv.sheet(items, { views, size, zoom })` is one image of magnified crops: a cell per item (regions, boxes, circles, points) labelled with its label (else id) and centre in doc px; several views side by side. At the defaults (64 px at zoom 4) 36 cells fit (18 items with two views). A sheet is a picture: its caption lists the cells' labels (else ids) in order (`cells: 14 13 26 …`); map cells to rows from that text.
 
 ```js looks=1
 const spots = img.view("speck").mask.luminance({ above: 0.5 }).components({ minArea: 4 })

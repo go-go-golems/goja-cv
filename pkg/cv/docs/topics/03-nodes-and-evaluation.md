@@ -1,6 +1,6 @@
 # Nodes and evaluation
 
-Calls build lazy, immutable, hash-consed nodes; nothing runs until you await a node, return a look, or use the node in something that is evaluated. Options are literal values. cv.explain(node) shows the graph; UNUSED_NODE and E_NOT_AWAITED catch the usual mistakes.
+Calls build lazy, immutable, hash-consed nodes; nothing runs until you await a node, return a look, or use the node in something that is evaluated. Options are literal values. cv.explain(node) shows the graph; E_NOT_AWAITED catches reading data that was not awaited.
 
 ## Kinds
 
@@ -69,18 +69,14 @@ return img.detect.specks().filter(r => r.score >= 0.5)   // fix: (await img.dete
 
 Other awaited data is not linked to its node: `(await img.stats()).p99` is a number. The YAML result shows at most 48 items of a list; `await cv.save("x.csv", items)` hands a program all of them.
 
-## UNUSED_NODE
+## A node you don't use does nothing
 
-A node built as a statement and never returned, awaited, looked at, stored in `mem` or used by another node did nothing. The result then carries a warning with your line:
+A node you don't await, look at or save does nothing: no pixels are computed, nothing is written, and nothing warns. A forgotten `await` shows up as a missing value in your result. What the eval does wait for are `cv.load` and `cv.save`: it ends only when every load and save it started has settled, awaited or not, and a failure nobody handled is an `UNHANDLED` warning.
 
-```js warns=UNUSED_NODE
-img.exposure(0.3)
-return "the line above was a no-op"
-```
-
-```yaml
-warnings:
-  - 'UNUSED_NODE line 1: img.exposure(0.3) builds a node and discards it. Nodes are lazy: nothing ran. Return it, await it, look at it, or keep it in mem.'
+```js
+img.exposure(0.3)                       // built, never used: a no-op
+cv.save("probe.json", { ok: true })     // not awaited: still written before the eval ends
+return "two lines above: one no-op, one saved file"
 ```
 
 ## E_NOT_AWAITED

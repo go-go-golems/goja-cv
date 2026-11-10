@@ -34,7 +34,7 @@ func (f *evalFlags) register(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&f.root, "root", "", "The workspace: cv.save writes in it, cv.open reads relative paths in it (default: the current directory)")
 	cmd.Flags().StringArrayVar(&f.read, "read", nil, "A directory cv.open may also read, never write (repeatable; relative paths are looked up after the workspace, in order)")
 	cmd.Flags().StringVar(&f.out, "out", "", "Directory for the delivered looks (default: a new temporary directory)")
-	cmd.Flags().StringArrayVar(&f.prelude, "prelude", nil, "Script run in the session before the code (repeatable; e.g. helpers that define mem.*)")
+	cmd.Flags().StringArrayVar(&f.prelude, "prelude", nil, "Script file loaded (await cv.load) in the session before the code, e.g. a task library that defines mem.* (repeatable; in --root or a --read directory)")
 	cmd.Flags().BoolVar(&f.json, "json", false, "Print a JSON object instead of YAML")
 	cmd.Flags().IntVar(&f.timeout, "timeout-ms", 0, "Eval timeout in milliseconds (default 60000)")
 }
@@ -98,15 +98,10 @@ func runCode(ctx context.Context, opts *rootOptions, f *evalFlags, code string) 
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	if err := checkRoots(f.root, f.read, f.image); err != nil {
+	if err := checkRoots(f.root, f.read, f.image, f.prelude); err != nil {
 		return err
 	}
 	logger := opts.logger()
-	for _, p := range f.prelude {
-		if st, err := os.Stat(p); err != nil || st.IsDir() {
-			return usageErr("--prelude %q is not a readable file", p)
-		}
-	}
 	sopts := cvsession.Options{Image: f.image, Root: f.root, Read: f.read, Preludes: f.prelude, Logger: &logger}
 	if f.timeout > 0 {
 		sopts.EvalTimeout = msDuration(f.timeout)
@@ -246,8 +241,8 @@ func slug(s string) string {
 }
 
 // checkRoots checks the workspace flags: --root and every --read must be
-// directories, and --image must lie in one of them.
-func checkRoots(root string, reads []string, image string) error {
+// directories, and --image and every --prelude must lie in one of them.
+func checkRoots(root string, reads []string, image string, preludes []string) error {
 	if root == "" {
 		wd, err := os.Getwd()
 		if err != nil {
@@ -260,20 +255,26 @@ func checkRoots(root string, reads []string, image string) error {
 		return usageErr("%v", err)
 	}
 	defer ws.Close()
-	if image == "" {
-		return nil
+	files := map[string][]string{}
+	if image != "" {
+		files["--image"] = []string{image}
 	}
-	abs, err := filepath.Abs(image)
-	if err != nil {
-		return usageErr("--image: %v", err)
-	}
-	f, _, err := ws.Open(abs)
-	if err != nil {
-		if _, serr := os.Stat(abs); serr != nil {
-			return usageErr("--image: %v", serr)
+	files["--prelude"] = preludes
+	for _, flag := range []string{"--image", "--prelude"} {
+		for _, p := range files[flag] {
+			abs, err := filepath.Abs(p)
+			if err != nil {
+				return usageErr("%s: %v", flag, err)
+			}
+			f, _, err := ws.Open(abs)
+			if err != nil {
+				if _, serr := os.Stat(abs); serr != nil {
+					return usageErr("%s: %v", flag, serr)
+				}
+				return usageErr("%s %s is outside --root %s and the --read directories; add --read %s", flag, p, ws.Dir(), filepath.Dir(abs))
+			}
+			_ = f.Close()
 		}
-		return usageErr("--image %s is outside --root %s and the --read directories; add --read %s", image, ws.Dir(), filepath.Dir(abs))
 	}
-	_ = f.Close()
 	return nil
 }

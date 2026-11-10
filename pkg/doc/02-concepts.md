@@ -40,8 +40,8 @@ return { same: a === img.exposure(0.3), graph: cv.explain(b).graph, summary: awa
 ```
 
 Awaited regions are a plain array: `const r = await img.detect.specks()`, then `r.filter(...)`, `r.sort(...)`,
-`r.slice(...)` are JavaScript, and the array goes back wherever regions go. A node that is built and
-thrown away produces an `UNUSED_NODE` warning, and reading a field of an unawaited measurement
+`r.slice(...)` are JavaScript, and the array goes back wherever regions go. A node that nobody awaits,
+looks at or saves does nothing (and nothing warns), and reading a field of an unawaited measurement
 (`img.stats().p99`) or comparing a node with `<` is `E_NOT_AWAITED` — await it first.
 
 Options are literal values. A measurement that feeds an option is awaited first:
@@ -77,7 +77,9 @@ between spaces), on which every image op works; **regions** are things you count
 (143 specks, drop id 31). Awaited regions are an array of **items**; each stays linked to its region's exact pixels
 through `filter`, `sort`, `slice` and `{ ...r }`, and literal boxes `{ x, y, w, h }` and circles `{ cx, cy, r }`
 mix in. Ids are data (they may repeat); a `label` is printed instead of the id. Each converts into the other:
-`img.mask.regions(items)`, `mask.components()`.
+`img.mask.regions(items)`, `mask.components()`. Morphology
+works on any one-channel image: `x.dilate(r)` and `x.erode(r)` take a disk of radius r doc px or, with
+`{ line: angle }`, a line; opening, closing and top-hat are their compositions (`cv.help("tophat")`).
 
 ```js
 const sel = img.mask.luminance({ above: 0.45 }).minus(img.mask.box([0, 0, 40, 40])).feather(6)
@@ -110,7 +112,7 @@ four images arrive per eval.
 
 Every error has the same shape: `code`, `message`, `where` (the agent's line), `path` (the graph path),
 `hint` and usually a literal `fix`. Raw JavaScript errors that involve cv objects are translated into the same
-shape. Warnings (`RANGE`, `UNUSED_NODE`) travel with results instead of failing them. `cv.help(name)` never
+shape. Warnings (`RANGE`, `LOOKS`, `UNHANDLED`) travel with results instead of failing them. `cv.help(name)` never
 throws: unknown names return `{ found: false, didYouMean }`.
 
 ```js error=E_NOT_AWAITED

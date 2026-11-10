@@ -167,6 +167,16 @@ func TestUnawaitedSaves(t *testing.T) {
 			t.Fatalf("chained save %s: %v", f, err)
 		}
 	}
+	// The same through a load: a save started after an unawaited cv.load settles finishes too (GCV-005's pending list).
+	if err := os.WriteFile(filepath.Join(ws, "chain.js"), []byte("await cv.save(\"c4.json\", { c: 4 })\nreturn 4\n"), 0o644); err != nil { // #nosec G306 -- test data
+		t.Fatal(err)
+	}
+	mustOK(t, eval(t, app, sid, `cv.load("chain.js").then(() => cv.save("c5.json", { c: 5 })); return 1`))
+	for _, f := range []string{"c4.json", "c5.json"} {
+		if st, err := os.Stat(filepath.Join(ws, f)); err != nil || st.Size() == 0 {
+			t.Fatalf("chained load/save %s: %v", f, err)
+		}
+	}
 	out = mustOK(t, eval(t, app, sid, `Promise.reject(new Error("boom")); return 1`))
 	mustContain(t, out, "UNHANDLED", "boom")
 }

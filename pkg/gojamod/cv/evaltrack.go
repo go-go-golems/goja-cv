@@ -11,26 +11,19 @@ import (
 )
 
 // This file holds the hooks an eval session (pkg/cvsession) uses around one
-// evaluation: per-eval tracking of the nodes a script builds and uses (for
-// the UNUSED_NODE lint), warnings with the script line that caused them, the
-// eval context that cancels kernels, the list of opened sources, node
+// evaluation: warnings with the script line that caused them, the eval
+// context that cancels kernels, the list of opened sources, node
 // identification for result rendering, and look() objects. Everything here
 // runs on the runtime owner goroutine.
 
 const preludeName = "cv/prelude.js"
 
 // Site is the position in the calling script (the first stack frame outside
-// the cv prelude and native code) where a node was built or a warning raised.
+// the cv prelude and native code) where a warning was raised or a look made.
 type Site struct {
 	Source string // script name; "" for code run with vm.RunString (eval cells)
 	Line   int    // 1-based; 0 when unknown
 	Column int
-}
-
-// NodeUse records a node built by a call during the current eval.
-type NodeUse struct {
-	ID   graph.NodeID
-	Site Site
 }
 
 // SiteWarning is a warning with the script position of the call that raised it.
@@ -45,15 +38,12 @@ type QueuedLook struct {
 	Site Site
 }
 
-// EvalTrace is what one eval did with nodes: the nodes its calls returned (in
-// call order, first call per node), the nodes it evaluated or looked at, the
-// warnings its calls raised, and the looks it created (in creation order;
-// every look created in an eval is delivered, up to the session's budget).
-// Late are looks created between evals (in a .then that ran after the
-// previous eval settled): they were not delivered.
+// EvalTrace is what one eval did: the warnings its calls raised, and the
+// looks it created (in creation order; every look created in an eval is
+// delivered, up to the session's budget). Late are looks created between
+// evals (in a .then that ran after the previous eval settled): they were not
+// delivered.
 type EvalTrace struct {
-	Created  []NodeUse
-	Used     []graph.NodeID
 	Warnings []SiteWarning
 	Looks    []QueuedLook
 	Late     []QueuedLook
@@ -62,14 +52,11 @@ type EvalTrace struct {
 type tracker struct {
 	active   bool
 	ctx      context.Context
-	created  []NodeUse
-	seen     map[graph.NodeID]bool
-	used     map[graph.NodeID]bool
-	usedList []graph.NodeID
 	warnings []SiteWarning
 	looks    []QueuedLook
 	saved    map[string]int // workspace-relative path → line of its save (E_DUPLICATE)
 	saves    []*pendingSave
+	pending  []goja.Value // promises the eval waits for: cv.load's, and each save's settling
 }
 
 func lookupBinding(vm *goja.Runtime) (*binding, bool) {
@@ -90,8 +77,8 @@ func BeginEval(vm *goja.Runtime, ctx context.Context) bool {
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.track = tracker{active: true, ctx: ctx, seen: map[graph.NodeID]bool{}, used: map[graph.NodeID]bool{}, saved: map[string]int{}}
-	b.unhandled = nil
+	b.track = tracker{active: true, ctx: ctx, saved: map[string]int{}}
+	b.unhandled, b.unhandledOrder = nil, nil
 	return true
 }
 
@@ -107,14 +94,7 @@ func EndEval(vm *goja.Runtime) EvalTrace {
 	b.track = tracker{}
 	late := b.late
 	b.late = nil
-	return EvalTrace{Created: t.created, Used: t.usedList, Warnings: t.warnings, Looks: t.looks, Late: late}
-}
-
-// MarkUsed records ids as used by the current evaluation.
-func MarkUsed(vm *goja.Runtime, ids ...graph.NodeID) {
-	if b, ok := lookupBinding(vm); ok {
-		b.noteUsed(ids...)
-	}
+	return EvalTrace{Warnings: t.warnings, Looks: t.looks, Late: late}
 }
 
 // Opened lists the source nodes opened in vm (cv.open), in opening order.
@@ -167,8 +147,11 @@ func (b *binding) site() Site {
 	return Site{}
 }
 
-// noteCall records a node returned by a call and the warnings it raised.
-func (b *binding) noteCall(id graph.NodeID, ws []graph.Warning) {
+// noteCall records the warnings a call raised, with the call's site.
+func (b *binding) noteCall(ws []graph.Warning) {
+	if len(ws) == 0 {
+		return
+	}
 	b.mu.Lock()
 	active := b.track.active
 	b.mu.Unlock()
@@ -178,10 +161,6 @@ func (b *binding) noteCall(id graph.NodeID, ws []graph.Warning) {
 	s := b.site()
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if !b.track.seen[id] {
-		b.track.seen[id] = true
-		b.track.created = append(b.track.created, NodeUse{ID: id, Site: s})
-	}
 	for _, w := range ws {
 		b.track.warnings = append(b.track.warnings, SiteWarning{Warning: w, Site: s})
 	}
@@ -202,20 +181,6 @@ func (b *binding) noteEvalWarning(w graph.Warning, s Site) {
 		}
 	}
 	b.track.warnings = append(b.track.warnings, SiteWarning{Warning: w, Site: s})
-}
-
-func (b *binding) noteUsed(ids ...graph.NodeID) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if !b.track.active {
-		return
-	}
-	for _, id := range ids {
-		if !b.track.used[id] {
-			b.track.used[id] = true
-			b.track.usedList = append(b.track.usedList, id)
-		}
-	}
 }
 
 func (b *binding) noteOpen(id graph.NodeID) {
@@ -269,7 +234,6 @@ func (b *binding) look(c goja.FunctionCall) goja.Value {
 		}
 		b.throw(err)
 	}
-	b.noteUsed(n.ID)
 	b.noteLook(l)
 	return b.vm.ToValue(l)
 }

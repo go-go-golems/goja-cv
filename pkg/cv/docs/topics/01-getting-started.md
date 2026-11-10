@@ -5,11 +5,13 @@ How an eval runs: your code is the body of an async function, you `return` what 
 ## The eval contract
 
 - The code is the **body of an async function**. Use `await` anywhere; end with `return`. The last expression is not returned.
-- The returned value comes back as **YAML**, capped at 9000 characters. Return small things: pick fields, slice arrays.
-- After the value come `warnings:` (RANGE, UNUSED_NODE, with your line number) and a `context:` block (the images by name with file, frame and encoding, `mem` keys).
+- The returned value comes back as **YAML**, capped at 9000 characters. A list of flat rows (objects of numbers and strings, such as awaited regions) comes back as a **table**, one line per row, paged when long: return the rows themselves, not strings.
+- After the value come `warnings:` (RANGE, LOOKS, UNHANDLED, … with your line number) and a `context:` block (the images by name with file, frame and encoding, `mem` keys, the functions on `mem` with their parameters, and the doc line of each new or changed one).
+- Calls build lazy nodes: a node you don't await, look at or save does nothing.
 - Options are **literal values**. A measurement that feeds an option is awaited first: `img.levels({ white: (await img.stats()).p99 })`.
 - `const` and `let` do **not** survive to the next eval. Keep anything you need later on `mem`.
 - One eval may run 60 s. Heavy work runs in Go; JavaScript only builds graphs and handles small data.
+- A task library or a saved pipeline is a file: `await cv.load("dir/file.js", args)` runs it in the session, `cv.scripts()` lists them (`cv.docs.read("task-libraries")`). Never paste a file into an eval.
 
 ```js
 const s = await img.stats()
@@ -22,7 +24,7 @@ return { meanL: s.meanL, p01: s.p01, p99: s.p99 }
 |---|---|
 | `img` | the open image (an Image node); `img = cv.open("scan.tif")` rebinds it |
 | names | more images: `cv.open(path, { name: "ref" })` binds `ref` as a global that persists like `img`; the context block lists every name |
-| `cv` | the module: `cv.open(path, { encoding, box, origin, as })`, `cv.help(op)`, `cv.docs`, `cv.compare([...])`, `cv.explain(node)` |
+| `cv` | the module: `cv.open(path, { encoding, box, origin, name })`, `cv.load(path, args)`, `cv.help(op)`, `cv.docs`, `cv.compare([...])`, `cv.explain(node)` |
 | `mem` | a plain object that persists between evals |
 
 ```js

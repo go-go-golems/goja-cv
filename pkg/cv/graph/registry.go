@@ -266,11 +266,10 @@ type OpDef struct {
 	Expand ExpandFunc
 	// Warn adds build-time warnings for a call (toLab on camera RGB).
 	Warn     func(b *Builder, a Args) []Warning
-	Identity func(a Args) bool    // neutral arguments: the receiver is returned unchanged
-	Halo     func(a Args) float64 // doc px of border around each output pixel the op reads
-	Global   bool                 // needs the whole image (stats, histogram)
-	Lazy     bool                 // inputs are not evaluated before Run (explain)
-	DocFrame func(a Args) Frame   // the result's frame; nil: the first input with a non-empty frame
+	Identity func(a Args) bool  // neutral arguments: the receiver is returned unchanged
+	Global   bool               // needs the whole image (stats, histogram)
+	Lazy     bool               // inputs are not evaluated before Run (explain)
+	DocFrame func(a Args) Frame // the result's frame; nil: the first input with a non-empty frame
 	// Fields is the schema of the result: the items of a Regions result, the
 	// rows or the object of a Value result (schema.go). It runs at intern
 	// time with the bound args (node arguments are InputRefs; Args carries the
@@ -286,6 +285,9 @@ type OpDef struct {
 	// then the same at preview and export. Regions ops use it so that region
 	// ids and doc-px coordinates are identities, not artefacts of the scale.
 	AnalysisScale func(args Args) float64
+	// Short is the op's compact call in captions and chains (Short); nil:
+	// ShortCall, the op name with its non-default positional arguments.
+	Short func(a Args) string
 	// Builders lists the positions (0-based, among the call's arguments) that
 	// may be builder lambdas: the JavaScript surface calls the function once
 	// with a placeholder for the receiver and passes the result as a

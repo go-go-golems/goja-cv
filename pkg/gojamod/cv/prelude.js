@@ -234,6 +234,8 @@
     return x;
   }
 
+  const loadStack = []; // names of the script files whose synchronous part is running (cv.load)
+
   const cv = {
     version: native.__version,
     // open(path, { encoding, box, origin }) → Image
@@ -265,6 +267,29 @@
     // or plain data (item links stay out of files).
     save(path, x, opts) {
       return native.__save(path, x, opts === undefined ? null : opts);
+    },
+    // load(path, args) runs a script file (the workspace, then the read
+    // directories) as the body of async function (args) { … } and returns a
+    // promise of its return value. Every call runs the file again. The eval
+    // waits for the file's promise; the caller gets a promise derived from
+    // it, so a failure nobody handles is reported (UNHANDLED).
+    load(path, args) {
+      const f = native.__compile(path);
+      if (loadStack.length >= 32) native.__tooDeep(loadStack.concat([f.name]));
+      loadStack.push(f.name);
+      let inner;
+      try {
+        inner = f.run(args === undefined ? {} : args); // the file's synchronous part runs now
+      } finally {
+        loadStack.pop();
+      }
+      native.__pending(inner);
+      return inner.then((v) => v);
+    },
+    // scripts() → [{ path, doc }]: the .js files load can run, with their
+    // first comment line
+    scripts() {
+      return native.__scripts();
     },
   };
   for (const name of MODULE_OPS) {

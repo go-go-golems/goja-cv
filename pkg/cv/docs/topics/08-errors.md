@@ -30,13 +30,18 @@ error:
 | E_UNKNOWN_METHOD | no such method on this kind | the `fix`: a close name (`gausian` → `gaussian`), the kind that has it, or for names agents often try (`export`, `save`, `zoom`) the call that does it |
 | E_NAMESPACE | the method lives in a namespace | `img.mask.luminance`, `img.detect.specks` |
 | E_UNKNOWN_OPTION | an option key is misspelt or named differently (`min` → `above` on mask.luminance, `look({ box })` → a crop) | the `fix` / `valid` list |
-| E_ARG_TYPE, E_ARG_RANGE | wrong type or outside the hard limits | read `cv.help(op)` |
-| E_WRONG_KIND | the receiver or an input has the wrong kind or channel count | a mask is one channel: `.toGray()`; convert: `img.mask.regions(items)`, `.components()` |
+| E_ARG_TYPE, E_ARG_RANGE | wrong type or outside the hard limits (a disk above 64 doc px in `erode`/`dilate`) | read `cv.help(op)`; for a large disk crop first, or `x.dilate(64).dilate(36)` |
+| E_WRONG_KIND | the receiver or an input has the wrong kind or channel count (`img.erode(2)` on colour) | a mask is one channel: `.toGray()` (`img.toGray().erode(2)`); convert: `img.mask.regions(items)`, `.components()` |
 | E_NOT_AWAITED | a property of, or a number from, a lazy Value or Regions node (`img.stats().p99`, `img.stats() > 0.5`) | `(await img.stats()).p99` |
 | E_ARG_TYPE (a node as an option) | options are literal values: `levels({ white: d.stats() })` | `levels({ white: (await d.stats()).p99 })` |
 | E_NO_IMAGE | no image is open | `img = cv.open("scan.tif")` |
 | E_UNKNOWN_TOPIC | no such docs topic or section | `cv.docs.list()` |
 | E_TIMEOUT | the eval ran longer than 60 s | crop before measuring, evaluate less per eval |
+| E_ACCESS | a path outside the workspace and the read directories (`cv.open`, `cv.load`) | a path inside them; the operator adds `--read DIR` |
+| SyntaxError (cv.load) | a loaded file does not compile; the message starts with `file:line:col` | fix the file at that line |
+| E_TOO_MANY (cv.load) | loads nested more than 32 deep | a file that loads itself |
+
+An error inside a loaded file has `where: 'dust/helpers.js:6: …'` and, when your eval called into the file, `called from: 'line 2: …'`.
 
 ```js error=E_UNKNOWN_OPTION
 return img.levels({ blak: 0.02 })
@@ -46,13 +51,16 @@ return img.levels({ blak: 0.02 })
 return await img.mask.luminance({ min: 0.99 }).coverage()   // hint: Did you mean "above"?
 ```
 
+```js error=E_ARG_RANGE
+return await img.toGray().dilate(100).stats()   // fix: img.dilate(64).dilate(36)
+```
+
 ## Warnings
 
 - `RANGE line N: …` an argument is outside its usual range (it still runs). The same warning from a loop is listed once with `(×N)`.
-- `UNUSED_NODE line N: …` a node was built and discarded (see `cv.docs.read("nodes-and-evaluation")`).
 - `LOOKS line N: …` more than 4 looks in one eval: the extra ones, named by line, were not rendered. Split the work over several calls, or return one `cv.sheet` of many crops.
 - `ITEMS line N: …` objects that look like region items lost their link (a `map` that built new objects); they are used as plain boxes.
-- `UNHANDLED: …` a promise was rejected and nothing handled it (an unawaited call that failed); await it or add `.catch`. An unawaited `cv.save` that fails fails the eval instead.
+- `UNHANDLED line N: …` a promise was rejected and never handled (an unawaited `cv.load` or async helper that failed; `file:line` when it failed in a loaded file); await it. An unawaited `cv.save` that fails fails the eval instead.
 
 ```js warns=RANGE
 const loud = img.exposure(4)

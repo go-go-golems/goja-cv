@@ -67,8 +67,8 @@ func TestComponentsAndMaskRegions(t *testing.T) {
 			t.Fatalf("mask.regions coverage at %g: %g", sc, got)
 		}
 	}
-	if grown := coverageOf(t, e, call(t, e, "grow", call(t, e, "mask.regions", img.ID, nodeArg(comps)).ID, 2.0)); grown <= 96.0/(64*48) {
-		t.Fatalf("mask.regions grow did not grow: %g", grown)
+	if grown := coverageOf(t, e, call(t, e, "dilate", call(t, e, "mask.regions", img.ID, nodeArg(comps)).ID, 2.0)); grown <= 96.0/(64*48) {
+		t.Fatalf("mask.regions(…).dilate(2) did not grow: %g", grown)
 	}
 	// a filtered array is the old only(ids): the one region's pixels
 	if got := coverageOf(t, e, call(t, e, "mask.regions", img.ID, linked(t, e, comps, 1))); math.Abs(got-16.0/(64*48)) > 1e-6 {

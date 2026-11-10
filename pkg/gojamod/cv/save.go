@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/dop251/goja"
 	"github.com/go-go-golems/go-go-goja/pkg/runtimebridge"
@@ -16,7 +17,7 @@ import (
 // goroutine (the path, E_DUPLICATE, the format against what is saved);
 // encoding and writing run on a goroutine and settle a promise. Every save
 // an eval starts is pending until it settles, and the session's eval runner
-// waits for all of them (SavesPending, SaveFailure): a save the agent did
+// waits for all of them (Pending, Settled): a save the agent did
 // not await still completes, and its failure fails the eval.
 
 // pendingSave is one save of the current eval.
@@ -110,9 +111,6 @@ func (b *binding) save(c goja.FunctionCall) goja.Value {
 		b.track.saved[rel] = site.Line
 	}
 	b.mu.Unlock()
-	if node != nil {
-		b.noteUsed(node.ID)
-	}
 	return b.startSave(rel, site, func(ctx context.Context, warn func(graph.Warning)) (any, error) {
 		var data []byte
 		var s dataout.Saved
@@ -179,6 +177,7 @@ func (b *binding) startSave(rel string, site Site, fn func(ctx context.Context, 
 	b.mu.Lock()
 	if b.track.active {
 		b.track.saves = append(b.track.saves, ps)
+		b.track.pending = append(b.track.pending, ps.done)
 	}
 	b.mu.Unlock()
 	callCtx := b.evalContext()
@@ -220,6 +219,7 @@ func (b *binding) trackRejections() {
 		case goja.PromiseRejectionReject:
 			if b.track.active {
 				b.unhandled[p] = true
+				b.unhandledOrder = append(b.unhandledOrder, p)
 			}
 		case goja.PromiseRejectionHandle:
 			delete(b.unhandled, p)
@@ -227,26 +227,30 @@ func (b *binding) trackRejections() {
 	})
 }
 
-// SavesPending returns the eval's pending saves as promises that resolve
-// when each save settles (never reject): the eval runner awaits them.
-func SavesPending(vm *goja.Runtime) goja.Value {
+// Pending returns the promises the current eval waits for before it ends:
+// cv.load's (the file's own promise) and one per save that resolves when
+// the save settles. The eval runner waits for them until no new one
+// appears, so a load or save started by a pending one is waited for too.
+func Pending(vm *goja.Runtime) goja.Value {
 	b, ok := lookupBinding(vm)
 	if !ok {
 		return vm.NewArray()
 	}
 	b.mu.Lock()
-	vals := make([]any, len(b.track.saves))
-	for i, s := range b.track.saves {
-		vals[i] = s.done
+	vals := make([]any, len(b.track.pending))
+	for i, p := range b.track.pending {
+		vals[i] = p
 	}
 	b.mu.Unlock()
 	return vm.NewArray(vals...)
 }
 
-// SaveFailure is the error of the first save of the eval that failed and
-// that the agent did not handle (null when there is none), as a JavaScript
-// error to throw; the other unhandled rejections become UNHANDLED warnings.
-func SaveFailure(vm *goja.Runtime) goja.Value {
+// Settled is called by the eval runner once everything pending has
+// settled. It returns the error of the first save that failed and that the
+// agent did not handle (null when there is none), as a JavaScript error to
+// throw; every other promise rejected without a handler during the eval
+// becomes one UNHANDLED warning, located by its error's stack.
+func Settled(vm *goja.Runtime) goja.Value {
 	b, ok := lookupBinding(vm)
 	if !ok {
 		return goja.Null()
@@ -259,18 +263,22 @@ func SaveFailure(vm *goja.Runtime) goja.Value {
 		}
 		delete(b.unhandled, s.user)
 	}
-	for p := range b.unhandled {
-		msg := "a promise was rejected and nothing handled it"
-		if r := p.Result(); r != nil {
-			if o, ok := r.(*goja.Object); ok && o.Get("message") != nil {
-				msg += ": " + o.Get("message").String()
-			} else {
-				msg += ": " + r.String()
-			}
+	rejected := make([]*goja.Promise, 0, len(b.unhandled))
+	for _, p := range b.unhandledOrder {
+		if b.unhandled[p] {
+			rejected = append(rejected, p)
 		}
-		b.track.warnings = append(b.track.warnings, SiteWarning{Warning: graph.Warning{Code: UnhandledWarning, Message: msg + " (await it, or add .catch)."}})
-		delete(b.unhandled, p)
 	}
+	b.unhandled, b.unhandledOrder = nil, nil
+	b.mu.Unlock()
+	var ws []SiteWarning
+	for _, p := range rejected {
+		msg, site := rejection(vm, p.Result())
+		ws = append(ws, SiteWarning{Site: site, Warning: graph.Warning{Code: UnhandledWarning,
+			Message: "a promise was rejected and never handled: " + msg + ". fix: await the call that returned it"}})
+	}
+	b.mu.Lock()
+	b.track.warnings = append(b.track.warnings, ws...)
 	b.mu.Unlock()
 	if failed == nil {
 		return goja.Null()
@@ -282,10 +290,33 @@ func SaveFailure(vm *goja.Runtime) goja.Value {
 	e := *ce
 	e.Message = fmt.Sprintf("cv.save(%q) was not awaited and failed: %s", failed.path, ce.Message)
 	obj := errorObject(vm, &e)
-	if failed.site.Line > 0 { // the session reads the agent's line from the stack
-		_ = obj.Set("stack", fmt.Sprintf("Error: %s\n\tat <eval>:%d:%d(0)", e.Message, failed.site.Line, failed.site.Column))
+	if failed.site.Line > 0 { // the session reads the location from the stack
+		src := failed.site.Source
+		if src == "" {
+			src = "<eval>"
+		}
+		_ = obj.Set("stack", fmt.Sprintf("Error: %s\n\tat %s:%d:%d(0)", e.Message, src, failed.site.Line, failed.site.Column))
 	}
 	return obj
+}
+
+// rejection is the message of a rejection reason and the eval or file
+// position of its error (the innermost frame in eval code or a loaded file).
+func rejection(vm *goja.Runtime, r goja.Value) (string, Site) {
+	if r == nil || goja.IsUndefined(r) {
+		return "undefined", Site{}
+	}
+	o, ok := r.(*goja.Object)
+	if !ok || o.Get("message") == nil {
+		return r.String(), Site{}
+	}
+	msg := strings.TrimSuffix(o.Get("message").String(), ".")
+	if st := o.Get("stack"); st != nil {
+		if fs := StackFrames(vm, st.String()); len(fs) > 0 {
+			return msg, Site{Source: fs[0].Source, Line: fs[0].Line, Column: fs[0].Column}
+		}
+	}
+	return msg, Site{}
 }
 
 // exportOrdered converts a JavaScript value into plain data for a file:

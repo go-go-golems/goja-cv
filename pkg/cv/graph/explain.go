@@ -143,6 +143,8 @@ func Short(n *Node) string {
 		return Label(n)
 	case n.Op.Name == "crop" && n.Op.Class == GeometricOp:
 		return fmt.Sprintf("crop[%d,%d,%d,%d]", n.Frame.X, n.Frame.Y, n.Frame.W, n.Frame.H)
+	case n.Op.Short != nil:
+		return n.Op.Short(n.Args)
 	}
 	return ShortCall(n.Op, n.Args)
 }

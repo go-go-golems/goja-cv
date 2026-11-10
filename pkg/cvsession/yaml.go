@@ -35,8 +35,7 @@ var (
 
 // renderer turns a settled goja value into a YAML node tree, on the owner
 // goroutine. It never reads "then", never runs proxy traps and never invokes
-// getters. cv nodes render as one-line summaries and looks as their caption;
-// the node ids it meets are collected for the UNUSED_NODE lint.
+// getters. cv nodes render as one-line summaries and looks as their caption.
 type renderer struct {
 	vm        *goja.Runtime
 	eng       *graph.Engine
@@ -44,12 +43,13 @@ type renderer struct {
 	providers map[resultcontent.Provider]int    // other providers → content number
 	dropped   map[resultcontent.Provider]string // providers left out by the session's budgets → why
 	props     int
-	nodes     []graph.NodeID
 	stack     map[*goja.Object]bool
+	tableLeft int // characters the tables of this result may still use (tables.go)
 }
 
 func newRenderer(vm *goja.Runtime, eng *graph.Engine) *renderer {
-	r := &renderer{vm: vm, eng: eng, providers: map[resultcontent.Provider]int{}, stack: map[*goja.Object]bool{}}
+	r := &renderer{vm: vm, eng: eng, providers: map[resultcontent.Provider]int{}, stack: map[*goja.Object]bool{},
+		tableLeft: DefaultMaxResultChars * 2 / 3}
 	if objectCtor, ok := vm.GlobalObject().Get("Object").(*goja.Object); ok {
 		r.getDesc, _ = goja.AssertFunction(objectCtor.Get("getOwnPropertyDescriptor"))
 	}
@@ -77,7 +77,9 @@ func FormatNumber(f float64) string {
 	return strconv.FormatFloat(f, 'g', 5, 64)
 }
 
-func (r *renderer) render(v goja.Value, depth int) *yaml.Node {
+// render renders v; path is its key path in the returned value ("rows",
+// "hot.rows", "" at the top), which paging notes and functions are named by.
+func (r *renderer) render(v goja.Value, depth int, path string) *yaml.Node {
 	if v == nil || goja.IsUndefined(v) {
 		return scalar("undefined")
 	}
@@ -89,7 +91,6 @@ func (r *renderer) render(v goja.Value, depth int) *yaml.Node {
 		return r.primitive(v)
 	}
 	if id, ok := cvmod.NodeOf(obj); ok {
-		r.nodes = append(r.nodes, id)
 		return str(cvmod.DescribeNode(r.eng, id) + " (lazy: await it, or return node.look())")
 	}
 	if l, ok := cvmod.LookOf(obj); ok {
@@ -109,7 +110,7 @@ func (r *renderer) render(v goja.Value, depth int) *yaml.Node {
 		return str("[content: " + desc + "]")
 	}
 	if _, ok := goja.AssertFunction(obj); ok {
-		return str("[Function]")
+		return str(r.function(obj, path))
 	}
 	t := obj.ExportType()
 	switch t {
@@ -133,11 +134,14 @@ func (r *renderer) render(v goja.Value, depth int) *yaml.Node {
 	case t == plainArrayType || obj.ClassName() == "Array":
 		r.stack[obj] = true
 		defer delete(r.stack, obj)
-		return r.array(obj, depth)
+		if tab := r.table(obj, path); tab != nil {
+			return tab
+		}
+		return r.array(obj, depth, path)
 	case t == plainObjectType || (t != nil && t.Kind() == reflect.Map):
 		r.stack[obj] = true
 		defer delete(r.stack, obj)
-		return r.object(obj, depth)
+		return r.object(obj, depth, path)
 	}
 	return str("[" + obj.ClassName() + "]")
 }
@@ -164,7 +168,7 @@ func (r *renderer) budget() bool {
 	return r.props <= maxProperties
 }
 
-func (r *renderer) array(obj *goja.Object, depth int) *yaml.Node {
+func (r *renderer) array(obj *goja.Object, depth int, path string) *yaml.Node {
 	n := &yaml.Node{Kind: yaml.SequenceNode}
 	length := int(obj.Get("length").ToInteger())
 	shown := min(length, maxArrayItems)
@@ -173,7 +177,7 @@ func (r *renderer) array(obj *goja.Object, depth int) *yaml.Node {
 			shown = i
 			break
 		}
-		n.Content = append(n.Content, r.render(obj.Get(strconv.Itoa(i)), depth+1))
+		n.Content = append(n.Content, r.render(obj.Get(strconv.Itoa(i)), depth+1, path+"["+strconv.Itoa(i)+"]"))
 	}
 	flow(n)
 	if more := length - shown; more > 0 {
@@ -187,7 +191,7 @@ func (r *renderer) array(obj *goja.Object, depth int) *yaml.Node {
 	return n
 }
 
-func (r *renderer) object(obj *goja.Object, depth int) *yaml.Node {
+func (r *renderer) object(obj *goja.Object, depth int, path string) *yaml.Node {
 	n := &yaml.Node{Kind: yaml.MappingNode}
 	keys := obj.Keys()
 	shown := 0
@@ -196,7 +200,7 @@ func (r *renderer) object(obj *goja.Object, depth int) *yaml.Node {
 			break
 		}
 		shown++
-		n.Content = append(n.Content, str(k), r.property(obj, k, depth))
+		n.Content = append(n.Content, str(k), r.property(obj, k, depth, keyPath(path, k)))
 	}
 	flow(n)
 	if more := len(keys) - shown; more > 0 {
@@ -207,19 +211,52 @@ func (r *renderer) object(obj *goja.Object, depth int) *yaml.Node {
 
 // property reads obj[k] through its property descriptor, so accessors are
 // reported instead of invoked.
-func (r *renderer) property(obj *goja.Object, k string, depth int) *yaml.Node {
+func (r *renderer) property(obj *goja.Object, k string, depth int, path string) *yaml.Node {
+	v, ok := r.dataProperty(obj, k)
+	if !ok {
+		return str("[Getter]")
+	}
+	return r.render(v, depth+1, path)
+}
+
+// dataProperty reads obj[k] through its property descriptor; ok is false
+// for an accessor, which is never invoked.
+func (r *renderer) dataProperty(obj *goja.Object, k string) (goja.Value, bool) {
 	if r.getDesc == nil {
-		return r.render(obj.Get(k), depth+1)
+		return obj.Get(k), true
 	}
 	d, err := r.getDesc(goja.Undefined(), obj, r.vm.ToValue(k))
 	if err != nil || d == nil || goja.IsUndefined(d) {
-		return r.render(obj.Get(k), depth+1)
+		return obj.Get(k), true
 	}
 	desc := d.ToObject(r.vm)
 	if g := desc.Get("get"); g != nil && !goja.IsUndefined(g) {
-		return str("[Getter]")
+		return nil, false
 	}
-	return r.render(desc.Get("value"), depth+1)
+	if g := desc.Get("set"); g != nil && !goja.IsUndefined(g) {
+		return nil, false
+	}
+	return desc.Get("value"), true
+}
+
+// keyPath extends a key path: rows, hot.rows, x["a b"].
+func keyPath(path, k string) string {
+	if k == "" || identifier(k) != k || (k[0] >= '0' && k[0] <= '9') {
+		return path + "[" + strconv.Quote(k) + "]"
+	}
+	if path == "" {
+		return k
+	}
+	return path + "." + k
+}
+
+func identifier(s string) string {
+	for i, c := range s {
+		if c != '_' && c != '$' && (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') && (c < '0' || c > '9') {
+			return s[:i]
+		}
+	}
+	return s
 }
 
 func (r *renderer) errorValue(obj *goja.Object) *yaml.Node {

@@ -5,7 +5,7 @@
 goja-cv is an image-analysis and editing engine written in Go and exposed to JavaScript as `require("cv")`
 through [go-go-goja](https://github.com/go-go-golems/go-go-goja). An agent (or you) sends a few lines of
 JavaScript; goja-cv builds a lazy graph of operations, evaluates it in Go, and answers with YAML and images
-("looks"). It measures (statistics, histograms, dust detection), selects (masks, regions), edits (exposure,
+("looks"). It measures (statistics, histograms, dust detection), selects (masks, regions, erosion and dilation), edits (exposure,
 levels, masked edits, healing, inpainting) and shows (numbered looks, overlays, comparisons). The pixels never
 enter JavaScript, and the runtime has no filesystem, process or network access.
 
@@ -78,8 +78,9 @@ goja-cv help concepts
 - **The workspace:** `--root DIR` (default: the current directory) is where `await cv.save("spots.csv", regions)`
   writes and where `cv.open` reads relative paths; `--read DIR` (repeatable) adds directories `cv.open` may read but
   never write. The extension picks the format: `.tif`, `.png`, `.npy`, `.jpg` for images (TIFF and PNG record the
-  encoding and frame), `.json` for any data, `.csv` for a list of rows. `--prelude helpers.js` runs a script first,
-  so `mem` helpers need not be pasted into every call.
+  encoding and frame), `.json` for any data, `.csv` for a list of rows. `--prelude lib/helpers.js` loads a task library
+  (a file that defines `mem` helpers, in `--root` or a `--read` directory) before the code; inside the code,
+  `await cv.load("helpers.js", args)` runs a script file the same way.
 
 ```bash
 goja-cv eval --root /tmp/specks --read ~/tiles --image ~/tiles/TILE.tif \
@@ -98,7 +99,10 @@ and session tools), the resources `cv://reference`, `cv://docs/<id>` and `cv://g
 - `--image FILE` opens an image at start and binds it to `img` (optional; the agent can call the `open` tool or
   `img = cv.open(path)`); it must lie in `--root` or a `--read` directory.
 
-`--prelude FILE` works as on the CLI.
+- `--prelude FILE` (repeatable) loads a task library in every session before the agent's first eval, so agents
+  never paste helpers: serve its directory with `--read DIR` and pass `--prelude DIR/lib.js`. The agent sees the
+  library's functions and their doc lines (the comment that opens each body) in the context block, and can load
+  other files itself with `await cv.load(path, args)` (`cv.scripts()` lists them).
 
 ### Claude Code
 

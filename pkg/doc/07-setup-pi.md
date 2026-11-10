@@ -47,6 +47,11 @@ pi install npm:pi-mcp-adapter
 pi asks before starting project-local servers; `-a` (`--approve`) trusts the project's files for one run and
 `--mcp-project-servers allow` starts its MCP servers without asking.
 
+
+To give the agent a task library (a file of `mem` helpers) in every session, add `"--read", "/path/to/lib",
+"--prelude", "/path/to/lib/dust/helpers.js"` to `args`: the file is loaded before the first eval, and the
+context block shows its functions with their doc lines.
+
 ## Headless runs
 
 ```bash
