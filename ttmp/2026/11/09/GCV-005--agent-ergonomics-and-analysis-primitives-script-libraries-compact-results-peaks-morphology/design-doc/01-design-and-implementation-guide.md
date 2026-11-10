@@ -2540,3 +2540,16 @@ details and numbers.
     instead of a `goja-cv run` driver writing CSVs: the tests compute every metric of §15.2 through the same ops.
 41. **The model library sets `mem.img = img` and `mem.lin = img.as("linear")` at load**, so it works on the session's
     image before `mem.tile` (the docs tests run it on the planted scan); otherwise it is §12.3's.
+
+### Phase V
+
+42. **Peaks' default `snr` stays 1** (§15.2): 172 of 190 dust points (90.5 %) against the hot list's 164 (86.3 %), median
+    354 peaks per tile, sorted; 1.4 covers 134 (70.5 %), below the hot list; 0.5 adds 10 points for 15× the peaks.
+43. **The pi validation uses one playbook-like question file** (`questions-gcv-005.md`: the library, the 15 strongest
+    spots, a sheet, the speck step, a scratch width) on GCV-004's tile `7edbfe9c…`, two runs per build, instead of
+    §15.1's three short questions plus a rerun of GCV-004's files.
+44. **The annotator comparison runs in the pi harness** (deepseek-4.1-flash, one session per build, tile `40869f8b…`, a
+    condensed v2 playbook, a v2 helper port as `--prelude` for each build), not as a Claude agent with the rewritten
+    DUST-002 playbook; it is compared with script 91's extracts of the two study agents on that tile.
+45. **"Before" is GCV-004 at `a42c9d1`**: its review fixes (`e0823da`, merged in step 9) landed after the runs; they do
+    not touch what the questions use.

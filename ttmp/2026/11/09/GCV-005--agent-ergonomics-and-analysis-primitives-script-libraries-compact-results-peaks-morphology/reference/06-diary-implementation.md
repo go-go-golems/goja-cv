@@ -1038,3 +1038,121 @@ tests, prove the chained case on GCV-005's loop, gate, commit.
 ### Technical details
 
 Conflict: `pkg/cvsession/init.js` only (ours kept). rerere recorded the resolution.
+
+## Step 10: Phase V — validation (gold metrics, pi before/after, an annotator-style session per build)
+
+Phase V measures GCV-005 three ways: detection quality on the gold tiles (Step 8's gated tests), the pi harness with a
+question file that needs a task library, peaks, a sheet, measure and a profile, and one annotator-style session per
+build on a gold tile, loaded with a helper library as a prelude. It decides peaks' default snr.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 7) "Phase V: validation (guide §15) — 1. Gold metrics. [...] Decide the default snr from the data, as the guide's §15 asks. Keep 1 unless the data clearly says otherwise, and record the decision with its numbers. 2. Pi harness, before and after, two runs each, with model `lunaroute/deepseek-4.1-flash`. [...] 3. Annotator-style comparison. If it is feasible with the pi harness, run one annotator-style session per build on one gold tile, following the DUST-002 playbook [...]"
+
+**Assistant interpretation:** reuse Step 8's numbers for loop 2; write `questions-gcv-005.md` and a small `lib/tile.js`;
+run GCV-004 (a temporary worktree) and this branch twice each; run one playbook session per build with v2 helper ports
+as `--prelude`; compare with script 91's numbers for the same tile.
+
+**Inferred user intent:** evidence that agents use libraries and peaks unprompted by a paste, and get positions right.
+
+**Commit (diary):** this step.
+
+### What I did
+
+- **Default snr: kept at 1.** On 15 tiles / 190 dust points (Step 8): snr 1 covers 172 (90.5 %), more than the hot list
+  at 0.3 (164, 86.3 %), with a median of 354 peaks per tile (58–921), sorted by snr; 1.4 drops to 134 (70.5 %, below
+  the hot list) and 0.5 adds 10 points for 15× the peaks (5,298 per tile). The instructions say "default snr ≥ 1 keeps
+  faint ones: slice or filter".
+- Pi harness (scratch copy of GCV-004's `gcv004-scripts`; `run.sh` gained `LIB`, a directory copied into the
+  workspace): `questions-gcv-005.md` (also written, uncommitted, to the CVJS-001 `pi-runs` directory) asks what
+  `lib/tile.js` defines, the 15 strongest compact spots, a sheet of them, the speck-view step of three, and the
+  width of the scratch near (235, 542) at two places, on tile `7edbfe9c3e7ab7d6_512_1024` (the sRGB-encoded export
+  of GCV-004's runs). `lib/tile.js` defines `mem.lin`, `mem.sheet`, `mem.width` (profile FWHM).
+  Before = `origin/task/gcv-004-api-v2` at `a42c9d1` (worktree `/private/tmp/claude-501/-Users-manuel-code-wesen-2026-11-07--dust-scanning/f3ce17c3-3866-46d2-8189-04b381055e1f/scratchpad/gcv004-before`, removed afterwards); after =
+  this branch at `8c9c54d`. Metrics by `scripts/metrics-gcv005.py` (scratch).
+- Annotator-style session: tile `40869f8b460ee8dc_1024_0` (13 gold points; two study agents, trial2 and trial3, worked
+  on it), a condensed v2 playbook (open with `mem.tile`, candidates as data, sheets, zooms, decision rules, a final
+  table), and a v2 helper library as `--prelude` for each build: before = a GCV-004 port of 84-cv-helpers.js
+  (`mem.hot` rows of the speck view at 0.4/0.3, probe-snapped), after = §16's migration (`mem.spots` = peaks +
+  speck step). Same model.
+
+### Why
+
+- One question file that needs every GCV-005 piece end to end, rather than §15.1's three short questions: the
+  coordinator's brief asked for a playbook-like task.
+- Ports of the helpers for both builds: 84-cv-helpers.js is v1 (it does not run on v2 as is), and the comparison is of
+  the builds, each with the library its API allows.
+
+### What worked
+
+- Every after-run used `cv.load("lib/tile.js")` in its first eval and no run pasted the library; both after-runs
+  placed their spots on gold with a median error of 0.12–0.13 px and 13–14 of 53 gold points located, against 4–5 for
+  the before-runs (whose spots came from `detect.specks` and were mostly not dust).
+- The scratch widths agree across builds and with the reference (thread-width script at three places: 3.78, 2.83,
+  2.98 px): before 3.1/3.3 and 3.8/3.3, after 3.29/3.27 and 3.07/3.38.
+
+### What didn't work
+
+- The first drive attempt ran nothing: the profile's `CDPATH` made `cd` print the directory, so `S=$(cd … && pwd)`
+  held two lines; fixed with `unset CDPATH` and `cd … >/dev/null`, two stray directories removed.
+- The before-agents could not load `lib/tile.js` with the API, and found `require("<absolute path>")` instead (calls
+  25–33 of before-a): see What warrants a second pair of eyes.
+
+### What I learned
+
+- Without `cv.load`, the deepseek agents spent 10–30 calls hunting for a way to read the library (`cv.fs`,
+  `cv.open("lib/tile.js")`, other MCP servers' `convert_document`, `require`).
+- In the annotator sessions both builds located 9 of 13 gold points; the after-session used 9 fewer evals (36 vs 45)
+  and 1,444 fewer code characters, and its one cut was a table's paging note where the before-session hit the
+  48-item cap ("… 64 more").
+
+### What was tricky to build
+
+- Parsing coordinates from free-form answer tables: `metrics-gcv005.py` takes an "x, y" cell, else the two cells after
+  a small integer id, else the first two adjacent numbers inside the tile's box.
+
+### What warrants a second pair of eyes
+
+- **`require` reads any file.** Both builds expose go-go-goja's `require` in the eval runtime, and
+  `require("/abs/path/x.js")` runs a JavaScript file anywhere on disk, outside the workspace and the `--read`
+  directories (checked on this branch: a module outside every root returned its exports). It bypasses D4's one path
+  rule. Not changed here (outside the guide); the coordinator should decide whether the session deletes `require`.
+- The gold of tile `40869f8b…` was made with agent suggestions (`suggestion_decisions`), which favours positions
+  agents report.
+
+### What should be done in the future
+
+- Decide on `require` (above) and the line-opening radius (deviation 39).
+- The DUST-002 playbook rewrite (§16) can now quote §15.2's numbers: `mem.spots()` at snr 1, rank by `spStep`.
+
+### Code review instructions
+
+- Run directories (scratch, not committed): see Technical details. `calls.txt` and `final.md` in each run come from
+  `07-pi-events-summary.py --max 1000000` and `final.py`.
+
+### Technical details
+
+Pi harness, `questions-gcv-005.md`, model `lunaroute/deepseek-4.1-flash`, tile `7edbfe9c3e7ab7d6_512_1024` (53 gold
+points); runs in `/private/tmp/claude-501/-Users-manuel-code-wesen-2026-11-07--dust-scanning/f3ce17c3-3866-46d2-8189-04b381055e1f/scratchpad/gcv005-pi/runs/`:
+
+| run | calls (cv eval) | isError | code chars total / median / max | pastes > 1,500 | results cut | cv.load | peaks calls | gold located ≤ 5 px | median position error | spots far from gold | scratch widths |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| before-gcv005-a | 69 (51) | 18 | 20,808 / 211 / 1,319 | 0 | 1 (help list) | — (`require`) | — | 4 of 20 spots | 0.26 px | 15 | 3.1, 3.3 |
+| before-gcv005-b | 62 (56) | 8 | 16,647 / 210 / 1,074 | 0 | 1 (help list) | — (`require`) | — | 5 of 17 | 0.28 px | 12 | 3.8, 3.3 |
+| after-gcv005-a | 61 (61) | 11 | 16,453 / 203 / 1,669 | 1 | 2 (help list, an object) | 4 | 1 | 14 of 17 | 0.13 px | 2 | 3.29, 3.27 |
+| after-gcv005-b | 42 (41) | 2 | 14,907 / 272 / 1,341 | 0 | 0 | 1 | 5 | 13 of 18 | 0.12 px | 5 | 3.07, 3.38 |
+
+Annotator-style sessions, tile `40869f8b460ee8dc_1024_0` (13 gold points), runs in `/private/tmp/claude-501/-Users-manuel-code-wesen-2026-11-07--dust-scanning/f3ce17c3-3866-46d2-8189-04b381055e1f/scratchpad/gcv005-pi/annot/runs/`;
+the study's agents (Claude Sonnet, helpers pasted) from script 91's extracts and their stored answers
+(`~/dustdet/vlm_gold`, `vlm_gold_v1`):
+
+| session | evals | errors | helper paste | code chars (non-paste) total / median / max | results cut | suggestions | gold located ≤ 5 px | median error | suggestions far from gold |
+|---|---|---|---|---|---|---|---|---|---|
+| study trial2 | 11 | 0 | 2,859 | 1,860 / 183 / 373 | 2 | | | | |
+| study trial3 | 13 | 0 | 3,276 | 2,648 / 190 / 343 | 1 | | | | |
+| study answers (vlm_gold / vlm_gold_v1) | | | | | | 28 / 30 | 9 / 10 | 2.55 / 1.17 px | |
+| before (GCV-004, `mem.hot` prelude) | 45 | 4 | 0 | 8,025 / 105 / 454 | 3 (one "… 64 more") | 37 | 9 | 1.27 px | 31 |
+| after (GCV-005, `mem.spots` = peaks prelude) | 36 | 3 | 0 | 6,581 / 177 / 416 | 1 (a table's paging note) | 45 | 9 | 1.19 px | 38 |
+
+The study's agents ran a different model with the full playbook; the sessions here are one each, so read the
+before/after rows against each other, and the study's rows for the evals and pastes only.
