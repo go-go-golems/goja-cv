@@ -971,3 +971,70 @@ line, §12.3's library in testdata, the guidebook recipe and the task-libraries 
 | line openings on the speck view (r 12): elongated components | 40 → 8 | |
 | … dust covered | 164 → 163 | |
 | peaks time per tile ([2, 4, 8], snr 1, through the graph) | median 0.081 s, max 0.104 s | |
+
+## Step 9: Merge the GCV-004 review fixes (e0823da) into the GCV-005 branch
+
+PR #6's review produced two fixes on `task/gcv-004-api-v2` (`e0823da`): temporary files of `Workspace.Write` are
+created exclusively under a random name, and `__cv_run` drains saves that another save's continuation started. The
+coordinator asked for them in GCV-005 before its PR, as a merge commit.
+
+### Prompt Context
+
+**User prompt (verbatim):** "Before you open the GCV-005 PR, merge the GCV-004 review fixes now on `origin/task/gcv-004-api-v2` (commit `e0823da`). Run `git fetch origin && git merge origin/task/gcv-004-api-v2`: a merge commit, never a rebase. Then run the full gate. [...] `pkg/cvsession/init.js`. [...] Keep GCV-005's version, and make sure its loop has the same property: a save or load started from another one's continuation finishes before the eval returns. Port `e0823da`'s chained-save test [...] `pkg/cv/graph/workspace.go`. Take `e0823da`'s `writeTemp` [...] Keep `TestWorkspaceTempFiles`. Record the merge in your diary."
+
+**Assistant interpretation:** merge, resolve `init.js` to GCV-005's pending loop, keep `e0823da`'s workspace code and
+tests, prove the chained case on GCV-005's loop, gate, commit.
+
+**Inferred user intent:** the PR stacked on #6 carries #6's final state, with no regression of either fix.
+
+**Commit (merge):** 32610c2 — "Merge GCV-004 review fixes (e0823da) into GCV-005"
+
+### What I did
+
+- `git merge origin/task/gcv-004-api-v2`: one conflict, `pkg/cvsession/init.js`; `workspace.go`, `workspace_test.go`
+  and `save_test.go` merged cleanly (`writeTemp` with O_CREATE|O_EXCL and a random suffix, no `tmp` counter;
+  `TestWorkspaceTempFiles`; the c1.tif → c2.tif → c3.json chain in `TestUnawaitedSaves`).
+- `init.js`: kept GCV-005's `saves(seen)`, which re-reads `native.pending()` after every `allSettled` and recurses
+  while the list grew, then throws `native.settled()`'s failure.
+- `TestUnawaitedSaves` gained a load chain: `cv.load("chain.js").then(() => cv.save("c5.json", …))`, where the file
+  itself saves `c4.json`.
+- Mutation check: with the loop waiting only once, the test fails (`chained save c2.tif: no such file`); restored.
+- Gate: `gate=0`.
+
+### Why
+
+- GCV-005's list already generalizes `e0823da`'s drain (loads and saves, until no new promise joins); taking
+  `e0823da`'s `drain` would have dropped loads.
+
+### What worked
+
+- The ported test passed on GCV-005's loop unchanged.
+
+### What didn't work
+
+- Nothing beyond the expected conflict.
+
+### What I learned
+
+- A user continuation attached in the eval body runs before `allSettled`'s, so the re-read of the pending list sees a
+  save it started.
+
+### What was tricky to build
+
+- Nothing; the property was already there and is now tested for loads too.
+
+### What warrants a second pair of eyes
+
+- `git diff a42c9d1 e0823da -- pkg/cvsession/init.js` against `git show 32610c2:pkg/cvsession/init.js`.
+
+### What should be done in the future
+
+- Nothing.
+
+### Code review instructions
+
+- `git show 32610c2 --stat`; `go test ./pkg/cvsession -run TestUnawaitedSaves -v`; `go test ./pkg/cv/graph -run TestWorkspaceTempFiles`.
+
+### Technical details
+
+Conflict: `pkg/cvsession/init.js` only (ours kept). rerere recorded the resolution.
