@@ -78,7 +78,7 @@ goja-cv eval --json --root /tmp/specks --read ~/tiles --image ~/tiles/TILE.tif \
 
 `--prelude FILE` (repeatable) loads a script file in the session before the code, as `await cv.load(FILE)` would:
 the task library's functions on `mem` are there for the eval (`--read ~/lib --prelude ~/lib/dust/helpers.js -e
-'return await mem.spots(0.3)'`). The file must lie in `--root` or a `--read` directory (a usage error otherwise); a
+'return (await mem.spots({ snr: 1.4 })).slice(0, 20)'`). The file must lie in `--root` or a `--read` directory (a usage error otherwise); a
 failing prelude exits 1 with `prelude dust/helpers.js:LINE: …`. Inside the code, `await cv.load("dust/helpers.js",
 args)` loads a file the same way (see `cv.docs.read("task-libraries")`). `--timeout-ms` raises the 60 s eval limit.
 

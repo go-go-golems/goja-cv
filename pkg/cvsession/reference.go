@@ -18,7 +18,7 @@ Eval contract
 - The code is the body of an async function: use await and end with return. The value comes back as YAML (max 9000 chars; a list of flat rows comes back as a table, paged), then warnings (with your line) and a context block (images, mem, and the docs of new mem functions).
 - const/let do not survive between evals: keep values on mem.
 - Calls build lazy, immutable nodes; a node you don't await, look at or save does nothing. await gives data: a Value or Regions node is computed at full resolution (regions become an array of flat items { id, x, y, w, h, cx, cy, … }); await img gives the image's file, encoding and frame. Options are literal values: levels({ white: (await d.stats()).p99 }).
-- node.look(label | { zoom, ruler }) shows an image; every look is delivered, at most 4 per eval. Never read a coordinate off a picture: take it from data (items, measure). cv.explain(node) describes a node.
+- node.look(label | { zoom, ruler }) shows an image; every look is delivered, at most 4 per eval. Never read a coordinate off a picture: take it from data (peaks, items, measure). cv.explain(node) describes a node.
 - Coordinates, lengths and boxes are doc px (original-image pixels).
 - Errors are YAML with code, message, where (your line, or file:line in a loaded file), hint and a literal fix: apply the fix.
 
@@ -34,6 +34,7 @@ Most used calls
 - img.levels({ black, white, auto }), img.exposure(ev), img.gaussian(sigma), img.toGray(), x.colormap("viridis")
 - Magnify: img.crop([x, y, w, h]).look({ zoom: 8, ruler: true }); ops after a crop see only the crop.
 - Views: img.view("speck" | "speckDark" | "signed" | "detail" | "scene"); img.dog(1, 4); the speck view's scale is set over the image it is computed on. img.detect.specks() → regions.
+- Find spots: await img.as("linear").peaks({ radius: [2, 4, 8] }) → disks { id, cx, cy, r, step, snr, … } sorted by snr (snr against each spot's own ring; default snr ≥ 1 keeps faint ones: slice or filter); on img.crop(b) only the crop. cv.docs.read("spots").
 - Many candidates in one picture: cv.sheet(items.slice(0, 15), { views: [img, img.view("speck")] }).look(); its caption lists the cells' ids.
 - Measure: await img.as("linear").measure(items) (step, spread, snr around each item, sized from r); img.profile(a, b, { width }) across a line; img.sample(points).
 - Filter, sort and page items with JavaScript: items.filter(r => r.snr >= 1.4 && r.aspect < 3).

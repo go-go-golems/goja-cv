@@ -59,7 +59,7 @@ Dark things: the black top-hat `x.dilate(r).erode(r).sub(x)`. `cv.help("opening"
 const S = img.view("speck")
 let lines = null
 for (let a = 0; a < 180; a += 22.5) {
-  const o = S.erode(10, { line: a }).dilate(10, { line: a })
+  const o = S.erode(12, { line: a }).dilate(12, { line: a })
   lines = lines ? lines.max(o) : o
 }
 const spots = S.sub(lines).mask.luminance({ above: 0.3 }).components({ minArea: 2 })

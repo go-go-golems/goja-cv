@@ -8,8 +8,8 @@ A task library is a JavaScript file of helpers for one task; a pipeline script d
 
 ```js
 const ready = await cv.load("dust/helpers.js")
-const m = await mem.probe(200.5, 46.5)
-return { ready, snr: m.snr > 2, scripts: cv.scripts().map(s => s.path) }
+const spots = await mem.spots({ snr: 2 })   // peaks measured on the speck view: spStep
+return { ready, top: spots.slice(0, 3).map(({ id, cx, cy, snr, spStep }) => ({ id, cx, cy, snr, spStep })), scripts: cv.scripts().map(s => s.path) }
 ```
 
 Every call reads and runs the file again (no cache): a second load picks up an edited file and redefines its functions; a pipeline runs again with new `args`. Nodes are hash-consed, so a rerun costs little. A file may load others by the same path rule; loads nest up to 32 deep.
@@ -18,15 +18,16 @@ Every call reads and runs the file again (no cache): a second load picks up an e
 ## Writing a library
 
 - Start the file with a comment line: `cv.scripts()` shows it.
-- Keep what must survive on `mem` (`mem.probe = async (x, y) => …`); everything else is private to the file.
-- Open each function's body with a comment: it is the function's doc line in the context block. `mem.probe = async (x, y) => { // the best point within 2 px` — a comment above the function or in the middle of its body is not.
+- Keep what must survive on `mem` (`mem.spots = async (opts) => …`); everything else is private to the file.
+- Open each function's body with a comment: it is the function's doc line in the context block. `mem.spots = async (opts) => { // peaks with the speck view's step` — a comment above the function or in the middle of its body is not.
 - Return a short string or an object; return rows, not joined strings.
 
 ```js fragment
 // dust/helpers.js: helpers for annotator agents
-mem.probe = async (x, y, r = 3) => { // core/ring measure at (x, y): { cx, cy, step, spread, snr }
-  const [m] = await img.as("linear").measure([{ cx: x, cy: y, r }])
-  return m
+mem.lin = img.as("linear")
+mem.spots = async ({ snr = 1, radius = [2, 4, 8] } = {}) => { // peaks with the speck view's step: sp = spStep
+  const pk = await mem.lin.peaks({ radius, snr })
+  return await mem.lin.view("speck").measure(pk, { prefix: "sp" })
 }
 return "dust helpers ready"
 ```

@@ -121,16 +121,23 @@ line (`cv.scripts()` shows it), keep what must survive on `mem`, and open each f
 the function's doc line in the context block.
 
 ```js
-// dust/helpers.js: helpers for annotator agents (a model task library)
+// dust/helpers.js: helpers for annotator agents on DUST-002 gold tiles (goja-cv v2)
+mem.img = img
 mem.lin = img.as("linear")
 
-mem.probe = async (x, y, r = 3) => { // core/ring measure at (x, y): { cx, cy, step, spread, snr }
-  const [m] = await mem.lin.measure([{ cx: x, cy: y, r }])
-  return m
+mem.tile = (id, ox, oy) => { // open a tile at its origin: every coordinate is an absolute scan coordinate
+  mem.img = cv.open("cv_tiles/" + id + ".tif", { encoding: "linear", origin: [ox, oy], name: "img" })
+  mem.lin = mem.img.as("linear")
+  return mem.img
 }
 
-mem.sheet = (items, size = 40) => // contact sheet of up to 15 items: image | speck view, captioned with their ids
-  cv.sheet(items.slice(0, 15), { views: [img, img.view("speck")], size, zoom: 4, stretch: "cell" })
+mem.spots = async ({ snr = 1, radius = [2, 4, 8] } = {}) => { // peaks with the speck view's step: sp = spStep
+  const pk = await mem.lin.peaks({ radius, snr })
+  return await mem.lin.view("speck").measure(pk, { prefix: "sp" })
+}
+
+mem.sheet = (items, size = 40) => // contact sheet of up to 15 items: tile | speck view, captioned with their ids
+  cv.sheet(items.slice(0, 15), { views: [mem.img, mem.img.view("speck")], size, zoom: 4, stretch: "cell" })
 
 return "dust helpers ready"
 ```
@@ -171,7 +178,7 @@ For people who write playbooks for annotator agents:
 
 1. Register the server with the task library as a prelude, so agents never paste it.
 2. Name the library's functions and what they return in the playbook; agents use what the playbook names.
-3. Give agents coordinates as data: candidates as rows from a library function, sheets of those items (their
+3. Give agents coordinates as data: candidates as rows from `peaks` or a library function, sheets of those items (their
    captions list the ids), and the instruction "never read a coordinate off a ruler; take it from the rows".
 4. For threads: pick two points either side of the thread from a zoom's data and run
    `await cv.load("dust/thread-width.js", { a, b })` at two or three places along it.
