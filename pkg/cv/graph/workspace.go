@@ -1,6 +1,8 @@
 package graph
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -8,7 +10,6 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"sync/atomic"
 )
 
 // The workspace (GCV-004 §4.6, §7.8, D11): one read-write directory (--root)
@@ -35,7 +36,6 @@ type Workspace struct {
 	mu      sync.Mutex
 	opened  []os.FileInfo // files cv.open read (protected from saves)
 	written []os.FileInfo // files cv.save wrote (may be saved again)
-	tmp     atomic.Int64
 }
 
 type dirRoot struct {
@@ -307,9 +307,8 @@ func (w *Workspace) Write(rel string, data []byte) (bool, error) {
 			return false, accessError(rel, err)
 		}
 	}
-	tmp := fmt.Sprintf("%s.tmp-%d-%d", rel, os.Getpid(), w.tmp.Add(1))
-	if err := r.WriteFile(tmp, data, 0o644); err != nil { // #nosec G306 -- files the agent saves for people and programs
-		_ = r.Remove(tmp)
+	tmp, err := writeTemp(r, rel, data)
+	if err != nil {
 		return false, Errorf(EEval, "cv.save(%q): %v", rel, unwrapPath(err))
 	}
 	if err := r.Rename(tmp, rel); err != nil {
@@ -322,4 +321,36 @@ func (w *Workspace) Write(rel string, data []byte) (bool, error) {
 		w.mu.Unlock()
 	}
 	return replaced, nil
+}
+
+// writeTemp writes data to a new temporary file next to rel and returns its
+// name. The file is created exclusively (O_EXCL: an existing file or symlink
+// at the name is never opened, truncated or followed) under a random name,
+// retried on collision, so sessions sharing a workspace cannot collide.
+func writeTemp(r *os.Root, rel string, data []byte) (string, error) {
+	for range 16 {
+		var b [8]byte
+		if _, err := rand.Read(b[:]); err != nil {
+			return "", err
+		}
+		tmp := rel + ".tmp-" + hex.EncodeToString(b[:])
+		f, err := r.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644) // #nosec G302 -- files the agent saves for people and programs
+		if errors.Is(err, fs.ErrExist) {
+			continue
+		}
+		if err != nil {
+			return "", err
+		}
+		_, werr := f.Write(data)
+		cerr := f.Close()
+		if werr == nil {
+			werr = cerr
+		}
+		if werr != nil {
+			_ = r.Remove(tmp)
+			return "", werr
+		}
+		return tmp, nil
+	}
+	return "", fmt.Errorf("no free temporary name next to %s", rel)
 }
