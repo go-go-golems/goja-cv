@@ -31,7 +31,7 @@ type evalFlags struct {
 
 func (f *evalFlags) register(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&f.image, "image", "", "Image file to open and bind to img (in --root or a --read directory)")
-	cmd.Flags().StringVar(&f.root, "root", "", "The workspace: cv.save writes in it, cv.open reads relative paths in it (default: the current directory)")
+	cmd.Flags().Var(&onceString{p: &f.root, name: "root"}, "root", "The workspace: cv.save writes in it, cv.open reads relative paths in it (default: the current directory)")
 	cmd.Flags().StringArrayVar(&f.read, "read", nil, "A directory cv.open may also read, never write (repeatable; relative paths are looked up after the workspace, in order)")
 	cmd.Flags().StringVar(&f.out, "out", "", "Directory for the delivered looks (default: a new temporary directory)")
 	cmd.Flags().StringArrayVar(&f.prelude, "prelude", nil, "Script file loaded (await cv.load) in the session before the code, e.g. a task library that defines mem.* (repeatable; in --root or a --read directory)")
@@ -262,10 +262,7 @@ func checkRoots(root string, reads []string, image string, preludes []string) er
 	files["--prelude"] = preludes
 	for _, flag := range []string{"--image", "--prelude"} {
 		for _, p := range files[flag] {
-			abs, err := filepath.Abs(p)
-			if err != nil {
-				return usageErr("%s: %v", flag, err)
-			}
+			abs := ws.Resolve(p)
 			f, _, err := ws.Open(abs)
 			if err != nil {
 				if _, serr := os.Stat(abs); serr != nil {

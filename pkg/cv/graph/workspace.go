@@ -243,6 +243,25 @@ func (w *Workspace) OpenAt(l Location) (*os.File, error) {
 	return w.at(l.Root).r.Open(l.Rel)
 }
 
+// PathOf is the absolute path of a location found by Open.
+func (w *Workspace) PathOf(l Location) string { return filepath.Join(w.at(l.Root).dir, l.Rel) }
+
+// Resolve maps a path given on a command line (--image, --prelude) to an
+// absolute path: a relative path is looked up like cv.open's (the workspace,
+// then each --read directory), falling back to the current directory.
+func (w *Workspace) Resolve(p string) string {
+	if !filepath.IsAbs(p) {
+		if f, l, err := w.Open(p); err == nil {
+			_ = f.Close()
+			return w.PathOf(l)
+		}
+	}
+	if a, err := filepath.Abs(p); err == nil {
+		return a
+	}
+	return p
+}
+
 // NoteOpened records a file the session opened: saves may not replace it.
 func (w *Workspace) NoteOpened(fi os.FileInfo) {
 	w.mu.Lock()

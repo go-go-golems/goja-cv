@@ -119,11 +119,11 @@ func (o Options) withDefaults() (Options, error) {
 	}
 	defer ws.Close()
 	if o.Image != "" {
-		o.Image = abs(o.Image)
+		o.Image = ws.Resolve(o.Image)
 	}
 	preludes := make([]string, 0, len(o.Preludes))
 	for _, p := range o.Preludes {
-		p = abs(p)
+		p = ws.Resolve(p)
 		f, _, err := ws.Open(p)
 		if err != nil {
 			if _, serr := os.Stat(p); serr != nil {

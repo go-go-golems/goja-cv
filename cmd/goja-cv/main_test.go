@@ -268,3 +268,25 @@ func TestPreludeFlag(t *testing.T) {
 		t.Fatalf("mcp prelude outside the roots: exit %d\n%s", code, errOut)
 	}
 }
+
+// TestRootOnceAndRelativePrelude: --root may be given once (a second --root
+// used to replace the first silently, making a read-only data directory the
+// workspace); a relative --prelude is found in --root or a --read directory,
+// like cv.load, wherever the command runs.
+func TestRootOnceAndRelativePrelude(t *testing.T) {
+	dir, ws := t.TempDir(), t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "lib.js"), []byte("mem.g = x => x * 2\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, cmd := range [][]string{
+		{"eval", "--root", ws, "--root", dir, "-e", "return 1"},
+		{"mcp", "--root", ws, "--root", dir},
+	} {
+		if code, _, errOut := runCLI(t, cmd...); code != exitUsage || !strings.Contains(errOut, "add read-only directories with --read DIR") {
+			t.Fatalf("%s with two --root: exit %d\n%s", cmd[0], code, errOut)
+		}
+	}
+	if code, out, errOut := runCLI(t, "eval", "--root", ws, "--read", dir, "--prelude", "lib.js", "-e", "return mem.g(21)"); code != exitOK || !strings.HasPrefix(out, "42") {
+		t.Fatalf("relative prelude in a --read directory: exit %d\n%s\n%s", code, out, errOut)
+	}
+}
