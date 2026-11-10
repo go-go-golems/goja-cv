@@ -247,3 +247,57 @@ the writable workspace; fixed in PR #8.
 
 ### Code review instructions
 - PR #8; DUST-002 `scripts/84-cv-helpers.js`, `reference/04`, `reference/12`.
+
+## Step 6: PR #8 review — symlinked --read inside the workspace
+
+Codex found that the new `Resolve` (relative `--prelude`/`--image`) returned a read directory's path as given. With
+`--root /work --read /work/lib` and `lib -> /shared`, the prelude resolved to `/work/lib/helpers.js`; `Open` then
+picked the workspace for that absolute path and refused the symlink as leaving it. `PathOf` now joins the root's
+resolved directory, so the path is `/shared/helpers.js`, which maps back to the read directory.
+
+### Prompt Context
+
+**User prompt (verbatim):** "it's not worth it. Address code review issue here: https://github.com/go-go-golems/goja-cv/pull/8"
+
+**Assistant interpretation:** Drop the GCV-006 proposal (iso column, image budget); fix the one review finding on #8.
+
+**Inferred user intent:** Get #8 mergeable.
+
+**Commit (code):** ed2088b — "Resolve: keep the selected read directory for a symlinked --read inside the workspace"
+
+### What I did
+- `pkg/cv/graph/workspace.go` `PathOf`: `w.at(l.Root).resolved` instead of `.dir`.
+- `cmd/goja-cv/main_test.go` `TestRootOnceAndRelativePrelude`: `--root ws --read ws/lib` with `lib -> dir`,
+  `--prelude lib.js`. Checked it fails without the fix ("outside --root … add --read …/lib").
+- Replied on the review thread.
+
+### Why
+- An absolute path written with a symlink's name is matched against the workspace first; the resolved name is
+  the only one that lands in the right root.
+
+### What worked
+- `make lint` (golangci-lint v2.12.2): 0 issues; `make vet fmt-check` clean; all tests pass except the one below.
+
+### What didn't work
+- `golangci-lint` on PATH (`/opt/homebrew/bin`, v1.59, go1.22) cannot read go1.26 export data and reports bogus
+  typecheck errors. Use `make lint` (the pinned `.bin/golangci-lint`).
+- `TestRealTopHatSaturated` (gold-gated) fails on `main` too: gold pass 1 grew the saturated/large set from 63 to
+  164 points; top-hat covers 124, the hot list 127, peaks 148. Not touched here.
+
+### What I learned
+- `Name` (display) can keep the given name; only paths that are fed back into `Open` need the resolved one.
+
+### What was tricky to build
+- Nothing beyond reproducing the symlink layout in a temp dir (macOS temp dirs are themselves under a symlink,
+  `/var` → `/private/var`, which `resolved` already handles).
+
+### What warrants a second pair of eyes
+- A read directory whose target is inside the workspace now resolves to a workspace path (root 0); it was
+  readable through the workspace already, so no access changes.
+
+### What should be done in the future
+- Decide whether `TestRealTopHatSaturated` should assert top-hat ≥ hot list on the larger gold set (it now
+  trails by 3 of 164) or compare against peaks.
+
+### Code review instructions
+- `git show ed2088b`; `go test ./cmd/goja-cv -run TestRootOnceAndRelativePrelude`.
