@@ -243,8 +243,12 @@ func (w *Workspace) OpenAt(l Location) (*os.File, error) {
 	return w.at(l.Root).r.Open(l.Rel)
 }
 
-// PathOf is the absolute path of a location found by Open.
-func (w *Workspace) PathOf(l Location) string { return filepath.Join(w.at(l.Root).dir, l.Rel) }
+// PathOf is the absolute path of a location found by Open, under the root's
+// resolved directory: a read directory that is a symlink inside the
+// workspace (--read /work/lib, lib -> /shared) gives /shared/x, which Open
+// maps back to that read directory, not /work/lib/x, which the workspace
+// would refuse as a link out of it.
+func (w *Workspace) PathOf(l Location) string { return filepath.Join(w.at(l.Root).resolved, l.Rel) }
 
 // Resolve maps a path given on a command line (--image, --prelude) to an
 // absolute path: a relative path is looked up like cv.open's (the workspace,

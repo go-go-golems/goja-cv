@@ -289,4 +289,11 @@ func TestRootOnceAndRelativePrelude(t *testing.T) {
 	if code, out, errOut := runCLI(t, "eval", "--root", ws, "--read", dir, "--prelude", "lib.js", "-e", "return mem.g(21)"); code != exitOK || !strings.HasPrefix(out, "42") {
 		t.Fatalf("relative prelude in a --read directory: exit %d\n%s\n%s", code, out, errOut)
 	}
+	// a --read directory that is a symlink inside the workspace (ws/lib -> dir)
+	if err := os.Symlink(dir, filepath.Join(ws, "lib")); err != nil {
+		t.Fatal(err)
+	}
+	if code, out, errOut := runCLI(t, "eval", "--root", ws, "--read", filepath.Join(ws, "lib"), "--prelude", "lib.js", "-e", "return mem.g(21)"); code != exitOK || !strings.HasPrefix(out, "42") {
+		t.Fatalf("relative prelude in a symlinked --read directory inside the workspace: exit %d\n%s\n%s", code, out, errOut)
+	}
 }
