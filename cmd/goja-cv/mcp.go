@@ -72,7 +72,7 @@ cv.open reads relative paths; each --read DIR is a directory cv.open may also re
 	cmd.Flags().StringVar(&f.http, "http", "", "Serve MCP streamable HTTP on this address (for example 127.0.0.1:3092) instead of stdio")
 	cmd.Flags().BoolVar(&f.allowRemote, "allow-remote", false, "Allow a non-loopback --http address (there is no authentication)")
 	cmd.Flags().StringVar(&f.image, "image", "", "Image file to open in the default session and bind to img (in --root or a --read directory)")
-	cmd.Flags().StringVar(&f.root, "root", "", "The workspace (required): cv.save writes in it, cv.open reads relative paths in it")
+	cmd.Flags().Var(&onceString{p: &f.root, name: "root"}, "root", "The workspace (required): cv.save writes in it, cv.open reads relative paths in it")
 	cmd.Flags().StringArrayVar(&f.read, "read", nil, "A directory cv.open may also read, never write (repeatable; relative paths are looked up after the workspace, in order)")
 	cmd.Flags().StringArrayVar(&f.prelude, "prelude", nil, "Script file loaded (await cv.load) in every new session before agent code, e.g. a task library (repeatable; in --root or a --read directory)")
 	cmd.Flags().IntVar(&f.timeout, "timeout-ms", 0, "Eval timeout in milliseconds (default 60000)")
