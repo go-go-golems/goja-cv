@@ -201,3 +201,49 @@ GCV-005; I fixed it on GCV-004 (PR #6) and it was merged up.
 
 ### Code review instructions
 - PR #7; guide deviations 1–45; implementation diary steps 1–12.
+
+## Step 5: #6 and #7 merged; v2 in users' hands; two CLI holes
+
+The user merged #6 and #7 ("#6 #7 merged. continue"). I installed v2, ported the DUST-002 helpers, playbook and
+getting-started guide, and found that the user's v1-era MCP registration silently made the gold-data directory
+the writable workspace; fixed in PR #8.
+
+### Prompt Context
+
+**User prompt (verbatim):** "#6 #7 merged. continue"
+
+**Assistant interpretation:** Do the post-merge steps announced: reinstall, move the colleague to v2 (helpers, playbook, getting-started), clean up.
+
+**Inferred user intent:** The colleague's agents run on v2 with the improvements.
+
+### What I did
+- `main` at `8d27f81`; `go install ./cmd/goja-cv`; removed the GCV-005 worktree.
+- Rewrote DUST-002 `scripts/84-cv-helpers.js` for v2: `mem.tile` (opens with `name`, keeps `mem.lin`), `mem.hot(snr)` on peaks (replaces levels and `mem.faint`; rows in the flat schema `id, cx, cy, r, sp, snr, chroma, edge`), `mem.probe`/`mem.probeR`, `mem.sheet` (rows go in as they are), `mem.zoom`, `mem.sweep`, `mem.hotLook`; every function has a doc comment for the context block. `sp`/`snr`/`chroma` in `mem.hot` use the probe's core 3 / ring 6–12, the settings script 87 calibrated the playbook thresholds on (on the test tile 30 of 414 peaks reach sp ≥ 0.15). First version left `chroma` empty (peaks measure luminance only); fixed with a prefixed `measure`.
+- Ported the playbook (`reference/04`): helpers loaded, not pasted; one `mem.hot()` list; rows to sheets directly; looks always delivered. Ran all five blocks against v2.
+- Wrote `reference/12` (v2 getting-started): v1 → v2 table, MCP registration (`--root ~/dustdet/cv_work`, `--read` tiles/dustds/scripts, `--prelude`), helper loop with gold `r/2`, the raw API (peaks, measure, sheet, crop, `cv.save`), top-hat/line/width recipes. Both blocks tested; `reference/08` marked superseded. Created `~/dustdet/cv_work`. dust-scanning `20b8502`.
+- Found: the user's registered `cv` server (`--root cv_tiles --root dustds`) starts on v2 with `~/dustds` as the writable workspace (last `--root` wins) and the tiles unreachable by name. Fixed in PR #8: `--root` is once-only (usage error pointing to `--read`); relative `--prelude`/`--image` now resolve like `cv.open` (workspace, then `--read`). Test fails on main; gate green after clearing golangci-lint's cache (it still referenced the removed worktree).
+
+### Why
+- A hard cutover leaves every old caller broken or, worse, silently misconfigured.
+
+### What worked
+- Keeping the helper names and the probe calibration let the playbook's decision rules carry over unchanged.
+
+### What didn't work
+- `--prelude 84-cv-helpers.js` (relative) failed from another directory; fixed in PR #8.
+- The scratchpad is not executable in this sandbox; tested the CLI through Go tests instead.
+
+### What I learned
+- A flag that silently takes the last value turns a v1 multi-root registration into a writable data directory: single-valued security-relevant flags must refuse repeats.
+
+### What was tricky to build
+- Calibration continuity: peaks find candidates, but the reported numbers must stay on the scale the playbook's thresholds were measured on.
+
+### What warrants a second pair of eyes
+- The user must re-register the `cv` MCP server (command in DUST-002 `reference/12`) — until then agents write into `~/dustds`.
+
+### What should be done in the future
+- Merge PR #8, reinstall; rerun one annotator agent on the v2 playbook to confirm the port.
+
+### Code review instructions
+- PR #8; DUST-002 `scripts/84-cv-helpers.js`, `reference/04`, `reference/12`.
