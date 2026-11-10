@@ -142,7 +142,19 @@ func DiskMinMax(ctx context.Context, p []float32, w, h int, r float64, isMax boo
 	if r >= binaryDiskMin && isBinary(p) {
 		return binaryDisk(ctx, p, w, h, r, isMax)
 	}
-	return chordDisk(ctx, p, w, h, r, isMax)
+	return chordDisk(ctx, p, w, h, r, isMax, parallel.Rows)
+}
+
+// rowRunner runs fn over bands of [0, n): parallel.Rows, or serialRows
+// inside work that is already parallel (a band of peaks).
+type rowRunner func(ctx context.Context, n int, fn func(y0, y1 int)) error
+
+// serialRows calls fn(0, n) on the caller's goroutine.
+func serialRows(ctx context.Context, n int, fn func(y0, y1 int)) error {
+	if n > 0 {
+		fn(0, n)
+	}
+	return ctx.Err()
 }
 
 func isBinary(p []float32) bool {
@@ -177,7 +189,7 @@ func diskChords(r float64) []int {
 // distinct half-width and every output row combines input rows y ± dy of
 // that width: about (number of widths) running extrema and (2⌊r⌋ + 1)
 // combinations per pixel.
-func chordDisk(ctx context.Context, p []float32, w, h int, r float64, isMax bool) ([]float32, error) {
+func chordDisk(ctx context.Context, p []float32, w, h int, r float64, isMax bool, rows rowRunner) ([]float32, error) {
 	half := diskChords(r)
 	pad := float32(math.Inf(1))
 	if isMax {
@@ -194,7 +206,7 @@ func chordDisk(ctx context.Context, p []float32, w, h int, r float64, isMax bool
 		for d1+1 < len(half) && half[d1+1] == a {
 			d1++
 		}
-		err := parallel.Rows(ctx, h, func(y0, y1 int) {
+		err := rows(ctx, h, func(y0, y1 int) {
 			sl := scratchLen(w, a)
 			g, hh := make([]float32, sl), make([]float32, sl)
 			for y := y0; y < y1; y++ {
@@ -204,7 +216,7 @@ func chordDisk(ctx context.Context, p []float32, w, h int, r float64, isMax bool
 		if err != nil {
 			return nil, err
 		}
-		err = parallel.Rows(ctx, h, func(y0, y1 int) {
+		err = rows(ctx, h, func(y0, y1 int) {
 			for y := y0; y < y1; y++ {
 				o := out[y*w : (y+1)*w]
 				for d := d0; d <= d1; d++ {

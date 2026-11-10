@@ -155,6 +155,7 @@ var walkSamples = map[string]func(w walkNodes) []any{
 	"minus":          func(w walkNodes) []any { return []any{nodeArg(w.mask2)} },
 	"feather":        func(walkNodes) []any { return []any{3} },
 	"erode":          func(walkNodes) []any { return []any{2} },
+	"peaks":          func(walkNodes) []any { return []any{map[string]any{"radius": []any{2.0, 4.0}, "snr": 0.5}} },
 	"dilate":         func(walkNodes) []any { return []any{6, map[string]any{"line": 30}} },
 	"refine":         func(w walkNodes) []any { return []any{nodeArg(w.img), map[string]any{"radius": 4}} },
 	"overlay": func(w walkNodes) []any {

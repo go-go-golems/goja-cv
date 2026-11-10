@@ -77,14 +77,17 @@ return { a: t(400), b: t(400) }`))
 }
 
 // TestResultFormat pins the text of a representative result: detector
-// items, measured items and a nested object with two tables
+// items, measured items and a nested object with two tables, measured peaks
 // (testdata/representative.result; -update-results rewrites it).
 func TestResultFormat(t *testing.T) {
 	app, sid := newApp(t, cvsession.Options{Image: planted(t)})
 	out := mustOK(t, eval(t, app, sid, `const sp = await img.detect.specks()
 const top = sp.sort((a, b) => b.contrast - a.contrast).slice(0, 6)
 const m = await img.as("linear").measure(top.map(r => ({ cx: r.cx, cy: r.cy, r: 2, label: "s" + r.id })))
-return { n: sp.length, specks: top, measured: { rows: m, cols: Object.keys(m[0]).length } }`))
+const lin = img.as("linear")
+const pk = await lin.peaks({ radius: [2, 4], polarity: "both" })
+const peaks = await lin.view("speck").measure(pk.slice(0, 6), { prefix: "sp" })
+return { n: sp.length, specks: top, measured: { rows: m, cols: Object.keys(m[0]).length }, peaks }`))
 	golden := filepath.Join("testdata", "representative.result")
 	if *updateResults {
 		if err := os.WriteFile(golden, []byte(out), 0o644); err != nil { // #nosec G306 -- test golden
@@ -97,6 +100,18 @@ return { n: sp.length, specks: top, measured: { rows: m, cols: Object.keys(m[0])
 	}
 	if out != string(want) {
 		t.Fatalf("result changed (go test -run TestResultFormat -update-results):\n%s", out)
+	}
+}
+
+// TestPeaksRenderAsAPagedTable: awaited peaks returned bare are a table;
+// a long list is paged with a note that names the array.
+func TestPeaksRenderAsAPagedTable(t *testing.T) {
+	app, sid := newApp(t, cvsession.Options{Image: planted(t)})
+	out := mustOK(t, eval(t, app, sid, `return await img.as("linear").peaks({ snr: 0, polarity: "both" })`))
+	m := regexp.MustCompile(`(?m)^\|-\n  id +x +y +w +h +cx +cy +area +aspect +r +coreMean +ringMean +step +spread +snr +ringCoverage$`).FindString(out)
+	note := regexp.MustCompile(`… rows 1–(\d+) of (\d+) shown\. Next: this array\.slice\((\d+), (\d+)\); all: await cv\.save\("rows\.csv", this array\)`).FindStringSubmatch(out)
+	if m == "" || note == nil || note[1] != note[3] || len(out) > 9000 {
+		t.Fatalf("peaks (%d characters):\n%s", len(out), out)
 	}
 }
 

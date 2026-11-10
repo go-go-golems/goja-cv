@@ -64,6 +64,8 @@ return { plain: img.crop(box).levels({ auto: true }).look({ zoom: 4, label: "str
 return { speck: img.view("speck").look("speck view"), detail: img.view("detail").look() }
 ```
 
+The speck view's white point is 5 × the 99th percentile of its high-pass over the image it is computed on. On a tile with strong scene edges (windows, cables, lattices) the edges set it, and dust can map to 3–10 % of white. `img.view("speck").crop(b)` keeps the whole image's scale; `img.crop(b).view("speck")` sets it from the crop alone (a local stretch). To find faint dust, do not lower thresholds on the view: use `img.as("linear").peaks({ snr })`, whose snr compares each spot with its own surroundings. A large saturated speck has a flat top, which the view turns into a ring: use a top-hat (`L.sub(L.erode(r).dilate(r))`) or peaks with several radii (`cv.docs.read("spots")`).
+
 A view is a node like any other: crop it, zoom it, find components in it, put it in a sheet.
 
 ```js looks=1

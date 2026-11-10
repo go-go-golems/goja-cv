@@ -27,6 +27,7 @@ func Register(r *graph.Registry) {
 	r.MustRegister(graph.ItemsOpDef())
 	r.MustRegister(compositeOps()...)
 	r.MustRegister(detectOps()...)
+	r.MustRegister(peaksOp())
 	r.MustRegister(healOps()...)
 	r.MustRegister(presentOps()...)
 	r.MustRegister(annotateOp())

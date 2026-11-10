@@ -65,7 +65,7 @@ return {
 
 ## Rank candidates
 
-Blobs of the DoG, measured on the scan, sorted by snr in JavaScript: `cv.docs.read("measuring", { section: "Measuring regions" })`.
+Peaks are sorted by snr; to rank them by the speck view's step, measure the view with a prefix (`cv.docs.read("spots")`). Saturated specks and lines: top-hats and line openings in the same topic.
 
 ## Edit inside a mask
 
@@ -88,16 +88,14 @@ return { side: cv.compare([img, blurred]).look("side"), diff: img.sub(blurred).m
 
 ## Inspect candidates
 
-Make small bright things stand out, find them, look at all of them in one sheet, then zoom on the doubtful ones with coordinates.
+Find the spots as data, look at all of them in one sheet (its caption lists their ids), then zoom on a doubtful one from its coordinates. More: `cv.docs.read("spots")`.
 
 ```js looks=2
-const speck = img.view("speck")
-const spots = speck.mask.luminance({ above: 0.5 }).components({ minArea: 4 })
-const top = (await spots).sort((a, b) => b.area - a.area).slice(0, 12)
-const first = top[0]
+const pk = await img.as("linear").peaks({ radius: [2, 4], snr: 2, polarity: "both" })
+const first = pk.find(p => p.cy < 160)   // the strongest one away from the bottom edge
 return {
-  sheet: cv.sheet(top, { views: [img, speck], size: 32, zoom: 4 }).look("candidates"),
-  zoom: speck.crop([Math.round(first.cx) - 16, Math.round(first.cy) - 16, 32, 32]).look({ zoom: 8, ruler: 4 }),
+  sheet: cv.sheet(pk.slice(0, 12), { views: [img, img.view("speck")], size: 32, zoom: 4 }).look("candidates"),
+  zoom: img.view("speck").crop([Math.round(first.cx) - 16, Math.round(first.cy) - 16, 32, 32]).look({ zoom: 8, ruler: 4 }),
 }
 ```
 

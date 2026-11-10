@@ -141,7 +141,7 @@ func TestBinaryDiskEqualsChords(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			chords, err := chordDisk(ctx, p, w, h, r, isMax)
+			chords, err := chordDisk(ctx, p, w, h, r, isMax, serialRows)
 			if err != nil {
 				t.Fatal(err)
 			}

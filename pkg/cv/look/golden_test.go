@@ -82,6 +82,20 @@ func goldenCases() []goldenCase {
 			sp := call(t, e, "detect.specks", img)
 			return call(t, e, "overlay", img, graph.NodeArg{ID: sp.ID}, map[string]any{"labels": "id"}).ID
 		}, Options{}},
+		// GCV-005 B1: a mask dilated by a disk, and a white top-hat of the grey image
+		{"dilate-mask", func(t *testing.T, e *graph.Engine, img graph.NodeID) graph.NodeID {
+			return call(t, e, "dilate", lum(t, e, img), 4.0).ID
+		}, Options{}},
+		{"tophat-gray", func(t *testing.T, e *graph.Engine, img graph.NodeID) graph.NodeID {
+			g := call(t, e, "toGray", img).ID
+			open := call(t, e, "dilate", call(t, e, "erode", g, 6.0).ID, 6.0).ID
+			return call(t, e, "sub", g, graph.NodeArg{ID: open}).ID
+		}, Options{}},
+		// GCV-005 B2: peaks of both polarities as exact disks, labelled with their ids
+		{"overlay-peaks", func(t *testing.T, e *graph.Engine, img graph.NodeID) graph.NodeID {
+			pk := call(t, e, "peaks", img, map[string]any{"radius": []any{2.0, 4.0}, "snr": 1.5, "polarity": "both"})
+			return call(t, e, "overlay", img, graph.NodeArg{ID: pk.ID}, map[string]any{"labels": "id"}).ID
+		}, Options{}},
 		{"histogram", c("histogram"), Options{}},
 		{"histogram-r", c("histogram", map[string]any{"channel": "r"}), Options{}},
 		// GCV-003 Phase 5: a profile across the star as a line chart

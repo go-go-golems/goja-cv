@@ -48,7 +48,7 @@ return [r.step, r.spread, r.snr, r.stepChroma, c.snr].map(x => x.toFixed(3))
 
 Gold points labelled with dustview carry the fit radius, about twice the speck's half-level radius: measure them as circles of half that radius, `gold.map(p => ({ cx: p.x - ox, cy: p.y - oy, r: p.r / 2 }))`.
 
-The old helper `mem.probe(x, y, r)` is `img.measure([[x + 0.5, y + 0.5]], { coreRadius: r + 0.5, ringRadii: [r + 3.5, r + 9.5], gray: "average" })`.
+Where to measure: `img.as("linear").peaks({ radius })` returns the local maxima of this step as circles with these fields, and a peak's snr is what `measure` reports there (`cv.docs.read("spots")`). Do not read points off a look.
 
 ## Measuring regions
 
