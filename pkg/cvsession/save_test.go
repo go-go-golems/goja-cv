@@ -187,3 +187,22 @@ return [(await again).w, t.replaced].join(" ")`)), "256 true")
 	}
 	mustContain(t, text(eval(t, app, sid, `return await mem.c.stats()`)), "code: E_EVAL", "changed since it was opened", `fix: img = cv.open("out.tif")`)
 }
+
+// TestRequireLoadsNoFiles: require serves only the built-in modules; a file
+// outside (or inside) the workspace cannot be loaded with it (a pi agent
+// used require("/abs/lib/tile.js") to bypass --root/--read).
+func TestRequireLoadsNoFiles(t *testing.T) {
+	app, sid, _ := saveApp(t)
+	outside := filepath.Join(t.TempDir(), "evil.js")
+	if err := os.WriteFile(outside, []byte(`module.exports = { pwned: true }`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out := text(eval(t, app, sid, `try { return require(`+strconvQuote(outside)+`) } catch (e) { return "refused: " + e.message }`))
+	mustContain(t, out, "refused:", "use await cv.load(path)")
+	if strings.Contains(out, "pwned") {
+		t.Fatalf("require loaded a file: %s", out)
+	}
+	mustContain(t, mustOK(t, eval(t, app, sid, `return typeof require("cv").open`)), "function")
+}
+
+func strconvQuote(s string) string { b, _ := json.Marshal(s); return string(b) }

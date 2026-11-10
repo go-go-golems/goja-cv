@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/dop251/goja"
+	"github.com/dop251/goja_nodejs/require"
 	"github.com/go-go-golems/go-go-goja/pkg/engine"
 	"github.com/go-go-golems/go-go-goja/pkg/replapi"
 	"github.com/go-go-golems/go-go-goja/pkg/replsession"
@@ -163,11 +164,20 @@ func NewRuntimeFactory(opts Options) (*engine.RuntimeFactory, error) {
 		eo.Workspace, _ = graph.OpenWorkspace(opts.Root, opts.Read)
 		return graph.NewEngine(cvmod.DefaultRegistry(), eo)
 	}
-	return engine.NewRuntimeFactoryBuilder(engine.WithDataOnlyDefaultRegistryModules(false)).
+	return engine.NewRuntimeFactoryBuilder(engine.WithDataOnlyDefaultRegistryModules(false),
+		engine.WithRequireOptions(require.WithLoader(noFileModules))).
 		UseModuleMiddleware(engine.MiddlewareOnly("timer")).
 		WithModules(&cvmod.Registrar{NewEngine: newEngine}).
 		WithRuntimeInitializers(&Initializer{opts: opts}).
 		Build()
+}
+
+// noFileModules is the require loader of cv sessions: require serves only
+// the built-in modules (cv, timer), never files. The default loader reads any
+// path on disk, which would bypass the workspace (--root, --read) that every
+// other file access goes through; scripts are loaded with cv.load.
+func noFileModules(path string) ([]byte, error) {
+	return nil, errors.Errorf("require(%q): cv sessions load no files with require; use await cv.load(path) for a script in the workspace or a --read directory", path)
 }
 
 // App is a replapi app of cv sessions. Its Evaluate takes agent code (an
