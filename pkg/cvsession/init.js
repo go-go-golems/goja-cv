@@ -70,8 +70,17 @@
     // started from a job. Every cv.save the eval started completes before it
     // returns, awaited or not; an unawaited save that failed fails the eval.
     value: function (body) {
+      // drain waits for every save the eval registered, again and again until
+      // no new one appears: a save's continuation may start another save.
+      function drain(seen) {
+        const ps = native.pendingSaves();
+        if (ps.length === seen) return Promise.resolve();
+        return Promise.allSettled(ps).then(function () {
+          return drain(ps.length);
+        });
+      }
       function saves() {
-        return Promise.allSettled(native.pendingSaves()).then(function () {
+        return drain(-1).then(function () {
           const e = native.saveFailure();
           if (e !== null) throw e;
         });

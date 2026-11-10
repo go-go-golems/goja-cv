@@ -1,6 +1,7 @@
 package graph
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -227,5 +228,42 @@ func TestWorkspaceProtectsOpenedFiles(t *testing.T) {
 		if strings.Contains(e.Name(), ".tmp-") {
 			t.Fatalf("temporary file left: %s", e.Name())
 		}
+	}
+}
+
+// TestWorkspaceTempFiles: temporary files are created exclusively under
+// random names, so a link planted at a predictable temporary name (here the
+// old "<name>.tmp-<pid>-<n>" scheme) is never followed into a protected
+// input (review of PR #6).
+func TestWorkspaceTempFiles(t *testing.T) {
+	root := t.TempDir()
+	mkfile(t, filepath.Join(root, "scan.tif"), "pixels")
+	ws, err := OpenWorkspace(root, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ws.Close()
+	f, _, err := ws.Open("scan.tif")
+	if err != nil {
+		t.Fatal(err)
+	}
+	st, _ := f.Stat()
+	_ = f.Close()
+	ws.NoteOpened(st)
+	for n := 1; n <= 4; n++ {
+		if err := os.Symlink("scan.tif", filepath.Join(root, fmt.Sprintf("out.json.tmp-%d-%d", os.Getpid(), n))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for i := 0; i < 4; i++ {
+		if _, err := ws.Write("out.json", []byte(`{"ok":true}`)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if b, _ := os.ReadFile(filepath.Join(root, "scan.tif")); string(b) != "pixels" {
+		t.Fatalf("scan.tif overwritten through a planted temp link: %q", b)
+	}
+	if b, _ := os.ReadFile(filepath.Join(root, "out.json")); string(b) != `{"ok":true}` {
+		t.Fatalf("out.json is %q", b)
 	}
 }

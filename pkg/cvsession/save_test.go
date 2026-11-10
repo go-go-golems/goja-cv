@@ -159,6 +159,14 @@ func TestUnawaitedSaves(t *testing.T) {
 	out := text(eval(t, app, sid, "cv.save(\"bad.tif\", img.levels({ black: 0.5, white: 0.2 }))\nreturn 1"))
 	mustContain(t, out, "code: E_ARG_RANGE", `cv.save("bad.tif") was not awaited and failed`, "where: 'line 1: cv.save(")
 	mustContain(t, mustOK(t, eval(t, app, sid, `try { await cv.save("bad2.tif", img.levels({ black: 0.5, white: 0.2 })) } catch (e) { return e.code }`)), "E_ARG_RANGE")
+	// A save started by another save's continuation also completes before
+	// the eval returns (review of PR #6).
+	mustOK(t, eval(t, app, sid, `cv.save("c1.tif", img.view("speck")).then(() => cv.save("c2.tif", img.view("detail"))).then(() => cv.save("c3.json", { c: 3 })); return 1`))
+	for _, f := range []string{"c1.tif", "c2.tif", "c3.json"} {
+		if st, err := os.Stat(filepath.Join(ws, f)); err != nil || st.Size() == 0 {
+			t.Fatalf("chained save %s: %v", f, err)
+		}
+	}
 	out = mustOK(t, eval(t, app, sid, `Promise.reject(new Error("boom")); return 1`))
 	mustContain(t, out, "UNHANDLED", "boom")
 }
