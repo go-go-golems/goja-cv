@@ -87,7 +87,8 @@ const m = await img.as("linear").measure(top.map(r => ({ cx: r.cx, cy: r.cy, r: 
 const lin = img.as("linear")
 const pk = await lin.peaks({ radius: [2, 4], polarity: "both" })
 const peaks = await lin.view("speck").measure(pk.slice(0, 6), { prefix: "sp" })
-return { n: sp.length, specks: top, measured: { rows: m, cols: Object.keys(m[0]).length }, peaks }`))
+const specks = top.map(({ localNoise, ...r }) => r)   // localNoise differs in the 5th digit between amd64 and arm64
+return { n: sp.length, specks, measured: { rows: m, cols: Object.keys(m[0]).length }, peaks }`))
 	golden := filepath.Join("testdata", "representative.result")
 	if *updateResults {
 		if err := os.WriteFile(golden, []byte(out), 0o644); err != nil { // #nosec G306 -- test golden

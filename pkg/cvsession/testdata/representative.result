@@ -1,12 +1,12 @@
 n: 41
 specks: |-
-  id  x    y    w   h   cx      cy      area  aspect  contrast  localNoise  sharpness  score  meanL    polarity
-  9   195  41   12  11  200.61  46.57   99    1.0126  0.43263   0.0051662   0.30227    0      0.69584  bright
-  11  223  49   7   7   226.5   52.74   41    1.009   0.30224   0.0034632   0.75341    1      0.37417  dark
-  14  39   65   9   4   43.5    67      24    2.51    0.2915    0.0043597   0.6584     1      0.5454   bright
-  40  73   179  5   5   75.59   181.59  22    1.1014  0.2883    0.0032599   0.72838    1      0.31231  dark
-  3   139  14   5   5   141.69  16.36   21    1.0618  0.27529   0.004987    0.68318    1      0.25507  dark
-  15  145  68   9   3   149.5   69.5    23    2.7218  0.26972   0.004899    0.63609    1      0.35917  dark
+  id  x    y    w   h   cx      cy      area  aspect  contrast  sharpness  score  meanL    polarity
+  9   195  41   12  11  200.61  46.57   99    1.0126  0.43263   0.30227    0      0.69584  bright
+  11  223  49   7   7   226.5   52.74   41    1.009   0.30224   0.75341    1      0.37417  dark
+  14  39   65   9   4   43.5    67      24    2.51    0.2915    0.6584     1      0.5454   bright
+  40  73   179  5   5   75.59   181.59  22    1.1014  0.2883    0.72838    1      0.31231  dark
+  3   139  14   5   5   141.69  16.36   21    1.0618  0.27529   0.68318    1      0.25507  dark
+  15  145  68   9   3   149.5   69.5    23    2.7218  0.26972   0.63609    1      0.35917  dark
 measured:
   rows: |-
     id  x       y       w  h  cx      cy      area   aspect  r  label  coreMean  ringMean  step      spread    snr      stepR     stepG     stepB     stepChroma  ringCoverage
