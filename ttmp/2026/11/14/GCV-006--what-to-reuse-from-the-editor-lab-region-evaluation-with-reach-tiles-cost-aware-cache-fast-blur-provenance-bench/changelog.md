@@ -13,3 +13,8 @@ Analysis of the Editor lab against goja-cv: sources imported, measurements on a 
 
 - /Users/manuel/code/wesen/go-go-golems/goja-cv/ttmp/2026/11/14/GCV-006--what-to-reuse-from-the-editor-lab-region-evaluation-with-reach-tiles-cost-aware-cache-fast-blur-provenance-bench/design-doc/01-editor-lab-and-goja-cv-analysis-and-design-guide-for-reuse.md — the guide
 
+
+## 2026-11-14
+
+Guide and diary uploaded to reMarkable: /ai/2026/11/14/GCV-006/GCV-006 Editor lab reuse guide
+

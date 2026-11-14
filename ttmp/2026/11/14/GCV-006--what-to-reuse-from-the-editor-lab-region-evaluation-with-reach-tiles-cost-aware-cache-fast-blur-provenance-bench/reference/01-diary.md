@@ -152,7 +152,7 @@ blur and JavaScript layers would pay in Go and goja.
 - The proposals ordered themselves by evidence: region evaluation first (100–1,000× on windows), then tiles, the bench, eviction, the fast blur (gated), provenance.
 
 ### What didn't work
-- N/A
+- First real upload: `Error: pandoc failed: xelatex not found. Please select a different --pdf-engine or install xelatex` (the dry run does not run pandoc). `/Library/TeX/texbin` was missing from this shell's PATH; with `export PATH="/Library/TeX/texbin:$PATH"` the upload printed `OK: uploaded GCV-006 Editor lab reuse guide.pdf -> /ai/2026/11/14/GCV-006`.
 
 ### What I learned
 - goja-cv's speck view hides a global statistic (`levelsAt`, white = 5 × p99) inside a local chain; region evaluation needs such ops split into a statistic and a point op.

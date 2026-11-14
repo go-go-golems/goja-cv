@@ -778,7 +778,7 @@ A missing or short `Reach` fails this test at the window's edge, which is exactl
 cache each tile under `sha256(signature, scale, tx, ty)`. A window is assembled from its tiles, as `Engine.rect`
 does. Overlapping windows, sheets of nearby items and repeated zooms then share tiles.
 
-**Tile size.** goja-cv's reaches are larger than the lab's: the speck view for a 16-pixel size uses σ₂ ≈ 21, a reach
+**Tile size.** goja-cv's reaches are larger than the lab's: the speck view for a 16-pixel size uses σ2 ≈ 21, a reach
 of 64. By the apron formula, 256-pixel tiles then read 2.25 times what they write and 512-pixel tiles 1.56 times.
 Start at 512, keep it a constant, and let the bench decide; the lab's Figure 5.1 shows the best size depends on the
 workload.
