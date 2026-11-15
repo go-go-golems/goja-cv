@@ -193,3 +193,112 @@ the test to what the data supports with a margin and put the measured coverage i
 
 ### Technical details
 - Gold subset: dust with fit radius ≥ 6 px or core max ≥ 98 % of the tile's maximum.
+
+## Step 3: Idle baseline — not possible yet
+
+The idle-machine baseline needs an idle machine. After the pattern rebuilds finished, the load stayed at 15–27:
+another session's Playwright Chromium processes (each near 100 % CPU) and a Node test run, none started here. I did
+not stop them. Every comparison in this ticket was taken old build against new, back to back, so its ratios hold
+under load; the absolute baseline in GCV-006 `reference/02` stays marked "under load" until a quiet run.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 1)
+
+**Assistant interpretation:** Rerun the bench baseline when the machine is quiet.
+
+**Inferred user intent:** Absolute numbers that are not inflated by other work.
+
+### What I did
+- `uptime` and `ps -r` at 22:38–22:47: load 15–27; top processes `Google Chrome for Testing` (Playwright) and `node --test`.
+
+### Why
+- Other sessions' work is not mine to stop.
+
+### What worked
+- N/A
+
+### What didn't work
+- No quiet window yet.
+
+### What I learned
+- Back-to-back old/new runs are the robust comparison on a shared machine; absolute baselines need a scheduled quiet slot.
+
+### What was tricky to build
+- N/A
+
+### What warrants a second pair of eyes
+- N/A
+
+### What should be done in the future
+- Run `goja-cv bench --root DIR --repeat 5 examples/bench/*.js` when the load average is below 2, and replace the
+  GCV-006 baseline tables.
+
+### Code review instructions
+- N/A
+
+### Technical details
+- N/A
+
+## Step 4: Usage evidence for region evaluation
+
+The evidence GCV-006 waited for, collected from what is already on disk: 3,042 annotator evals from 171 agents
+(static counts of their own code), six pi annotator sessions replayed through the bench on the current engine, and a
+real 12.4 MP Epson V600 scan through the zoom and blur patterns. Agents never opened a full scan; their work is
+windows of views over 1,024² tiles, already served from the cache; a whole session spends 1.5–3 s in the engine.
+Region evaluation and the fast Gaussian are not worth building now. The write-up is
+`reference/02-usage-evidence-for-region-evaluation.md`.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 1); earlier: "what's the evidence we are waiting for? when will we get it?"
+
+**Assistant interpretation:** Mine the annotator transcripts and bench a real scan, and say what they mean for GCV-006 Phases 1–2 and 5.
+
+**Inferred user intent:** Decide the large proposals on evidence instead of a synthetic benchmark.
+
+### What I did
+- `scripts/01-usage-evidence.py`: counts patterns in the Sonnet evals (DUST-002 `various/agent-evals/evals.jsonl`) and
+  the pi annotators' `tool_execution_start` code (`~/dustdet/autolabel/pi*/*/events.jsonl`), helper pastes excluded;
+  output in `scripts/01-usage-evidence-output.md`.
+- `scripts/replay/`: six pi sessions as bench scenarios (one eval per `// ---`), run with the DUST helpers as
+  prelude, `--read` the tiles and scripts, three repeats: `replay-bench.json`.
+- `scripts/02-real-scan.js`: `raw0002.dng` through open, stats, the speck view and 19 windows, σ 2 and σ 8 windows;
+  old and new build: `02-real-scan-bench-{old,new}.yaml`.
+
+### Why
+- GCV-006 §11.1 measured a synthetic 24 MP scan; whether that workload exists decides Phases 1–2.
+
+### What worked
+- The pi sessions replay on the current API with the same prelude; their errors are the agents' own (oversized
+  sheets, `cv.ops`, cancelled evals).
+- The real scan reproduces the synthetic picture at half the size: first window of a computation 0.1–0.4 s, later
+  windows 0.3 ms each, stats 1,785 → 294 ms with step 1.
+
+### What didn't work
+- The Sonnet sessions no longer run: they are v1 API (`cv.open has no option "as"`); I used the pi sessions instead.
+- First real-scan run: windows placed for a 6,000 px image (`crop.box = [3711, 2229, 64, 64] is outside the image's
+  frame [0, 0, 3528, 3516]`); positions taken modulo 3,400.
+- pi's tool events carry no timestamps, so original eval durations cannot be read from the logs; the replay measures
+  the engine instead (model time is not included, which is the point).
+
+### What I learned
+- Agents' heavy patterns (zoom, sheets, probes) are windows of one cached whole view, the case goja-cv already makes
+  free. The costs region evaluation removes are first computations, which agents make a handful of per tile.
+
+### What was tricky to build
+- Counting only agent code: the pasted helper library contains every pattern; evals containing it are skipped.
+
+### What warrants a second pair of eyes
+- The regexes count calls in code, not executions (a loop calling `mem.zoom` 20 times counts once per occurrence).
+- All agent evidence is from tile workloads; it cannot say what agents would do with full scans.
+
+### What should be done in the future
+- Revisit Phases 1–2 if agents get full scans.
+
+### Code review instructions
+- `python3 -I scripts/01-usage-evidence.py <evals.jsonl> ~/dustdet/autolabel/pi ~/dustdet/autolabel/pi_annot ~/dustdet/autolabel/pi_annot_run`
+- `goja-cv bench --root WS --read ~/dustdet/cv_tiles --read <DUST-002 scripts> --prelude <84-cv-helpers.js> scripts/replay/*.js`
+
+### Technical details
+- See `reference/02-usage-evidence-for-region-evaluation.md` for the tables.

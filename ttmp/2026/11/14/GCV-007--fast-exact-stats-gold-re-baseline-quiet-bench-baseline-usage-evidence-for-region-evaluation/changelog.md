@@ -14,3 +14,8 @@ Step 1: exact Quantiles, stats 4.8 s -> 0.19 s on 24 MP (commit 04effef)
 
 Step 2: TestRealTopHatSaturated re-baselined (commit d562ddc)
 
+
+## 2026-11-14
+
+Steps 3-4: idle baseline blocked by other sessions' load; usage evidence says region evaluation and fast Gaussian are not worth building now
+
