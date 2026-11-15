@@ -23,6 +23,10 @@ func main() {
 			fmt.Fprintln(os.Stderr, "-bench-scan wants WxH with both at least 64, e.g. 6000x4000")
 			os.Exit(2)
 		}
+		if err := os.MkdirAll(*out, 0o755); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
 		path := filepath.Join(*out, fmt.Sprintf("bench-scan-%dx%d.npy", w, h))
 		if err := testimage.WriteNPY(path, testimage.BenchScan(w, h, w*h/60000), "<f4"); err != nil {
 			fmt.Fprintln(os.Stderr, err)

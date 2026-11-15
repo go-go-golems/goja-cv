@@ -235,8 +235,12 @@ func summarize(file string, evals []benchEval, samples [][]sample, repeats int) 
 		Name: strings.TrimSuffix(filepath.Base(file), filepath.Ext(file)), File: file, Repeats: repeats,
 		PeakRSSMB: round1(float64(peakRSSBytes()) / (1 << 20)),
 	}
+	totals := make([]float64, repeats) // per repeat, the sum of its evals: total_p50_ms is their median
 	for i, ev := range evals {
 		ss := samples[i]
+		for j, s := range ss {
+			totals[j] += s.ms
+		}
 		ms := make([]float64, len(ss))
 		for j, s := range ss {
 			ms[j] = s.ms
@@ -252,10 +256,9 @@ func summarize(file string, evals []benchEval, samples [][]sample, repeats int) 
 				er.Status, er.Error = s.status, s.errorMsg
 			}
 		}
-		rep.TotalP50 += er.P50Ms
 		rep.Evals = append(rep.Evals, er)
 	}
-	rep.TotalP50 = round1(rep.TotalP50)
+	rep.TotalP50 = round1(percentile(totals, 50))
 	return rep
 }
 
