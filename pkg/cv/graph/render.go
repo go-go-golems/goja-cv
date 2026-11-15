@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"math"
+	"time"
 
 	"github.com/go-go-golems/goja-cv/pkg/cv/buffer"
 	"golang.org/x/sync/errgroup"
@@ -213,7 +214,9 @@ func (rr *renderRun) decorate(ctx context.Context, n *Node, win Frame) (Value, e
 		return ins[0], nil
 	}
 	ec := &EvalCtx{Eval: rr.e, Node: n, Scale: rr.s, Window: win}
+	t0 := time.Now()
 	out, err := safeRun(ctx, n.Op, ec, receiverValue(n, ins), args)
+	took := time.Since(t0)
 	if err != nil {
 		return nil, rr.e.wrapWithPath(err, n)
 	}
@@ -226,7 +229,7 @@ func (rr *renderRun) decorate(ctx context.Context, n *Node, win Frame) (Value, e
 		iv = &c
 	}
 	iv.Frame, iv.Enc = win, n.Enc
-	rr.e.countRun(n.ID)
+	rr.e.countRun(n.ID, took)
 	key := rr.key(n, win)
 	if ws := ec.warnings(); len(ws) > 0 {
 		rr.e.keepWarnings(key, ws)

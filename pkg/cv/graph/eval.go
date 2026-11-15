@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"sync"
+	"time"
 
 	"github.com/pkg/errors"
 	"golang.org/x/sync/errgroup"
@@ -64,12 +65,13 @@ type Evaluator struct {
 
 	mu    sync.Mutex
 	runs  map[NodeID]int
+	times map[NodeID]time.Duration // duration of each node's last op run
 	total int
 }
 
 // NewEvaluator wires an evaluator to its graph, cache and sources.
 func NewEvaluator(b *Builder, cache *Cache, sources *SourceStore) *Evaluator {
-	return &Evaluator{b: b, cache: cache, sources: sources, runs: map[NodeID]int{}}
+	return &Evaluator{b: b, cache: cache, sources: sources, runs: map[NodeID]int{}, times: map[NodeID]time.Duration{}}
 }
 
 func (e *Evaluator) Builder() *Builder            { return e.b }
@@ -93,9 +95,18 @@ func (e *Evaluator) TotalRuns() int {
 	return e.total
 }
 
-func (e *Evaluator) countRun(id NodeID) {
+// LastRunTime is how long node id's op took the last time it ran (0 if it
+// never ran). It measures the op's own Run, not its inputs; explain shows it.
+func (e *Evaluator) LastRunTime(id NodeID) time.Duration {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.times[id]
+}
+
+func (e *Evaluator) countRun(id NodeID, d time.Duration) {
 	e.mu.Lock()
 	e.runs[id]++
+	e.times[id] = d
 	e.total++
 	e.mu.Unlock()
 }
@@ -331,7 +342,9 @@ func (r *evalRun) compute(ctx context.Context, n *Node, sig Signature) (Value, e
 		return stamp(n, ins[0], ins), nil // neutral args: the receiver's value (a stamped copy); not cached twice
 	}
 	ec := &EvalCtx{Eval: r.e, Node: n, Scale: r.scale, Window: n.Frame}
+	t0 := time.Now()
 	out, err := safeRun(ctx, n.Op, ec, receiverValue(n, ins), args)
+	took := time.Since(t0)
 	if err != nil {
 		return nil, r.e.wrapWithPath(err, n)
 	}
@@ -339,7 +352,7 @@ func (r *evalRun) compute(ctx context.Context, n *Node, sig Signature) (Value, e
 		return nil, r.e.wrapWithPath(Errorf(EInternal, "%s returned no value", n.Op.Name), n)
 	}
 	out = stamp(n, out, ins)
-	r.e.countRun(n.ID)
+	r.e.countRun(n.ID, took)
 	ws := ec.warnings()
 	r.e.keepWarnings(sig, ws)
 	if !r.e.cache.Put(sig, out) && r.group.onWarn != nil { // too large to cache: nothing to replay, report now

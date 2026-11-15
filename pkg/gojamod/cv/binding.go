@@ -303,7 +303,8 @@ func resultToJS(vm *goja.Runtime, v graph.Value, n *graph.Node) (goja.Value, err
 
 // __explain(id) → { id, kind, op, call, label, frame, space, path, graph }:
 // cv.explain(node), synchronous; it evaluates nothing (graph lists each
-// node's call, kind, size at scale 1 and whether its value is cached).
+// node's call, kind, size at scale 1, whether its value is cached, and its
+// op's last run time).
 func (b *binding) explain(c goja.FunctionCall) goja.Value {
 	n := b.nodeArg(c.Argument(0))
 	d := map[string]any{

@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-go-golems/goja-cv/pkg/cv/buffer"
 )
@@ -257,7 +258,8 @@ func describeArg(b *Builder, n *Node, s *ArgSpec, v any, scale float64) string {
 }
 
 // Explain renders the graph under node id as indented lines with the
-// result kind, its size at scale, and whether it is cached at that scale.
+// result kind, its size at scale, whether it is cached at that scale, and
+// how long the node's op took the last time it ran.
 // It computes no pixels. Nodes reached twice are printed once.
 func (e *Evaluator) Explain(id NodeID, scale float64) []string {
 	root := e.newRun(scale, nil)
@@ -282,6 +284,9 @@ func (e *Evaluator) Explain(id NodeID, scale float64) []string {
 		}
 		if e.cache.Contains(run.sig(id)) {
 			right += "  cached"
+		}
+		if d := e.LastRunTime(id); d > 0 {
+			right += "  " + fmtRunTime(d)
 		}
 		if run.scale != parentScale {
 			right += fmt.Sprintf("  (analysed at scale %s)", fmtNum(run.scale))
@@ -315,4 +320,17 @@ func (e *Evaluator) Explain(id NodeID, scale float64) []string {
 		}
 	}
 	return out
+}
+
+// fmtRunTime prints an op's run time for explain: "0.4 ms", "41 ms", "3.1 s".
+func fmtRunTime(d time.Duration) string {
+	ms := float64(d) / float64(time.Millisecond)
+	switch {
+	case ms < 10:
+		return fmt.Sprintf("%.1f ms", ms)
+	case ms < 1000:
+		return fmt.Sprintf("%.0f ms", ms)
+	default:
+		return fmt.Sprintf("%.1f s", ms/1000)
+	}
 }

@@ -235,10 +235,12 @@ func TestPart2Section3NodesAndEvaluation(t *testing.T) {
 	// as hands its result back in the file's encoding; explain shows both
 	if len(lines) != 4 ||
 		!strings.Contains(lines[0].(string), " gaussian(sigma: 2 px)") ||
-		!strings.HasSuffix(lines[0].(string), "Image 64×48           enc srgb · space encoded") || // never evaluated
+		!strings.Contains(lines[0].(string), "Image 64×48 ") || strings.Contains(lines[0].(string), "cached") || // never evaluated:
+		strings.Contains(lines[0].(string), " ms ") || !strings.HasSuffix(lines[0].(string), "enc srgb · space encoded") || // no run time
 		!strings.HasPrefix(lines[1].(string), "  #4 as(to: \"encoded\")") ||
 		!strings.HasPrefix(lines[2].(string), "    #3 exposure(ev: 0.3)") ||
-		!strings.HasSuffix(lines[2].(string), "Image 64×48  cached   enc srgb · space linear") || // measured above
+		!strings.Contains(lines[2].(string), "Image 64×48  cached  ") || !strings.Contains(lines[2].(string), " ms ") || // measured above
+		!strings.HasSuffix(lines[2].(string), "enc srgb · space linear") ||
 		!strings.HasPrefix(lines[3].(string), "      #2 source gradient-64x48-16bit.tif (linear)") {
 		t.Fatalf("explain: %q", lines)
 	}

@@ -31,7 +31,7 @@ Evaluation happens when you:
 - `await` a node: a Value is evaluated at full resolution and gives its data, Regions give `{ count, items, … }`; an Image gives its summary `{ kind, w, h, encoding, space, frame, … }` (plus file metadata for an opened file) without computing anything;
 - create a look (`node.look()`): every look of an eval is rendered after it.
 
-`await` is the only way to evaluate. `cv.explain(node)` describes a node without evaluating it: id, kind, op, call, frame, encoding, space, path, and `graph`, one line per node (call, kind, size, cached).
+`await` is the only way to evaluate. `cv.explain(node)` describes a node without evaluating it: id, kind, op, call, frame, encoding, space, path, and `graph`, one line per node (call, kind, size, cached, and how long the node's own op took the last time it ran, e.g. `41 ms`: the slow step of a chain is the line with the large time).
 
 ## Options are literal values
 
