@@ -304,13 +304,13 @@ func (w *Workspace) protected(fi os.FileInfo) bool {
 	return false
 }
 
-// Write writes data to rel (from SaveName) in the workspace: never through
-// a symlink, never over a file the session opened and did not write,
-// through a temporary name renamed into place (a failed save leaves the old
-// file). replaced reports whether a file was there.
-func (w *Workspace) Write(rel string, data []byte) (bool, error) {
-	r := w.root.r
-	fi, err := r.Lstat(rel)
+// CheckWrite reports whether Write(rel, …) would replace a file, or the
+// refusal it would give (a symlink, a directory, a file the session opened),
+// without writing anything. A save checks its provenance sidecar's name with
+// it before replacing the file, so a sidecar that cannot be written leaves the
+// old file in place.
+func (w *Workspace) CheckWrite(rel string) (bool, error) {
+	fi, err := w.root.r.Lstat(rel)
 	replaced := err == nil
 	switch {
 	case err != nil && !errors.Is(err, fs.ErrNotExist):
@@ -324,6 +324,19 @@ func (w *Workspace) Write(rel string, data []byte) (bool, error) {
 		return false, Errorf(EAccess, "cv.save(%q) would replace %s, which this session opened.", rel, rel).
 			WithHint("Saves never overwrite an input of the session; save under another name.").
 			WithFix(fmt.Sprintf("cv.save(%q, x)", strings.TrimSuffix(rel, filepath.Ext(rel))+"-out"+filepath.Ext(rel)))
+	}
+	return replaced, nil
+}
+
+// Write writes data to rel (from SaveName) in the workspace: never through
+// a symlink, never over a file the session opened and did not write,
+// through a temporary name renamed into place (a failed save leaves the old
+// file). replaced reports whether a file was there.
+func (w *Workspace) Write(rel string, data []byte) (bool, error) {
+	r := w.root.r
+	replaced, err := w.CheckWrite(rel)
+	if err != nil {
+		return false, err
 	}
 	if dir := filepath.Dir(rel); dir != "." {
 		if err := r.MkdirAll(dir, 0o755); err != nil {

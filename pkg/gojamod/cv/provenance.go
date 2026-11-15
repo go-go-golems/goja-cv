@@ -77,7 +77,11 @@ type ProvenanceSource struct {
 	Path   string `json:"path"` // absolute
 	Size   int64  `json:"size"`
 	MTime  string `json:"mtime"`
-	SHA256 string `json:"sha256"`
+	SHA256 string `json:"sha256,omitempty"`
+	// Changed is set instead of SHA256 when the file is no longer the version
+	// the session opened (its size or modification time differ): the saved
+	// value came from the opened version, whose bytes are gone.
+	Changed string `json:"changed,omitempty"`
 }
 
 // provenanceState is the binding's provenance bookkeeping.
@@ -180,14 +184,21 @@ func (b *binding) stampSave(p *pendingProvenance, data []byte) (string, error) {
 	p.rec.Sources = []ProvenanceSource{}
 	for _, m := range p.sources {
 		src := ProvenanceSource{Name: m.Name, Path: ws.PathOf(m.Loc)}
-		if fi, err := os.Stat(src.Path); err == nil {
+		fi, err := os.Stat(src.Path)
+		switch {
+		case err != nil:
+			src.Changed = "the file is gone or unreadable: " + err.Error()
+		case graph.Stamp(fi) != m.Stamp:
 			src.Size, src.MTime = fi.Size(), fi.ModTime().UTC().Format(time.RFC3339Nano)
+			src.Changed = "the file changed after the session opened it (size or modification time differ); the saved value came from the opened version, so no hash is given"
+		default:
+			src.Size, src.MTime = fi.Size(), fi.ModTime().UTC().Format(time.RFC3339Nano)
+			h, err := b.sourceHash(m)
+			if err != nil {
+				return "", err
+			}
+			src.SHA256 = h
 		}
-		h, err := b.sourceHash(m)
-		if err != nil {
-			return "", err
-		}
-		src.SHA256 = h
 		p.rec.Sources = append(p.rec.Sources, src)
 	}
 	out, err := json.MarshalIndent(p.rec, "", "  ")

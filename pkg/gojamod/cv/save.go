@@ -140,6 +140,9 @@ func (b *binding) save(c goja.FunctionCall) goja.Value {
 			}
 			data, s = out, dataout.Saved{Format: format, Bytes: len(out), Rows: rows}
 		}
+		if _, err := ws.CheckWrite(rel + ProvenanceSuffix); err != nil { // a sidecar that cannot be written: keep the old file
+			return nil, err
+		}
 		replaced, err := ws.Write(rel, data)
 		if err != nil {
 			return nil, err

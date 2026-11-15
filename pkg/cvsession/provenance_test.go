@@ -93,3 +93,41 @@ func TestSaveRefusesSidecarNames(t *testing.T) {
 	app, sid, _ := saveApp(t)
 	mustContain(t, text(eval(t, app, sid, `return await cv.save("x.json.provenance.json", 1)`)), "code: E_ARG_TYPE", "sidecars", "x.json-data.json")
 }
+
+// TestSidecarFailureKeepsTheOldFile: when the sidecar's name cannot be
+// written (here a directory), the save fails before the file is replaced.
+func TestSidecarFailureKeepsTheOldFile(t *testing.T) {
+	app, sid, ws := saveApp(t)
+	mustOK(t, eval(t, app, sid, `return (await cv.save("keep.json", [1])).rows`))
+	if err := os.Remove(filepath.Join(ws, "keep.json"+cvmod.ProvenanceSuffix)); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(ws, "keep.json"+cvmod.ProvenanceSuffix), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	mustContain(t, text(eval(t, app, sid, `return await cv.save("keep.json", [2, 3])`)), "is a directory")
+	if b, _ := os.ReadFile(filepath.Join(ws, "keep.json")); string(b) != "[\n  1\n]\n" && string(b) != "[1]\n" {
+		t.Fatalf("keep.json was replaced: %q", b)
+	}
+}
+
+// TestChangedSourceIsNotHashed: a source replaced after the session read it
+// is reported as changed, not hashed as if it were the version the pixels
+// came from.
+func TestChangedSourceIsNotHashed(t *testing.T) {
+	app, sid, ws := saveApp(t)
+	mustOK(t, eval(t, app, sid, `return (await img.stats()).meanL`)) // decoded: the pixels are the opened version
+	scan := filepath.Join(ws, "scan.tif")
+	b, err := os.ReadFile(scan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(scan, append(b, 0), 0o600); err != nil { // another version under the same name
+		t.Fatal(err)
+	}
+	mustOK(t, eval(t, app, sid, `return (await cv.save("v.tif", img.view("speck"))).path`))
+	p := readSidecar(t, ws, "v.tif")
+	if len(p.Sources) != 1 || p.Sources[0].SHA256 != "" || !strings.Contains(p.Sources[0].Changed, "changed after the session opened it") {
+		t.Fatalf("sources: %+v", p.Sources)
+	}
+}
