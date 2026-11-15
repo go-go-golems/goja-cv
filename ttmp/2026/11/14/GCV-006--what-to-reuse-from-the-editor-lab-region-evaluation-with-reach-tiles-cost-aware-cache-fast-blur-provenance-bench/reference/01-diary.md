@@ -22,6 +22,12 @@ RelatedFiles:
       Note: run time in explain lines
     - Path: repo://pkg/cv/kernels/measure.go
       Note: 'stats kernel: quickselect per plane, the 4.8 s finding'
+    - Path: repo://pkg/cvsession/provenance_test.go
+      Note: sidecar tests
+    - Path: repo://pkg/gojamod/cv/provenance.go
+      Note: provenance sidecars (Phase 6)
+    - Path: repo://pkg/gojamod/cv/save.go
+      Note: save calls the stamping path
     - Path: repo://ttmp/2026/11/14/GCV-006--what-to-reuse-from-the-editor-lab-region-evaluation-with-reach-tiles-cost-aware-cache-fast-blur-provenance-bench/scripts/01-boxblur-vs-gaussian.go
       Note: blur comparison
     - Path: repo://ttmp/2026/11/14/GCV-006--what-to-reuse-from-the-editor-lab-region-evaluation-with-reach-tiles-cost-aware-cache-fast-blur-provenance-bench/scripts/03-window-costs.js
@@ -32,6 +38,9 @@ LastUpdated: 2026-11-14T17:10:00-05:00
 WhatFor: ""
 WhenToUse: ""
 ---
+
+
+
 
 
 
@@ -332,3 +341,84 @@ memory. A generator writes the 24 MP bench scan, and three scenarios ship in `ex
   between evals.
 - Report fields: `p50_ms`, `p95_ms`, `runs`, `cache_hits`, `cache_misses`, `cached_mb`, `status`, `error`; per
   scenario `total_p50_ms`, `peak_rss_mb`.
+
+## Step 6: Phase 6, provenance sidecars on every save
+
+Every `cv.save` now writes `<file>.provenance.json` beside the file. The sidecar records what made the file (the
+goja-cv module, version and VCS revision, a session id, the eval number, and the agent's line of the save), what the
+file is (its bytes and SHA-256), and what it came from: the saved node's path and signature, and every source file
+under the node with its size, mtime and SHA-256. Data saved from JavaScript values has no node, so its sidecar lists
+the sources the session had opened and says `plain`. The save result names the sidecar. An agent cannot save a file
+whose name ends in `.provenance.json`.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 4)
+
+**Assistant interpretation:** Implement Phase 6 (§12.6): provenance sidecars on saves, with the decision "a sidecar for every save" now accepted.
+
+**Inferred user intent:** Make every saved artefact, DUST labels included, traceable to the scan, the code and the script line that produced it.
+
+**Commit (code):** a1f29bd — "Provenance sidecars: every cv.save writes <file>.provenance.json (…) (GCV-006 Phase 6)"
+
+### What I did
+- `pkg/gojamod/cv/provenance.go`: `Provenance` and its parts; `beginProvenance` (owner goroutine: mapped site, eval
+  number, node path, scale-1 signature, a walk of `Inputs` collecting `open` nodes' `SourceMeta`, or the session's
+  opened sources for plain data); `stampSave` (save goroutine: bytes hash, source hashes, JSON, `ws.Write` of the
+  sidecar); `sourceHash` (once per session per location and stamp); `buildInfo` (`runtime/debug.ReadBuildInfo`);
+  `SetSiteMapper`.
+- `pkg/gojamod/cv/save.go`: refuses `*.provenance.json` names (`E_ARG_TYPE`, fix `…-data.json`); calls
+  `beginProvenance` before `startSave` and `stampSave` after the file is written. `binding.go`: `prov` state;
+  `evaltrack.go`: `BeginEval` counts evals.
+- `pkg/cv/dataout/save.go`: `Saved.Provenance`, `provenance` in the JS result.
+- `pkg/cvsession/session.go`: installs the site mapper (eval-cell lines past the one-line wrapper).
+- `pkg/cvsession/provenance_test.go`: sidecar fields and hashes, agent line 3, eval 2, equal signatures for the same
+  value and different ones for another; plain data; refused names. `pkg/cv/docs/topics/13-data-out.md`: the sidecar.
+
+### Why
+- The lineage-ledger lessons (vault chapter 11, construction experiments): one stamping path every creating path goes
+  through, and a sidecar that names what the file was made from, not only the save's own inputs.
+
+### What worked
+- The node walk over `Inputs` finds the sources of views, macros and builder lambdas alike (the speck view's sidecar
+  lists `scan.tif` once).
+- A built binary embeds the VCS revision: `"vcs_revision": "b7046743…", "vcs_modified": true` (the work tree had the
+  uncommitted Phase 6 change), version `v0.0.0-20261115005911-b7046743a769+dirty`.
+- Mutation check of the line test: with the site mapper disabled the test fails with `Site:{Script: Line:4}`
+  (want 3); restored, it passes.
+
+### What didn't work
+- First test draft used a `mustFail` helper that does not exist in the package (`undefined: mustFail`); the existing
+  tests check failures with `text(eval(...))` and `code: …`, which I used instead.
+
+### What I learned
+- Line numbers of eval cells are the wrapped source's; only the session layer knows the wrapper, so the `cv` module
+  needs a hook (`SetSiteMapper`) to record the agent's line. The E_DUPLICATE message in `save.go` reports
+  `site.Line` raw; check whether the processor maps it (not changed here).
+
+### What was tricky to build
+- Ordering between goroutines: the graph, the binding's opened list and the runtime's call stack may only be read on
+  the owner goroutine, so everything except hashing and writing happens before `startSave`; the save goroutine only
+  hashes, marshals and writes.
+- A sidecar that fails to write fails the save, after the file itself was written: the file then exists without
+  provenance, and the eval fails with the sidecar's error. Writing the sidecar first would leave a sidecar for a file
+  that may not exist; I chose the failing eval as the louder signal.
+
+### What warrants a second pair of eyes
+- Source paths in the sidecar are absolute (`/Users/…`): useful for audits, but they leak the machine's layout into
+  saved artefacts that may be shared.
+- Hashing a large source (288 MB) costs about 0.3 s on the first save of a session; later saves reuse the hash.
+- Plain data lists every source the session opened, which over-approximates what the data came from.
+
+### What should be done in the future
+- DUST scripts that read saved labels can now check the sidecar; a small `cv`-side reader (`cv.provenance(path)`)
+  could come later if agents need it.
+
+### Code review instructions
+- `pkg/gojamod/cv/provenance.go`, then the two calls in `save.go`; `pkg/cvsession/provenance_test.go`.
+- `GOWORK=off go test ./pkg/cvsession/ -run 'Provenance|SidecarNames' -v`; `make lint`; `make smoke`.
+
+### Technical details
+- Sidecar schema `goja-cv/provenance/1`: `schema, file, bytes, sha256, at, goja_cv{module, version, vcs_revision,
+  vcs_modified}, session, eval, site{script, line}, node{path, signature} | data, sources[{name, path, size, mtime,
+  sha256}]`.
