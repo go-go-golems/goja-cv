@@ -463,11 +463,11 @@ the session's one-line wrapper. The save now records `agentSite(site).Line`, the
 - N/A
 
 ### What warrants a second pair of eyes
-- Other places in `pkg/gojamod/cv` that print `site.Line` into messages directly (grep `site.Line`); only the
-  duplicate-save one was checked.
+- N/A. Audited: the other `site.Line` uses (`save.go` failure stacks) build an Error stack that the session maps
+  to agent lines itself; only the duplicate-save message formatted the raw line.
 
 ### What should be done in the future
-- Audit the remaining `site.Line` uses.
+- N/A
 
 ### Code review instructions
 - `GOWORK=off go test ./pkg/cvsession/ -run TestSaveRefusals -v`.
