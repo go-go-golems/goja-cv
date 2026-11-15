@@ -5,6 +5,7 @@ import (
 	"math"
 
 	"github.com/go-go-golems/goja-cv/pkg/cv/buffer"
+	"github.com/go-go-golems/goja-cv/pkg/cv/parallel"
 	"github.com/pkg/errors"
 )
 
@@ -51,19 +52,23 @@ func Stats(ctx context.Context, b *buffer.Buffer, lum []float32, percentiles []f
 	if err != nil {
 		return nil, err
 	}
-	scratch := make([]float32, n)
-	if res.L, err = channelStats(ctx, lum, scratch, percentiles); err != nil {
-		return nil, err
-	}
+	planes := [][]float32{lum} // luminance, then each channel of a colour image
 	if b.C > 1 {
 		for c := 0; c < b.C; c++ {
-			copy(scratch, b.Plane(c))
-			cs, err := channelStats(ctx, b.Plane(c), scratch, percentiles)
-			if err != nil {
-				return nil, err
-			}
-			res.Channels = append(res.Channels, cs)
+			planes = append(planes, b.Plane(c))
 		}
+	}
+	got := make([]ChannelStats, len(planes))
+	if err := parallel.Each(ctx, len(planes), func(i int) error { // planes in parallel; each plane's sums in order
+		cs, err := channelStats(ctx, planes[i], percentiles)
+		got[i] = cs
+		return err
+	}); err != nil {
+		return nil, err
+	}
+	res.L = got[0]
+	if b.C > 1 {
+		res.Channels = got[1:]
 	}
 	var lo, hi int
 	for i := 0; i < n; i++ {
@@ -84,13 +89,12 @@ func Stats(ctx context.Context, b *buffer.Buffer, lum []float32, percentiles []f
 	return res, nil
 }
 
-// channelStats measures plane; scratch (same length) is reordered by
-// selection.
-func channelStats(ctx context.Context, plane, scratch []float32, percentiles []float64) (ChannelStats, error) {
+// channelStats measures plane without modifying it (Quantiles: exact, no
+// copy, no reordering).
+func channelStats(ctx context.Context, plane []float32, percentiles []float64) (ChannelStats, error) {
 	if err := ctx.Err(); err != nil {
 		return ChannelStats{}, err
 	}
-	copy(scratch, plane)
 	var cs ChannelStats
 	var sum float64
 	var lo, hi int
@@ -105,12 +109,12 @@ func channelStats(ctx context.Context, plane, scratch []float32, percentiles []f
 	}
 	n := float64(len(plane))
 	cs.Mean, cs.ClipLow, cs.ClipHigh = sum/n, float64(lo)/n, float64(hi)/n
-	cs.P01 = Percentile(scratch, 0.01)
-	cs.Median = Percentile(scratch, 0.5)
-	cs.P99 = Percentile(scratch, 0.99)
-	for _, p := range percentiles {
-		cs.Percentiles = append(cs.Percentiles, Percentile(scratch, p))
+	q, err := Quantiles(ctx, plane, append([]float64{0.01, 0.5, 0.99}, percentiles...))
+	if err != nil {
+		return ChannelStats{}, err
 	}
+	cs.P01, cs.Median, cs.P99 = q[0], q[1], q[2]
+	cs.Percentiles = append(cs.Percentiles, q[3:]...)
 	return cs, ctx.Err()
 }
 

@@ -63,9 +63,11 @@ func toneOps() []graph.OpDef {
 				src := image(in[0])
 				b, w := levelOr(a, "black", 0), levelOr(a, "white", 1)
 				if p, auto := autoPercentiles(a); auto {
-					lum := append([]float32(nil), a.Luma().Buf.Plane(0)...) // the one luminance; Percentile reorders
-					b = kernels.Percentile(lum, p[0])
-					w = kernels.Percentile(lum, p[1])
+					q, err := kernels.Quantiles(ctx, a.Luma().Buf.Plane(0), []float64{p[0], p[1]}) // the one luminance; not modified
+					if err != nil {
+						return nil, err
+					}
+					b, w = q[0], q[1]
 					if !(w > b) {
 						w = b + 1e-6 // a flat window: everything maps to 0
 					}
