@@ -170,3 +170,60 @@ blur and JavaScript layers would pay in Go and goja.
 ### Code review instructions
 - Read the guide's executive summary, then §11 (evidence) and §12.1 (region evaluation).
 - `docmgr doctor --ticket GCV-006 --stale-after 30`.
+
+## Step 4: Decisions after review, folded into the guide
+
+The proposals were reviewed with the user, using evidence the guide did not have when it was written: the
+*Agent-Operated Engines* pattern language in the vault, whose chapter 4 is §12.1 as a pattern, and its validation
+(agents built small region engines with and without the chapter; blind Opus reviewers judged the builds; probes found
+concrete traps). The guide now records which proposals are accepted, which wait for evidence and which are deferred,
+and carries the experiment's lessons into §12.1's precondition.
+
+### Prompt Context
+
+**User prompt (verbatim):** "ok, now oging back to editor-lab, what do you think would make sense to pull into goja-cv? did we already write a ticket and design doc about that?"
+
+Then: "ok, do it. Keep a detailed diary (see skill in ~/.codex/skills) as you work, commit at appropriate intervals."
+
+**Assistant interpretation:** Fold the updated recommendation into GCV-006 (decisions table, lessons), open a PR for the docs, then implement Phase 0 (bench and per-node timing) and Phase 6 (provenance sidecars), keeping this diary step by step and committing per step.
+
+**Inferred user intent:** Turn the analysis into working, measured improvements, starting with the cheap ones that every later decision needs, without committing to the large region-evaluation work before the evidence says it pays.
+
+### What I did
+- `design-doc/01-…`: a decisions paragraph in the executive summary; new §12.7 "Decisions after review" with a status
+  table (3 and 6 accepted; 1 and 5 conditional; 2 and 4 deferred) and six lessons for §12.1 from the construction
+  experiments; the decision records of §12.3 and §12.6 marked `accepted`.
+- `tasks.md`: regrouped into accepted, conditional (with a new task: check annotator transcripts for crops of computed
+  full-size images), deferred and blockers.
+
+### Why
+- §11.1 measured a synthetic 24 MP case. Whether region evaluation pays depends on what agents really do; the DUST
+  annotators mostly worked on tiles. The bench (Phase 0) and the transcripts answer that; until then the large phases
+  stay conditional.
+
+### What worked
+- The experiment's findings map one to one onto §12.1's design points (exactness, footprint, cost rule, statistics,
+  the cut-from-whole path), so the precondition is concrete rather than a general caution.
+
+### What didn't work
+- N/A
+
+### What I learned
+- The pattern experiments' strongest region-evaluation lesson is about tests, not code: tolerance-based invariance
+  tests hid an origin-dependent kernel. The invariance test has to compare bit for bit.
+
+### What was tricky to build
+- N/A (documentation step).
+
+### What warrants a second pair of eyes
+- The conditional status of §12.1: it is the guide's biggest proposal; the user may prefer to commit to it now.
+
+### What should be done in the future
+- Mine the DUST-002 annotator transcripts for crops and windows of computed images (the conditional task).
+
+### Code review instructions
+- Read §12.7 and the executive summary's decisions paragraph; `tasks.md`.
+
+### Technical details
+- Source of the lessons: vault `Research/Software Architecture Garden/general/agent-operated-engines/_validation/LOG.md`
+  step 9 and `reviews/04-o1.json`.

@@ -90,6 +90,8 @@ What to take, in order of value:
 | 5 | **A σ-independent Gaussian for large σ** | `boxSizes`, `gaussBlur` | Large blurs cost the same at σ 32 as at σ 4. | Small code, but changes values by up to 8 % of the signal: gold-gated. |
 | 6 | **Provenance on saved results** | `Provenance`, `meta.source` | Every saved file says which eval, script line, inputs and graph made it; DUST-002 labels become traceable. | Small. |
 
+**Decisions (14 November 2026, §12.7):** the bench and per-node timing (3) and provenance sidecars (6) are accepted and built first. Region evaluation (1) and the fast Gaussian (5) wait for evidence from real agent work; tiles (2) and cost-aware eviction (4) are deferred.
+
 goja-cv already has the lab's runnable documentation blocks, operation introspection, result capping, length units
 that scale with evaluation (the lab's level invariance) and constant-time morphology. It should not take the lab's
 per-pixel JavaScript layers (1.6 s per megapixel in goja), its blend-mode compositing and undo (an editor's
@@ -822,7 +824,7 @@ where to optimise.
 - **Rationale:** scenarios measure what agents feel (eval latency, memory); kernel benchmarks isolate one change. Both
   are needed to accept proposals 1, 2, 4 and 5 on evidence.
 - **Consequences:** the first PR changes no behaviour and records a baseline.
-- **Status:** proposed.
+- **Status:** accepted (14 November 2026, §12.7).
 
 ### 12.4 Cost-aware eviction
 
@@ -892,7 +894,42 @@ calling site (file and line) for its error messages, and `Evaluator.Path` alread
 - **Consequences:** two files per save; the workspace's rule against replacing files the session opened applies to the
   sidecar too. Hashing a 288 MB source costs about 0.3 s, so hash once per source load and keep the hash in the
   `SourceStore`.
-- **Status:** proposed.
+- **Status:** accepted (14 November 2026, §12.7).
+
+### 12.7 Decisions after review (14 November 2026)
+
+The proposals above were reviewed with the user, and with evidence this guide did not have when it was written: a
+pattern language distilled from goja-cv, the lab and the dust pipelines (the vault's *Agent-Operated Engines*,
+chapter 4 "Reach-Declared Region Evaluation" is §12.1 as a pattern), validated by having agents build small region
+engines from the chapter and without it, and by blind design reviews of those builds.
+
+| # | Proposal | Status | Why |
+| --- | --- | --- | --- |
+| 3 | Bench and per-node timing | **accepted, Phase 0** | Every other decision needs before-and-after numbers; per-node time in `explain` helps agents find the slow step. |
+| 6 | Provenance sidecars | **accepted, Phase 6** | Small, independent; makes saved labels traceable. |
+| 1 | Region evaluation | **conditional** | Large; worth it only if agents really crop computed images of full scans. §11.1 measured a synthetic case; the DUST annotators mostly worked on tiles. Decide from the bench and from annotator transcripts. |
+| 5 | Fast Gaussian | **conditional, opt-in** | 4–8 % value change against calibrated thresholds; add as a separate operation only if agents use large σ. |
+| 2 | Tiles | **deferred** | The whole-result cache already serves repeated windows for free. |
+| 4 | Cost-aware eviction | **deferred** | Wait for the bench to show pressure on the 2 GiB cap. |
+
+**Lessons for §12.1, if it goes ahead.** Agents that built region engines from the pattern chapter got exactness and
+economy right more often than those without it, but blind reviewers judged the leaner builds better adapted, and
+probes found these traps:
+
+- **Exact equality, not tolerance.** A prefix-sum box blur computed over a buffer makes a window differ from the
+  whole-image result in the last bits (872 of 941 cells in one build), because the arithmetic depends on where the
+  buffer starts. Tolerance-based invariance tests hid it. `TestRegionInvariance` compares bit for bit.
+- **A footprint guard in tests.** Cut every input, sources included, to the declared reach and fail on a read
+  outside it. Only one of five builds did, and it was the only one whose wrong reach could not pass silently.
+- **Windows one at a time.** The "evaluate whole when a window costs about the whole" rule is per node and per
+  window. One build applied it to the bounding box of two distant windows and computed the whole grid.
+- **Global statistics as ordinary inputs.** `divide(img, stat(img))`: the statistic is an input node evaluated whole,
+  the point half is windowed. This is the split §12.1 already proposes for the speck view.
+- **Keep the best case.** A cached whole value serves later windows; one build lost this and recomputed every window.
+- **No tiles, no cost constant copied from the lab.** The 0.6 threshold is a placeholder until the bench measures the
+  crossover.
+
+**Status of §12.1's decision records:** unchanged (`proposed`), with the precondition above.
 
 ## 13. What goja-cv already has
 

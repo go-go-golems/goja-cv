@@ -18,3 +18,8 @@ Analysis of the Editor lab against goja-cv: sources imported, measurements on a 
 
 Guide and diary uploaded to reMarkable: /ai/2026/11/14/GCV-006/GCV-006 Editor lab reuse guide
 
+
+## 2026-11-14
+
+Step 4: decisions after review (§12.7): bench and provenance accepted; region evaluation and fast Gaussian conditional; tiles and eviction deferred
+
