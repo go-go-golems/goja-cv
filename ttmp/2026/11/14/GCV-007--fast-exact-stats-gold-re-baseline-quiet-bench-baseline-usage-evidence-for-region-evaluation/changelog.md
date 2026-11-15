@@ -9,3 +9,8 @@
 
 Step 1: exact Quantiles, stats 4.8 s -> 0.19 s on 24 MP (commit 04effef)
 
+
+## 2026-11-14
+
+Step 2: TestRealTopHatSaturated re-baselined (commit d562ddc)
+

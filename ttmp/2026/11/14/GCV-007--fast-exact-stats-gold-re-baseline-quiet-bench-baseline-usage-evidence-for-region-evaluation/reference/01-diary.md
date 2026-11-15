@@ -136,3 +136,60 @@ takes 186 ms and returns byte-identical results.
 
 ### Technical details
 - Bench scenario for the end-to-end numbers: open; `crop([3000, 2000, 64, 64]).stats()` (decodes); whole `stats()`.
+
+## Step 2: TestRealTopHatSaturated re-baselined
+
+The test encoded a GCV-005 hypothesis: on saturated or large dust, top-hat components cover at least as many gold
+points as the hot list. Since the gold set grew to 164 such points, the top-hat covers 124 and the hot list 127, so
+the test had failed on main ever since. The hypothesis was refuted by 3 points, not broken by code; I re-baselined
+the test to what the data supports with a margin and put the measured coverage in the spots topic for agents.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 1)
+
+**Assistant interpretation:** Fix or re-baseline the failing gold test so main is green again.
+
+**Inferred user intent:** A suite whose only failure is not "the known one", so a real regression shows.
+
+**Commit (code):** d562ddc — "Re-baseline TestRealTopHatSaturated on the grown gold set: …"
+
+### What I did
+- Read the test and the GCV-005 guide: the claim "top-hat ≥ hot list" was an acceptance criterion
+  (GCV-005 design doc §tests), not something the agent guides promise; they only say the top-hat keeps a saturated
+  speck as a filled blob where the speck view makes a ring.
+- `pkg/cv/ops/peaks_gold_test.go`: new doc comment with the numbers; asserts `peaks [2, 4, 8, 16] ≥ max(top-hat,
+  hot list)` and `top-hat ≥ 0.9 × hot list` (a regression floor).
+- `pkg/cv/docs/topics/15-spots.md`: the measured coverage (124 / 127 / 148 of 164), the advice to include a large
+  radius in `peaks` for saturated dust and to use the top-hat for its shape, and that precision was not measured.
+
+### Why
+- A test that has failed for days hides the next real regression. Changing code to make the top-hat win would chase
+  a number; the honest move is to record what the data says and keep a floor.
+
+### What worked
+- `go test ./...` passes in full, the first time since the gold set grew; numbers unchanged by Step 1 (124/127/148).
+
+### What didn't work
+- N/A
+
+### What I learned
+- On this gold set, `peaks` with a radius of 16 is the best of the three at finding saturated dust (90 %), which the
+  guides did not say.
+
+### What was tricky to build
+- Choosing what to assert: the ordering that holds by a clear margin (peaks over both) plus a floor for the method
+  the guides describe, rather than a ranking within noise (124 vs 127).
+
+### What warrants a second pair of eyes
+- Coverage without precision: `peaks` with radius 16 may also add more false candidates; the guide says so, but the
+  advice leans on coverage only.
+
+### What should be done in the future
+- Measure precision of the three methods on the gold tiles (false candidates per tile) before recommending one.
+
+### Code review instructions
+- `GOWORK=off go test ./pkg/cv/ops/ -run TestRealTopHatSaturated -v` (needs the local gold data).
+
+### Technical details
+- Gold subset: dust with fit radius ≥ 6 px or core max ≥ 98 % of the tile's maximum.
