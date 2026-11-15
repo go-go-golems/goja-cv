@@ -1,0 +1,2322 @@
+{
+  "scenarios": [
+    {
+      "name": "pi__1496ee00c58eed64_1536_1024",
+      "file": "/Users/manuel/code/wesen/go-go-golems/goja-cv/ttmp/2026/11/14/GCV-007--fast-exact-stats-gold-re-baseline-quiet-bench-baseline-usage-evidence-for-region-evaluation/scripts/replay/pi__1496ee00c58eed64_1536_1024.js",
+      "repeats": 3,
+      "total_p50_ms": 1790.4,
+      "peak_rss_mb": 1045.1,
+      "evals": [
+        {
+          "name": "eval 1",
+          "p50_ms": 218,
+          "p95_ms": 227.4,
+          "runs": 15,
+          "cache_hits": 2,
+          "cache_misses": 34,
+          "cached_mb": 116,
+          "status": "ok"
+        },
+        {
+          "name": "eval 2",
+          "p50_ms": 175,
+          "p95_ms": 178.4,
+          "runs": 7,
+          "cache_hits": 8,
+          "cache_misses": 14,
+          "cached_mb": 128.5,
+          "status": "ok"
+        },
+        {
+          "name": "eval 3",
+          "p50_ms": 85.3,
+          "p95_ms": 85.8,
+          "runs": 4,
+          "cache_hits": 60,
+          "cache_misses": 68,
+          "cached_mb": 159,
+          "status": "ok"
+        },
+        {
+          "name": "eval 4",
+          "p50_ms": 0.6,
+          "p95_ms": 0.6,
+          "runs": 2,
+          "cache_hits": 2,
+          "cache_misses": 10,
+          "cached_mb": 161,
+          "status": "ok"
+        },
+        {
+          "name": "eval 5",
+          "p50_ms": 6,
+          "p95_ms": 48.9,
+          "runs": 0,
+          "cache_hits": 0,
+          "cache_misses": 1,
+          "cached_mb": 161,
+          "status": "runtime-error",
+          "error": "promise rejected: The evaluation was cancelled."
+        },
+        {
+          "name": "eval 6",
+          "p50_ms": 40.8,
+          "p95_ms": 64.1,
+          "runs": 3,
+          "cache_hits": 2,
+          "cache_misses": 8,
+          "cached_mb": 167,
+          "status": "ok"
+        },
+        {
+          "name": "eval 7",
+          "p50_ms": 42.6,
+          "p95_ms": 43.5,
+          "runs": 3,
+          "cache_hits": 2,
+          "cache_misses": 8,
+          "cached_mb": 173,
+          "status": "ok"
+        },
+        {
+          "name": "eval 8",
+          "p50_ms": 42.3,
+          "p95_ms": 43,
+          "runs": 2,
+          "cache_hits": 2,
+          "cache_misses": 5,
+          "cached_mb": 178,
+          "status": "ok"
+        },
+        {
+          "name": "eval 9",
+          "p50_ms": 77.3,
+          "p95_ms": 77.6,
+          "runs": 120,
+          "cache_hits": 120,
+          "cache_misses": 240,
+          "cached_mb": 179,
+          "status": "ok"
+        },
+        {
+          "name": "eval 10",
+          "p50_ms": 103.5,
+          "p95_ms": 105.6,
+          "runs": 4,
+          "cache_hits": 24,
+          "cache_misses": 32,
+          "cached_mb": 217.5,
+          "status": "ok"
+        },
+        {
+          "name": "eval 11",
+          "p50_ms": 54.1,
+          "p95_ms": 54.9,
+          "runs": 2,
+          "cache_hits": 24,
+          "cache_misses": 16,
+          "cached_mb": 236.2,
+          "status": "ok"
+        },
+        {
+          "name": "eval 12",
+          "p50_ms": 16.1,
+          "p95_ms": 16.6,
+          "runs": 7,
+          "cache_hits": 6,
+          "cache_misses": 16,
+          "cached_mb": 238.1,
+          "status": "ok"
+        },
+        {
+          "name": "eval 13",
+          "p50_ms": 108.2,
+          "p95_ms": 111.1,
+          "runs": 4,
+          "cache_hits": 60,
+          "cache_misses": 68,
+          "cached_mb": 275.6,
+          "status": "ok"
+        },
+        {
+          "name": "eval 14",
+          "p50_ms": 1.2,
+          "p95_ms": 1.4,
+          "runs": 0,
+          "cache_hits": 0,
+          "cache_misses": 0,
+          "cached_mb": 275.6,
+          "status": "ok"
+        },
+        {
+          "name": "eval 15",
+          "p50_ms": 0.5,
+          "p95_ms": 0.5,
+          "runs": 0,
+          "cache_hits": 0,
+          "cache_misses": 0,
+          "cached_mb": 275.6,
+          "status": "ok"
+        },
+        {
+          "name": "eval 16",
+          "p50_ms": 0.4,
+          "p95_ms": 0.4,
+          "runs": 0,
+          "cache_hits": 0,
+          "cache_misses": 0,
+          "cached_mb": 275.6,
+          "status": "ok"
+        },
+        {
+          "name": "eval 17",
+          "p50_ms": 55,
+          "p95_ms": 55.7,
+          "runs": 7,
+          "cache_hits": 1,
+          "cache_misses": 15,
+          "cached_mb": 331.5,
+          "status": "ok"
+        },
+        {
+          "name": "eval 18",
+          "p50_ms": 57.2,
+          "p95_ms": 57.8,
+          "runs": 5,
+          "cache_hits": 4,
+          "cache_misses": 11,
+          "cached_mb": 347.1,
+          "status": "ok"
+        },
+        {
+          "name": "eval 19",
+          "p50_ms": 73.7,
+          "p95_ms": 74.2,
+          "runs": 11,
+          "cache_hits": 4,
+          "cache_misses": 25,
+          "cached_mb": 373.9,
+          "status": "ok"
+        },
+        {
+          "name": "eval 20",
+          "p50_ms": 447.2,
+          "p95_ms": 448.9,
+          "runs": 13,
+          "cache_hits": 15,
+          "cache_misses": 26,
+          "cached_mb": 385.5,
+          "status": "ok"
+        },
+        {
+          "name": "eval 21",
+          "p50_ms": 57.9,
+          "p95_ms": 60.9,
+          "runs": 2,
+          "cache_hits": 16,
+          "cache_misses": 20,
+          "cached_mb": 407,
+          "status": "ok"
+        },
+        {
+          "name": "eval 22",
+          "p50_ms": 111.6,
+          "p95_ms": 112.7,
+          "runs": 4,
+          "cache_hits": 20,
+          "cache_misses": 24,
+          "cached_mb": 445.3,
+          "status": "runtime-error",
+          "error": "promise rejected: TypeError: Cannot read property 'toFixed' of undefined or null"
+        },
+        {
+          "name": "eval 23",
+          "p50_ms": 27.2,
+          "p95_ms": 27.3,
+          "runs": 32,
+          "cache_hits": 32,
+          "cache_misses": 64,
+          "cached_mb": 445.6,
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "name": "pi__1ce57fe44ccc51bc_512_1024",
+      "file": "/Users/manuel/code/wesen/go-go-golems/goja-cv/ttmp/2026/11/14/GCV-007--fast-exact-stats-gold-re-baseline-quiet-bench-baseline-usage-evidence-for-region-evaluation/scripts/replay/pi__1ce57fe44ccc51bc_512_1024.js",
+      "repeats": 3,
+      "total_p50_ms": 2149.4,
+      "peak_rss_mb": 1046.1,
+      "evals": [
+        {
+          "name": "eval 1",
+          "p50_ms": 229.1,
+          "p95_ms": 237.5,
+          "runs": 15,
+          "cache_hits": 2,
+          "cache_misses": 34,
+          "cached_mb": 116,
+          "status": "ok"
+        },
+        {
+          "name": "eval 2",
+          "p50_ms": 232.9,
+          "p95_ms": 248.1,
+          "runs": 7,
+          "cache_hits": 8,
+          "cache_misses": 14,
+          "cached_mb": 130.9,
+          "status": "ok"
+        },
+        {
+          "name": "eval 3",
+          "p50_ms": 2.3,
+          "p95_ms": 2.4,
+          "runs": 0,
+          "cache_hits": 0,
+          "cache_misses": 0,
+          "cached_mb": 130.9,
+          "status": "ok"
+        },
+        {
+          "name": "eval 4",
+          "p50_ms": 80.2,
+          "p95_ms": 81.7,
+          "runs": 4,
+          "cache_hits": 48,
+          "cache_misses": 56,
+          "cached_mb": 161.9,
+          "status": "ok"
+        },
+        {
+          "name": "eval 5",
+          "p50_ms": 18.4,
+          "p95_ms": 18.6,
+          "runs": 6,
+          "cache_hits": 4,
+          "cache_misses": 17,
+          "cached_mb": 166.6,
+          "status": "ok"
+        },
+        {
+          "name": "eval 6",
+          "p50_ms": 93.2,
+          "p95_ms": 93.5,
+          "runs": 6,
+          "cache_hits": 4,
+          "cache_misses": 16,
+          "cached_mb": 178.6,
+          "status": "ok"
+        },
+        {
+          "name": "eval 7",
+          "p50_ms": 16.8,
+          "p95_ms": 17.1,
+          "runs": 3,
+          "cache_hits": 2,
+          "cache_misses": 9,
+          "cached_mb": 180.9,
+          "status": "ok"
+        },
+        {
+          "name": "eval 8",
+          "p50_ms": 56,
+          "p95_ms": 56.3,
+          "runs": 31,
+          "cache_hits": 30,
+          "cache_misses": 65,
+          "cached_mb": 185.4,
+          "status": "ok"
+        },
+        {
+          "name": "eval 9",
+          "p50_ms": 94.5,
+          "p95_ms": 95.6,
+          "runs": 6,
+          "cache_hits": 4,
+          "cache_misses": 16,
+          "cached_mb": 197.4,
+          "status": "ok"
+        },
+        {
+          "name": "eval 10",
+          "p50_ms": 1.8,
+          "p95_ms": 1.8,
+          "runs": 0,
+          "cache_hits": 0,
+          "cache_misses": 0,
+          "cached_mb": 197.4,
+          "status": "ok"
+        },
+        {
+          "name": "eval 11",
+          "p50_ms": 18.8,
+          "p95_ms": 18.9,
+          "runs": 6,
+          "cache_hits": 4,
+          "cache_misses": 18,
+          "cached_mb": 202,
+          "status": "ok"
+        },
+        {
+          "name": "eval 12",
+          "p50_ms": 2.9,
+          "p95_ms": 2.9,
+          "runs": 3,
+          "cache_hits": 3,
+          "cache_misses": 6,
+          "cached_mb": 202.1,
+          "status": "ok"
+        },
+        {
+          "name": "eval 13",
+          "p50_ms": 1.2,
+          "p95_ms": 1.2,
+          "runs": 0,
+          "cache_hits": 0,
+          "cache_misses": 0,
+          "cached_mb": 202.1,
+          "status": "runtime-error",
+          "error": "promise rejected: cv has no \"ops\"."
+        },
+        {
+          "name": "eval 14",
+          "p50_ms": 1.2,
+          "p95_ms": 1.2,
+          "runs": 0,
+          "cache_hits": 0,
+          "cache_misses": 0,
+          "cached_mb": 202.1,
+          "status": "ok"
+        },
+        {
+          "name": "eval 15",
+          "p50_ms": 1.1,
+          "p95_ms": 1.1,
+          "runs": 0,
+          "cache_hits": 0,
+          "cache_misses": 0,
+          "cached_mb": 202.1,
+          "status": "ok"
+        },
+        {
+          "name": "eval 16",
+          "p50_ms": 21.3,
+          "p95_ms": 21.8,
+          "runs": 0,
+          "cache_hits": 3,
+          "cache_misses": 3,
+          "cached_mb": 209.3,
+          "status": "ok"
+        },
+        {
+          "name": "eval 17",
+          "p50_ms": 196.7,
+          "p95_ms": 198.2,
+          "runs": 6,
+          "cache_hits": 2,
+          "cache_misses": 16,
+          "cached_mb": 239,
+          "status": "ok"
+        },
+        {
+          "name": "eval 18",
+          "p50_ms": 110.4,
+          "p95_ms": 124.6,
+          "runs": 4,
+          "cache_hits": 60,
+          "cache_misses": 68,
+          "cached_mb": 280.3,
+          "status": "ok"
+        },
+        {
+          "name": "eval 19",
+          "p50_ms": 63.6,
+          "p95_ms": 75.5,
+          "runs": 2,
+          "cache_hits": 31,
+          "cache_misses": 35,
+          "cached_mb": 302.5,
+          "status": "ok"
+        },
+        {
+          "name": "eval 20",
+          "p50_ms": 12.9,
+          "p95_ms": 17.9,
+          "runs": 6,
+          "cache_hits": 2,
+          "cache_misses": 15,
+          "cached_mb": 306.2,
+          "status": "ok"
+        },
+        {
+          "name": "eval 21",
+          "p50_ms": 66.1,
+          "p95_ms": 68.8,
+          "runs": 27,
+          "cache_hits": 26,
+          "cache_misses": 57,
+          "cached_mb": 316.5,
+          "status": "ok"
+        },
+        {
+          "name": "eval 22",
+          "p50_ms": 15.2,
+          "p95_ms": 15.6,
+          "runs": 3,
+          "cache_hits": 2,
+          "cache_misses": 9,
+          "cached_mb": 319.3,
+          "status": "ok"
+        },
+        {
+          "name": "eval 23",
+          "p50_ms": 693.3,
+          "p95_ms": 694,
+          "runs": 5,
+          "cache_hits": 7,
+          "cache_misses": 10,
+          "cached_mb": 340.9,
+          "status": "ok"
+        },
+        {
+          "name": "eval 24",
+          "p50_ms": 46.2,
+          "p95_ms": 46.3,
+          "runs": 2,
+          "cache_hits": 18,
+          "cache_misses": 22,
+          "cached_mb": 354.6,
+          "status": "ok"
+        },
+        {
+          "name": "eval 25",
+          "p50_ms": 49.2,
+          "p95_ms": 50,
+          "runs": 2,
+          "cache_hits": 18,
+          "cache_misses": 22,
+          "cached_mb": 368.6,
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "name": "pi__61ba690de9a8be1e_512_15360",
+      "file": "/Users/manuel/code/wesen/go-go-golems/goja-cv/ttmp/2026/11/14/GCV-007--fast-exact-stats-gold-re-baseline-quiet-bench-baseline-usage-evidence-for-region-evaluation/scripts/replay/pi__61ba690de9a8be1e_512_15360.js",
+      "repeats": 3,
+      "total_p50_ms": 2866.4,
+      "peak_rss_mb": 1072.9,
+      "evals": [
+        {
+          "name": "eval 1",
+          "p50_ms": 219.3,
+          "p95_ms": 219.9,
+          "runs": 15,
+          "cache_hits": 2,
+          "cache_misses": 34,
+          "cached_mb": 116,
+          "status": "ok"
+        },
+        {
+          "name": "eval 2",
+          "p50_ms": 223.6,
+          "p95_ms": 225.7,
+          "runs": 7,
+          "cache_hits": 8,
+          "cache_misses": 14,
+          "cached_mb": 130,
+          "status": "ok"
+        },
+        {
+          "name": "eval 3",
+          "p50_ms": 88.4,
+          "p95_ms": 88.5,
+          "runs": 4,
+          "cache_hits": 60,
+          "cache_misses": 68,
+          "cached_mb": 161.3,
+          "status": "ok"
+        },
+        {
+          "name": "eval 4",
+          "p50_ms": 20.5,
+          "p95_ms": 20.8,
+          "runs": 6,
+          "cache_hits": 4,
+          "cache_misses": 18,
+          "cached_mb": 166,
+          "status": "ok"
+        },
+        {
+          "name": "eval 5",
+          "p50_ms": 20.2,
+          "p95_ms": 20.4,
+          "runs": 6,
+          "cache_hits": 4,
+          "cache_misses": 16,
+          "cached_mb": 170.7,
+          "status": "ok"
+        },
+        {
+          "name": "eval 6",
+          "p50_ms": 19.9,
+          "p95_ms": 20,
+          "runs": 6,
+          "cache_hits": 5,
+          "cache_misses": 17,
+          "cached_mb": 175.4,
+          "status": "ok"
+        },
+        {
+          "name": "eval 7",
+          "p50_ms": 20.2,
+          "p95_ms": 20.2,
+          "runs": 6,
+          "cache_hits": 5,
+          "cache_misses": 16,
+          "cached_mb": 180.1,
+          "status": "ok"
+        },
+        {
+          "name": "eval 8",
+          "p50_ms": 19.7,
+          "p95_ms": 19.8,
+          "runs": 6,
+          "cache_hits": 4,
+          "cache_misses": 17,
+          "cached_mb": 184.9,
+          "status": "ok"
+        },
+        {
+          "name": "eval 9",
+          "p50_ms": 1.5,
+          "p95_ms": 1.7,
+          "runs": 0,
+          "cache_hits": 0,
+          "cache_misses": 0,
+          "cached_mb": 184.9,
+          "status": "ok"
+        },
+        {
+          "name": "eval 10",
+          "p50_ms": 75.7,
+          "p95_ms": 78.2,
+          "runs": 4,
+          "cache_hits": 52,
+          "cache_misses": 36,
+          "cached_mb": 207.5,
+          "status": "ok"
+        },
+        {
+          "name": "eval 11",
+          "p50_ms": 18.7,
+          "p95_ms": 19.5,
+          "runs": 6,
+          "cache_hits": 4,
+          "cache_misses": 18,
+          "cached_mb": 211.8,
+          "status": "ok"
+        },
+        {
+          "name": "eval 12",
+          "p50_ms": 1.1,
+          "p95_ms": 1.2,
+          "runs": 2,
+          "cache_hits": 2,
+          "cache_misses": 10,
+          "cached_mb": 213.8,
+          "status": "ok"
+        },
+        {
+          "name": "eval 13",
+          "p50_ms": 1.2,
+          "p95_ms": 1.3,
+          "runs": 2,
+          "cache_hits": 2,
+          "cache_misses": 10,
+          "cached_mb": 215.8,
+          "status": "ok"
+        },
+        {
+          "name": "eval 14",
+          "p50_ms": 41.5,
+          "p95_ms": 42.6,
+          "runs": 2,
+          "cache_hits": 2,
+          "cache_misses": 5,
+          "cached_mb": 220.8,
+          "status": "ok"
+        },
+        {
+          "name": "eval 15",
+          "p50_ms": 1.2,
+          "p95_ms": 1.2,
+          "runs": 0,
+          "cache_hits": 1,
+          "cache_misses": 2,
+          "cached_mb": 220.8,
+          "status": "ok"
+        },
+        {
+          "name": "eval 16",
+          "p50_ms": 1,
+          "p95_ms": 1.1,
+          "runs": 0,
+          "cache_hits": 1,
+          "cache_misses": 2,
+          "cached_mb": 220.8,
+          "status": "ok"
+        },
+        {
+          "name": "eval 17",
+          "p50_ms": 41.1,
+          "p95_ms": 41.9,
+          "runs": 0,
+          "cache_hits": 0,
+          "cache_misses": 1,
+          "cached_mb": 220.8,
+          "status": "runtime-error",
+          "error": "promise rejected: The evaluation was cancelled."
+        },
+        {
+          "name": "eval 18",
+          "p50_ms": 19.5,
+          "p95_ms": 21.4,
+          "runs": 6,
+          "cache_hits": 4,
+          "cache_misses": 17,
+          "cached_mb": 225.5,
+          "status": "ok"
+        },
+        {
+          "name": "eval 19",
+          "p50_ms": 1.9,
+          "p95_ms": 2.2,
+          "runs": 0,
+          "cache_hits": 0,
+          "cache_misses": 0,
+          "cached_mb": 225.5,
+          "status": "ok"
+        },
+        {
+          "name": "eval 20",
+          "p50_ms": 0.9,
+          "p95_ms": 1,
+          "runs": 0,
+          "cache_hits": 0,
+          "cache_misses": 0,
+          "cached_mb": 225.5,
+          "status": "ok"
+        },
+        {
+          "name": "eval 21",
+          "p50_ms": 8.2,
+          "p95_ms": 9,
+          "runs": 2,
+          "cache_hits": 1,
+          "cache_misses": 6,
+          "cached_mb": 226.5,
+          "status": "ok"
+        },
+        {
+          "name": "eval 22",
+          "p50_ms": 20.2,
+          "p95_ms": 21.5,
+          "runs": 6,
+          "cache_hits": 5,
+          "cache_misses": 16,
+          "cached_mb": 231.2,
+          "status": "ok"
+        },
+        {
+          "name": "eval 23",
+          "p50_ms": 18,
+          "p95_ms": 22.5,
+          "runs": 2,
+          "cache_hits": 1,
+          "cache_misses": 4,
+          "cached_mb": 235.2,
+          "status": "runtime-error",
+          "error": "promise rejected: look({ zoom: 2.5 }) of levels (180×700 doc px) would be 1750 px on its long side; looks are at most 1568 px."
+        },
+        {
+          "name": "eval 24",
+          "p50_ms": 128.1,
+          "p95_ms": 129.4,
+          "runs": 5,
+          "cache_hits": 3,
+          "cache_misses": 13,
+          "cached_mb": 253.2,
+          "status": "ok"
+        },
+        {
+          "name": "eval 25",
+          "p50_ms": 72.7,
+          "p95_ms": 74.1,
+          "runs": 6,
+          "cache_hits": 2,
+          "cache_misses": 16,
+          "cached_mb": 265.1,
+          "status": "ok"
+        },
+        {
+          "name": "eval 26",
+          "p50_ms": 45.5,
+          "p95_ms": 47.8,
+          "runs": 5,
+          "cache_hits": 2,
+          "cache_misses": 13,
+          "cached_mb": 278.5,
+          "status": "ok"
+        },
+        {
+          "name": "eval 27",
+          "p50_ms": 37.7,
+          "p95_ms": 39.6,
+          "runs": 4,
+          "cache_hits": 3,
+          "cache_misses": 11,
+          "cached_mb": 284.7,
+          "status": "ok"
+        },
+        {
+          "name": "eval 28",
+          "p50_ms": 28.5,
+          "p95_ms": 33.5,
+          "runs": 5,
+          "cache_hits": 2,
+          "cache_misses": 13,
+          "cached_mb": 289.8,
+          "status": "ok"
+        },
+        {
+          "name": "eval 29",
+          "p50_ms": 42.3,
+          "p95_ms": 43.9,
+          "runs": 2,
+          "cache_hits": 2,
+          "cache_misses": 5,
+          "cached_mb": 294.8,
+          "status": "ok"
+        },
+        {
+          "name": "eval 30",
+          "p50_ms": 2,
+          "p95_ms": 2.2,
+          "runs": 0,
+          "cache_hits": 0,
+          "cache_misses": 0,
+          "cached_mb": 294.8,
+          "status": "ok"
+        },
+        {
+          "name": "eval 31",
+          "p50_ms": 0.9,
+          "p95_ms": 1,
+          "runs": 0,
+          "cache_hits": 0,
+          "cache_misses": 0,
+          "cached_mb": 294.8,
+          "status": "ok"
+        },
+        {
+          "name": "eval 32",
+          "p50_ms": 0.8,
+          "p95_ms": 0.9,
+          "runs": 0,
+          "cache_hits": 0,
+          "cache_misses": 0,
+          "cached_mb": 294.8,
+          "status": "runtime-error",
+          "error": "SyntaxError: SyntaxError: (anonymous): Line 4:53 Unexpected number"
+        },
+        {
+          "name": "eval 33",
+          "p50_ms": 93.3,
+          "p95_ms": 99.7,
+          "runs": 4,
+          "cache_hits": 2,
+          "cache_misses": 10,
+          "cached_mb": 310.3,
+          "status": "ok"
+        },
+        {
+          "name": "eval 34",
+          "p50_ms": 1.2,
+          "p95_ms": 1.2,
+          "runs": 0,
+          "cache_hits": 0,
+          "cache_misses": 0,
+          "cached_mb": 310.3,
+          "status": "ok"
+        },
+        {
+          "name": "eval 35",
+          "p50_ms": 59.8,
+          "p95_ms": 64,
+          "runs": 6,
+          "cache_hits": 0,
+          "cache_misses": 14,
+          "cached_mb": 340.8,
+          "status": "ok"
+        },
+        {
+          "name": "eval 36",
+          "p50_ms": 52.6,
+          "p95_ms": 54,
+          "runs": 7,
+          "cache_hits": 2,
+          "cache_misses": 18,
+          "cached_mb": 357.8,
+          "status": "ok"
+        },
+        {
+          "name": "eval 37",
+          "p50_ms": 14.4,
+          "p95_ms": 14.6,
+          "runs": 4,
+          "cache_hits": 2,
+          "cache_misses": 12,
+          "cached_mb": 359.8,
+          "status": "ok"
+        },
+        {
+          "name": "eval 38",
+          "p50_ms": 41.2,
+          "p95_ms": 41.8,
+          "runs": 2,
+          "cache_hits": 2,
+          "cache_misses": 5,
+          "cached_mb": 364.8,
+          "status": "ok"
+        },
+        {
+          "name": "eval 39",
+          "p50_ms": 1.5,
+          "p95_ms": 1.6,
+          "runs": 0,
+          "cache_hits": 0,
+          "cache_misses": 0,
+          "cached_mb": 364.8,
+          "status": "ok"
+        },
+        {
+          "name": "eval 40",
+          "p50_ms": 19.1,
+          "p95_ms": 19.8,
+          "runs": 6,
+          "cache_hits": 4,
+          "cache_misses": 17,
+          "cached_mb": 369.2,
+          "status": "ok"
+        },
+        {
+          "name": "eval 41",
+          "p50_ms": 19.5,
+          "p95_ms": 20.2,
+          "runs": 6,
+          "cache_hits": 4,
+          "cache_misses": 16,
+          "cached_mb": 373.9,
+          "status": "ok"
+        },
+        {
+          "name": "eval 42",
+          "p50_ms": 19.6,
+          "p95_ms": 20.7,
+          "runs": 6,
+          "cache_hits": 4,
+          "cache_misses": 17,
+          "cached_mb": 378.6,
+          "status": "ok"
+        },
+        {
+          "name": "eval 43",
+          "p50_ms": 84.5,
+          "p95_ms": 86.8,
+          "runs": 6,
+          "cache_hits": 2,
+          "cache_misses": 16,
+          "cached_mb": 403.6,
+          "status": "ok"
+        },
+        {
+          "name": "eval 44",
+          "p50_ms": 24.7,
+          "p95_ms": 24.9,
+          "runs": 2,
+          "cache_hits": 16,
+          "cache_misses": 14,
+          "cached_mb": 410.4,
+          "status": "runtime-error",
+          "error": "promise rejected: cv.sheet needs at least one item."
+        },
+        {
+          "name": "eval 45",
+          "p50_ms": 20.4,
+          "p95_ms": 20.9,
+          "runs": 6,
+          "cache_hits": 4,
+          "cache_misses": 18,
+          "cached_mb": 415.1,
+          "status": "ok"
+        },
+        {
+          "name": "eval 46",
+          "p50_ms": 648.5,
+          "p95_ms": 689.4,
+          "runs": 5,
+          "cache_hits": 7,
+          "cache_misses": 10,
+          "cached_mb": 434.4,
+          "status": "ok"
+        },
+        {
+          "name": "eval 47",
+          "p50_ms": 10.7,
+          "p95_ms": 15.5,
+          "runs": 0,
+          "cache_hits": 0,
+          "cache_misses": 0,
+          "cached_mb": 434.4,
+          "status": "ok"
+        },
+        {
+          "name": "eval 48",
+          "p50_ms": 102.8,
+          "p95_ms": 111.7,
+          "runs": 4,
+          "cache_hits": 60,
+          "cache_misses": 64,
+          "cached_mb": 465,
+          "status": "ok"
+        },
+        {
+          "name": "eval 49",
+          "p50_ms": 32.6,
+          "p95_ms": 37.8,
+          "runs": 4,
+          "cache_hits": 2,
+          "cache_misses": 10,
+          "cached_mb": 468.5,
+          "status": "ok"
+        },
+        {
+          "name": "eval 50",
+          "p50_ms": 70.8,
+          "p95_ms": 75.6,
+          "runs": 96,
+          "cache_hits": 96,
+          "cache_misses": 192,
+          "cached_mb": 469.2,
+          "status": "ok"
+        },
+        {
+          "name": "eval 51",
+          "p50_ms": 71.5,
+          "p95_ms": 80.9,
+          "runs": 96,
+          "cache_hits": 96,
+          "cache_misses": 192,
+          "cached_mb": 470,
+          "status": "ok"
+        },
+        {
+          "name": "eval 52",
+          "p50_ms": 8.7,
+          "p95_ms": 9,
+          "runs": 0,
+          "cache_hits": 0,
+          "cache_misses": 0,
+          "cached_mb": 470,
+          "status": "ok"
+        },
+        {
+          "name": "eval 53",
+          "p50_ms": 25,
+          "p95_ms": 25.9,
+          "runs": 2,
+          "cache_hits": 1,
+          "cache_misses": 6,
+          "cached_mb": 473,
+          "status": "ok"
+        },
+        {
+          "name": "eval 54",
+          "p50_ms": 31.6,
+          "p95_ms": 31.6,
+          "runs": 28,
+          "cache_hits": 28,
+          "cache_misses": 56,
+          "cached_mb": 473.3,
+          "status": "ok"
+        },
+        {
+          "name": "eval 55",
+          "p50_ms": 9.8,
+          "p95_ms": 9.8,
+          "runs": 0,
+          "cache_hits": 0,
+          "cache_misses": 0,
+          "cached_mb": 473.3,
+          "status": "ok"
+        },
+        {
+          "name": "eval 56",
+          "p50_ms": 53.2,
+          "p95_ms": 68.7,
+          "runs": 60,
+          "cache_hits": 60,
+          "cache_misses": 120,
+          "cached_mb": 473.7,
+          "status": "ok"
+        },
+        {
+          "name": "eval 57",
+          "p50_ms": 28.6,
+          "p95_ms": 29.3,
+          "runs": 6,
+          "cache_hits": 4,
+          "cache_misses": 18,
+          "cached_mb": 478.5,
+          "status": "ok"
+        },
+        {
+          "name": "eval 58",
+          "p50_ms": 27.9,
+          "p95_ms": 28.5,
+          "runs": 6,
+          "cache_hits": 5,
+          "cache_misses": 17,
+          "cached_mb": 483.2,
+          "status": "ok"
+        },
+        {
+          "name": "eval 59",
+          "p50_ms": 10.9,
+          "p95_ms": 10.9,
+          "runs": 0,
+          "cache_hits": 0,
+          "cache_misses": 0,
+          "cached_mb": 483.2,
+          "status": "ok"
+        },
+        {
+          "name": "eval 60",
+          "p50_ms": 23.7,
+          "p95_ms": 24.6,
+          "runs": 6,
+          "cache_hits": 4,
+          "cache_misses": 17,
+          "cached_mb": 486.7,
+          "status": "ok"
+        },
+        {
+          "name": "eval 61",
+          "p50_ms": 10,
+          "p95_ms": 10.8,
+          "runs": 0,
+          "cache_hits": 0,
+          "cache_misses": 0,
+          "cached_mb": 486.7,
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "name": "pi__69345e1ba20c5694_2048_3072",
+      "file": "/Users/manuel/code/wesen/go-go-golems/goja-cv/ttmp/2026/11/14/GCV-007--fast-exact-stats-gold-re-baseline-quiet-bench-baseline-usage-evidence-for-region-evaluation/scripts/replay/pi__69345e1ba20c5694_2048_3072.js",
+      "repeats": 3,
+      "total_p50_ms": 2959.1,
+      "peak_rss_mb": 1256.5,
+      "evals": [
+        {
+          "name": "eval 1",
+          "p50_ms": 229.5,
+          "p95_ms": 262.8,
+          "runs": 15,
+          "cache_hits": 2,
+          "cache_misses": 34,
+          "cached_mb": 116,
+          "status": "ok"
+        },
+        {
+          "name": "eval 2",
+          "p50_ms": 222.8,
+          "p95_ms": 292.7,
+          "runs": 7,
+          "cache_hits": 8,
+          "cache_misses": 14,
+          "cached_mb": 130.4,
+          "status": "ok"
+        },
+        {
+          "name": "eval 3",
+          "p50_ms": 83.3,
+          "p95_ms": 98.8,
+          "runs": 4,
+          "cache_hits": 60,
+          "cache_misses": 68,
+          "cached_mb": 161.3,
+          "status": "ok"
+        },
+        {
+          "name": "eval 4",
+          "p50_ms": 19.3,
+          "p95_ms": 20.2,
+          "runs": 6,
+          "cache_hits": 4,
+          "cache_misses": 17,
+          "cached_mb": 165.9,
+          "status": "ok"
+        },
+        {
+          "name": "eval 5",
+          "p50_ms": 19.4,
+          "p95_ms": 19.7,
+          "runs": 6,
+          "cache_hits": 4,
+          "cache_misses": 18,
+          "cached_mb": 170.6,
+          "status": "ok"
+        },
+        {
+          "name": "eval 6",
+          "p50_ms": 19,
+          "p95_ms": 19.1,
+          "runs": 6,
+          "cache_hits": 4,
+          "cache_misses": 17,
+          "cached_mb": 175.2,
+          "status": "ok"
+        },
+        {
+          "name": "eval 7",
+          "p50_ms": 19.5,
+          "p95_ms": 20.6,
+          "runs": 6,
+          "cache_hits": 4,
+          "cache_misses": 17,
+          "cached_mb": 179.8,
+          "status": "ok"
+        },
+        {
+          "name": "eval 8",
+          "p50_ms": 1.3,
+          "p95_ms": 1.5,
+          "runs": 0,
+          "cache_hits": 0,
+          "cache_misses": 0,
+          "cached_mb": 179.8,
+          "status": "runtime-error",
+          "error": "promise rejected: sheet of 15 items: only 8 cells of 360 px fit a 1568 px look."
+        },
+        {
+          "name": "eval 9",
+          "p50_ms": 1.2,
+          "p95_ms": 1.2,
+          "runs": 0,
+          "cache_hits": 0,
+          "cache_misses": 0,
+          "cached_mb": 179.8,
+          "status": "runtime-error",
+          "error": "promise rejected: sheet of 15 items: only 10 cells of 280 px fit a 1568 px look."
+        },
+        {
+          "name": "eval 10",
+          "p50_ms": 58.4,
+          "p95_ms": 59.4,
+          "runs": 2,
+          "cache_hits": 20,
+          "cache_misses": 24,
+          "cached_mb": 203.8,
+          "status": "ok"
+        },
+        {
+          "name": "eval 11",
+          "p50_ms": 1.5,
+          "p95_ms": 1.5,
+          "runs": 0,
+          "cache_hits": 0,
+          "cache_misses": 0,
+          "cached_mb": 203.8,
+          "status": "ok"
+        },
+        {
+          "name": "eval 12",
+          "p50_ms": 59.6,
+          "p95_ms": 59.9,
+          "runs": 2,
+          "cache_hits": 20,
+          "cache_misses": 24,
+          "cached_mb": 228,
+          "status": "ok"
+        },
+        {
+          "name": "eval 13",
+          "p50_ms": 19.4,
+          "p95_ms": 19.8,
+          "runs": 6,
+          "cache_hits": 4,
+          "cache_misses": 17,
+          "cached_mb": 232.7,
+          "status": "ok"
+        },
+        {
+          "name": "eval 14",
+          "p50_ms": 1.2,
+          "p95_ms": 1.3,
+          "runs": 1,
+          "cache_hits": 1,
+          "cache_misses": 5,
+          "cached_mb": 233.7,
+          "status": "ok"
+        },
+        {
+          "name": "eval 15",
+          "p50_ms": 1.2,
+          "p95_ms": 1.3,
+          "runs": 0,
+          "cache_hits": 1,
+          "cache_misses": 2,
+          "cached_mb": 233.7,
+          "status": "ok"
+        },
+        {
+          "name": "eval 16",
+          "p50_ms": 42.1,
+          "p95_ms": 43.1,
+          "runs": 2,
+          "cache_hits": 2,
+          "cache_misses": 5,
+          "cached_mb": 238.7,
+          "status": "ok"
+        },
+        {
+          "name": "eval 17",
+          "p50_ms": 1.2,
+          "p95_ms": 1.2,
+          "runs": 0,
+          "cache_hits": 0,
+          "cache_misses": 0,
+          "cached_mb": 238.7,
+          "status": "ok"
+        },
+        {
+          "name": "eval 18",
+          "p50_ms": 11.4,
+          "p95_ms": 12.6,
+          "runs": 4,
+          "cache_hits": 4,
+          "cache_misses": 10,
+          "cached_mb": 240.6,
+          "status": "ok"
+        },
+        {
+          "name": "eval 19",
+          "p50_ms": 56.5,
+          "p95_ms": 56.9,
+          "runs": 0,
+          "cache_hits": 2,
+          "cache_misses": 2,
+          "cached_mb": 245.9,
+          "status": "ok"
+        },
+        {
+          "name": "eval 20",
+          "p50_ms": 19.1,
+          "p95_ms": 19.7,
+          "runs": 6,
+          "cache_hits": 4,
+          "cache_misses": 16,
+          "cached_mb": 250.5,
+          "status": "ok"
+        },
+        {
+          "name": "eval 21",
+          "p50_ms": 15.2,
+          "p95_ms": 15.3,
+          "runs": 2,
+          "cache_hits": 2,
+          "cache_misses": 4,
+          "cached_mb": 252.4,
+          "status": "ok"
+        },
+        {
+          "name": "eval 22",
+          "p50_ms": 1.5,
+          "p95_ms": 1.5,
+          "runs": 0,
+          "cache_hits": 0,
+          "cache_misses": 0,
+          "cached_mb": 252.4,
+          "status": "ok"
+        },
+        {
+          "name": "eval 23",
+          "p50_ms": 19.2,
+          "p95_ms": 19.5,
+          "runs": 6,
+          "cache_hits": 5,
+          "cache_misses": 17,
+          "cached_mb": 257,
+          "status": "ok"
+        },
+        {
+          "name": "eval 24",
+          "p50_ms": 2,
+          "p95_ms": 2.2,
+          "runs": 0,
+          "cache_hits": 0,
+          "cache_misses": 0,
+          "cached_mb": 257,
+          "status": "ok"
+        },
+        {
+          "name": "eval 25",
+          "p50_ms": 1.1,
+          "p95_ms": 1.3,
+          "runs": 0,
+          "cache_hits": 0,
+          "cache_misses": 0,
+          "cached_mb": 257,
+          "status": "ok"
+        },
+        {
+          "name": "eval 26",
+          "p50_ms": 141.4,
+          "p95_ms": 151.1,
+          "runs": 2,
+          "cache_hits": 2,
+          "cache_misses": 4,
+          "cached_mb": 265.7,
+          "status": "ok"
+        },
+        {
+          "name": "eval 27",
+          "p50_ms": 144.7,
+          "p95_ms": 158.3,
+          "runs": 54,
+          "cache_hits": 54,
+          "cache_misses": 108,
+          "cached_mb": 274.5,
+          "status": "ok"
+        },
+        {
+          "name": "eval 28",
+          "p50_ms": 164.3,
+          "p95_ms": 172.1,
+          "runs": 34,
+          "cache_hits": 34,
+          "cache_misses": 68,
+          "cached_mb": 285.5,
+          "status": "ok"
+        },
+        {
+          "name": "eval 29",
+          "p50_ms": 69.6,
+          "p95_ms": 76.6,
+          "runs": 18,
+          "cache_hits": 18,
+          "cache_misses": 36,
+          "cached_mb": 289.8,
+          "status": "ok"
+        },
+        {
+          "name": "eval 30",
+          "p50_ms": 30.9,
+          "p95_ms": 31.3,
+          "runs": 0,
+          "cache_hits": 2,
+          "cache_misses": 2,
+          "cached_mb": 296.4,
+          "status": "ok"
+        },
+        {
+          "name": "eval 31",
+          "p50_ms": 47,
+          "p95_ms": 47.1,
+          "runs": 0,
+          "cache_hits": 3,
+          "cache_misses": 3,
+          "cached_mb": 305.9,
+          "status": "ok"
+        },
+        {
+          "name": "eval 32",
+          "p50_ms": 138.5,
+          "p95_ms": 145.1,
+          "runs": 40,
+          "cache_hits": 40,
+          "cache_misses": 80,
+          "cached_mb": 314.5,
+          "status": "ok"
+        },
+        {
+          "name": "eval 33",
+          "p50_ms": 20.1,
+          "p95_ms": 27.3,
+          "runs": 0,
+          "cache_hits": 2,
+          "cache_misses": 2,
+          "cached_mb": 318.5,
+          "status": "ok"
+        },
+        {
+          "name": "eval 34",
+          "p50_ms": 44.2,
+          "p95_ms": 59.5,
+          "runs": 3,
+          "cache_hits": 2,
+          "cache_misses": 8,
+          "cached_mb": 324.5,
+          "status": "ok"
+        },
+        {
+          "name": "eval 35",
+          "p50_ms": 60.5,
+          "p95_ms": 63.6,
+          "runs": 2,
+          "cache_hits": 20,
+          "cache_misses": 14,
+          "cached_mb": 344.9,
+          "status": "ok"
+        },
+        {
+          "name": "eval 36",
+          "p50_ms": 63.4,
+          "p95_ms": 107.5,
+          "runs": 2,
+          "cache_hits": 20,
+          "cache_misses": 14,
+          "cached_mb": 365.6,
+          "status": "ok"
+        },
+        {
+          "name": "eval 37",
+          "p50_ms": 72.6,
+          "p95_ms": 74.9,
+          "runs": 2,
+          "cache_hits": 20,
+          "cache_misses": 24,
+          "cached_mb": 390.5,
+          "status": "ok"
+        },
+        {
+          "name": "eval 38",
+          "p50_ms": 19.5,
+          "p95_ms": 19.7,
+          "runs": 2,
+          "cache_hits": 6,
+          "cache_misses": 10,
+          "cached_mb": 397.1,
+          "status": "ok"
+        },
+        {
+          "name": "eval 39",
+          "p50_ms": 44.1,
+          "p95_ms": 44.4,
+          "runs": 3,
+          "cache_hits": 2,
+          "cache_misses": 8,
+          "cached_mb": 403.1,
+          "status": "ok"
+        },
+        {
+          "name": "eval 40",
+          "p50_ms": 1.5,
+          "p95_ms": 1.6,
+          "runs": 0,
+          "cache_hits": 0,
+          "cache_misses": 0,
+          "cached_mb": 403.1,
+          "status": "ok"
+        },
+        {
+          "name": "eval 41",
+          "p50_ms": 1.2,
+          "p95_ms": 1.2,
+          "runs": 0,
+          "cache_hits": 0,
+          "cache_misses": 0,
+          "cached_mb": 403.1,
+          "status": "runtime-error",
+          "error": "SyntaxError: SyntaxError: (anonymous): Line 2:112 Unexpected token for"
+        },
+        {
+          "name": "eval 42",
+          "p50_ms": 92.4,
+          "p95_ms": 96.4,
+          "runs": 5,
+          "cache_hits": 16,
+          "cache_misses": 22,
+          "cached_mb": 425.5,
+          "status": "ok"
+        },
+        {
+          "name": "eval 43",
+          "p50_ms": 1.5,
+          "p95_ms": 1.6,
+          "runs": 0,
+          "cache_hits": 0,
+          "cache_misses": 0,
+          "cached_mb": 425.5,
+          "status": "ok"
+        },
+        {
+          "name": "eval 44",
+          "p50_ms": 19.8,
+          "p95_ms": 20.3,
+          "runs": 6,
+          "cache_hits": 5,
+          "cache_misses": 17,
+          "cached_mb": 430.1,
+          "status": "ok"
+        },
+        {
+          "name": "eval 45",
+          "p50_ms": 19.9,
+          "p95_ms": 20,
+          "runs": 6,
+          "cache_hits": 4,
+          "cache_misses": 17,
+          "cached_mb": 434.7,
+          "status": "ok"
+        },
+        {
+          "name": "eval 46",
+          "p50_ms": 20.1,
+          "p95_ms": 20.2,
+          "runs": 6,
+          "cache_hits": 4,
+          "cache_misses": 16,
+          "cached_mb": 439.3,
+          "status": "ok"
+        },
+        {
+          "name": "eval 47",
+          "p50_ms": 107.7,
+          "p95_ms": 116,
+          "runs": 180,
+          "cache_hits": 180,
+          "cache_misses": 360,
+          "cached_mb": 440.8,
+          "status": "ok"
+        },
+        {
+          "name": "eval 48",
+          "p50_ms": 1.3,
+          "p95_ms": 1.4,
+          "runs": 0,
+          "cache_hits": 0,
+          "cache_misses": 0,
+          "cached_mb": 440.8,
+          "status": "ok"
+        },
+        {
+          "name": "eval 49",
+          "p50_ms": 60.3,
+          "p95_ms": 68,
+          "runs": 2,
+          "cache_hits": 20,
+          "cache_misses": 24,
+          "cached_mb": 465.1,
+          "status": "ok"
+        },
+        {
+          "name": "eval 50",
+          "p50_ms": 60.4,
+          "p95_ms": 60.8,
+          "runs": 2,
+          "cache_hits": 20,
+          "cache_misses": 24,
+          "cached_mb": 488.9,
+          "status": "ok"
+        },
+        {
+          "name": "eval 51",
+          "p50_ms": 28.2,
+          "p95_ms": 29.9,
+          "runs": 2,
+          "cache_hits": 8,
+          "cache_misses": 12,
+          "cached_mb": 500.5,
+          "status": "ok"
+        },
+        {
+          "name": "eval 52",
+          "p50_ms": 40.5,
+          "p95_ms": 41,
+          "runs": 0,
+          "cache_hits": 2,
+          "cache_misses": 2,
+          "cached_mb": 509.5,
+          "status": "ok"
+        },
+        {
+          "name": "eval 53",
+          "p50_ms": 66.1,
+          "p95_ms": 66.8,
+          "runs": 0,
+          "cache_hits": 2,
+          "cache_misses": 2,
+          "cached_mb": 515.6,
+          "status": "ok"
+        },
+        {
+          "name": "eval 54",
+          "p50_ms": 220.9,
+          "p95_ms": 241.6,
+          "runs": 24,
+          "cache_hits": 24,
+          "cache_misses": 48,
+          "cached_mb": 529.5,
+          "status": "ok"
+        },
+        {
+          "name": "eval 55",
+          "p50_ms": 10.4,
+          "p95_ms": 11.1,
+          "runs": 3,
+          "cache_hits": 2,
+          "cache_misses": 9,
+          "cached_mb": 531.8,
+          "status": "ok"
+        },
+        {
+          "name": "eval 56",
+          "p50_ms": 60.7,
+          "p95_ms": 63.4,
+          "runs": 22,
+          "cache_hits": 22,
+          "cache_misses": 44,
+          "cached_mb": 535.4,
+          "status": "ok"
+        },
+        {
+          "name": "eval 57",
+          "p50_ms": 26.7,
+          "p95_ms": 29.6,
+          "runs": 0,
+          "cache_hits": 3,
+          "cache_misses": 3,
+          "cached_mb": 546.2,
+          "status": "ok"
+        },
+        {
+          "name": "eval 58",
+          "p50_ms": 30.5,
+          "p95_ms": 33.4,
+          "runs": 0,
+          "cache_hits": 3,
+          "cache_misses": 3,
+          "cached_mb": 555.8,
+          "status": "ok"
+        },
+        {
+          "name": "eval 59",
+          "p50_ms": 13.2,
+          "p95_ms": 13.6,
+          "runs": 0,
+          "cache_hits": 2,
+          "cache_misses": 2,
+          "cached_mb": 560.8,
+          "status": "ok"
+        },
+        {
+          "name": "eval 60",
+          "p50_ms": 12.7,
+          "p95_ms": 12.8,
+          "runs": 2,
+          "cache_hits": 2,
+          "cache_misses": 4,
+          "cached_mb": 560.8,
+          "status": "runtime-error",
+          "error": "promise rejected: TypeError: Cannot read property 'toFixed' of undefined or null"
+        }
+      ]
+    },
+    {
+      "name": "pi__702691f5c5f280ca_512_1024",
+      "file": "/Users/manuel/code/wesen/go-go-golems/goja-cv/ttmp/2026/11/14/GCV-007--fast-exact-stats-gold-re-baseline-quiet-bench-baseline-usage-evidence-for-region-evaluation/scripts/replay/pi__702691f5c5f280ca_512_1024.js",
+      "repeats": 3,
+      "total_p50_ms": 2032.1,
+      "peak_rss_mb": 1256.6,
+      "evals": [
+        {
+          "name": "eval 1",
+          "p50_ms": 249.8,
+          "p95_ms": 252.8,
+          "runs": 15,
+          "cache_hits": 2,
+          "cache_misses": 34,
+          "cached_mb": 116,
+          "status": "ok"
+        },
+        {
+          "name": "eval 2",
+          "p50_ms": 159,
+          "p95_ms": 162.7,
+          "runs": 7,
+          "cache_hits": 8,
+          "cache_misses": 14,
+          "cached_mb": 128.4,
+          "status": "ok"
+        },
+        {
+          "name": "eval 3",
+          "p50_ms": 86.8,
+          "p95_ms": 87.6,
+          "runs": 4,
+          "cache_hits": 60,
+          "cache_misses": 68,
+          "cached_mb": 159.2,
+          "status": "ok"
+        },
+        {
+          "name": "eval 4",
+          "p50_ms": 18.3,
+          "p95_ms": 18.3,
+          "runs": 6,
+          "cache_hits": 4,
+          "cache_misses": 17,
+          "cached_mb": 163.9,
+          "status": "ok"
+        },
+        {
+          "name": "eval 5",
+          "p50_ms": 21.9,
+          "p95_ms": 22,
+          "runs": 6,
+          "cache_hits": 4,
+          "cache_misses": 17,
+          "cached_mb": 168.2,
+          "status": "ok"
+        },
+        {
+          "name": "eval 6",
+          "p50_ms": 0.6,
+          "p95_ms": 0.6,
+          "runs": 4,
+          "cache_hits": 4,
+          "cache_misses": 20,
+          "cached_mb": 172.2,
+          "status": "ok"
+        },
+        {
+          "name": "eval 7",
+          "p50_ms": 0.5,
+          "p95_ms": 0.5,
+          "runs": 0,
+          "cache_hits": 4,
+          "cache_misses": 8,
+          "cached_mb": 172.2,
+          "status": "ok"
+        },
+        {
+          "name": "eval 8",
+          "p50_ms": 84.3,
+          "p95_ms": 85.7,
+          "runs": 4,
+          "cache_hits": 4,
+          "cache_misses": 10,
+          "cached_mb": 182.2,
+          "status": "ok"
+        },
+        {
+          "name": "eval 9",
+          "p50_ms": 0.8,
+          "p95_ms": 0.8,
+          "runs": 0,
+          "cache_hits": 0,
+          "cache_misses": 0,
+          "cached_mb": 182.2,
+          "status": "ok"
+        },
+        {
+          "name": "eval 10",
+          "p50_ms": 108.4,
+          "p95_ms": 110.4,
+          "runs": 4,
+          "cache_hits": 60,
+          "cache_misses": 68,
+          "cached_mb": 219.9,
+          "status": "ok"
+        },
+        {
+          "name": "eval 11",
+          "p50_ms": 120.9,
+          "p95_ms": 121.6,
+          "runs": 48,
+          "cache_hits": 48,
+          "cache_misses": 98,
+          "cached_mb": 230.3,
+          "status": "ok"
+        },
+        {
+          "name": "eval 12",
+          "p50_ms": 741.4,
+          "p95_ms": 744.4,
+          "runs": 7,
+          "cache_hits": 37,
+          "cache_misses": 44,
+          "cached_mb": 287.3,
+          "status": "ok"
+        },
+        {
+          "name": "eval 13",
+          "p50_ms": 27.1,
+          "p95_ms": 27.7,
+          "runs": 6,
+          "cache_hits": 4,
+          "cache_misses": 17,
+          "cached_mb": 292,
+          "status": "runtime-error",
+          "error": "promise rejected: sheet of 10 items: only 8 cells of 360 px fit a 1568 px look."
+        },
+        {
+          "name": "eval 14",
+          "p50_ms": 8.6,
+          "p95_ms": 8.8,
+          "runs": 0,
+          "cache_hits": 0,
+          "cache_misses": 0,
+          "cached_mb": 292,
+          "status": "runtime-error",
+          "error": "promise rejected: sheet of 4 items: only 3 cells of 480 px fit a 1568 px look."
+        },
+        {
+          "name": "eval 15",
+          "p50_ms": 160.7,
+          "p95_ms": 161.7,
+          "runs": 6,
+          "cache_hits": 18,
+          "cache_misses": 30,
+          "cached_mb": 347.3,
+          "status": "ok"
+        },
+        {
+          "name": "eval 16",
+          "p50_ms": 157.3,
+          "p95_ms": 159.5,
+          "runs": 6,
+          "cache_hits": 18,
+          "cache_misses": 30,
+          "cached_mb": 402.4,
+          "status": "ok"
+        },
+        {
+          "name": "eval 17",
+          "p50_ms": 9.4,
+          "p95_ms": 9.9,
+          "runs": 0,
+          "cache_hits": 0,
+          "cache_misses": 0,
+          "cached_mb": 402.4,
+          "status": "ok"
+        },
+        {
+          "name": "eval 18",
+          "p50_ms": 79.4,
+          "p95_ms": 79.4,
+          "runs": 58,
+          "cache_hits": 62,
+          "cache_misses": 122,
+          "cached_mb": 417.7,
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "name": "pi__d1a55e986363697c_2048_1024",
+      "file": "/Users/manuel/code/wesen/go-go-golems/goja-cv/ttmp/2026/11/14/GCV-007--fast-exact-stats-gold-re-baseline-quiet-bench-baseline-usage-evidence-for-region-evaluation/scripts/replay/pi__d1a55e986363697c_2048_1024.js",
+      "repeats": 3,
+      "total_p50_ms": 1497.3,
+      "peak_rss_mb": 1256.7,
+      "evals": [
+        {
+          "name": "eval 1",
+          "p50_ms": 223.4,
+          "p95_ms": 251.5,
+          "runs": 15,
+          "cache_hits": 2,
+          "cache_misses": 34,
+          "cached_mb": 116,
+          "status": "ok"
+        },
+        {
+          "name": "eval 2",
+          "p50_ms": 219.7,
+          "p95_ms": 275.5,
+          "runs": 7,
+          "cache_hits": 8,
+          "cache_misses": 14,
+          "cached_mb": 129.8,
+          "status": "ok"
+        },
+        {
+          "name": "eval 3",
+          "p50_ms": 89.8,
+          "p95_ms": 97.5,
+          "runs": 4,
+          "cache_hits": 60,
+          "cache_misses": 68,
+          "cached_mb": 160.3,
+          "status": "ok"
+        },
+        {
+          "name": "eval 4",
+          "p50_ms": 19.4,
+          "p95_ms": 24,
+          "runs": 6,
+          "cache_hits": 4,
+          "cache_misses": 17,
+          "cached_mb": 164.4,
+          "status": "ok"
+        },
+        {
+          "name": "eval 5",
+          "p50_ms": 6.8,
+          "p95_ms": 6.9,
+          "runs": 6,
+          "cache_hits": 6,
+          "cache_misses": 12,
+          "cached_mb": 164.5,
+          "status": "ok"
+        },
+        {
+          "name": "eval 6",
+          "p50_ms": 19.2,
+          "p95_ms": 19.4,
+          "runs": 6,
+          "cache_hits": 4,
+          "cache_misses": 18,
+          "cached_mb": 168.6,
+          "status": "ok"
+        },
+        {
+          "name": "eval 7",
+          "p50_ms": 19.8,
+          "p95_ms": 19.9,
+          "runs": 6,
+          "cache_hits": 4,
+          "cache_misses": 16,
+          "cached_mb": 172.8,
+          "status": "ok"
+        },
+        {
+          "name": "eval 8",
+          "p50_ms": 19.7,
+          "p95_ms": 20.1,
+          "runs": 6,
+          "cache_hits": 5,
+          "cache_misses": 16,
+          "cached_mb": 176.9,
+          "status": "ok"
+        },
+        {
+          "name": "eval 9",
+          "p50_ms": 19.2,
+          "p95_ms": 19.3,
+          "runs": 6,
+          "cache_hits": 4,
+          "cache_misses": 16,
+          "cached_mb": 181.1,
+          "status": "ok"
+        },
+        {
+          "name": "eval 10",
+          "p50_ms": 1.4,
+          "p95_ms": 2,
+          "runs": 4,
+          "cache_hits": 4,
+          "cache_misses": 20,
+          "cached_mb": 185.1,
+          "status": "ok"
+        },
+        {
+          "name": "eval 11",
+          "p50_ms": 1.1,
+          "p95_ms": 1.2,
+          "runs": 0,
+          "cache_hits": 1,
+          "cache_misses": 3,
+          "cached_mb": 185.1,
+          "status": "ok"
+        },
+        {
+          "name": "eval 12",
+          "p50_ms": 83.1,
+          "p95_ms": 85.5,
+          "runs": 4,
+          "cache_hits": 4,
+          "cache_misses": 10,
+          "cached_mb": 195.1,
+          "status": "runtime-error",
+          "error": "promise rejected: The evaluation was cancelled."
+        },
+        {
+          "name": "eval 13",
+          "p50_ms": 82.2,
+          "p95_ms": 82.8,
+          "runs": 4,
+          "cache_hits": 4,
+          "cache_misses": 10,
+          "cached_mb": 205.1,
+          "status": "ok"
+        },
+        {
+          "name": "eval 14",
+          "p50_ms": 26.8,
+          "p95_ms": 27.1,
+          "runs": 6,
+          "cache_hits": 4,
+          "cache_misses": 18,
+          "cached_mb": 209.9,
+          "status": "ok"
+        },
+        {
+          "name": "eval 15",
+          "p50_ms": 12.1,
+          "p95_ms": 13,
+          "runs": 6,
+          "cache_hits": 4,
+          "cache_misses": 18,
+          "cached_mb": 212.3,
+          "status": "ok"
+        },
+        {
+          "name": "eval 16",
+          "p50_ms": 18.9,
+          "p95_ms": 19.7,
+          "runs": 6,
+          "cache_hits": 4,
+          "cache_misses": 16,
+          "cached_mb": 216.4,
+          "status": "ok"
+        },
+        {
+          "name": "eval 17",
+          "p50_ms": 19,
+          "p95_ms": 20.2,
+          "runs": 6,
+          "cache_hits": 4,
+          "cache_misses": 17,
+          "cached_mb": 220.6,
+          "status": "ok"
+        },
+        {
+          "name": "eval 18",
+          "p50_ms": 19.9,
+          "p95_ms": 19.9,
+          "runs": 6,
+          "cache_hits": 4,
+          "cache_misses": 18,
+          "cached_mb": 224.7,
+          "status": "ok"
+        },
+        {
+          "name": "eval 19",
+          "p50_ms": 24.1,
+          "p95_ms": 24.6,
+          "runs": 6,
+          "cache_hits": 4,
+          "cache_misses": 18,
+          "cached_mb": 229.4,
+          "status": "ok"
+        },
+        {
+          "name": "eval 20",
+          "p50_ms": 19.1,
+          "p95_ms": 19.7,
+          "runs": 6,
+          "cache_hits": 4,
+          "cache_misses": 18,
+          "cached_mb": 233.6,
+          "status": "ok"
+        },
+        {
+          "name": "eval 21",
+          "p50_ms": 11.4,
+          "p95_ms": 11.6,
+          "runs": 3,
+          "cache_hits": 2,
+          "cache_misses": 9,
+          "cached_mb": 235.5,
+          "status": "ok"
+        },
+        {
+          "name": "eval 22",
+          "p50_ms": 26.6,
+          "p95_ms": 27.5,
+          "runs": 6,
+          "cache_hits": 4,
+          "cache_misses": 17,
+          "cached_mb": 240.7,
+          "status": "ok"
+        },
+        {
+          "name": "eval 23",
+          "p50_ms": 17.4,
+          "p95_ms": 18.3,
+          "runs": 6,
+          "cache_hits": 4,
+          "cache_misses": 17,
+          "cached_mb": 244.8,
+          "status": "ok"
+        },
+        {
+          "name": "eval 24",
+          "p50_ms": 13.5,
+          "p95_ms": 13.7,
+          "runs": 3,
+          "cache_hits": 2,
+          "cache_misses": 9,
+          "cached_mb": 246.9,
+          "status": "ok"
+        },
+        {
+          "name": "eval 25",
+          "p50_ms": 18.5,
+          "p95_ms": 18.7,
+          "runs": 3,
+          "cache_hits": 2,
+          "cache_misses": 9,
+          "cached_mb": 249.3,
+          "status": "ok"
+        },
+        {
+          "name": "eval 26",
+          "p50_ms": 19.9,
+          "p95_ms": 19.9,
+          "runs": 6,
+          "cache_hits": 4,
+          "cache_misses": 16,
+          "cached_mb": 254.2,
+          "status": "ok"
+        },
+        {
+          "name": "eval 27",
+          "p50_ms": 27,
+          "p95_ms": 27.8,
+          "runs": 6,
+          "cache_hits": 4,
+          "cache_misses": 17,
+          "cached_mb": 259.4,
+          "status": "ok"
+        },
+        {
+          "name": "eval 28",
+          "p50_ms": 128.3,
+          "p95_ms": 176.7,
+          "runs": 6,
+          "cache_hits": 84,
+          "cache_misses": 96,
+          "cached_mb": 302.5,
+          "status": "ok"
+        },
+        {
+          "name": "eval 29",
+          "p50_ms": 19.9,
+          "p95_ms": 21,
+          "runs": 6,
+          "cache_hits": 4,
+          "cache_misses": 18,
+          "cached_mb": 307,
+          "status": "ok"
+        },
+        {
+          "name": "eval 30",
+          "p50_ms": 1.2,
+          "p95_ms": 1.2,
+          "runs": 0,
+          "cache_hits": 0,
+          "cache_misses": 0,
+          "cached_mb": 307,
+          "status": "ok"
+        },
+        {
+          "name": "eval 31",
+          "p50_ms": 1,
+          "p95_ms": 1.1,
+          "runs": 0,
+          "cache_hits": 0,
+          "cache_misses": 0,
+          "cached_mb": 307,
+          "status": "ok"
+        },
+        {
+          "name": "eval 32",
+          "p50_ms": 23.5,
+          "p95_ms": 26.3,
+          "runs": 6,
+          "cache_hits": 2,
+          "cache_misses": 14,
+          "cached_mb": 315,
+          "status": "ok"
+        },
+        {
+          "name": "eval 33",
+          "p50_ms": 71.8,
+          "p95_ms": 73.4,
+          "runs": 6,
+          "cache_hits": 2,
+          "cache_misses": 16,
+          "cached_mb": 329.9,
+          "status": "ok"
+        },
+        {
+          "name": "eval 34",
+          "p50_ms": 12.4,
+          "p95_ms": 13.1,
+          "runs": 12,
+          "cache_hits": 12,
+          "cache_misses": 24,
+          "cached_mb": 330,
+          "status": "ok"
+        },
+        {
+          "name": "eval 35",
+          "p50_ms": 45.6,
+          "p95_ms": 49.8,
+          "runs": 68,
+          "cache_hits": 68,
+          "cache_misses": 136,
+          "cached_mb": 330.5,
+          "status": "ok"
+        },
+        {
+          "name": "eval 36",
+          "p50_ms": 38.8,
+          "p95_ms": 39.1,
+          "runs": 6,
+          "cache_hits": 3,
+          "cache_misses": 15,
+          "cached_mb": 334.4,
+          "status": "ok"
+        },
+        {
+          "name": "eval 37",
+          "p50_ms": 55.1,
+          "p95_ms": 67.8,
+          "runs": 6,
+          "cache_hits": 2,
+          "cache_misses": 16,
+          "cached_mb": 340.2,
+          "status": "ok"
+        },
+        {
+          "name": "eval 38",
+          "p50_ms": 21.4,
+          "p95_ms": 21.8,
+          "runs": 6,
+          "cache_hits": 4,
+          "cache_misses": 17,
+          "cached_mb": 344.7,
+          "status": "ok"
+        }
+      ]
+    }
+  ]
+}

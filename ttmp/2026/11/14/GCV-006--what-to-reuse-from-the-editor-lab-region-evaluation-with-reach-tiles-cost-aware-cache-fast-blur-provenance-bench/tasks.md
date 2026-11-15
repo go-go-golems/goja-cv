@@ -15,7 +15,7 @@
 
 ## Conditional (decide from the bench and annotator transcripts)
 
-- [ ] Check annotator transcripts: how often do agents crop computed images of full-size scans?
+- [x] Check annotator transcripts: how often do agents crop computed images of full-size scans? (GCV-007 reference/02: never; agents work on 1,024² tiles; Phases 1-2 and 5 not worth building now)
 - [ ] Phase 1: `OpDef.Reach` for every op, complete `Global` marking, registry test (§12.1)
 - [ ] Phase 2: window evaluation, exact region-invariance test, footprint guard in tests (§12.1, §12.7)
 - [ ] Phase 5: fast Gaussian for large σ as an opt-in op, gold-gated (§12.5)
@@ -27,5 +27,5 @@
 
 ## Blockers
 
-- [ ] Fix or re-baseline `TestRealTopHatSaturated` before Phase 2
-- [ ] New candidate from the baseline: whole-image stats() costs 4.8 s on 24 MP (parallel planes or exact histogram selection; gold-gated) <!-- t:g6zm -->
+- [x] Fix or re-baseline `TestRealTopHatSaturated` before Phase 2 (GCV-007 step 2)
+- [x] New candidate from the baseline: whole-image stats() costs 4.8 s on 24 MP (GCV-007 step 1: 0.19 s) (parallel planes or exact histogram selection; gold-gated) <!-- t:g6zm -->

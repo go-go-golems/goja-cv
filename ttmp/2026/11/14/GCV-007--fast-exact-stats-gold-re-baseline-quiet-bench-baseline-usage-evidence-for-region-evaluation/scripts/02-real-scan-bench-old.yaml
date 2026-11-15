@@ -1,0 +1,55 @@
+scenarios:
+    - name: 02-real-scan
+      file: /Users/manuel/code/wesen/go-go-golems/goja-cv/ttmp/2026/11/14/GCV-007--fast-exact-stats-gold-re-baseline-quiet-bench-baseline-usage-evidence-for-region-evaluation/scripts/02-real-scan.js
+      repeats: 3
+      total_p50_ms: 2585.5
+      peak_rss_mb: 1604.4
+      evals:
+        - name: open (header only)
+          p50_ms: 0.4
+          p95_ms: 1.4
+          runs: 0
+          cache_hits: 0
+          cache_misses: 0
+          cached_mb: 0
+          status: ok
+        - name: whole-image stats (decodes)
+          p50_ms: 1784.8
+          p95_ms: 1824.5
+          runs: 3
+          cache_hits: 0
+          cache_misses: 7
+          cached_mb: 189.3
+          status: ok
+        - name: speck view, first 64 px window
+          p50_ms: 170.1
+          p95_ms: 197.7
+          runs: 8
+          cache_hits: 1
+          cache_misses: 19
+          cached_mb: 473.2
+          status: ok
+        - name: 19 more windows of the speck view
+          p50_ms: 6
+          p95_ms: 7.3
+          runs: 38
+          cache_hits: 19
+          cache_misses: 92
+          cached_mb: 473.5
+          status: ok
+        - name: gaussian 2, 64 px window
+          p50_ms: 107
+          p95_ms: 156.1
+          runs: 4
+          cache_hits: 1
+          cache_misses: 9
+          cached_mb: 615.5
+          status: ok
+        - name: gaussian 8, 64 px window
+          p50_ms: 487.2
+          p95_ms: 547.1
+          runs: 4
+          cache_hits: 1
+          cache_misses: 9
+          cached_mb: 757.6
+          status: ok

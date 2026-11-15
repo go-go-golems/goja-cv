@@ -209,8 +209,11 @@ func levelsAtOp() graph.OpDef {
 		},
 		Run: func(ctx context.Context, _ *graph.EvalCtx, in []graph.Value, a graph.Args) (graph.Value, error) {
 			src := image(in[0])
-			lum := append([]float32(nil), a.Luma().Buf.Plane(0)...) // Percentile reorders; the quantile is the one stats reports
-			w := max(a.Number("times")*kernels.Percentile(lum, a.Number("p")), a.Number("floor"))
+			q, err := kernels.Quantiles(ctx, a.Luma().Buf.Plane(0), []float64{a.Number("p")}) // the quantile stats reports; not modified
+			if err != nil {
+				return nil, err
+			}
+			w := max(a.Number("times")*q[0], a.Number("floor"))
 			out, err := kernels.Levels(ctx, src.Buf, 0, w, 1)
 			if err != nil {
 				return nil, err
