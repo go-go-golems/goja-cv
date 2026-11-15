@@ -728,7 +728,8 @@ func TestRegionInvariance(t *testing.T) {
         full := evaluate(chain(op), nil)                      // whole frame
         for _, w := range windows(frame) {                    // interior, each edge, each corner, 1 × 1, whole
             got := evaluate(chain(op), &w)
-            assertClose(t, cut(full, w), got, 1e-6)           // summation order may differ: tolerance
+            assertEqualBits(t, cut(full, w), got)             // bit for bit (§12.7): a kernel whose result depends
+                                                                  // on the buffer origin must fail here
         }
     }
 }

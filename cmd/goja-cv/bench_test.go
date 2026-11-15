@@ -66,3 +66,16 @@ func TestBenchReportsEvalsRunsAndCache(t *testing.T) {
 		t.Fatalf("broken: %+v", broken)
 	}
 }
+
+// TestTotalIsTheMedianOfRepeatTotals: total_p50_ms is the median of the
+// per-repeat sums, not the sum of per-eval medians.
+func TestTotalIsTheMedianOfRepeatTotals(t *testing.T) {
+	evals := []benchEval{{name: "a"}, {name: "b"}}
+	samples := [][]sample{
+		{{ms: 100, status: "ok"}, {ms: 1, status: "ok"}, {ms: 1, status: "ok"}},
+		{{ms: 1, status: "ok"}, {ms: 100, status: "ok"}, {ms: 1, status: "ok"}},
+	}
+	if got := summarize("s.js", evals, samples, 3).TotalP50; got != 101 {
+		t.Fatalf("total p50 = %v, want 101 (repeat totals 101, 101, 2)", got)
+	}
+}

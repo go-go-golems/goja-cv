@@ -157,7 +157,8 @@ goja-cv bench --root /tmp/cv-bench --json examples/bench/scan-probe.js
 lines `// --- name`; the evals run in order in one session (keep values on `mem`), and the whole scenario is repeated
 `--repeat` times, each repeat in a fresh session so it starts cold. Per eval the report gives `p50_ms` and `p95_ms`
 over the repeats, the op `runs`, `cache_hits` and `cache_misses` the eval caused, and `cached_mb` after it; per
-scenario, `peak_rss_mb`, the process's peak resident memory so far. A failing eval is reported with its error and
+scenario, `total_p50_ms` (the median over repeats of each repeat's total) and `peak_rss_mb`, the process's peak
+resident memory so far. A failing eval is reported with its error and
 does not stop the scenario. `--root`, `--read`, `--image`, `--prelude` and `--timeout-ms` work as for `eval`.
 
 The shipped scenarios in `examples/bench/` use the generated 24-megapixel bench scan. `cv.explain(node).graph` shows
