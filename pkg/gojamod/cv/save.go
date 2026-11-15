@@ -72,6 +72,11 @@ func (b *binding) save(c goja.FunctionCall) goja.Value {
 	if err != nil {
 		b.throw(err)
 	}
+	if strings.HasSuffix(rel, ProvenanceSuffix) {
+		b.throw(graph.Errorf(graph.EArgType, "cv.save(%q): names ending in %s are the sidecars every save writes beside its file.", path, ProvenanceSuffix).
+			WithHint("Save the data under another name; its provenance is written beside it.").
+			WithFix(fmt.Sprintf("await cv.save(%q, x)", strings.TrimSuffix(rel, ProvenanceSuffix)+"-data.json")))
+	}
 	format, err := dataout.FormatOf(rel)
 	if err != nil {
 		b.throw(err)
@@ -108,9 +113,10 @@ func (b *binding) save(c goja.FunctionCall) goja.Value {
 				WithHint("One save per path per eval: save another name, or save once.").
 				WithFix(fmt.Sprintf("await cv.save(%q, x)", withSuffix(rel, "-2"))))
 		}
-		b.track.saved[rel] = site.Line
+		b.track.saved[rel] = b.agentSite(site).Line // the agent's line, as in the error's where
 	}
 	b.mu.Unlock()
+	prov := b.beginProvenance(rel, site, node)
 	return b.startSave(rel, site, func(ctx context.Context, warn func(graph.Warning)) (any, error) {
 		var data []byte
 		var s dataout.Saved
@@ -134,11 +140,17 @@ func (b *binding) save(c goja.FunctionCall) goja.Value {
 			}
 			data, s = out, dataout.Saved{Format: format, Bytes: len(out), Rows: rows}
 		}
+		if _, err := ws.CheckWrite(rel + ProvenanceSuffix); err != nil { // a sidecar that cannot be written: keep the old file
+			return nil, err
+		}
 		replaced, err := ws.Write(rel, data)
 		if err != nil {
 			return nil, err
 		}
 		s.Path, s.Replaced = rel, replaced
+		if s.Provenance, err = b.stampSave(prov, data); err != nil {
+			return nil, err
+		}
 		return s.Data(), nil
 	})
 }

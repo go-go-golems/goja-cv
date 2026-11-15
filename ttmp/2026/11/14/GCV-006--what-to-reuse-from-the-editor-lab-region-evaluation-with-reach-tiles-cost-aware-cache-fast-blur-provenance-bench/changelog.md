@@ -28,3 +28,8 @@ Step 4: decisions after review (§12.7): bench and provenance accepted; region e
 
 Step 5: Phase 0 — per-node run time in explain, goja-cv bench, 24 MP bench scan, baseline (commits 283f9bc, 79a3a3a)
 
+
+## 2026-11-14
+
+Step 6: Phase 6 — provenance sidecars on every save (commit a1f29bd)
+

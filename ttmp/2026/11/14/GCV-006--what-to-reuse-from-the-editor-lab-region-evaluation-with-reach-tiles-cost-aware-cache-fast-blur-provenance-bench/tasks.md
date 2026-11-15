@@ -11,7 +11,7 @@
 ## Accepted (14 November 2026, design doc §12.7)
 
 - [x] Phase 0: bench harness and per-node timing (§12.3)
-- [ ] Phase 6: provenance sidecars on saves (§12.6)
+- [x] Phase 6: provenance sidecars on saves (§12.6)
 
 ## Conditional (decide from the bench and annotator transcripts)
 

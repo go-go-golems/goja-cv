@@ -78,6 +78,7 @@ func BeginEval(vm *goja.Runtime, ctx context.Context) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.track = tracker{active: true, ctx: ctx, saved: map[string]int{}}
+	b.prov.evals++
 	b.unhandled, b.unhandledOrder = nil, nil
 	return true
 }
