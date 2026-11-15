@@ -2,7 +2,7 @@ module github.com/go-go-golems/goja-cv
 
 go 1.26.1
 
-toolchain go1.26.10
+toolchain go1.26.11
 
 require (
 	github.com/dop251/goja v0.0.0-20261103151521-97b96e1e55f5

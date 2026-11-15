@@ -14,11 +14,11 @@ import (
 	"math"
 	"math/rand"
 	"runtime"
-	"sync"
 	"time"
 
 	"github.com/go-go-golems/goja-cv/pkg/cv/buffer"
 	"github.com/go-go-golems/goja-cv/pkg/cv/kernels"
+	"golang.org/x/sync/errgroup"
 )
 
 // boxSizes is the Editor lab's engine.js boxSizes (Kovesi 2010): n box widths
@@ -82,13 +82,12 @@ func boxBlur3(p []float32, w, h int, sigma float64) []float32 {
 	b := make([]float32, len(p))
 	bands := func(n int, f func(lo, hi int)) { // split [0, n) over the CPUs
 		k := runtime.GOMAXPROCS(0)
-		var wg sync.WaitGroup
+		var g errgroup.Group
 		for i := 0; i < k; i++ {
 			lo, hi := n*i/k, n*(i+1)/k
-			wg.Add(1)
-			go func() { defer wg.Done(); f(lo, hi) }()
+			g.Go(func() error { f(lo, hi); return nil })
 		}
-		wg.Wait()
+		_ = g.Wait() // the bands return no errors
 	}
 	for _, r := range radii { // horizontal passes, rows in parallel
 		src, dst := a, b
