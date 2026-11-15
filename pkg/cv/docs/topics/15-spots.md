@@ -49,6 +49,8 @@ const blobs = await th.mask.luminance({ above }).components({ minArea: 4 })
 return blobs.slice(0, 5).map(({ id, cx, cy, area }) => ({ id, cx, cy, area }))
 ```
 
+On the DUST gold tiles, of 164 saturated or large dust points (radius ≥ 6 px or a core near the tile's maximum), top-hat components found 124, the hot list 127, and `peaks` with radii `[2, 4, 8, 16]` found 148: for finding saturated dust, include a large radius in `peaks`; use the top-hat for its shape (a filled blob, not a ring). Coverage only: how many false candidates each adds was not measured.
+
 Dark things: the black top-hat `x.dilate(r).erode(r).sub(x)`. `cv.help("opening")`, `cv.help("tophat")` give the compositions.
 
 ## Removing lines
