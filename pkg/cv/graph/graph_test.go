@@ -367,8 +367,15 @@ func TestExplain(t *testing.T) {
 			t.Fatalf("line %d = %q, want prefix %q", i, lines[i], w)
 		}
 	}
-	if !strings.HasSuffix(lines[1], "Image 200×100  cached") || strings.HasSuffix(lines[0], "cached") {
+	if !strings.Contains(lines[1], "Image 200×100  cached") || strings.Contains(lines[0], "cached") {
 		t.Fatalf("cache markers: %q", lines)
+	}
+	// the evaluated nodes show their op's last run time; the unevaluated root does not
+	if !strings.HasSuffix(lines[1], " ms") || strings.HasSuffix(lines[0], " ms") {
+		t.Fatalf("run times: %q", lines)
+	}
+	if e.Evaluator().LastRunTime(a.ID) <= 0 || e.Evaluator().LastRunTime(r.ID) != 0 {
+		t.Fatalf("LastRunTime: %v %v", e.Evaluator().LastRunTime(a.ID), e.Evaluator().LastRunTime(r.ID))
 	}
 }
 

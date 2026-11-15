@@ -23,3 +23,8 @@ Guide and diary uploaded to reMarkable: /ai/2026/11/14/GCV-006/GCV-006 Editor la
 
 Step 4: decisions after review (§12.7): bench and provenance accepted; region evaluation and fast Gaussian conditional; tiles and eviction deferred
 
+
+## 2026-11-14
+
+Step 5: Phase 0 — per-node run time in explain, goja-cv bench, 24 MP bench scan, baseline (commits 283f9bc, 79a3a3a)
+

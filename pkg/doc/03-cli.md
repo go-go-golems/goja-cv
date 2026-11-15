@@ -144,3 +144,22 @@ goja-cv mcp --http 127.0.0.1:3092 --root ./work --image ./work/scan.tif
 - `--log-level debug` logs to stderr (stdout carries the protocol).
 
 See `goja-cv help agents` for what the agent gets, and the setup pages for each client.
+
+## bench
+
+```bash
+go run ./internal/testimage/gen -out /tmp/cv-bench -bench-scan 6000x4000
+goja-cv bench --root /tmp/cv-bench --repeat 3 examples/bench/big-blur.js examples/bench/scan-zoom.js
+goja-cv bench --root /tmp/cv-bench --json examples/bench/scan-probe.js
+```
+
+`goja-cv bench SCENARIO.js...` times agent-like sequences of evals. A scenario is a script split into evals by
+lines `// --- name`; the evals run in order in one session (keep values on `mem`), and the whole scenario is repeated
+`--repeat` times, each repeat in a fresh session so it starts cold. Per eval the report gives `p50_ms` and `p95_ms`
+over the repeats, the op `runs`, `cache_hits` and `cache_misses` the eval caused, and `cached_mb` after it; per
+scenario, `total_p50_ms` (the median over repeats of each repeat's total) and `peak_rss_mb`, the process's peak
+resident memory so far. A failing eval is reported with its error and
+does not stop the scenario. `--root`, `--read`, `--image`, `--prelude` and `--timeout-ms` work as for `eval`.
+
+The shipped scenarios in `examples/bench/` use the generated 24-megapixel bench scan. `cv.explain(node).graph` shows
+the same per-node cost from inside an eval: each evaluated node's line ends with its op's last run time.

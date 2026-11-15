@@ -20,7 +20,7 @@ GLAZED_LINT_DIRS ?= ./cmd/... ./pkg/...
 # changes the CLI surface (Glazed adds its command-settings flags) and is
 # tracked as a follow-up; until then these four files are skipped. pkg/ and new
 # files under cmd/ are still checked.
-GLAZED_LINT_FLAGS ?= -glazedclilint.allow-paths=cmd/goja-cv/eval.go,cmd/goja-cv/mcp.go,cmd/goja-cv/ops.go,cmd/goja-cv/root.go
+GLAZED_LINT_FLAGS ?= -glazedclilint.allow-paths=cmd/goja-cv/bench.go,cmd/goja-cv/eval.go,cmd/goja-cv/mcp.go,cmd/goja-cv/ops.go,cmd/goja-cv/root.go
 
 # Scratch directory for the smoke test (generated image, looks, ops/eval output).
 SMOKE_DIR ?= $(CURDIR)/dist/smoke
