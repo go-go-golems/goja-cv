@@ -422,3 +422,55 @@ whose name ends in `.provenance.json`.
 - Sidecar schema `goja-cv/provenance/1`: `schema, file, bytes, sha256, at, goja_cv{module, version, vcs_revision,
   vcs_modified}, session, eval, site{script, line}, node{path, signature} | data, sources[{name, path, size, mtime,
   sha256}]`.
+
+## Step 7: E_DUPLICATE reported the wrapped line
+
+Recording the agent's line in provenance showed an older off-by-one: `E_DUPLICATE` said "this eval already saves
+t.json (line 2)" when the first save was on the agent's line 1, because it stored the runtime's line, which counts
+the session's one-line wrapper. The save now records `agentSite(site).Line`, the same mapping provenance uses.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 4)
+
+**Assistant interpretation:** A defect found on the way; fix it in the Phase 6 PR since it uses the same hook.
+
+**Inferred user intent:** Errors an agent acts on must name its own lines.
+
+**Commit (code):** see `git log` on `task/gcv-006-phase6-provenance` — "E_DUPLICATE names the agent's line of the first save, not the wrapped source's (…)"
+
+### What I did
+- `pkg/gojamod/cv/provenance.go`: `agentSite`; `save.go`: `track.saved[rel] = b.agentSite(site).Line`.
+- `pkg/cvsession/save_test.go`: a two-line case expecting "already saves twice2.json (line 1)".
+
+### Why
+- The error's `where` already showed the agent's line 2 for the second save; its message pointed at line 2 for the
+  first one too, which is wrong and sends the agent to the wrong line.
+
+### What worked
+- Mutation check: with the old `site.Line` the new case fails with `already saves twice2.json (line 2)`; with the fix
+  it passes.
+
+### What didn't work
+- My first mutation check stashed the whole change, test included, so it proved nothing; redone by reverting only
+  `save.go`.
+
+### What I learned
+- Any message that formats a `Site.Line` inside the `cv` module needs the session's mapping; `agentSite` is now the
+  one place to get it.
+
+### What was tricky to build
+- N/A
+
+### What warrants a second pair of eyes
+- Other places in `pkg/gojamod/cv` that print `site.Line` into messages directly (grep `site.Line`); only the
+  duplicate-save one was checked.
+
+### What should be done in the future
+- Audit the remaining `site.Line` uses.
+
+### Code review instructions
+- `GOWORK=off go test ./pkg/cvsession/ -run TestSaveRefusals -v`.
+
+### Technical details
+- Before: `message: 'cv.save("twice2.json"): this eval already saves twice2.json (line 2).'` for a first save on line 1.
