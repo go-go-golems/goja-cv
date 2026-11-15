@@ -530,6 +530,12 @@ func (i *Initializer) InitRuntime(ctx *engine.RuntimeInitializationContext) erro
 	}
 	st := &state{opts: i.opts, eng: eng, names: newNameTable()}
 	states.Store(vm, st)
+	cvmod.SetSiteMapper(vm, func(s cvmod.Site) cvmod.Site { // provenance records the agent's line
+		if s.Source == "" {
+			s.Line = st.agentLine(s.Line)
+		}
+		return s
+	})
 	if svc, ok := runtimebridge.Lookup(vm); ok {
 		context.AfterFunc(svc.Lifetime(), func() { states.CompareAndDelete(vm, st) })
 	}

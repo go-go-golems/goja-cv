@@ -29,10 +29,11 @@ type binding struct {
 	unhandled      map[*goja.Promise]bool
 	unhandledOrder []*goja.Promise     // rejection order of unhandled
 	files          map[string][]string // script name → lines of the text last loaded under it (load.go)
+	prov           *provenanceState    // provenance sidecars of saves (provenance.go)
 }
 
 func newBinding(vm *goja.Runtime, eng *graph.Engine) *binding {
-	b := &binding{vm: vm, eng: eng}
+	b := &binding{vm: vm, eng: eng, prov: newProvenanceState()}
 	b.trackRejections()
 	return b
 }

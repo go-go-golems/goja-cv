@@ -72,6 +72,11 @@ func (b *binding) save(c goja.FunctionCall) goja.Value {
 	if err != nil {
 		b.throw(err)
 	}
+	if strings.HasSuffix(rel, ProvenanceSuffix) {
+		b.throw(graph.Errorf(graph.EArgType, "cv.save(%q): names ending in %s are the sidecars every save writes beside its file.", path, ProvenanceSuffix).
+			WithHint("Save the data under another name; its provenance is written beside it.").
+			WithFix(fmt.Sprintf("await cv.save(%q, x)", strings.TrimSuffix(rel, ProvenanceSuffix)+"-data.json")))
+	}
 	format, err := dataout.FormatOf(rel)
 	if err != nil {
 		b.throw(err)
@@ -111,6 +116,7 @@ func (b *binding) save(c goja.FunctionCall) goja.Value {
 		b.track.saved[rel] = site.Line
 	}
 	b.mu.Unlock()
+	prov := b.beginProvenance(rel, site, node)
 	return b.startSave(rel, site, func(ctx context.Context, warn func(graph.Warning)) (any, error) {
 		var data []byte
 		var s dataout.Saved
@@ -139,6 +145,9 @@ func (b *binding) save(c goja.FunctionCall) goja.Value {
 			return nil, err
 		}
 		s.Path, s.Replaced = rel, replaced
+		if s.Provenance, err = b.stampSave(prov, data); err != nil {
+			return nil, err
+		}
 		return s.Data(), nil
 	})
 }

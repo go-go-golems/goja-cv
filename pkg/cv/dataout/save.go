@@ -41,6 +41,9 @@ type Saved struct {
 	Rows     int // data only
 	Replaced bool
 	Note     string
+	// Provenance is the workspace-relative name of the save's sidecar
+	// (<path>.provenance.json).
+	Provenance string
 }
 
 // Data is the plain-data form JavaScript receives.
@@ -63,6 +66,9 @@ func (s Saved) Data() map[string]any {
 	}
 	if s.Note != "" {
 		m["note"] = s.Note
+	}
+	if s.Provenance != "" {
+		m["provenance"] = s.Provenance
 	}
 	return m
 }

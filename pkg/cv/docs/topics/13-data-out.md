@@ -15,7 +15,7 @@ return { count: (await specks).length, rows: t.rows, file: p.path }
 
 ## cv.save
 
-`await cv.save(path, x, { depth })` writes one file and resolves to `{ path, format, bytes, rows, depth, encoding, space, frame, replaced }`. The extension picks the format:
+`await cv.save(path, x, { depth })` writes one file and resolves to `{ path, format, bytes, rows, depth, encoding, space, frame, replaced, provenance }`. The extension picks the format:
 
 | extension | x | records |
 |---|---|---|
@@ -39,6 +39,8 @@ return { saved: [v.encoding, v.frame], reopened: [back.encoding, back.frame], ro
 ## The workspace
 
 Relative paths are names in the workspace (`--root DIR`; the current directory for `goja-cv eval` and `run`); `cv.open` also reads the read directories (`--read DIR`), which are never written. `..` and symlinks may not leave a directory. One save per path per eval (`E_DUPLICATE`); a save never writes through a symlink and never replaces a file the session opened (`E_ACCESS`); another existing file is replaced (`replaced: true`). The file is written under a temporary name and renamed into place, so a failed save leaves the old one. Every save an eval starts completes before the eval returns, awaited or not; an unawaited save that fails fails the eval.
+
+Every save also writes a provenance sidecar beside the file, `<path>.provenance.json` (`provenance` in the result names it): the saved bytes' SHA-256, when, the goja-cv version and revision, the session and eval number, the line of the `cv.save` call, and for a node its path and signature (equal signatures mean equal values) and every source file under it with its size, modification time and SHA-256. Data saved from JavaScript values (an array you built) has no node: its sidecar lists the sources the session had opened and says `data: plain`. Names ending in `.provenance.json` are refused (`E_ARG_TYPE`). Readers of the saved file are unchanged; the sidecar is how a saved label is traced back to the scan and the script that made it.
 
 ```js error=E_DUPLICATE
 await cv.save("a.json", { n: 1 })
