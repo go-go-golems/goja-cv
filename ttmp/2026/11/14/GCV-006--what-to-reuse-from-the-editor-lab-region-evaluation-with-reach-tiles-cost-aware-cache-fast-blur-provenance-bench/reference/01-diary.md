@@ -12,6 +12,16 @@ DocType: reference
 Intent: long-term
 Owners: []
 RelatedFiles:
+    - Path: repo://cmd/goja-cv/bench.go
+      Note: the bench command (Phase 0)
+    - Path: repo://internal/testimage/benchscan.go
+      Note: the 24 MP bench scan
+    - Path: repo://pkg/cv/graph/eval.go
+      Note: per-node run time (countRun, LastRunTime)
+    - Path: repo://pkg/cv/graph/explain.go
+      Note: run time in explain lines
+    - Path: repo://pkg/cv/kernels/measure.go
+      Note: 'stats kernel: quickselect per plane, the 4.8 s finding'
     - Path: repo://ttmp/2026/11/14/GCV-006--what-to-reuse-from-the-editor-lab-region-evaluation-with-reach-tiles-cost-aware-cache-fast-blur-provenance-bench/scripts/01-boxblur-vs-gaussian.go
       Note: blur comparison
     - Path: repo://ttmp/2026/11/14/GCV-006--what-to-reuse-from-the-editor-lab-region-evaluation-with-reach-tiles-cost-aware-cache-fast-blur-provenance-bench/scripts/03-window-costs.js
@@ -22,6 +32,11 @@ LastUpdated: 2026-11-14T17:10:00-05:00
 WhatFor: ""
 WhenToUse: ""
 ---
+
+
+
+
+
 
 
 # Diary — GCV-006
@@ -227,3 +242,93 @@ Then: "ok, do it. Keep a detailed diary (see skill in ~/.codex/skills) as you wo
 ### Technical details
 - Source of the lessons: vault `Research/Software Architecture Garden/general/agent-operated-engines/_validation/LOG.md`
   step 9 and `reviews/04-o1.json`.
+
+## Step 5: Phase 0, per-node run time and the bench
+
+Phase 0 gives every later decision its numbers. The evaluator now records how long each node's op took the last time
+it ran, and `cv.explain(node).graph` ends each evaluated node's line with that time, so an agent sees the slow step
+of its chain. `goja-cv bench` runs scenario scripts (evals separated by `// --- name` lines), each repeat in a fresh
+session, and reports per eval p50 and p95, op runs, cache hits and misses, cached megabytes and the process's peak
+memory. A generator writes the 24 MP bench scan, and three scenarios ship in `examples/bench/`. The baseline is in
+`reference/02-phase-0-bench-baseline.md`; its biggest surprise is that whole-image `stats()` costs 4.8 s.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 4)
+
+**Assistant interpretation:** Implement Phase 0 of the plan (§12.3, §15): per-node timing in the evaluator and explain, and a scenario bench; record a baseline.
+
+**Inferred user intent:** Measure before optimising, and give agents a way to see costs from inside an eval.
+
+**Commit (code):** 283f9bc — "Per-node run time: the evaluator records each op's last run duration; explain shows it (GCV-006 Phase 0)"; 79a3a3a — "goja-cv bench: scenario runner (…), 24 MP bench scan generator, three scenarios (GCV-006 Phase 0)"
+
+### What I did
+- `pkg/cv/graph/eval.go`: `Evaluator.times` map, `LastRunTime(id)`, `countRun(id, d)`; the op's `safeRun` is timed in
+  `compute`. `pkg/cv/graph/render.go`: the same in the render path. `pkg/cv/graph/explain.go`: `fmtRunTime` ("0.4 ms",
+  "41 ms", "3.1 s") appended after the cached marker.
+- Tests: `TestExplain` (graph) and `TestPart2Section3NodesAndEvaluation` (module) asserted exact suffixes and column
+  padding; rewritten to check the cached marker, the run time on evaluated nodes and its absence on the unevaluated
+  root.
+- `pkg/cvsession/session.go`: `EngineStats` (op runs, cache stats) and `App.EngineStats(ctx, sessionID)`.
+- `cmd/goja-cv/bench.go`: `parseScenario`, `benchRepeat` (fresh `cvsession.App` per repeat), `summarize` (nearest-rank
+  p50/p95, counts from the last repeat, a failure in any repeat reported), YAML or `--json`; `rss_unix.go`
+  (`getrusage`, bytes on macOS, KiB elsewhere) and `rss_other.go`. `cmd/goja-cv/bench_test.go`: separators, percentile,
+  and an end-to-end run (cold blur computes, the same request in the next eval is a hit with 0 runs, a failing eval is
+  reported).
+- `internal/testimage/benchscan.go` + `gen -bench-scan 6000x4000`: a deterministic 24 MP float32 NPY (noise around
+  0.3, bright 3×3 specks), 1.5 s to write.
+- `examples/bench/{big-blur,scan-zoom,scan-probe}.js`; `pkg/doc/03-cli.md` "bench" section; README development lines;
+  `Makefile`: `bench.go` added to glazed-lint's allow-paths, as for the other Cobra commands.
+- Ran the baseline (3 repeats) and an extra decode-vs-stats scenario; wrote `reference/02-phase-0-bench-baseline.md`.
+
+### Why
+- Every proposal after Phase 0 claims a speed-up; the bench is the yardstick. Per-node time in explain is the agent's
+  view of the same thing (the lab shows `ms_last_update`).
+
+### What worked
+- The bench's counts are deterministic across cold repeats, so a change that alters op runs or cache behaviour shows
+  up exactly, not just as noise in times.
+- The baseline reproduces §11.1's shape (σ 32 window 4.0 s now vs 3.1 s then; this run was under heavier load).
+
+### What didn't work
+- `make lint`: `cmd/goja-cv/bench.go:63:2: define CLI flags with cmds.WithFlags(fields.New(...)) instead of raw Cobra/pflag/flag APIs` (seven lines). The other commands use raw Cobra flags through the Makefile's `-glazedclilint.allow-paths`; bench joined that list.
+- The first `scan-probe` run: `promise rejected: measure would add coreMean, which these items already have.` (peaks
+  items already carry the ring fields). Fixed with `measure(items, { prefix: "probe" })`. The bench reported it as an
+  eval error without stopping, which is the intended behaviour.
+- `go test ./...` still fails only `TestRealTopHatSaturated` (known, the gold set grew to 164 points; not touched here).
+
+### What I learned
+- Whole-image `stats()` costs 4.8 s on 24 MP, 16 times the decode (0.3 s): four planes, each copied and quickselected
+  at least three times on one core. It is the largest single cost measured and is not on GCV-006's list.
+- The speck view's later windows are already cheap (19 windows in 6 ms); region evaluation would only cut the first
+  window of a view. That weakens the case for Phases 1–2 for zooming agents, and strengthens it only for many
+  different computed images per scan.
+
+### What was tricky to build
+- Counting per eval: the cache and run counters are per session and cumulative, so the bench snapshots them before
+  and after each eval and reports deltas; `cached_mb` is the level after the eval, not a delta.
+- Peak RSS is process-wide and monotone; with several scenarios in one invocation, later scenarios report the peak of
+  everything before them. Documented in the help; run one scenario per invocation for per-scenario peaks.
+
+### What warrants a second pair of eyes
+- `countRun` now takes the duration; both call sites (compute and render) time only `safeRun`, not input evaluation.
+  Is "the op's own time" the right number for explain (it is what an agent can act on), or should inputs be included?
+- The explain line grew a column; agents parse explain lines by eye only, but check nothing downstream splits them.
+
+### What should be done in the future
+- A `stats()` speed-up (parallel planes or exact histogram selection), measured with this bench and gated by the gold
+  tests.
+- A `tile-session` scenario with the DUST prelude (`mem.views`, `mem.zoom`, `mem.sheet`), kept with the dust repo.
+- Rerun the baseline on a quiet machine.
+
+### Code review instructions
+- Start at `cmd/goja-cv/bench.go` (`runBench`, `benchRepeat`, `summarize`), then `pkg/cv/graph/eval.go` (`countRun`,
+  `LastRunTime`) and `explain.go` (`fmtRunTime`).
+- `GOWORK=off go test ./cmd/goja-cv/ ./pkg/cv/graph/ ./pkg/gojamod/cv/ ./pkg/doc/`; `make lint`.
+- `go run ./internal/testimage/gen -out /tmp/b -bench-scan 6000x4000 && go run ./cmd/goja-cv bench --root /tmp/b --repeat 2 examples/bench/big-blur.js`
+
+### Technical details
+- Scenario format: text before the first `// --- name` is a comment; each part is one eval body; `mem` carries values
+  between evals.
+- Report fields: `p50_ms`, `p95_ms`, `runs`, `cache_hits`, `cache_misses`, `cached_mb`, `status`, `error`; per
+  scenario `total_p50_ms`, `peak_rss_mb`.

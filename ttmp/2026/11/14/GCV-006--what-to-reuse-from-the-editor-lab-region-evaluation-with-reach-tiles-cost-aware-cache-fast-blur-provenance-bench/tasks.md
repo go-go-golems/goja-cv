@@ -10,7 +10,7 @@
 
 ## Accepted (14 November 2026, design doc §12.7)
 
-- [ ] Phase 0: bench harness and per-node timing (§12.3)
+- [x] Phase 0: bench harness and per-node timing (§12.3)
 - [ ] Phase 6: provenance sidecars on saves (§12.6)
 
 ## Conditional (decide from the bench and annotator transcripts)
@@ -28,3 +28,4 @@
 ## Blockers
 
 - [ ] Fix or re-baseline `TestRealTopHatSaturated` before Phase 2
+- [ ] New candidate from the baseline: whole-image stats() costs 4.8 s on 24 MP (parallel planes or exact histogram selection; gold-gated) <!-- t:g6zm -->
