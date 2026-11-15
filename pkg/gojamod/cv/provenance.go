@@ -103,6 +103,14 @@ func SetSiteMapper(vm *goja.Runtime, fn func(Site) Site) {
 	}
 }
 
+// agentSite is site as the agent knows it (its own line in eval code).
+func (b *binding) agentSite(site Site) Site {
+	if b.prov.mapSite != nil {
+		return b.prov.mapSite(site)
+	}
+	return site
+}
+
 // pendingProvenance is what the owner goroutine knows about a save; the save
 // goroutine completes it with the bytes and the source hashes.
 type pendingProvenance struct {
@@ -115,9 +123,7 @@ type pendingProvenance struct {
 // the sources under the node (or, for plain data, the sources the session
 // opened).
 func (b *binding) beginProvenance(rel string, site Site, node *graph.Node) *pendingProvenance {
-	if b.prov.mapSite != nil {
-		site = b.prov.mapSite(site)
-	}
+	site = b.agentSite(site)
 	p := &pendingProvenance{rec: Provenance{
 		Schema: ProvenanceSchema, File: rel, GojaCV: buildInfo(), Session: b.prov.session, Eval: b.prov.evals,
 		Site: ProvenanceSite{Script: site.Source, Line: site.Line},

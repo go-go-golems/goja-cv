@@ -113,7 +113,7 @@ func (b *binding) save(c goja.FunctionCall) goja.Value {
 				WithHint("One save per path per eval: save another name, or save once.").
 				WithFix(fmt.Sprintf("await cv.save(%q, x)", withSuffix(rel, "-2"))))
 		}
-		b.track.saved[rel] = site.Line
+		b.track.saved[rel] = b.agentSite(site).Line // the agent's line, as in the error's where
 	}
 	b.mu.Unlock()
 	prov := b.beginProvenance(rel, site, node)

@@ -114,6 +114,7 @@ func TestSaveRefusals(t *testing.T) {
 		{`return await cv.save("p.csv", img.profile([190.5, 46.5], [195.5, 46.5]))`, `fix: cv.save("p.csv", (await x).rows)`},
 		{`return await cv.save("d.json", { a: 1 }, { depth: 8 })`, "code: E_UNKNOWN_OPTION"},
 		{`await cv.save("twice.json", 1); return await cv.save("twice.json", 2)`, "code: E_DUPLICATE"},
+		{"await cv.save(\"twice2.json\", 1)\nreturn await cv.save(\"twice2.json\", 2)", "already saves twice2.json (line 1)"}, // the agent's line of the first save
 		{`return await cv.save("scan.tif", img.exposure(0.2))`, "which this session opened"},
 	} {
 		mustContain(t, text(eval(t, app, sid, tc.code)), tc.want)
