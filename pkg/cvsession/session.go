@@ -322,6 +322,23 @@ func (a *App) Evaluate(ctx context.Context, sessionID string, body string) (*rep
 	return a.App.Evaluate(ctx, sessionID, Wrap(body))
 }
 
+// EngineStats is a snapshot of one session's engine counters: op runs since
+// the session started and the value cache (the bench reads it between evals).
+type EngineStats struct {
+	Runs  int              `json:"runs"`
+	Cache graph.CacheStats `json:"cache"`
+}
+
+// EngineStats returns the engine counters of session sessionID.
+func (a *App) EngineStats(ctx context.Context, sessionID string) (EngineStats, error) {
+	st, err := a.stateFor(ctx, sessionID)
+	if err != nil {
+		return EngineStats{}, err
+	}
+	ev := st.eng.Evaluator()
+	return EngineStats{Runs: ev.TotalRuns(), Cache: ev.Cache().Stats()}, nil
+}
+
 func (a *App) stateFor(ctx context.Context, sessionID string) (*state, error) {
 	if st, ok := a.states.Load(sessionID); ok {
 		return st.(*state), nil

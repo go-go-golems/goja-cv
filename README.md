@@ -244,6 +244,8 @@ make logcopter-generate   # regenerate the per-package loggers; make logcopter-c
 make vet
 make testdata   # regenerate the synthetic test images
 go run ./internal/testimage/gen -out /tmp/cv -planted   # the planted-fault dust scan used by tests and docs
+go run ./internal/testimage/gen -out /tmp/cv -bench-scan 6000x4000   # the 24 MP bench scan
+goja-cv bench --root /tmp/cv --repeat 3 examples/bench/*.js   # time the bench scenarios (help: goja-cv help cli)
 lefthook install          # pre-commit: lint + test; pre-push: also a snapshot goreleaser build
 make goreleaser           # local snapshot release for this platform (dist/)
 ```

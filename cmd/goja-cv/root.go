@@ -73,7 +73,7 @@ Exit codes: 0 ok, 1 cv error (the structured error is still printed), 2 usage er
 	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
 		return &exitError{code: exitUsage, err: err}
 	})
-	root.AddCommand(newRunCommand(opts), newEvalCommand(opts), newOpsCommand(opts), newMCPCommand(opts))
+	root.AddCommand(newRunCommand(opts), newEvalCommand(opts), newOpsCommand(opts), newMCPCommand(opts), newBenchCommand(opts))
 	if err := setupHelp(root, opts); err != nil {
 		fmt.Fprintf(stderr, "goja-cv: help pages unavailable: %v\n", err)
 	}
