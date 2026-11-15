@@ -1,0 +1,850 @@
+Editor lab: implementation diary and report
+Editor lab: implementation diary and report
+Nov 14, 2026 ·
+@Manuel Odendahl
+Summary
+The Editor lab is a photo-editing workbench that runs as one HTML page: a tiled, content-
+cached engine, a stage with ten tools, an agent and a code editor that drive the same API,
+a benchmark bench, 32 presets and a nine-chapter textbook. It is published as Editor lab
+(version 1794686042-0718, 14 November 2026, 19:54 UTC), and the zip that goes with this
+report holds its full source, tools, tests, research notes and screenshots.
+State at handoff:
+Every test suite passed on the last build, and the book checker reports no errors in
+any of the nine chapters.
+The last request, layer grouping with metadata that links layers back to the code or
+preset that made them, was interrupted before any work started (see Not done).
+The engine renders in JavaScript on the main thread. WebAssembly and WebGPU
+exist as probes that are checked against the engine, not yet as render paths.
+What Count
+Source, book, tools and tests Layer kinds Blend modes 18
+Presets Bench T extbook Built page 8,311 lines in 61 files
+18, including JavaScript code layers
+32 built in, each also readable and runnable as a
+program
+9 scenarios × 4 device profiles × 3 tile sizes × 2
+preview and 2 eviction policies
+9 chapters, about 250,000 characters of
+Markdown, 20 figures
+744 KB, one file, no network needed except web
+fonts
+Page 1 of 19
+Editor lab: implementation diary and report
+The workbench in its editing layout, on the final build.
+Diary
+The work ran from 12 to 14 November 2026 in eleven phases, each started by one request;
+the table lists them newest first. Times are UTC and come from the artifacts' version
+stamps, because the workspace clock did not match them.
+Date Phase The request What was done Published
+14
+Nov
+Zip and report "make a full zip of all
+your work, and write
+a detailed
+implementation diary
+/ report"
+This report; fresh
+screenshots; the zip
+of source, tools,
+tests, research and
+earlier work. Rebuilt
+and republished the
+page, because the
+13 November build
+predated a one-
+sentence fix to
+Chapter 6.
+This doc; 14 Nov
+19:54,
+1794686042-
+0718
+Page 2 of 19
+Editor lab: implementation diary and report
+Date Phase The request What was done Published
+13
+Nov
+12–13
+Nov
+Layer grouping Research for
+chapters 5 to 9
+"can we do layer
+grouping? and have
+groups / layers have
+metadata so that
+they can crosslink
+back to the source
+code / preset that
+created them?"
+Interrupted before
+—
+any work. Nothing
+in the code or the
+book changed.
+"properly research
+the GPU, caching,
+pyramids, fast
+engine, scheduling
+chapters, externally,
+flesh them out"
+, with
+the Executable
+T extbook Handbook
+attached
+13 Nov 13:51,
+1794577916-85b1
+Read the source of
+darktable, GIMP ,
+GEGL, Krita, libvips
+and Chromium's
+compositor, and
+papers and write-
+ups on Halide, build
+systems, Photoshop
+on the web, Figma
+and Vello. Wrote
+research notes;
+ported GIMP's
+chunk rule;
+measured early
+cutoff and hash
+cost; added four
+computed figures,
+seven runnable
+programs, a chapter
+checker and a
+renumbering tool;
+rewrote chapters 5
+to 9 to the
+handbook's shape
+(25,000 to 31,000
+characters each).
+Page 3 of 19
+Editor lab: implementation diary and report
+Date Phase The request What was done Published
+12
+Nov
+12
+Nov
+12
+Nov
+12
+Nov
+Code layers and
+Edit as code
+Code view Performance
+chapters and
+probes
+"when I do edit as
+code, i only get the
+data. But where do I
+see the code for the
+preset itself?"
+"do we not have a
+code editor? and also
+i'm not sure if the
+presets load
+properly? are the
+presets in
+javascript?"
+"expand the book by
+fleshing out the
+pyramids / caching /
+GPU / scheduling
+chapters (there's no
+GPU / WASM
+chapter, so add one)"
+Presets "make many more
+presets too to
+showcase all the
+things"
+A code layer kind
+whose operation is
+JavaScript. Edit as
+code now writes a
+preset as a program
+holding the engine's
+own kind functions
+and their helpers; all
+32 built-in presets
+render pixel-
+identically as code.
+A Code view: editor,
+runner for the lab
+API, results as
+YAML, revert, eight
+examples (E-01 to E-
+08). Fixed the
+presets list, which
+was hidden in
+narrow tiles, with a
+drill-in detail and
+double-click to
+apply.
+First versions of
+chapters 5 to 9 with
+measured tables; a
+WebGPU probe
+(fused WGSL
+shader, staged blur)
+and a WebAssembly
+probe (hand-
+written SIMD
+kernels in text
+format).
+32 presets, from
+Warm film to
+Difference check,
+covering every kind,
+blend mode and
+mask component.
+12 Nov 22:09,
+1794521351-5a26
+not recorded
+not recorded
+not recorded
+Page 4 of 19
+Editor lab: implementation diary and report
+Date Phase The request What was done Published
+12
+Nov
+12
+Nov
+12
+Nov
+12
+Nov
+Exports "make benchmarks
+and such
+downloadable /
+exportable (from
+agent too)"
+Masks "can we do like
+gradient masks
+(think lightroom,
+ellipse masks, etc...) /
+add feathering / draw
+a mask with
+feathering / boolean
+combination"
+Workbench and
+textbook
+"Let's build a
+workbench, with a
+photoshop like stage
+… an agent …
+presets …
+benchmarks …
+tilable drag drop
+tiles"
+, then "Build it,
+do a tiny textbook"
+Bench runs as CSV ,
+JSON and a
+Markdown report;
+the picture as PNG
+or JPEG; presets as
+JSON; probe
+reports; every
+export callable from
+the agent.
+Masks as ordered
+lists of components
+(linear, radial, brush,
+luminance, colour)
+combined by add,
+subtract and
+intersect, each with
+feather, invert and
+amount.
+The Editor lab on
+the user's three
+Form Skate design
+systems (Agent,
+Workbench, Stage):
+engine, stage and
+tools, layers and
+params, agent,
+presets, bench,
+tiled dock, and the
+first chapters of the
+book.
+Answers in chat;
+two Claude Docs;
+the Editor grammar
+examples page.
+not recorded
+not recorded
+12 Nov 20:27,
+first version
+15:30 to 19:32
+Groundwork Questions on
+Photoshop and
+Lightroom layers,
+masks and blending,
+clones, ML and SAM,
+WebGPU and WASM,
+editor data
+structures
+Page 5 of 19
+Editor lab: implementation diary and report
+The Editor lab's version history holds eight versions: 20:27, 20:28, 21:24, 21:25, 21:38 and
+22:09 on 12 November, 13:51 on 13 November and 19:54 on 14 November. The first is the
+workbench, and 22:09, 13:51 and 19:54 are the code-layers, research and report phases;
+which of the four in between carried which of the masks, exports, presets, performance-
+chapter and code-view work was not recorded.
+Architecture
+Everything runs in one page: a document model, a tile engine that names every tile by a
+hash of its inputs, a renderer that shows a coarse preview first, and nine views that all
+reach the document through the same lab API. build.py concatenates 17 scripts, the
+book and the WebAssembly kernels into index.html.
+Editor lab architecture · 5 views, one API, 3 core parts
+Every view acts on the document only through the lab API. The Workspace records each
+change, Render asks the Engine for a preview and then for level 0 tiles, and the probes are
+checked against the Engine's output.
+How an edit reaches the screen:
+1. A tool, a slider, the agent or a program changes the Workspace (layers, masks, pixels),
+which records a command in history.
+2. Render.request asks for a coarse preview at once and queues the level 0 tiles, visible
+ones first and nearest the middle.
+Page 6 of 19
+Editor lab: implementation diary and report
+3. For each tile, Engine.key hashes the layer's settings, the pixel revisions it reads and
+the keys of the tiles below it into a 52-bit key. A key found in the TileCache costs
+nothing; a missing one is computed by applyLayer from the tile below plus its apron.
+4. The refining loop runs at most 8 ms of tiles per frame and abandons the queue
+between tiles when a newer edit arrives.
+File Lines What it holds
+src/engine.js 697 Raster (64 px blocks with revisions,
+pyramid levels), the 18 layer kinds, 18
+blend modes, mask components and their
+combination, TileCache (LRU and
+GreedyDual-Size), Engine (keys, tiles,
+aprons, levels), code-layer compilation
+src/workspace.js 403 The document, layers, selections
+(rectangle, ellipse, polygon, wand),
+masks, painting, history as commands
+with block-level copies
+src/app.js 276 Boot, scenes, Render (preview levels,
+slices, generations), the 17 lab: link
+verbs the book uses
+src/views/stage.js 508 The canvas, ten tools, overlays for tiles
+and masks, zoom and pan
+src/views/panels.js 242 Layers, Params and History
+src/views/presets.js 276 32 presets, apply, save, import and
+export, Edit as code; per-user storage
+through the page's db capability
+src/views/bench.js 296 Scenarios, device profiles, percentiles,
+the 16.7 ms gate, recorded sessions,
+charts
+src/views/exports.js 91 CSV , JSON and Markdown reports,
+pictures, presets and probe reports,
+saved through the downloads capability
+src/views/agent.js 435 The agent: it calls Claude through the
+page's sample capability with one tool,
+eval, which runs JavaScript against the
+lab API ( labScope); every step shows its
+code, time and YAML result and can be
+reverted
+Page 7 of 19
+Editor lab: implementation diary and report
+File Lines What it holds
+src/views/code.js 570 The Code view: editor, runner, eight
+examples, preset programs, code layers
+src/views/gpu.js 208 WebGPU probe: which layers fuse, the
+WGSL generator, the staged blur
+src/views/wasm.js,
+tools/kernels.wat
+60, 96 WebAssembly probe: scalar and SIMD
+box pass and gain, hand-written in text
+format
+src/views/book.js, src/util.js 66,
+200
+The book view and its Markdown
+renderer: math, SVG figures, runnable
+blocks, lab: links, code quoted from the
+running page
+src/dock.js, src/controls.js 221, 83 The tiled drag-and-drop dock with six
+layouts; sliders and controls in the design
+systems' style
+src/scenes.js 131 Four procedural documents: D-01 Lake at
+dusk, D-02 T est card, D-03 Three lights, D-
+04 Blank sheet
+src/app.css, src/tokens.css, ds/— The app's styles over the Form Skate
+Workbench, Agent and Stage design
+systems
+The lab API is the one seam that matters. The agent, the Code view, code layers, the
+bench's scripted runs and the book's runnable blocks all call it, so a feature added there is
+reachable from every one of them. Settings and scripts persist in localStorage ; presets
+and saved programs persist per user through the page's database where the host
+provides one.
+Page 8 of 19
+Editor lab: implementation diary and report
+Example E-08 in the Code view: a program of two code layers, compiled, saved as a preset
+and placed on the stage, with their parameters as sliders.
+The textbook
+The book has nine chapters inside the lab: four on fundamentals and five on building a fast
+engine, the five rewritten in the last phase to the attached Executable T extbook
+Handbook. Its numbers come from the running lab or from scripts, its code quotes are
+pulled from the running page, and its links act on the lab.
+Chapter Prose, characters Sections Figures T ables Runnable programs
+1 Pixels, alpha and over 6,122 6 2 0 0
+2 Blend modes 5,354 6 1 0 0
+3 Masks and selections 10,105 8 2 0 0
+4 Neighbourhood operations 5,071 7 2 0 0
+5 Pyramids and tiles 30,729 15 4 5 1
+6 Caching by content 27,695 15 3 3 2
+7 Scheduling and measuring 27,233 16 3 1 2
+8 The GPU and WebAssembly 30,266 18 2 4 1
+9 Designing a fast engine 25,204 17 1 5 1
+Page 9 of 19
+Editor lab: implementation diary and report
+Prose counts exclude code, math and figure source, as tools/check
+_
+book.js measures
+them. Before the research phase chapters 5 to 9 held 13,000 to 21,000 characters each.
+What each of chapters 5 to 9 now has, following the handbook:
+A lead that states the problem, the mechanism and what the reader will be able to do.
+Foundation sections, then technique sections with the reason, the math, a worked
+trace, a figure, the systems that use it, a Try it and Careful and Exercise callouts.
+Closing sections: T oward a reusable API (signatures with one-line meanings), Systems
+in this chapter (a table), Key points (6 to 10 sentences), Exercises, and Further
+reading (only sources that were opened).
+The machinery behind it:
+{{src:Path:range}} quotes insert code from the running page, so a quoted function
+cannot drift from the code; test/quotes.js prints all 21 of them.
+lab: links act on the lab (load a scene, select a layer, set the tile size, run a bench
+configuration); the checker validates every verb, scene, preset, example and scenario
+they name.
+Runnable blocks (```
+run name.js) render the code with a button that opens it in
+the Code view and runs it against the open document. Seven programs: tile-
+sizes.js, keys.js, cutoff.js, gimp-chunks.js, timer.js, limits.js,
+gates.js.
+Computed figures come from tools/figs.py and tools/figs2.py: the apron
+factor against tile size, three downsampling filters' frequency responses, expected
+key collisions at 32, 52 and 64 bits, and the port of GIMP's chunk rule. Measured
+figures were drawn from bench runs. All figures use classes only, so they follow the
+light and dark themes.
+tools/check
+_
+book.js enforces the handbook's rules: one title, sections numbered in
+order, closing sections, figure safety and class vocabulary, captions numbered in
+order, cross-references that exist, valid lab: links, no raw HTML, a list of banned
+words, key points as sentences and further reading with real links.
+tools/renumber.py renumbers sections, figures and tables after an edit and fixes
+every reference in all chapters; new text refers by label ( Section @Title@, Figure
+@apron@). tools/embed
+_
+figs.py puts computed SVGs into the chapters.
+House style follows the Form Skate rules the user's design systems carry: British spelling,
+no em dashes, no filler words, real data only or a figure labelled as a schematic.
+Page 10 of 19
+Editor lab: implementation diary and report
+Chapter 5 in the book layout, at one of the computed figures.
+Research for chapters 5 to 9
+The research found that darktable keys its cache the same way the lab does, and
+measured what that design wastes: up to 52 % of the tile work after an edit of a masked
+layer. The method was the handbook's: read the source, port it, compute. Source files
+were downloaded at the revisions below on 12 November 2026 and are in the zip under
+research/src , with notes in research/notes.md.
+System What was read Version
+darktable pixelpipe
+_
+cache.c, pixelpipe
+hb.c,
+_
+develop.c, tiling.c, darktable.h
+157457d583dc
+GIMP gimpprojection.c, gimpchunkiterator.c c483bf789fbd
+GEGL gegl-config.c, gegl-tile-handler-cache.c,
+gegl-buffer.c
+b500a75d43dd
+Krita tiles3 headers, kis
+_
+update
+_
+scheduler.cpp,
+kis
+_
+image
+_
+config.cpp, kis
+lod
+transform.h;
+_
+_
+the Instant Preview manual page
+1cc1d5c7e335
+Page 11 of 19
+Editor lab: implementation diary and report
+System What was read Version
+libvips how-it-works.md, cache.c, sinkscreen.c,
+threadpool.c, tilecache.c
+5e918bd43a5f
+Chromium docs/how
+cc
+works.md 0fcf5b8bdf04
+_
+_
+Halide PLDI 2013 paper as published
+Build systems Build Systems à la Carte ICFP 2018
+Photoshop Photoshop's journey to the web; files larger than
+memory; Adobe's performance guide as quoted on
+its forum
+as published
+Figma Figma rendering: powered by WebGPU as published
+Vello vello
+_
+cpu gaussian
+_
+blur.rs as published
+Web platform MDN on timing and GPU limits; Chrome posts on
+scheduler.yield and WebGPU timestamps;
+web.dev on INP; wrk2's README
+as published
+Findings that are the book's own, each checkable from the zip:
+The lab and darktable both use deep constructive traces. Each key is built from the
+keys below, so a lookup needs no pixels but a rebuild can never stop early.
+On D-01 that wastes up to half the work. After an edit, Darker sky leaves 16 of 40
+output tiles bit-identical and Sun glow 26 of 40, so 33 % and 52 % of the tile
+computations above them are avoidable; Contrast leaves none ( test/cutoff.js).
+Two fixes, priced. A zero mask over a tile lets the key pass through, as a hidden layer's
+does, for one rectangle test. Hashing output tiles costs 0.093 ms for a 128 px float tile,
+15 to 22 % of a cheap layer's tile.
+GIMP's adaptive chunks overshoot twice. A port of its rule shows two 266 ms chunks
+after the cost per pixel quadruples, because the median of three aims lags one step
+more than the newest aim would.
+Vello's blur plan follows from adding variances. Six decimations with [1, 3, 3, 1]/8 and
+an 11-tap kernel reproduce its plan for σ = 100, at about 1 % of the direct blur's reads.
+Adobe's tile advice matches the bench. Bigger tiles for sharpening and smaller for
+strokes is what Figure 5.1 measured: strokes run 1 : 2.4 : 5.8 at 64, 128 and 256 px, and a
+large blur 3.5 times slower at 64 px than at 256.
+The 24-megapixel open is reachable only with zoom-level rendering. Estimated from
+D-01's cost per layer-megapixel, level 0 takes 13.8 s, the view on a 2× display 3.5 s in
+JavaScript and 0.77 s with WebAssembly SIMD.
+Page 12 of 19
+Editor lab: implementation diary and report
+Testing and verification
+All suites passed on the final build: they drive index.html in headless Chrome through
+puppeteer-core, and their only error lines are the errors they provoke on purpose. The
+agent was tested with a stubbed model that returns scripted tool calls; the real model was
+not called from the tests.
+Suite What it checks Latest result
+smoke.js The page boots, renders D-
+01 and logs no errors
+interact.js Strokes, slider drags with
+previews, undo, the agent's
+eval in normal and read-only
+modes, a short bench run
+masks.js Mask components, their on-
+stage handles and dragging
+them, feathering, boolean
+ops
+presets.js, presetcheck.js Every preset applies and
+changes the picture; every
+parameter, blend mode and
+mask field is valid
+code.js Code view examples, error
+lines in both execution
+modes, all presets round-
+tripping through
+JavaScript, revert, the
+presets view in a narrow tile
+codelayers.js Every built-in preset
+written as a program
+renders the same pixels;
+code layers compile, report
+errors, update and expose
+sliders
+exports.js CSV , JSON and Markdown
+reports, pictures, presets
+and probe reports
+passed
+passed; read-only
+refusal and unknown-
+layer errors as intended
+passed
+passed, 32 of 32
+passed; no preset differs
+passed; largest
+difference 0.0000
+passed
+Page 13 of 19
+Editor lab: implementation diary and report
+Suite What it checks Latest result
+agent.js, agent
+_
+call.js The agent's loop with
+images, tool calls, steps and
+revert, against the stubbed
+model
+runblocks.js, runbutton.js Every runnable block in the
+book runs without error;
+the button opens and runs
+it in the Code view
+quotes.js Every code quote in the
+book resolves from the
+running page
+tools/check
+_
+book.js The handbook's static rules
+over all nine chapters
+bookshots.js,
+_
+tshot.js,
+_
+reportshots.js, shots.js,
+_pshot.js
+Screenshots of figures,
+tables, presets and the
+workbench, for looking at
+booknums.js, levels.js,
+cutoff.js, evict.js,
+probes.js, gpu.js, more.js
+Measurements the book
+quotes: costs per layer and
+level, level invariance, early
+cutoff , eviction, the probes;
+dock gutters and layer
+reordering
+passed
+7 of 7 ran; the bench one
+when BENCH=1
+21 quotes
+0 errors
+looked at; label overlaps
+and clipped legends
+fixed
+numbers in the book
+The timing numbers in the book come from one machine: headless Chrome in a container
+with 2 logical cores and a software WebGPU adapter (SwiftShader). Two repeat runs of
+the low scrub gave a preview p95 of 28 ms and 17 ms, which is why the book reports
+ranges where runs disagreed.
+Problems met and how they were fixed
+Most problems were small syntax slips caught by the smoke test, and claims in the new
+chapters that a second reading against the sources corrected. Newest first:
+Page 14 of 19
+Editor lab: implementation diary and report
+Phase Problem Fix
+Research Research Research Research Several claims in the drafts did not
+match the sources on a second check:
+hmix was described as using
+rotations, darktable's ageing as
+applying to chosen lines only, Halide's
+systems row named ARM, an exercise
+assumed a picture size, Figma's post
+was given a year
+A further-reading entry pointed at a
+page that had not been opened
+Four new figures had overlapping
+labels, a clipped legend and caret
+exponents; one caption said a curve
+fell below 2× at 256 px
+T ables with five or more columns
+overflowed the 76-character text
+column
+Research Renumbering sections shifted a
+reference that had already been
+written with the new number
+Each checked against the source
+and rewritten: multiply and xor-shift
+steps, every hit, multicore CPUs, the
+reader looks the size up, no year
+Removed; further reading lists only
+pages that were opened
+Looked at every render, moved
+labels, used superscript digits,
+recomputed the crossing: 338 px
+Research Research Research Code
+layers
+Code view The checker flagged vec4<f32> in
+inline code as raw HTML
+Some pages could not be fetched
+(Adobe's help site, v8.dev, MDN's
+performance.now page); one PDF
+redirected to another host; darktable's
+hash.h returned 404
+The low scrub's p95 measured 28 ms in
+one run and 17 ms in another
+A copy of every tile inside code layers
+slowed them
+Errors from the script fallback (used
+when new Function is blocked)
+pointed at the wrong lines
+Wide tables get smaller type, a
+minimum column width and a
+horizontal scroll
+New text refers by label; the
+renumber tool maps old numbers
+through a snapshot; the one stale
+reference fixed by hand
+Inline code is stripped before the
+HTML check
+Used pages that search returned
+and Adobe's guide as quoted on its
+forum; did not follow the redirect;
+found dt
+hash in darktable.h
+_
+through GitHub code search
+Reported as a range; Chapter 7 uses
+it as the example for repeating runs
+Removed the copy; the layer works
+on the tile buffer
+Fixed the line offset and the
+message
+Page 15 of 19
+Editor lab: implementation diary and report
+Phase Problem Fix
+Code view The presets list was hidden in narrow
+Several Report tiles
+Syntax slips after edits: a doubled
+comma in agent.js, a stray comma
+after the gradient kind's params in
+engine.js, a comma between class
+methods in workspace.js
+The workspace clock did not match
+the artifacts' publish times
+A drill-in detail with a back button;
+double-click applies
+Caught by the smoke test and fixed
+Dates in this report come from the
+artifacts' version stamps
+Not done, open items and known limits
+The biggest open item is the interrupted request for layer groups with provenance; after
+it come the engine milestones the book names but the lab does not have.
+Layer grouping and provenance (requested, not started). It fits the existing design in
+three parts:
+A group layer kind whose children render into their own tile stack and blend as one
+layer, either isolated or passing through; its key hashes its settings and the keys of its
+children's top tiles, so the content cache needs no change.
+A meta record on every layer and group: what made it (a built-in preset, a saved
+preset, a program file and line, an agent step, a tool), with the id that finds it again.
+Presets.apply, the Code view's runner, code layers and the agent's eval would
+stamp it.
+In Layers and Params, a link from that record that opens the preset or the program in
+the Code view at the right line, and the reverse: a program that lists the layers it made
+on the stage.
+Engine milestones not built (Chapter 9's build order):
+No workers: everything renders on the main thread (milestone 5).
+WebAssembly and WebGPU run only as probes checked against the engine, not as
+render paths (milestones 6 and 7).
+No cache tiers or 16-bit storage (milestone 8).
+The stage renders level 0 at every zoom; rendering at the zoom's level is a Chapter 5
+exercise and the step that most improves the 24-megapixel estimate.
+Early cutoff through zero-mask pass-through is described and priced but not
+implemented.
+Page 16 of 19
+Editor lab: implementation diary and report
+The bench is closed-loop only; the open-loop mode that measures response time is a
+Chapter 7 exercise.
+Book: chapters 1 to 4 keep their earlier shape, 5,000 to 10,000 characters each, without
+the handbook's closing sections.
+Not verified:
+All timings come from one container with 2 cores; GPU timings come from a software
+adapter, never a hardware GPU.
+Photoshop's desktop cache guidance was read as quoted on Adobe's forum, because
+Adobe's help site could not be fetched.
+Vello's rule for choosing the number of decimations was not confirmed; only its plan
+for σ = 100 was reproduced.
+darktable's cancellation rule is described from its source, not simulated; the
+simulation is a Chapter 7 exercise.
+The 24-megapixel budget in Chapter 9 is an estimate from D-01's cost per layer-
+megapixel.
+The zip
+editor-lab-work.zip holds everything needed to rebuild the page, rerun every test and
+check every number in the book, plus the earlier documents of this conversation as PDFs.
+Only node
+_
+modules is left out; npm install restores it.
+Folder What is in it
+editor-lab/ editor-lab/research/ The project: build.py, the built index.html
+(the published page), src/ (17 scripts, styles,
+the nine chapters in src/book/), ds/ (the
+design systems' CSS), tools/, test/,
+package.json
+notes.md (facts with sources) and src/ (24
+third-party files read for chapters 5 to 9, with
+SOURCES.md giving project, revision and licence
+note)
+editor-lab/build-output/figures/ The computed figures as SVG, as
+tools/figs2.py and tools/figs.py produce
+them
+Page 17 of 19
+Editor lab: implementation diary and report
+Folder What is in it
+screenshots/ earlier-work/docs/ earlier-work/editor-grammar-
+examples/
+Seven screenshots of the final build:
+workbench, bench, presets, code layers, two
+book chapters, a runnable block
+PDF exports of the two Claude Docs written
+before the workbench
+The grammar examples ( editor-grammar-
+examples.mjs) and the script and page that
+published them
+REPORT.pdf This report
+README.md What is where, and the commands below
+T o rebuild and test (Python 3, Node 18 or later, and Chrome at which the tests expect):
+/usr/bin/google-chrome ,
+cd editor-lab
+npm install python3 build.py # puppeteer-core, for the browser tests
+# writes index.html from src/, the book and
+the kernels
+node tools/check
+_
+book.js # the handbook's rules over all chapters
+for t in smoke interact masks presets presetcheck code codelayers exports
+agent agent
+_
+call; do node test/$t.js; done
+node test/runblocks.js # every runnable block in the book; BENCH=1
+includes the bench one
+node test/quotes.js python3 tools/figs2.py python3 tools/embed
+_
+figs.py python3 tools/renumber.py # every code quote resolves
+# recompute the figures into /tmp/figs
+# put @@FIG name@@ figures into the chapters
+# after editing chapters: renumber and fix
+references
+Opening editor-lab/index.html directly in a browser works without a server. The
+agent, per-user preset storage and confirmed downloads need the capabilities the
+published page gets from its host; without them the agent shows that it is off , presets
+stay in the browser and exports are copied to the clipboard.
+Artifacts and links
+Five artifacts came out of this conversation. The Editor lab is public; the others are private
+to you unless you have shared them. Newest first:
+Page 18 of 19
+Editor lab: implementation diary and report
+Artifact What it is Last updated
+(UTC)
+This report 14 Nov 2026
+Editor lab: implementation diary and
+report
+Editor lab Editor grammar examples Editor perf lab: simulating workloads
+and devices before building the
+engine
+Build your own Photoshop/Lightroom:
+features and algorithms
+The workbench and its textbook,
+version 1794686042-0718
+Usage examples of a fluent
+editing grammar, simple to
+complex
+A doc on modelling workloads
+and devices, the idea behind the
+bench's scenarios and profiles
+A doc listing features with
+starting, next and advanced
+algorithms for each
+14 Nov 2026,
+19:54
+12 Nov 2026,
+19:32
+12 Nov 2026,
+16:19
+12 Nov 2026,
+15:30
+Inputs from you: the three Form Skate design systems (Agent, Workbench, Stage) the
+workbench is built on, and the Executable T extbook Handbook that set the shape of
+chapters 5 to 9.
+Page 19 of 19

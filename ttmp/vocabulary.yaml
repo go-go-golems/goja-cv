@@ -33,6 +33,10 @@ topics:
       description: Structure of goja-cv's layers and mechanisms
     - slug: refactor
       description: Changes that remove or reshape existing code
+    - slug: performance
+      description: Evaluation speed, memory and caching
+    - slug: research
+      description: Studies of external systems and prior work
 docTypes:
     - slug: design-doc
       description: Structured rationale and architecture notes
