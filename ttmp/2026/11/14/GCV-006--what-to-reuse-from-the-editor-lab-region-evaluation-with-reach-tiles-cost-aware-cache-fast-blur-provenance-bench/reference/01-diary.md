@@ -474,3 +474,64 @@ the session's one-line wrapper. The save now records `agentSite(site).Line`, the
 
 ### Technical details
 - Before: `message: 'cv.save("twice2.json"): this eval already saves twice2.json (line 2).'` for a first save on line 1.
+
+## Step 8: Code review fixes before merging #9, #10 and #11
+
+Codex reviewed the three PRs: one P1 and six P2s, all small, plus a failing Go vulnerability check. All of them were
+fixed before merging, each on its own branch, and the stack was merged forward (docs into Phase 0, Phase 0 into
+Phase 6) without rewriting history.
+
+### Prompt Context
+
+**User prompt (verbatim):** "merge #9 #10 #11, check for P1 code review issues or P2 that are aeasily fixed before."
+
+**Assistant interpretation:** Read the review comments and CI of the three PRs, fix the P1 and the easy P2s, then merge them in order.
+
+**Inferred user intent:** Land GCV-006's docs, Phase 0 and Phase 6 on main without known defects.
+
+**Commit (code):** 4b0947e (#9), 335ceac (#10), a4fd9d2 (#11)
+
+### What I did
+- #9: the ticket's blur script used `sync.WaitGroup` (P1, AGENTS.md says errgroup): now `errgroup.Group`. The §12.1
+  invariance example still had `assertClose(…, 1e-6)` (P2, contradicts §12.7): now `assertEqualBits`. CI's
+  govulncheck failed on GO-2026-6859 (`net/http@go1.26.10`, fixed in 1.26.11): `toolchain go1.26.11` in go.mod;
+  govulncheck clean locally.
+- #10: `total_p50_ms` summed per-eval medians (P2; the reviewer's example: repeats (100, 1), (1, 100), (1, 1) gave 2
+  instead of 101): now the median of per-repeat totals, with that example as a test. `gen -bench-scan` failed when
+  the output directory did not exist (P2): it creates it.
+- #11: a sidecar that could not be written failed the save after the file had been replaced (P2): new
+  `Workspace.CheckWrite` (the pre-write checks of `Write`, split out); the save checks the sidecar's name first. A
+  source replaced after the session decoded it was hashed as the new version (P2): the sidecar now hashes only when
+  the file's stamp matches the opened one, and otherwise says `changed`. Two tests, both mutation-checked (each
+  fails with its fix removed).
+
+### Why
+- Each finding was real and small; none needed a design change.
+
+### What worked
+- `CheckWrite` is a pure refactor of `Write`'s checks, so every existing workspace test covers it.
+
+### What didn't work
+- N/A
+
+### What I learned
+- The vulnerability check fails on the toolchain, not the code; the bump touches every branch, so it went into the
+  base of the stack.
+
+### What was tricky to build
+- Merging a stack without force pushes: each fix was committed on its branch and the lower branch merged into the
+  next, so every PR's diff stays correct and the merges into main are plain merge commits.
+
+### What warrants a second pair of eyes
+- A race remains between `CheckWrite` of the sidecar and its write after the file (another process creating a
+  directory there in between); acceptable for a single-session workspace.
+
+### What should be done in the future
+- N/A
+
+### Code review instructions
+- `GOWORK=off go test ./cmd/goja-cv/ ./pkg/cvsession/ ./pkg/cv/graph/`; `make lint`; `make smoke`.
+
+### Technical details
+- Review comments: PR #9 (blur script errgroup P1; invariance example P2), #10 (total percentile P2; bench dir P2),
+  #11 (sidecar failure P2; source version P2).
